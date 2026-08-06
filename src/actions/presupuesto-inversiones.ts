@@ -163,6 +163,9 @@ function camposDesdeForm(formData: FormData): Record<string, any> {
     kpi_unidad: parseText(formData.get("kpi_unidad")),
     kpi_objetivo: parseNum(formData.get("kpi_objetivo")),
     proveedor: parseText(formData.get("proveedor")),
+    // El formulario manda responsable_id desde que existe la solapa, pero acá
+    // no se leía: el responsable elegido nunca llegaba a la base.
+    responsable_id: parseText(formData.get("responsable_id")),
     fecha_programada: parseText(formData.get("fecha_programada")),
     monto_estimado: parseNum(formData.get("monto_estimado")),
     estado,

@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   CalendarClock,
   FileDown,
+  ExternalLink,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +28,7 @@ import {
 import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import { getSignedUrl } from "@/actions/presupuesto"
 import { eliminarInversion } from "@/actions/presupuesto-inversiones"
+import { leerObservaciones, MARCA_ORIGEN } from "@/lib/inversiones-origen"
 import type { InversionConDetalle } from "@/types/database"
 import {
   CATEGORIA_LABEL,
@@ -89,6 +91,47 @@ function DesvioMonto({
       {sign}
       {pct.toFixed(1)}%
     </Badge>
+  )
+}
+
+/**
+ * Marca de dónde vino la inversión cuando la cargó Plan de Mantenimiento
+ * Edilicio. Las filas siguen siendo editables acá, pero el próximo push del
+ * origen pisa título, montos, fechas, estado y proveedor.
+ */
+function OrigenExterno({ inversion }: { inversion: InversionConDetalle }) {
+  const { origen } = leerObservaciones(inversion.observaciones)
+  if (!origen) return null
+  const detalle = [origen.rubro, origen.responsable].filter(Boolean).join(" · ")
+  return (
+    <p className="mt-1 flex items-center gap-1 text-xs text-blue-700">
+      <ExternalLink className="size-3 shrink-0" />
+      {origen.url ? (
+        <a
+          href={origen.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:underline"
+          title="Abrir el plan de acción en Plan de Mantenimiento Edilicio"
+        >
+          {MARCA_ORIGEN}
+        </a>
+      ) : (
+        <span>{MARCA_ORIGEN}</span>
+      )}
+      {detalle && <span className="text-muted-foreground">· {detalle}</span>}
+    </p>
+  )
+}
+
+/** Avance % del plan de acción; sólo lo mantiene la app de mantenimiento. */
+function AvanceOrigen({ inversion }: { inversion: InversionConDetalle }) {
+  const { origen } = leerObservaciones(inversion.observaciones)
+  if (!origen || origen.avancePct === null) return null
+  return (
+    <p className="mt-0.5 text-xs text-muted-foreground">
+      avance {origen.avancePct}%
+    </p>
   )
 }
 
@@ -300,6 +343,7 @@ export function InversionesSection({
                         {inv.beneficio_esperado}
                       </p>
                     )}
+                    <OrigenExterno inversion={inv} />
                   </TableCell>
                   <TableCell className="text-sm">
                     {CATEGORIA_LABEL[inv.categoria]}
@@ -321,6 +365,7 @@ export function InversionesSection({
                         {formatDate(inv.fecha_realizada)}
                       </p>
                     )}
+                    <AvanceOrigen inversion={inv} />
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-right text-sm">
                     {formatMoney(inv.monto_real)}

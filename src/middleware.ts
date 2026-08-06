@@ -90,6 +90,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/wa-bot/sync-clientes" ||
     pathname === "/api/wa-bot/webhook" ||
     pathname === "/api/indicadores/sync-familias" ||
+    pathname === "/api/presupuesto/inversiones/sync" ||
     pathname === "/api/indicadores/quiebres-stock/cron-foto"
   ) {
     return NextResponse.next()
