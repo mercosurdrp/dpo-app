@@ -2,9 +2,9 @@
 
 import { useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Camera, CheckCircle2, Sparkles } from "lucide-react"
+import { Camera, CheckCircle2, CircleAlert, Sparkles } from "lucide-react"
 import { createMiTareaCil, type MiCilData } from "@/actions/mi-cil"
-import { TAREAS_CIL } from "@/lib/flota/cil-tareas"
+import { TAREAS_CIL, labelTareaCil } from "@/lib/flota/cil-tareas"
 import { cn } from "@/lib/utils"
 
 const TIPO_LABEL: Record<string, string> = {
@@ -82,6 +82,37 @@ export function MiCilClient({ data }: { data: MiCilData }) {
           />
         </div>
       </div>
+
+      {/* Qué unidades quedan sin cerrar el ciclo del mes: evita que el chofer
+          tenga que preguntar y que todo el CIL caiga sobre las mismas 6. */}
+      {data.pendientes.length > 0 ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+          <p className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-300">
+            <CircleAlert className="size-4 shrink-0" />
+            Faltan {data.pendientes.length} unidad
+            {data.pendientes.length === 1 ? "" : "es"} este mes
+          </p>
+          <ul className="mt-2 space-y-1">
+            {data.pendientes.map((u) => (
+              <li key={u.dominio} className="text-sm text-amber-900 dark:text-amber-200">
+                <span className="font-medium">{u.dominio}</span>
+                {u.numero && <span className="text-xs"> (N° {u.numero})</span>}
+                <span className="text-xs">
+                  {" — "}
+                  {u.faltan.map((t) => labelTareaCil(t)).join(", ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+          <CheckCircle2 className="size-5 shrink-0" />
+          <span className="text-sm font-medium">
+            Todas las unidades tienen el CIL del mes completo.
+          </span>
+        </div>
+      )}
 
       {ok && (
         <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -225,7 +256,7 @@ export function MiCilClient({ data }: { data: MiCilData }) {
               >
                 <span className="text-foreground">
                   <span className="font-medium">{t.dominio}</span>
-                  <span className="text-muted-foreground"> · {t.tarea}</span>
+                  <span className="text-muted-foreground"> · {labelTareaCil(t.tarea)}</span>
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {t.fecha.split("-").reverse().join("/")}

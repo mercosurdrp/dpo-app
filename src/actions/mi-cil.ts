@@ -23,7 +23,12 @@ import { requireAuth } from "@/lib/session"
  * cargada sin foto no lo demuestra.
  */
 
-import { TAREAS_CIL, META_CIL_MENSUAL } from "@/lib/flota/cil-tareas"
+import {
+  TAREAS_CIL,
+  META_CIL_MENSUAL,
+  CICLO_CIL_MENSUAL,
+  TIPOS_CIL_OBLIGATORIOS,
+} from "@/lib/flota/cil-tareas"
 
 const BUCKET = "mantenimiento-evidencias"
 
@@ -42,6 +47,13 @@ export interface MiTareaCil {
   foto_url: string | null
 }
 
+export interface UnidadPendiente {
+  dominio: string
+  numero: string | null
+  /** Tareas del ciclo que le faltan a esta unidad en el mes. */
+  faltan: string[]
+}
+
 export interface MiCilData {
   /** Unidades activas sobre las que se puede cargar una tarea. */
   unidades: UnidadCil[]
@@ -51,6 +63,12 @@ export interface MiCilData {
   mesTotal: number
   metaMes: number
   nombre: string
+  /**
+   * Unidades obligatorias a las que les falta alguna tarea del ciclo este mes.
+   * Se muestra en la pantalla del chofer para que sepa qué agarrar, sin tener
+   * que preguntarle al supervisor.
+   */
+  pendientes: UnidadPendiente[]
 }
 
 function ymActual(): string {
@@ -92,7 +110,7 @@ export async function getMiCil(): Promise<{ data: MiCilData } | { error: string 
         .limit(20),
       supabase
         .from("mantenimiento_cil")
-        .select("id")
+        .select("dominio, tarea")
         .gte("fecha", `${ym}-01`),
     ])
 
@@ -113,6 +131,21 @@ export async function getMiCil(): Promise<{ data: MiCilData } | { error: string 
       ]),
     )
 
+    // Qué le falta a cada unidad obligatoria para cerrar el ciclo del mes.
+    const delMes = (mesRes.data || []) as Array<{ dominio: string; tarea: string }>
+    const obligatorios = TIPOS_CIL_OBLIGATORIOS as readonly string[]
+    const ciclo = CICLO_CIL_MENSUAL as readonly string[]
+    const pendientes: UnidadPendiente[] = (vehRes.data || [])
+      .filter((v) => obligatorios.includes(v.tipo ?? ""))
+      .map((v) => ({
+        dominio: v.dominio,
+        numero: numeros.get(v.dominio) ?? null,
+        faltan: ciclo.filter(
+          (t) => !delMes.some((d) => d.dominio === v.dominio && d.tarea === t),
+        ),
+      }))
+      .filter((u) => u.faltan.length > 0)
+
     return {
       data: {
         unidades: (vehRes.data || []).map((v) => ({
@@ -121,9 +154,10 @@ export async function getMiCil(): Promise<{ data: MiCilData } | { error: string 
           numero: numeros.get(v.dominio) ?? null,
         })),
         mias: (misRes.data || []) as MiTareaCil[],
-        mesTotal: (mesRes.data || []).length,
+        mesTotal: delMes.length,
         metaMes: META_CIL_MENSUAL,
         nombre: profile.nombre ?? "",
+        pendientes,
       },
     }
   } catch (e) {
@@ -182,7 +216,9 @@ export async function createMiTareaCil(
     const { error } = await supabase.from("mantenimiento_cil").insert({
       fecha: hoyArgentina(),
       dominio,
-      tarea: tarea.label,
+      // 🚨 El `id`, nunca el `label`: la columna tiene un CHECK y el label lo
+      // viola. Ver el comentario de `lib/flota/cil-tareas.ts`.
+      tarea: tarea.id,
       operario,
       descripcion: descripcion || null,
       foto_url: pub.publicUrl,

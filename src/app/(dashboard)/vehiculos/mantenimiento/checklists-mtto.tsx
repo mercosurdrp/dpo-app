@@ -44,6 +44,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoPuntoBadge, DpoSeccionCinta } from "./_components/dpo-badge"
+import { CoberturaCil } from "./cobertura-cil"
 import { KpiCard } from "./_components/kpi-card"
 import {
   createTareaCil,
@@ -62,6 +63,18 @@ import { toast } from "sonner"
 
 function fmtFecha(f: string): string {
   return f.slice(0, 10).split("-").reverse().join("/")
+}
+
+/** El mes en curso en hora argentina: el servidor puede estar en UTC. */
+function mesActualArgentina(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(new Date())
+    .slice(0, 7)
 }
 
 function tipoLabel(t: string): string {
@@ -493,6 +506,9 @@ export function ChecklistsMtto({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ===== Cobertura del CIL: qué unidad está al día y cuál falta (DPO 4.1) ===== */}
+      <CoberturaCil mesActual={mesActualArgentina()} />
 
       {/* ===== Tareas CIL / ATO (DPO 4.1) ===== */}
       <TareasCilSection
