@@ -51,8 +51,12 @@ const RMD_BAJO = 4.5 // RMD promedio por debajo de esto = mal servicio
 const MAX_GANADORES = 200
 // Rechazos por culpa del cliente EN TODO EL PERÍODO que hacen bajar de clúster.
 // En una ventana de 6 meses un rechazo aislado le pasa a cualquier cliente que
-// recibe entregas todas las semanas; dos ya es un patrón.
-const MIN_RECHAZOS_BAJA = 2
+// recibe entregas todas las semanas, y con dos todavía entra mucho ruido: sobre
+// el 1º semestre 2026, con 2 bajaban 285 PDV contra 142 con 3. Tres rechazos es
+// más de uno cada dos meses — ahí ya hay un patrón. Subirlo a 6 ("uno por mes")
+// vacía la regla: solo 27 PDV llegan, y la baja pasaría a decidirse por RMD/NPS,
+// que es justo la variable que la auditoría pidió que NO fuera la única.
+const MIN_RECHAZOS_BAJA = 3
 // RMD promedio por debajo del cual el cliente baja de clúster (vota mal).
 const RMD_MINIMO_BAJA = 4.99
 

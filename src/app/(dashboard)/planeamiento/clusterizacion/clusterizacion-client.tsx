@@ -289,6 +289,21 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
   const visibles = filtrados.slice(0, MAX_FILAS)
   const resumenById = (cl: ClusterId) => resumen.find((r) => r.cluster === cl)
 
+  // Cuántos de los que se están viendo llegaron acá bajando de otro clúster, y
+  // de cuál. Es la lectura que importa al entrar a Productor o Ventas Bajas:
+  // esos PDV no son chicos, son clientes penalizados por servicio.
+  const recibidos = useMemo(() => {
+    const porOrigen = new Map<ClusterId, number>()
+    for (const c of filtrados) {
+      if (!c.degradado) continue
+      porOrigen.set(c.cluster_base, (porOrigen.get(c.cluster_base) ?? 0) + 1)
+    }
+    const desde = [...porOrigen.entries()]
+      .map(([cluster, n]) => ({ cluster, n }))
+      .sort((a, b) => b.n - a.n)
+    return { total: desde.reduce((s, d) => s + d.n, 0), desde }
+  }, [filtrados])
+
   // Tarjeta de un cluster (clickeable = filtra). Se ubica en la matriz 2×2.
   const tarjetaCluster = (cl: ClusterId) => {
     const r = resumenById(cl)
@@ -563,6 +578,19 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                     {CLUSTER_LABELS[filtroCluster]}
                   </Badge>
                 )}
+                {/* De dónde vienen los que están acá por una baja de servicio. */}
+                {recibidos.total > 0 && (
+                  <p className="mt-1 text-xs font-normal text-muted-foreground">
+                    <span className="font-medium text-red-600">
+                      {fmtNum(recibidos.total)} bajaron de clúster
+                    </span>{" "}
+                    y están en esta lista
+                    {recibidos.desde.length > 0
+                      ? `: ${recibidos.desde.map((d) => `${fmtNum(d.n)} desde ${CLUSTER_LABELS[d.cluster]}`).join(", ")}`
+                      : ""}
+                    . Van marcados con la flecha roja bajo el clúster.
+                  </p>
+                )}
               </CardTitle>
               <Input
                 placeholder="Buscar por nombre, ID, localidad o promotor…"
@@ -594,7 +622,10 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                     {visibles.map((c) => {
                       const meta = CLUSTER_META[c.cluster]
                       return (
-                        <TableRow key={c.id_cliente}>
+                        <TableRow
+                          key={c.id_cliente}
+                          className={c.degradado ? "bg-red-50/60" : undefined}
+                        >
                           <TableCell className="max-w-[170px]">
                             <div className="truncate font-medium text-slate-900" title={c.nombre ?? undefined}>
                               {c.nombre ?? `Cliente ${c.id_cliente}`}
