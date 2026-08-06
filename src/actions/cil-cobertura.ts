@@ -4,9 +4,9 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import {
   CICLO_CIL_MENSUAL,
+  DOMINIOS_CIL_EXCLUIDOS,
   META_CIL_MENSUAL,
   TIPOS_CIL_OBLIGATORIOS,
-  TIPOS_CIL_OPTATIVOS,
 } from "@/lib/flota/cil-tareas"
 
 /**
@@ -35,8 +35,10 @@ export interface UnidadCobertura {
   tipo: string | null
   /** Número de flota: es como el chofer llama a su unidad. */
   numero: string | null
-  /** Si entra en el porcentaje o sólo se muestra (camionetas). */
+  /** Si entra en el porcentaje o sólo se muestra (unidades excluidas). */
   obligatoria: boolean
+  /** Por qué no cuenta, cuando no cuenta. */
+  motivoExclusion: string | null
   /** Por tarea del ciclo, el registro más reciente del mes. */
   hechas: Record<string, TareaHecha | undefined>
   faltan: string[]
@@ -120,14 +122,10 @@ export async function getCoberturaCilMes(
     )
 
     const obligatorios = TIPOS_CIL_OBLIGATORIOS as readonly string[]
-    const optativos = TIPOS_CIL_OPTATIVOS as readonly string[]
     const ciclo = CICLO_CIL_MENSUAL as readonly string[]
 
     const unidades: UnidadCobertura[] = (vehRes.data || [])
-      .filter((v: { tipo: string | null }) => {
-        const t = v.tipo ?? ""
-        return obligatorios.includes(t) || optativos.includes(t)
-      })
+      .filter((v: { tipo: string | null }) => obligatorios.includes(v.tipo ?? ""))
       .map((v: { dominio: string; tipo: string | null }) => {
         const propias = tareas.filter((t) => t.dominio === v.dominio)
         const hechas: Record<string, TareaHecha | undefined> = {}
@@ -139,11 +137,13 @@ export async function getCoberturaCilMes(
             : undefined
         }
         const faltan = ciclo.filter((t) => !hechas[t])
+        const motivoExclusion = DOMINIOS_CIL_EXCLUIDOS[v.dominio] ?? null
         return {
           dominio: v.dominio,
           tipo: v.tipo,
           numero: numeros.get(v.dominio) ?? null,
-          obligatoria: obligatorios.includes(v.tipo ?? ""),
+          obligatoria: motivoExclusion === null,
+          motivoExclusion,
           hechas,
           faltan,
           completa: faltan.length === 0,

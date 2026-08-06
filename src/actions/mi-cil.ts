@@ -28,6 +28,7 @@ import {
   META_CIL_MENSUAL,
   CICLO_CIL_MENSUAL,
   TIPOS_CIL_OBLIGATORIOS,
+  DOMINIOS_CIL_EXCLUIDOS,
 } from "@/lib/flota/cil-tareas"
 
 const BUCKET = "mantenimiento-evidencias"
@@ -136,7 +137,11 @@ export async function getMiCil(): Promise<{ data: MiCilData } | { error: string 
     const obligatorios = TIPOS_CIL_OBLIGATORIOS as readonly string[]
     const ciclo = CICLO_CIL_MENSUAL as readonly string[]
     const pendientes: UnidadPendiente[] = (vehRes.data || [])
-      .filter((v) => obligatorios.includes(v.tipo ?? ""))
+      .filter(
+        (v) =>
+          obligatorios.includes(v.tipo ?? "") &&
+          !(v.dominio in DOMINIOS_CIL_EXCLUIDOS),
+      )
       .map((v) => ({
         dominio: v.dominio,
         numero: numeros.get(v.dominio) ?? null,

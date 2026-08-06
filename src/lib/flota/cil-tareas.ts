@@ -53,10 +53,24 @@ export const META_CIL_MENSUAL = 30
 export const CICLO_CIL_MENSUAL = ["limpieza", "inspeccion", "lubricacion"] as const
 
 /**
- * Alcance del seguimiento mensual, por `catalogo_vehiculos.tipo`:
- * camiones y autoelevadores son obligatorios; las camionetas se muestran pero
- * no entran en el porcentaje; el acoplado no tiene motor, así que fluidos y
- * lubricación no le aplican y queda fuera.
+ * Alcance del seguimiento mensual, por `catalogo_vehiculos.tipo`: camiones y
+ * autoelevadores.
+ *
+ * Quedan afuera, por decisión de Francisco el 06/08/2026:
+ *  - **camionetas**: la inspección y la lubricación se hacen en la base, pero el
+ *    lavado a veces va a un lavadero externo y no deja registro propio;
+ *  - **acoplado**: no tiene motor, así que fluidos y lubricación no le aplican.
  */
 export const TIPOS_CIL_OBLIGATORIOS = ["camion", "autoelevador"] as const
-export const TIPOS_CIL_OPTATIVOS = ["camioneta"] as const
+
+/**
+ * Unidades que no entran aunque su tipo sí: no ruedan y no tienen chofer
+ * designado, así que arrastrarían el porcentaje para abajo todos los meses sin
+ * decir nada sobre la flota que trabaja.
+ *
+ * 🚨 Se muestran igual en la pantalla, en un bloque aparte: que no cuenten no
+ * significa esconderlas del auditor.
+ */
+export const DOMINIOS_CIL_EXCLUIDOS: Record<string, string> = {
+  AC165AJ: "Camión de backup: no rueda y no tiene chofer designado",
+}
