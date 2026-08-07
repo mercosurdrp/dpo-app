@@ -866,6 +866,27 @@ async function filaRecepcion(
 // ===========================================================================
 
 /**
+ * Excepción embebida de un movimiento, venga como venga.
+ *
+ * 🚨 `edf_excepciones.movimiento_id` es UNIQUE, así que PostgREST resuelve el
+ * embed como *to-one* y devuelve un OBJETO (o null), NO un array. Leerlo con
+ * `[0]` daba siempre `undefined`: la excepción se guardaba bien en la base pero
+ * el movimiento seguía figurando "sin excepción" y el día quedaba en rojo.
+ * Se acepta también el array por si la relación deja de ser única.
+ */
+function excepcionEmbebida<T>(embed: T | T[] | null | undefined): T | null {
+  if (!embed) return null
+  return Array.isArray(embed) ? embed[0] ?? null : embed
+}
+
+type EdfExcepcionEmbebida = {
+  motivo: string
+  detalle: string | null
+  autoriza_jdl: string
+  autoriza_jdv: string
+}
+
+/**
  * Movimientos en camión FUERA de la ventana lunes-miércoles en un rango, con
  * su excepción si ya fue registrada. Es la lista que se repasa en la reunión
  * Ventas-Logística: los que vienen con `excepcion: null` son los que faltan
@@ -904,7 +925,7 @@ export async function getMovimientosEdfFueraDeVentana(
     )
 
     const filas: MovimientoEdfPendiente[] = fueraDeVentana.map((m: any) => {
-      const exc = (m.edf_excepciones ?? [])[0]
+      const exc = excepcionEmbebida<any>(m.edf_excepciones)
       return {
         id: m.id,
         fecha_entrega: m.fecha_entrega,
@@ -1032,7 +1053,8 @@ interface MovimientoEdfRow {
   fecha_entrega: string
   en_camion: boolean
   en_ventana: boolean
-  edf_excepciones: { id: string }[] | null
+  // to-one: PostgREST manda un objeto porque `movimiento_id` es UNIQUE.
+  edf_excepciones: { id: string } | { id: string }[] | null
 }
 
 async function filaEquiposFrio(
@@ -1085,7 +1107,7 @@ async function filaEquiposFrio(
     // feriado y el día posterior se resuelven acá.
     if (!edfDiaHabilitado(m.fecha_entrega)) {
       a.fuera++
-      if ((m.edf_excepciones ?? []).length > 0) a.justificados++
+      if (excepcionEmbebida(m.edf_excepciones)) a.justificados++
     }
     porDia.set(dia, a)
   }
@@ -2207,14 +2229,8 @@ export async function getDetalleDiaSla(
         des_articulo: string | null
         cantidad: number
         en_ventana: boolean
-        edf_excepciones:
-          | {
-              motivo: string
-              detalle: string | null
-              autoriza_jdl: string
-              autoriza_jdv: string
-            }[]
-          | null
+        // to-one: PostgREST manda un objeto porque `movimiento_id` es UNIQUE.
+        edf_excepciones: EdfExcepcionEmbebida | EdfExcepcionEmbebida[] | null
       }
       const movs = (data ?? []) as unknown as MovDetalle[]
 
@@ -2240,7 +2256,7 @@ export async function getDetalleDiaSla(
       let fuera = 0
       let justificados = 0
       for (const m of movs) {
-        const exc = (m.edf_excepciones ?? [])[0]
+        const exc = excepcionEmbebida(m.edf_excepciones)
         const accion = m.tipo_doc === "COPOP" ? "Entrega" : "Retiro"
         const label = `${accion} · ${m.reparto ?? "s/reparto"} · cliente ${m.id_cliente ?? "—"}`
         const equipo = `${m.des_articulo ?? "equipo"}${m.cantidad > 1 ? ` ×${m.cantidad}` : ""}`
