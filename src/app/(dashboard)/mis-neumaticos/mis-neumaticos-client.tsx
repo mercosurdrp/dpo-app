@@ -7,7 +7,7 @@ import {
   guardarMedicionesNeumaticos,
   type MisNeumaticosData,
 } from "@/actions/mis-neumaticos"
-import { motivoDesvio } from "@/lib/flota/neumaticos-control"
+import { motivoDesvio, validarProfundidad } from "@/lib/flota/neumaticos-control"
 import { cn } from "@/lib/utils"
 
 const TIPO_LABEL: Record<string, string> = {
@@ -34,6 +34,7 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
   const [ok, setOk] = useState<string | null>(null)
 
   const unidad = data.unidades.find((u) => u.dominio === dominio) ?? null
+  const pendientes = data.unidades.filter((u) => !u.completa)
 
   // Lo cargado en pantalla, ya convertido a número.
   const cargadas = useMemo(() => {
@@ -97,7 +98,19 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
     })
   }
 
-  const listo = cargadas.length > 0 && !pendiente
+  // 🚨 Con una sola profundidad mal escrita no se guarda NADA: si dejáramos
+  // pasar el resto, el chofer cree que cargó todo y la cubierta del error queda
+  // sin medir y sin que nadie lo note.
+  const erroresProf = unidad
+    ? unidad.cubiertas
+        .map((c) => ({
+          posicion: c.posicion,
+          error: validarProfundidad(valores[c.id]?.mm ?? ""),
+        }))
+        .filter((e) => e.error)
+    : []
+
+  const listo = cargadas.length > 0 && erroresProf.length === 0 && !pendiente
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5 pb-24">
@@ -140,6 +153,39 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
           entre {data.limites.psiMin} y {data.limites.psiMax} psi.
         </p>
       </div>
+
+      {/* Qué unidades quedan sin cerrar el mes: mismo aviso que en Mi CIL, para
+          que el chofer no tenga que preguntar y no caiga todo sobre las mismas. */}
+      {pendientes.length > 0 ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+          <p className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-300">
+            <CircleAlert className="size-4 shrink-0" />
+            Faltan {pendientes.length} unidad
+            {pendientes.length === 1 ? "" : "es"} este mes
+          </p>
+          <ul className="mt-2 space-y-1">
+            {pendientes.map((u) => (
+              <li key={u.dominio} className="text-sm text-amber-900 dark:text-amber-200">
+                <span className="font-medium">{u.dominio}</span>
+                {u.numero && <span className="text-xs"> (N° {u.numero})</span>}
+                <span className="text-xs">
+                  {" — "}
+                  {u.total === 0
+                    ? "sin cubiertas cargadas"
+                    : `${u.total - u.medidas} de ${u.total} sin medir`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+          <CheckCircle2 className="size-5 shrink-0" />
+          <span className="text-sm font-medium">
+            Todas las unidades tienen sus cubiertas medidas este mes.
+          </span>
+        </div>
+      )}
 
       {ok && (
         <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -206,7 +252,10 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
               <div className="mt-3 space-y-3">
                 {unidad.cubiertas.map((c) => {
                   const v = valores[c.id] ?? { mm: "", psi: "" }
-                  const desvio = motivoDesvio(aNumero(v.mm), aNumero(v.psi))
+                  const errorMm = validarProfundidad(v.mm)
+                  const desvio = errorMm
+                    ? null
+                    : motivoDesvio(aNumero(v.mm), aNumero(v.psi))
                   return (
                     <div
                       key={c.id}
@@ -239,14 +288,20 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
                           <span className="text-xs text-muted-foreground">
                             Dibujo (mm)
                           </span>
+                          {/* 🚨 `text` y no `number`: hace falta ver lo que el
+                              chofer tipeó tal cual para exigirle el decimal. Un
+                              input `number` se come la coma y deja pasar "115"
+                              como si fuera un valor válido. */}
                           <input
-                            type="number"
+                            type="text"
                             inputMode="decimal"
-                            step="0.1"
-                            min="0"
+                            placeholder="11.5"
                             value={v.mm}
                             onChange={(e) => setValor(c.id, "mm", e.target.value)}
-                            className="mt-1 w-full rounded-lg border bg-background p-3 text-sm"
+                            className={cn(
+                              "mt-1 w-full rounded-lg border bg-background p-3 text-sm",
+                              errorMm ? "border-red-400 ring-1 ring-red-300" : "",
+                            )}
                           />
                         </label>
                         <label className="block">
@@ -264,6 +319,13 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
                           />
                         </label>
                       </div>
+
+                      {errorMm && (
+                        <p className="mt-2 flex items-start gap-1.5 text-xs font-medium text-red-700 dark:text-red-300">
+                          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+                          {errorMm}
+                        </p>
+                      )}
 
                       {desvio && (
                         <p className="mt-2 flex items-start gap-1.5 text-xs font-medium text-red-700 dark:text-red-300">
@@ -291,6 +353,15 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
         {error && (
           <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
             {error}
+          </p>
+        )}
+
+        {erroresProf.length > 0 && (
+          <p className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+            Revisá la profundidad de{" "}
+            {erroresProf.map((e) => e.posicion ?? "—").join(", ")}: va con punto y
+            un decimal (11.5, y si son 12 justos, 12.0). Hasta que no esté bien no
+            se guarda ninguna, para que no quede media carga.
           </p>
         )}
 

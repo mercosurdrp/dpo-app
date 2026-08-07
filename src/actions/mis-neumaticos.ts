@@ -24,6 +24,7 @@ import {
 
 import {
   PROF_MIN_MM,
+  PROF_MAX_MM,
   PRESION_MIN_PSI,
   PRESION_MAX_PSI,
 } from "@/lib/flota/neumaticos-control"
@@ -239,6 +240,23 @@ export async function guardarMedicionesNeumaticos(
     )
     if (utiles.length === 0) {
       return { error: "Cargá al menos una cubierta con profundidad o presión." }
+    }
+
+    // 🚨 Segundo control del rango, del lado del servidor. La pantalla ya exige
+    // el decimal, pero la validación que sólo vive en el navegador no protege el
+    // dato: una cubierta cargada con 115 mm en vez de 11,5 queda impecable para
+    // siempre y nadie la mira más.
+    for (const m of utiles) {
+      if (m.profundidad_mm != null) {
+        if (m.profundidad_mm <= 0 || m.profundidad_mm > PROF_MAX_MM) {
+          return {
+            error: `Profundidad fuera de rango (${m.profundidad_mm} mm). Tiene que estar entre 0 y ${PROF_MAX_MM} mm.`,
+          }
+        }
+      }
+      if (m.presion_psi != null && (m.presion_psi <= 0 || m.presion_psi > 200)) {
+        return { error: `Presión fuera de rango (${m.presion_psi} psi).` }
+      }
     }
 
     // Las cubiertas tienen que ser de esta unidad y estar instaladas: si no, la

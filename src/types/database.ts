@@ -1382,6 +1382,8 @@ export type AlertaTipo =
   | "sin_liberacion"
   | "mantenimiento_vencido"
   | "mantenimiento_proximo"
+  | "neumatico_critico"
+  | "neumatico_alerta"
 
 export interface AlertaVehiculo {
   id: string

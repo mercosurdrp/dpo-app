@@ -18,6 +18,11 @@ import {
   loadEstadoPlan,
   resumenAlertasMantenimiento,
 } from "@/lib/vehiculos/plan-mantenimiento"
+import {
+  PROF_ALERTA_MM,
+  PROF_MIN_MM,
+  nivelProfundidad,
+} from "@/lib/flota/neumaticos-control"
 import type {
   AlertaVehiculo,
   AlertaSeveridad,
@@ -586,6 +591,13 @@ export async function getAlertasVehiculos(): Promise<
       // sin alertas de mantenimiento
     }
 
+    // Cubiertas gastadas. Igual que arriba: si falla, no se lleva puesto el resto.
+    try {
+      alertas.push(...(await alertasProfundidadNeumaticos()))
+    } catch {
+      // sin alertas de neumáticos
+    }
+
     const sevOrder: Record<AlertaSeveridad, number> = { danger: 3, warning: 2, info: 1 }
     alertas.sort((a, b) => {
       const s = sevOrder[b.severidad] - sevOrder[a.severidad]
@@ -597,4 +609,73 @@ export async function getAlertasVehiculos(): Promise<
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
+}
+
+/**
+ * Cubiertas gastadas: las que ya están fuera de norma y las que están por
+ * llegar. Nivel acordado con Francisco el 07/08/2026 — crítico por debajo de
+ * 3 mm, alerta entre 3 y 5 mm.
+ *
+ * 🚨 Una alerta POR UNIDAD, no por cubierta: con 85 cubiertas, avisar de a una
+ * llenaba el panel de 20 líneas y el resto de las alertas de flota dejaba de
+ * leerse. La alerta dice cuántas y en qué posiciones.
+ *
+ * Lee `profundidad_actual_mm`, que es lo que actualiza la medición mensual del
+ * chofer: si nadie mide, el número se queda quieto y la alerta no aparece. Por
+ * eso la ronda mensual y esta alerta son la misma cosa vista de dos lados.
+ */
+async function alertasProfundidadNeumaticos(): Promise<AlertaVehiculo[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("mantenimiento_neumaticos")
+    .select("dominio, posicion, profundidad_actual_mm")
+    .eq("estado", "instalado")
+  if (error || !data) return []
+
+  const porDominio = new Map<
+    string,
+    { criticas: string[]; alerta: string[]; peor: number }
+  >()
+
+  for (const n of data) {
+    const mm = n.profundidad_actual_mm
+    if (mm == null || !n.dominio) continue
+    const nivel = nivelProfundidad(mm)
+    if (nivel !== "critico" && nivel !== "alerta") continue
+    const acc =
+      porDominio.get(n.dominio) ?? { criticas: [], alerta: [], peor: Infinity }
+    const pos = n.posicion ?? "s/pos"
+    if (nivel === "critico") acc.criticas.push(pos)
+    else acc.alerta.push(pos)
+    acc.peor = Math.min(acc.peor, mm)
+    porDominio.set(n.dominio, acc)
+  }
+
+  const out: AlertaVehiculo[] = []
+  for (const [dominio, acc] of porDominio) {
+    const peor = acc.peor.toFixed(1).replace(".", ",")
+    if (acc.criticas.length > 0) {
+      out.push({
+        id: `neu-crit-${dominio}`,
+        tipo: "neumatico_critico",
+        severidad: "danger",
+        dominio,
+        titulo: `${acc.criticas.length} cubierta${acc.criticas.length === 1 ? "" : "s"} bajo el mínimo`,
+        descripcion: `${acc.criticas.join(", ")} por debajo de ${PROF_MIN_MM} mm (la peor, ${peor} mm). Cambio inmediato.`,
+        valor: acc.criticas.length,
+      })
+    }
+    if (acc.alerta.length > 0) {
+      out.push({
+        id: `neu-alerta-${dominio}`,
+        tipo: "neumatico_alerta",
+        severidad: "warning",
+        dominio,
+        titulo: `${acc.alerta.length} cubierta${acc.alerta.length === 1 ? "" : "s"} por llegar al mínimo`,
+        descripcion: `${acc.alerta.join(", ")} entre ${PROF_MIN_MM} y ${PROF_ALERTA_MM} mm. Programar el cambio.`,
+        valor: acc.alerta.length,
+      })
+    }
+  }
+  return out
 }
