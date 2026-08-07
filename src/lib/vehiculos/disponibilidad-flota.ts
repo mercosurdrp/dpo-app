@@ -55,17 +55,22 @@ export interface CalcDisponibilidadMes {
 
 const pad = (n: number) => String(n).padStart(2, "0")
 
-/** Unidades que rutean: solo flota de DISTRIBUCIÓN. Quedan afuera todo lo de
- *  depósito (autoelevadores y camionetas internas, que nunca salen a reparto y
- *  por lo tanto diluían la disponibilidad) y los acoplados (no rutean solos, van
- *  remolcados). El sector manda sobre el tipo: un alta nueva de depósito se
- *  excluye sola, sin tocar este código. */
+/** Unidades que rutean: **solo CAMIONES de distribución**.
+ *
+ *  Quedan afuera todo lo de depósito, los autoelevadores, los acoplados (no
+ *  rutean solos, van remolcados) y las **camionetas**: son de supervisión y
+ *  visita, no salen a repartir, así que mezclarlas en disponibilidad y
+ *  utilización compara cosas distintas (Francisco, 07/08/2026).
+ *
+ *  El sector manda sobre el tipo: un alta nueva de depósito se excluye sola,
+ *  sin tocar este código. */
 export function flotaDeRuta(unidades: UnidadFlota[]): UnidadFlota[] {
   return unidades.filter(
     (u) =>
       u.sector !== "deposito" &&
       u.tipo !== "autoelevador" &&
-      u.tipo !== "acoplado"
+      u.tipo !== "acoplado" &&
+      u.tipo !== "camioneta"
   )
 }
 

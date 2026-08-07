@@ -96,6 +96,19 @@ interface KpiDef {
   conSerie: boolean
   /** Punto del pilar Flota de DPO que este PI evidencia (ej. "2.1"). */
   dpo?: string
+  /**
+   * true = el valor SE ACUMULA a lo largo del mes (tareas hechas, litros
+   * quemados, plata gastada, días parados).
+   *
+   * 🚨 En el mes en curso estos KPI no se comparan contra la meta: el día 7 un
+   * acumulativo lleva un cuarto de lo que va a terminar siendo, y eso da un
+   * semáforo falso en las DOS direcciones — falso rojo en los de "más es mejor"
+   * (el CIL con 8 de 30 tareas) y falso verde en los de "menos es mejor" (el CO2
+   * o el costo, que arrancan el mes en cero y cumplen cualquier tope).
+   * Los porcentuales (disponibilidad, conformidad) NO son acumulativos: valen
+   * igual el día 7 que el 30.
+   */
+  acumulativo?: boolean
 }
 
 const KPI_DEFS: KpiDef[] = [
@@ -122,6 +135,7 @@ const KPI_DEFS: KpiDef[] = [
     fmt: fmtMoney,
     conSerie: true,
     dpo: "3.2",
+    acumulativo: true,
   },
   {
     kpi: "pct_preventivo",
@@ -229,6 +243,7 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)} t` : `${v.toFixed(0)} kg`),
     conSerie: true,
     dpo: "4.3",
+    acumulativo: true,
   },
   {
     kpi: "cil_tareas",
@@ -238,6 +253,7 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => String(Math.round(v)),
     conSerie: true,
     dpo: "4.1",
+    acumulativo: true,
   },
   {
     kpi: "cil_defectos_anticipables",
@@ -247,6 +263,7 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => String(Math.round(v)),
     conSerie: true,
     dpo: "4.1",
+    acumulativo: true,
   },
   {
     kpi: "correctivo_dias_parado",
@@ -256,6 +273,7 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => `${v.toFixed(0)} d`,
     conSerie: true,
     dpo: "2.4",
+    acumulativo: true,
   },
   {
     kpi: "neumaticos_conformidad",
@@ -621,6 +639,48 @@ function cumpleMeta(valor: number, meta: FlotaMeta | null): boolean | null {
 }
 
 /**
+ * Margen dentro del cual un PI que no llega a la meta se muestra en AMARILLO en
+ * vez de rojo: 10 % de la meta.
+ *
+ * 🚨 Antes el semáforo era binario y 94,9 % contra una meta de 95 % se pintaba
+ * exactamente igual que un 20 %. Con metas exigentes —que es lo correcto— eso
+ * dejaba el tablero entero en rojo y el rojo dejaba de querer decir algo.
+ * El amarillo no afloja ninguna meta: sigue sin cumplir, pero se distingue "a un
+ * pelo" de "lejos".
+ */
+const MARGEN_ALERTA = 0.1
+
+/**
+ * Semáforo de un PI.
+ *
+ * 🚨 `parcial` = el mes todavía está corriendo. Para los KPI ACUMULATIVOS eso
+ * hace que el número no signifique nada todavía y se devuelve neutro: comparar
+ * 8 tareas de CIL contra la meta de 30 el día 7 pinta rojo algo que va bien, y
+ * comparar el costo del mes contra el tope el día 2 pinta verde algo que no se
+ * sabe. Los porcentuales sí se evalúan siempre: valen igual el día 7 que el 30.
+ */
+function estadoDeKpi(
+  valor: number | null,
+  meta: FlotaMeta | null,
+  opts: { acumulativo?: boolean; parcial?: boolean } = {},
+): EstadoKpi {
+  if (valor == null) return "neutro"
+  const cumple = cumpleMeta(valor, meta)
+  if (cumple == null) return "neutro"
+  if (opts.acumulativo && opts.parcial) return "neutro"
+  if (cumple) return "ok"
+
+  const m = Number(meta!.meta)
+  // Con meta 0 ("cero services vencidos") no hay margen posible: 1 es 1.
+  if (m === 0) return "critico"
+  const cerca =
+    meta!.comparador === "<="
+      ? valor <= m * (1 + MARGEN_ALERTA)
+      : valor >= m * (1 - MARGEN_ALERTA)
+  return cerca ? "alerta" : "critico"
+}
+
+/**
  * Card de un PI de flota: usa la <KpiCard> del módulo como contenedor (label,
  * valor, semáforo, delta y badge DPO) y le cuelga lo propio de esta sección —
  * editor de meta y tendencia de 3 meses con su plan de acción.
@@ -648,8 +708,11 @@ function KpiIndicadorCard({
 }) {
   const [editMeta, setEditMeta] = useState(false)
 
-  const ok = valor == null ? null : cumpleMeta(valor, meta)
-  const estado: EstadoKpi = ok == null ? "neutro" : ok ? "ok" : "critico"
+  const parcialMes = serie.find((p) => p.parcial)?.parcial ?? false
+  const estado: EstadoKpi = estadoDeKpi(valor, meta, {
+    acumulativo: def.acumulativo,
+    parcial: parcialMes,
+  })
 
   // Tendencia: compara los dos últimos puntos con dato.
   const conDato = serie.filter((p) => p.valor != null)
@@ -721,6 +784,12 @@ function KpiIndicadorCard({
         {def.conSerie ? (
           <div className="grid grid-cols-3 gap-2 border-t border-border pt-2">
             {serie.map((p) => {
+              // Mismo criterio que el número grande: amarillo si está cerca, y
+              // el mes en curso de un acumulativo no se juzga.
+              const estMes = estadoDeKpi(p.valor, meta, {
+                acumulativo: def.acumulativo,
+                parcial: p.parcial,
+              })
               const okMes = p.valor == null ? null : cumpleMeta(p.valor, meta)
               const plan = planBy.get(`${def.kpi}|${p.ym}`)
               return (
@@ -732,11 +801,13 @@ function KpiIndicadorCard({
                   <p
                     className={cn(
                       "text-sm font-semibold tabular-nums",
-                      okMes == null
-                        ? "text-muted-foreground"
-                        : okMes
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-destructive"
+                      estMes === "ok"
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : estMes === "alerta"
+                          ? "text-amber-600 dark:text-amber-400"
+                          : estMes === "critico"
+                            ? "text-destructive"
+                            : "text-muted-foreground"
                     )}
                   >
                     {p.valor == null ? "—" : def.fmt(p.valor)}
@@ -748,7 +819,7 @@ function KpiIndicadorCard({
                     >
                       Ver plan
                     </button>
-                  ) : okMes === false && puedeEditar ? (
+                  ) : (estMes === "critico" || estMes === "alerta") && puedeEditar ? (
                     <button
                       className="mt-0.5 text-[11px] font-medium text-amber-600 hover:underline dark:text-amber-400"
                       onClick={() => onCrearPlan(p.ym, p.valor, meta?.meta ?? null)}
@@ -763,7 +834,7 @@ function KpiIndicadorCard({
         ) : (
           <div className="flex items-center justify-between border-t border-border pt-2 text-xs text-muted-foreground">
             <span>{def.descripcion}</span>
-            {ok === false && puedeEditar && (
+            {(estado === "critico" || estado === "alerta") && puedeEditar && (
               <PlanFotoActualBtn def={def} valor={valor} meta={meta} planBy={planBy}
                 onCrearPlan={onCrearPlan} onVerPlan={onVerPlan} />
             )}
