@@ -112,14 +112,18 @@ async function traerMaestro(): Promise<Map<number, ArticuloMaestro>> {
       des_articulo: string | null
       marca: string | null
       calibre: string | null
+      segmento: string | null
       anulado: boolean | null
-    }>("SELECT id_articulo, des_articulo, marca, calibre, anulado FROM articulos")
+    }>(
+      "SELECT id_articulo, des_articulo, marca, calibre, segmento, anulado FROM articulos",
+    )
     const m = new Map<number, ArticuloMaestro>()
     for (const r of res.rows) {
       m.set(Number(r.id_articulo), {
         des_articulo: r.des_articulo ?? String(r.id_articulo),
         marca: r.marca,
         calibre: r.calibre,
+        segmento: r.segmento,
         anulado: !!r.anulado,
       })
     }

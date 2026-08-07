@@ -31,7 +31,10 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { getPool } from "@/lib/mercosur-dashboard"
 import { chessLogin } from "@/lib/wa-bot/chess"
 import { credencialesChess, getStockChess, DEPOSITO_CD } from "@/lib/chess/stock"
-import { claveFamilia } from "@/lib/quiebres-stock/calculo"
+import {
+  construirResolverFamilias,
+  type ArticuloMaestro,
+} from "@/lib/quiebres-stock/calculo"
 import { IS_MISIONES } from "@/lib/empresa"
 
 const CRON_SECRET = process.env.CRON_SECRET
@@ -77,19 +80,33 @@ export async function GET(request: NextRequest) {
     // Maestro para resolver la familia (marca + calibre) de cada artículo.
     const pool = getPool()
     const client = await pool.connect()
-    let maestro: Map<number, { marca: string | null; calibre: string | null }>
+    let maestro: Map<number, ArticuloMaestro>
     try {
       const m = await client.query<{
         id_articulo: number
+        des_articulo: string | null
         marca: string | null
         calibre: string | null
-      }>("SELECT id_articulo, marca, calibre FROM articulos")
+        segmento: string | null
+      }>("SELECT id_articulo, des_articulo, marca, calibre, segmento FROM articulos")
       maestro = new Map(
-        m.rows.map((r) => [Number(r.id_articulo), { marca: r.marca, calibre: r.calibre }]),
+        m.rows.map((r) => [
+          Number(r.id_articulo),
+          {
+            des_articulo: r.des_articulo ?? String(r.id_articulo),
+            marca: r.marca,
+            calibre: r.calibre,
+            segmento: r.segmento,
+            anulado: false,
+          },
+        ]),
       )
     } finally {
       client.release()
     }
+    // Misma resolución de familia que el indicador, para que la foto y la
+    // pantalla hablen de los mismos productos.
+    const resolverFamilia = construirResolverFamilias(maestro)
 
     // Un solo login para todo el rango.
     const sessionId = await chessLogin(credencialesChess())
@@ -122,12 +139,11 @@ export async function GET(request: NextRequest) {
       }
 
       const filas = [...porArticulo.entries()].map(([id, a]) => {
-        const m = maestro.get(id)
         return {
           fecha,
           id_articulo: id,
           ds_articulo: a.ds,
-          familia: claveFamilia(m?.marca, m?.calibre, a.ds),
+          familia: resolverFamilia(id, a.ds),
           bultos: a.bultos,
           dias_cobertura: null,
           vpd: null,

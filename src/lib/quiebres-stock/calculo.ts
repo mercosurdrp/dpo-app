@@ -141,7 +141,92 @@ export interface ArticuloMaestro {
   des_articulo: string
   marca: string | null
   calibre: string | null
+  segmento: string | null
   anulado: boolean
+}
+
+// ─── Qué entra al indicador ─────────────────────────────────────────────────
+
+/** Calibres que no son mercadería: no se venden, se usan. */
+const CALIBRES_NO_MERCADERIA = new Set(["ESQUELETO", "MODULO", "NO APLICABLE"])
+
+/**
+ * Material de punto de venta y logístico. Se detecta por descripción porque
+ * varios de estos artículos vienen sin marca ni calibre en el maestro.
+ */
+const PATRON_POP =
+  /\b(VASO|VASOS|PELOTA|SOMBRILLA|MESA|SILLA|RACK|TARIMA|COPA|COPAS|EXHIBIDOR|GLORIFICADOR|CENEFA|BEERMAT|PIZARRA|STOPPER|SHELF|PANERA|FRAPERA|HEL|HELADERA|CHAPADUR|PALETA|PALETAS|PUNTERA|HEADER|CUBRECAJON|CUBREPUNTERAS)\b/i
+
+/**
+ * true = es mercadería vendible. Deja afuera envases y esqueletos (`segmento`
+ * "env CZA"), pallets y chapadur (`marca`/`calibre` "NO APLICABLE"), módulos de
+ * sillas y mesas, y el material POP.
+ *
+ * El indicador mide abastecimiento: que falte un esqueleto o una sombrilla no
+ * es un quiebre de compra, y al mezclarse tapan lo que sí importa. Ojo que
+ * `segmento = 'env CZA'` también saca botellas vacías que comparten calibre con
+ * el producto lleno (BOT 1/1 ARACELI 1000CC está en 1Lt RET, igual que la
+ * Brahma litro).
+ */
+export function esMercaderia(a: ArticuloMaestro): boolean {
+  if (a.marca?.trim().toUpperCase() === "NO APLICABLE") return false
+  if (a.calibre && CALIBRES_NO_MERCADERIA.has(a.calibre.trim().toUpperCase())) return false
+  if (a.segmento?.trim().toLowerCase().startsWith("env")) return false
+  if (PATRON_POP.test(a.des_articulo)) return false
+  return true
+}
+
+// ─── Resolución de familias ─────────────────────────────────────────────────
+
+const normalizar = (s: string) =>
+  s.toUpperCase().replace(/[#*]/g, " ").replace(/\s+/g, " ").trim()
+
+/**
+ * Saca los sufijos de campaña: "MUND", "MUNDIAL 2026", "NF 2024", "ED TENIS".
+ * Sin esto, "QUILMES IPA CAN 4X6 473CC MUND 2026" y "QUILMES IPA CAN 4X6
+ * 473CC" son dos productos distintos, y el primero figura quebrado mientras el
+ * segundo está en el depósito: es el mismo producto con otro envase.
+ */
+function sinSufijoDeCampania(desc: string): string {
+  let x = normalizar(desc)
+  let previo: string
+  do {
+    previo = x
+    x = x.replace(/\s+(MUND(IAL)?|NF|EXP|CART|TERM|SMK|ED\s+\S+|\d{2,4})$/i, "").trim()
+  } while (x !== previo)
+  return x
+}
+
+/**
+ * Devuelve la familia de cada artículo. Los que tienen marca y calibre se
+ * agrupan por ahí; los que no —típicamente los códigos de campaña, que en el
+ * maestro vienen con todo en blanco— se enganchan al artículo cuya descripción
+ * coincide una vez sacado el sufijo. Si no engancha con ninguno, quedan solos.
+ */
+export function construirResolverFamilias(
+  maestro: Map<number, ArticuloMaestro>,
+): (id: number, descFallback?: string | null) => string {
+  const porDescripcion = new Map<string, string>()
+  for (const [, a] of maestro) {
+    if (!a.marca?.trim() || !a.calibre?.trim()) continue
+    const familia = claveFamilia(a.marca, a.calibre, a.des_articulo)
+    porDescripcion.set(normalizar(a.des_articulo), familia)
+    // La versión sin sufijo también, para que enganche "IPA MUND" con "IPA".
+    porDescripcion.set(sinSufijoDeCampania(a.des_articulo), familia)
+  }
+
+  return (id, descFallback) => {
+    const a = maestro.get(id)
+    const desc = a?.des_articulo ?? descFallback ?? String(id)
+    if (a?.marca?.trim() && a?.calibre?.trim()) {
+      return claveFamilia(a.marca, a.calibre, desc)
+    }
+    return (
+      porDescripcion.get(normalizar(desc)) ??
+      porDescripcion.get(sinSufijoDeCampania(desc)) ??
+      desc
+    )
+  }
 }
 
 export interface SkuDeFamilia {
@@ -273,11 +358,15 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
   }
   const familias = new Map<string, Acum>()
   const familiaDeSku = new Map<number, string>()
+  const resolverFamilia = construirResolverFamilias(e.maestro)
 
   for (const v of e.ventas) {
     const a = e.maestro.get(v.id_articulo)
+    // Envases, esqueletos, pallets y POP quedan afuera: el indicador mide
+    // abastecimiento de mercadería.
+    if (a && !esMercaderia(a)) continue
     const desc = a?.des_articulo ?? v.ds_articulo ?? String(v.id_articulo)
-    const clave = claveFamilia(a?.marca, a?.calibre, desc)
+    const clave = resolverFamilia(v.id_articulo, v.ds_articulo)
     familiaDeSku.set(v.id_articulo, clave)
 
     const f = familias.get(clave) ?? {
@@ -289,6 +378,11 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
       porDia: new Map<string, number>(),
       skus: new Map<number, SkuDeFamilia>(),
     }
+    // El código de campaña viene sin marca ni calibre; si la familia se creó
+    // con uno de ésos, se completa con el primer artículo que sí los traiga.
+    if (!f.marca && a?.marca?.trim()) f.marca = a.marca
+    if (!f.calibre && a?.calibre?.trim()) f.calibre = a.calibre
+
     const bultos = Number(v.bultos) || 0
     f.rotacion += bultos
 
