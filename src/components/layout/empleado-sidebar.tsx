@@ -57,6 +57,24 @@ function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpI
     ...(IS_MISIONES
       ? []
       : [{ label: "Mis Resultados", href: "/visibilidad-resultados", icon: <TrendingUp className="size-5" /> }]),
+    // ── Lo que el chofer hace sobre SU unidad, los tres juntos y ARRIBA ──
+    // 🚨 Estaban repartidos: Mi CIL sexto y Vehículos/Combustible al fondo, detrás
+    // de Comunicaciones, Servicios, Reportar, Buenas Prácticas y Mis vacaciones.
+    // Juntarlos abajo no alcanzaba: en el celular hay que scrollear y el maquinista
+    // no los encontraba (Francisco, 07/08/2026). Si se agregan ítems nuevos al
+    // menú, van DESPUÉS de este bloque.
+    { label: "Vehículos", href: "/vehiculos/checklist", icon: <Truck className="size-5" /> },
+    // Combustible: los choferes de distribución entran por las tarjetas del
+    // Inicio (piden legajo vinculado); los maquinistas cargan los autoelevadores
+    // y no tienen ese vínculo, así que este ítem es su única puerta de entrada.
+    ...(puedeCombustible
+      ? [{ label: "Combustible", href: "/vehiculos/combustible", icon: <Fuel className="size-5" /> }]
+      : []),
+    // Mi CIL: el chofer registra su propia limpieza, control de fluidos o
+    // lubricación (DPO Flota 4.1). Solo Pampeana, que es donde corre el programa.
+    ...(IS_MISIONES
+      ? []
+      : [{ label: "Mi CIL", href: "/mi-cil", icon: <Droplets className="size-5" /> }]),
     // Trivia MERCOSUR: desafío de conocimiento diario (ambos tenants).
     { label: "Trivia", href: "/trivia", icon: <Brain className="size-5" /> },
     // Mi sector 5S: el responsable sorteado del mes carga sus tareas con foto.
@@ -92,22 +110,6 @@ function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpI
       ? []
       : [{ label: "Clasificar envases", href: "/clasificacion-envases", icon: <Boxes className="size-5" /> }]),
     { label: "Mis vacaciones", href: "/rrhh/mis-solicitudes", icon: <CalendarRange className="size-5" /> },
-    { label: "Vehículos", href: "/vehiculos/checklist", icon: <Truck className="size-5" /> },
-    // Combustible: los choferes de distribución entran por las tarjetas del
-    // Inicio (piden legajo vinculado); los maquinistas cargan los autoelevadores
-    // y no tienen ese vínculo, así que este ítem es su única puerta de entrada.
-    ...(puedeCombustible
-      ? [{ label: "Combustible", href: "/vehiculos/combustible", icon: <Fuel className="size-5" /> }]
-      : []),
-    // Mi CIL: el chofer registra su propia limpieza, control de fluidos o
-    // lubricación (DPO Flota 4.1). Solo Pampeana, que es donde corre el programa.
-    //
-    // 🚨 Va acá, pegado a Vehículos y Combustible, y no arriba entre las tarjetas
-    // del Inicio: las tres son cosas que el chofer hace sobre SU unidad y las
-    // busca juntas (pedido de Francisco, 07/08/2026).
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Mi CIL", href: "/mi-cil", icon: <Droplets className="size-5" /> }]),
     { label: "Mis tareas", href: "/mis-tareas", icon: <ClipboardList className="size-5" /> },
   ]
   if (puedeRecepcion) {
