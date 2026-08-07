@@ -388,7 +388,13 @@ export function FichaVehiculo({ dominio, ficha, documentos, canEdit }: Props) {
             <div className="min-w-0 flex-1">
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 lg:grid-cols-3">
                 {CAMPOS.map((c) => {
-                  const valor = ((ficha?.[c.key] ?? "") as string).trim()
+                  // 🚨 `.toString()` y no `as string`: el cast es de TypeScript y
+                  // en ejecución no convierte nada. Hay campos NUMÉRICOS en la
+                  // ficha (`tara_kg`, y desde el 03/08 también `tanque_litros`,
+                  // `capacidad_paletas` y `cajones_por_paleta`), y llamar `.trim()`
+                  // sobre un número tiraba la página entera: la ficha de TODAS las
+                  // unidades quedó en "This page couldn't load" del 03/08 al 07/08.
+                  const valor = (ficha?.[c.key] ?? "").toString().trim()
                   return (
                     <div key={c.key} className="min-w-0">
                       <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
