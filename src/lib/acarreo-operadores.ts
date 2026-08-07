@@ -61,6 +61,26 @@ export function puedeOperarVehiculos(
   return !!email && VEHICULOS_OPERADORES.includes(email)
 }
 
+// Quiénes ven la tarjeta "Registrar CIL" en el panel de Inicio, ADEMÁS de los
+// choferes vinculados a un legajo de entrega y de VEHICULOS_OPERADORES (que ya
+// la ven por su cuenta).
+//
+// 🚨 Es una lista PROPIA y no se resuelve sumando gente a VEHICULOS_OPERADORES:
+// esa lista habilita también la carga de combustible, y acá hay que habilitar
+// sólo el CIL (Francisco, 07/08/2026: "tema de combustible no es necesario").
+// Para sumar a alguien, agregá su email acá.
+export const CIL_OPERADORES = [
+  "42323256@mercosur.local", // Cejas Ezequiel
+]
+
+export function puedeCargarCil(
+  role?: string | null,
+  email?: string | null,
+): boolean {
+  if (role === "admin" || role === "supervisor") return true
+  return !!email && CIL_OPERADORES.includes(email)
+}
+
 // Quiénes pueden dar el "Ingreso a depósito" (acción reservada): además de los
 // admin, esta lista acotada habilita a personas puntuales sin darles rol admin.
 export const INGRESO_OPERADORES = [

@@ -20,7 +20,6 @@ import {
   Wrench,
   PackageX,
   Refrigerator,
-  Droplets,
   Sparkles,
   Brain,
   ChevronLeft,
@@ -71,11 +70,11 @@ function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpI
     ...(puedeCombustible
       ? [{ label: "Combustible", href: "/vehiculos/combustible", icon: <Fuel className="size-5" /> }]
       : []),
-    // Mi CIL: el chofer registra su propia limpieza, control de fluidos o
-    // lubricación (DPO Flota 4.1). Solo Pampeana, que es donde corre el programa.
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Mi CIL", href: "/mi-cil", icon: <Droplets className="size-5" /> }]),
+    // 🚨 Acá estaba "Mi CIL". Sale del menú por pedido de Francisco (07/08/2026):
+    // la puerta de entrada al CIL es la tarjeta "Registrar CIL" del panel de
+    // Inicio, al lado de Checklist y Carga Combustible. Tenerlo en los dos
+    // lugares confundía sobre cuál era el camino bueno. La pantalla /mi-cil sigue
+    // existiendo y sigue habilitada en EmpleadoGuard.
     // Trivia MERCOSUR: desafío de conocimiento diario (ambos tenants).
     { label: "Trivia", href: "/trivia", icon: <Brain className="size-5" /> },
     // Mi sector 5S: el responsable sorteado del mes carga sus tareas con foto.

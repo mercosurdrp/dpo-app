@@ -23,6 +23,7 @@ import {
   Ban,
   Gauge,
   ClipboardCheck,
+  Droplets,
   Fuel,
   ExternalLink,
   Sparkles,
@@ -66,6 +67,8 @@ interface Props {
   sobrecargas: MisSobrecargasResumen | null
   /** Habilitado por lista a operar vehículos sin ser chofer de distribución. */
   puedeVehiculos?: boolean
+  /** Habilitado a registrar el CIL sin ser chofer ni cargar combustible. */
+  puedeCil?: boolean
   /** Sector 5S que le tocó este mes (null si no salió sorteado). */
   mi5s: MiSector5S | null
 }
@@ -102,7 +105,7 @@ function MaterialLink({ url }: { url: string | null }) {
   )
 }
 
-export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reunionWarehouse, reunionLogistica, dashboard, entrega, sobrecargas, puedeVehiculos = false, mi5s = null }: Props) {
+export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reunionWarehouse, reunionLogistica, dashboard, entrega, sobrecargas, puedeVehiculos = false, puedeCil = false, mi5s = null }: Props) {
   const router = useRouter()
   const [reunionState, setReunionState] = useState(reunion)
   const [warehouseState, setWarehouseState] = useState(reunionWarehouse)
@@ -511,9 +514,12 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
       )}
 
       {/* Acciones Vehículo — choferes vinculados y habilitados por lista
-          (maquinistas: cargan los autoelevadores, no salen a ruta). */}
-      {(entrega?.vinculado || puedeVehiculos) && (
-        <div className="grid gap-3 sm:grid-cols-2">
+          (maquinistas: cargan los autoelevadores, no salen a ruta).
+          🚨 El CIL entra al bloque con su propia condición: hay gente habilitada
+          a registrarlo que no carga combustible ni sale a ruta. */}
+      {(entrega?.vinculado || puedeVehiculos || puedeCil) && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          {(entrega?.vinculado || puedeVehiculos) && (
           <Link href="/vehiculos/checklist">
             <Card className="group cursor-pointer border-blue-200 bg-blue-50 transition-shadow hover:shadow-md">
               <CardContent className="flex items-center gap-4 py-5">
@@ -527,6 +533,8 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
               </CardContent>
             </Card>
           </Link>
+          )}
+          {(entrega?.vinculado || puedeVehiculos) && (
           <Link href="/vehiculos/combustible">
             <Card className="group cursor-pointer border-amber-200 bg-amber-50 transition-shadow hover:shadow-md">
               <CardContent className="flex items-center gap-4 py-5">
@@ -536,6 +544,20 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
                 <div>
                   <p className="font-semibold text-slate-900">Carga Combustible</p>
                   <p className="text-sm text-amber-600">Registrar carga</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          )}
+          <Link href="/mi-cil">
+            <Card className="group cursor-pointer border-emerald-200 bg-emerald-50 transition-shadow hover:shadow-md">
+              <CardContent className="flex items-center gap-4 py-5">
+                <div className="rounded-xl bg-emerald-100 p-3 transition-colors group-hover:bg-emerald-200">
+                  <Droplets className="size-6 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">Registrar CIL</p>
+                  <p className="text-sm text-emerald-600">Limpieza, fluidos o engrase</p>
                 </div>
               </CardContent>
             </Card>

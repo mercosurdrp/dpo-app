@@ -8,7 +8,7 @@ import { getMiEntrega } from "@/actions/mi-entrega"
 import { getMisSobrecargas } from "@/actions/sobrecargas"
 import { getMiSector5S } from "@/actions/s5-mi-sector"
 import { IS_MISIONES } from "@/lib/empresa"
-import { puedeOperarVehiculos } from "@/lib/acarreo-operadores"
+import { puedeOperarVehiculos, puedeCargarCil } from "@/lib/acarreo-operadores"
 import { SuenoSection, SuenoSkeleton } from "@/components/sueno/sueno-section"
 import { MisCapacitacionesClient } from "./mis-capacitaciones-client"
 
@@ -45,6 +45,9 @@ export default async function MisCapacitacionesPage() {
   // Maquinistas y demás habilitados por lista: ven las tarjetas de vehículo
   // aunque no estén vinculados a un legajo de chofer/ayudante de entrega.
   const puedeVehiculos = puedeOperarVehiculos(profile?.role, profile?.email)
+  // El CIL tiene su propia lista: hay gente habilitada a registrarlo que no
+  // carga combustible ni sale a ruta.
+  const puedeCil = puedeCargarCil(profile?.role, profile?.email)
 
   return (
     <>
@@ -61,6 +64,7 @@ export default async function MisCapacitacionesPage() {
         entrega={entrega}
         sobrecargas={sobrecargas}
         puedeVehiculos={puedeVehiculos}
+        puedeCil={puedeCil}
         mi5s={mi5s}
       />
     </>
