@@ -29,6 +29,7 @@ import {
   CICLO_CIL_MENSUAL,
   TIPOS_CIL_OBLIGATORIOS,
   DOMINIOS_CIL_EXCLUIDOS,
+  tareaDelCiclo,
 } from "@/lib/flota/cil-tareas"
 
 const BUCKET = "mantenimiento-evidencias"
@@ -63,7 +64,6 @@ export interface MiCilData {
   /** Tareas de TODA la operación en el mes en curso, contra la meta. */
   mesTotal: number
   metaMes: number
-  nombre: string
   /**
    * Unidades obligatorias a las que les falta alguna tarea del ciclo este mes.
    * Se muestra en la pantalla del chofer para que sepa qué agarrar, sin tener
@@ -145,8 +145,13 @@ export async function getMiCil(): Promise<{ data: MiCilData } | { error: string 
       .map((v) => ({
         dominio: v.dominio,
         numero: numeros.get(v.dominio) ?? null,
+        // 🚨 `tareaDelCiclo` y no `d.tarea` a secas: las tareas viejas cargadas
+        // como `limpieza` cierran la misma letra que `limpieza_profunda`.
         faltan: ciclo.filter(
-          (t) => !delMes.some((d) => d.dominio === v.dominio && d.tarea === t),
+          (t) =>
+            !delMes.some(
+              (d) => d.dominio === v.dominio && tareaDelCiclo(d.tarea) === t,
+            ),
         ),
       }))
       .filter((u) => u.faltan.length > 0)
@@ -161,7 +166,6 @@ export async function getMiCil(): Promise<{ data: MiCilData } | { error: string 
         mias: (misRes.data || []) as MiTareaCil[],
         mesTotal: delMes.length,
         metaMes: META_CIL_MENSUAL,
-        nombre: profile.nombre ?? "",
         pendientes,
       },
     }
@@ -180,11 +184,21 @@ export async function createMiTareaCil(
     const dominio = String(formData.get("dominio") || "").trim().toUpperCase()
     const tareaId = String(formData.get("tarea") || "").trim()
     const descripcion = String(formData.get("descripcion") || "").trim()
-    // 🚨 El nombre se ESCRIBE, no se elige de una lista: la tarea la puede haber
-    // hecho un ayudante o alguien sin usuario en la app, y con una lista cerrada
-    // esa persona no tendría cómo quedar registrada. Viene precargado con el
-    // nombre de quien está logueado, que es el caso normal.
-    const operario = String(formData.get("operario") || "").trim()
+    // 🚨 El nombre se ESCRIBE y arranca VACÍO, no se elige de una lista ni se
+    // precarga con el usuario logueado: la tarea la puede haber hecho un ayudante
+    // o alguien sin usuario en la app, y quien carga no siempre es quien la hizo.
+    // Precargarlo hacía que el nombre de quien estaba logueado quedara pegado por
+    // descuido (Francisco, 07/08/2026).
+    //
+    // Pueden ser VARIAS personas: la pantalla las manda separadas por coma en una
+    // sola fila. Una fila por tarea y no una por persona, porque el KPI `cil_tareas`
+    // cuenta tareas contra una meta de 30 — dos choferes lavando el mismo camión
+    // es una tarea hecha, no dos.
+    const operario = String(formData.get("operario") || "")
+      .split(",")
+      .map((n) => n.trim())
+      .filter(Boolean)
+      .join(", ")
     const tarea = TAREAS_CIL.find((t) => t.id === tareaId)
 
     if (!dominio) return { error: "Elegí la unidad." }

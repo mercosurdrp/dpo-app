@@ -12,7 +12,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { DpoPuntoBadge } from "./_components/dpo-badge"
-import { getCoberturaCilMes, type CoberturaCilMes } from "@/actions/cil-cobertura"
+import {
+  getCoberturaCilMes,
+  getSerieCoberturaCil,
+  type CoberturaCilMes,
+  type PuntoSerieCil,
+} from "@/actions/cil-cobertura"
 import { CICLO_CIL_MENSUAL, labelTareaCil } from "@/lib/flota/cil-tareas"
 
 /**
@@ -54,6 +59,7 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
   const [data, setData] = useState<CoberturaCilMes | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
+  const [serie, setSerie] = useState<PuntoSerieCil[] | null>(null)
 
   const cargar = useCallback(async (mes: string) => {
     setCargando(true)
@@ -67,6 +73,14 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
   useEffect(() => {
     void cargar(ym)
   }, [ym, cargar])
+
+  // La tendencia no depende del mes elegido: se pide una sola vez.
+  useEffect(() => {
+    void (async () => {
+      const res = await getSerieCoberturaCil(6)
+      if (!("error" in res)) setSerie(res.data)
+    })()
+  }, [])
 
   const ciclo = CICLO_CIL_MENSUAL as readonly string[]
   const obligatorias = data?.unidades.filter((u) => u.obligatoria) ?? []
@@ -151,6 +165,10 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
               </p>
             </div>
 
+            {serie && serie.length > 0 && (
+              <SerieCobertura serie={serie} mesElegido={ym} onElegir={setYm} />
+            )}
+
             <TablaCobertura unidades={obligatorias} ciclo={ciclo} />
 
             {optativas.length > 0 && (
@@ -176,6 +194,76 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Tendencia mes a mes. El DPO no se conforma con el número del mes: pide ver que
+ * el indicador mejore. Con un mes por vez esa lectura no existía.
+ */
+function SerieCobertura({
+  serie,
+  mesElegido,
+  onElegir,
+}: {
+  serie: PuntoSerieCil[]
+  mesElegido: string
+  onElegir: (ym: string) => void
+}) {
+  return (
+    <div className="rounded-lg border p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-sm font-medium text-foreground">
+          Cómo viene mes a mes
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Unidades con el ciclo completo · la meta es 100 %
+        </p>
+      </div>
+
+      <div className="mt-4 flex items-end gap-2 sm:gap-3">
+        {serie.map((p) => (
+          <button
+            key={p.ym}
+            type="button"
+            onClick={() => onElegir(p.ym)}
+            title={`${fmtMes(p.ym)}: ${p.completas} de ${p.total} unidades · ${p.tareas} tareas`}
+            className={`group flex flex-1 flex-col items-center gap-1 rounded-md p-1 transition-colors hover:bg-accent ${
+              p.ym === mesElegido ? "bg-accent" : ""
+            }`}
+          >
+            <span className="text-xs font-semibold text-foreground">{p.pct}%</span>
+            {/* Alto fijo del riel para que las barras se comparen entre sí. */}
+            <span className="flex h-24 w-full items-end justify-center">
+              <span
+                className={`w-full max-w-10 rounded-t transition-all ${
+                  p.pct === 100
+                    ? "bg-emerald-500"
+                    : p.pct === 0
+                      ? "bg-muted-foreground/25"
+                      : "bg-amber-400 dark:bg-amber-500"
+                }`}
+                // El 0 % igual deja un hilo visible: una barra invisible se lee
+                // como "no hay dato", y acá el cero es un dato.
+                style={{ height: `${Math.max(p.pct, 2)}%` }}
+              />
+            </span>
+            <span className="text-[11px] leading-tight text-muted-foreground">
+              {fmtMes(p.ym).slice(0, 3)}
+            </span>
+            <span className="text-[11px] leading-tight text-muted-foreground">
+              {p.completas}/{p.total}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <p className="mt-3 text-xs text-muted-foreground">
+        Se recalcula sobre las tareas cargadas, así que ningún mes se pierde ni
+        depende de que un proceso haya corrido ese día. El denominador es la flota
+        de hoy.
+      </p>
+    </div>
   )
 }
 

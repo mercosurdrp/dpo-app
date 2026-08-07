@@ -59,6 +59,7 @@ import {
   type ChecklistPlanTipo,
   type TareaCil,
 } from "@/actions/mantenimiento-vehiculos"
+import { TAREAS_CIL, labelTareaCil } from "@/lib/flota/cil-tareas"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
 import { toast } from "sonner"
 
@@ -526,12 +527,10 @@ export function ChecklistsMtto({
 
 // ==================== Tareas CIL / ATO ====================
 
-const TAREA_CIL_LABEL: Record<string, string> = {
-  limpieza: "Limpieza",
-  limpieza_profunda: "Limpieza profunda",
-  inspeccion: "Inspección",
-  lubricacion: "Lubricación",
-}
+// 🚨 Acá había una copia del catálogo de tareas. Al sacar `limpieza` del catálogo
+// real (07/08/2026) esta copia lo habría seguido ofreciendo del lado del
+// supervisor, que es justo la duplicación que causó el error `23514` de agosto.
+// Ahora sale todo de `lib/flota/cil-tareas`.
 
 function TareasCilSection({
   tareasCil,
@@ -595,7 +594,7 @@ function TareasCilSection({
                       variant="outline"
                       className="border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
                     >
-                      {TAREA_CIL_LABEL[t.tarea] ?? t.tarea}
+                      {labelTareaCil(t.tarea)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{t.operario}</TableCell>
@@ -667,7 +666,7 @@ function TareaCilDialog({
   const hoy = new Date().toISOString().slice(0, 10)
   const [fecha, setFecha] = useState(hoy)
   const [dominio, setDominio] = useState("")
-  const [tarea, setTarea] = useState("limpieza")
+  const [tarea, setTarea] = useState<string>(TAREAS_CIL[0].id)
   const [operario, setOperario] = useState("")
   const [descripcion, setDescripcion] = useState("")
   const [foto, setFoto] = useState<File | null>(null)
@@ -730,9 +729,9 @@ function TareaCilDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(TAREA_CIL_LABEL).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>
-                      {v}
+                  {TAREAS_CIL.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

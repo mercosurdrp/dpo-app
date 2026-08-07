@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Camera, CheckCircle2, CircleAlert, Sparkles } from "lucide-react"
+import { Camera, CheckCircle2, CircleAlert, Plus, Sparkles, X } from "lucide-react"
 import { createMiTareaCil, type MiCilData } from "@/actions/mi-cil"
 import { TAREAS_CIL, labelTareaCil } from "@/lib/flota/cil-tareas"
 import { cn } from "@/lib/utils"
@@ -19,19 +19,25 @@ export function MiCilClient({ data }: { data: MiCilData }) {
   const [pendiente, iniciar] = useTransition()
   const [dominio, setDominio] = useState("")
   const [tarea, setTarea] = useState("")
-  const [operario, setOperario] = useState(data.nombre)
+  // 🚨 Arranca vacío a propósito: antes venía con el nombre del usuario logueado
+  // y quedaba pegado por descuido, aunque la tarea la hubiera hecho otro.
+  // Es una lista porque el CIL se hace de a dos casi siempre.
+  const [operarios, setOperarios] = useState<string[]>([""])
   const [descripcion, setDescripcion] = useState("")
   const [foto, setFoto] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
   const fotoRef = useRef<HTMLInputElement>(null)
 
+  /** Los nombres cargados, en una sola línea: así los guarda la tabla. */
+  const nombres = operarios.map((n) => n.trim()).filter(Boolean)
+
   function enviar() {
     setError(null)
     const fd = new FormData()
     fd.set("dominio", dominio)
     fd.set("tarea", tarea)
-    fd.set("operario", operario)
+    fd.set("operario", nombres.join(", "))
     fd.set("descripcion", descripcion)
     if (foto) fd.set("foto", foto)
 
@@ -52,7 +58,10 @@ export function MiCilClient({ data }: { data: MiCilData }) {
     })
   }
 
-  const listo = dominio && tarea && operario.trim() && foto
+  // Los nombres NO se limpian al guardar: el que hace el CIL suele cargar varias
+  // unidades seguidas y volver a escribirlos cada vez es lo que hace que se
+  // abandone la carga por la mitad.
+  const listo = dominio && tarea && nombres.length > 0 && foto
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5 pb-24">
@@ -174,15 +183,42 @@ export function MiCilClient({ data }: { data: MiCilData }) {
         <div>
           <label className="text-sm font-medium text-foreground">3 · ¿Quién la hizo?</label>
           <p className="mt-1 text-xs text-muted-foreground">
-            Viene con tu nombre. Si la hizo otra persona, escribí el nombre de quien la hizo.
+            Escribí el nombre de quien la hizo. Si la hicieron entre varios, agregalos a todos.
           </p>
-          <input
-            type="text"
-            value={operario}
-            onChange={(e) => setOperario(e.target.value)}
-            placeholder="Nombre y apellido"
-            className="mt-2 w-full rounded-lg border bg-background p-3 text-sm"
-          />
+          <div className="mt-2 space-y-2">
+            {operarios.map((nombre, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={nombre}
+                  onChange={(e) =>
+                    setOperarios((prev) =>
+                      prev.map((n, j) => (j === i ? e.target.value : n)),
+                    )
+                  }
+                  placeholder={i === 0 ? "Nombre y apellido" : "Nombre y apellido de la otra persona"}
+                  className="w-full rounded-lg border bg-background p-3 text-sm"
+                />
+                {operarios.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setOperarios((prev) => prev.filter((_, j) => j !== i))}
+                    aria-label={`Quitar la persona ${i + 1}`}
+                    className="shrink-0 rounded-lg border p-3 text-muted-foreground transition-colors hover:bg-accent"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setOperarios((prev) => [...prev, ""])}
+            className="mt-2 flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+          >
+            <Plus className="size-4" /> Agregar otra persona
+          </button>
         </div>
 
         <div>
