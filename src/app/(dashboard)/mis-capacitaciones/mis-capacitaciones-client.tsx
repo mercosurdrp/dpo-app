@@ -518,7 +518,7 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
           🚨 El CIL entra al bloque con su propia condición: hay gente habilitada
           a registrarlo que no carga combustible ni sale a ruta. */}
       {(entrega?.vinculado || puedeVehiculos || puedeCil) && (
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {(entrega?.vinculado || puedeVehiculos) && (
           <Link href="/vehiculos/checklist">
             <Card className="group cursor-pointer border-blue-200 bg-blue-50 transition-shadow hover:shadow-md">
@@ -558,6 +558,19 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
                 <div>
                   <p className="font-semibold text-slate-900">Registrar CIL</p>
                   <p className="text-sm text-emerald-600">Limpieza, fluidos o engrase</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/mis-neumaticos">
+            <Card className="group cursor-pointer border-violet-200 bg-violet-50 transition-shadow hover:shadow-md">
+              <CardContent className="flex items-center gap-4 py-5">
+                <div className="rounded-xl bg-violet-100 p-3 transition-colors group-hover:bg-violet-200">
+                  <Gauge className="size-6 text-violet-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">Neumáticos</p>
+                  <p className="text-sm text-violet-600">Dibujo y presión, 1 vez al mes</p>
                 </div>
               </CardContent>
             </Card>

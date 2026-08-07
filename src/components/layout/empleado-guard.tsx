@@ -25,6 +25,7 @@ const ALLOWED_PATHS = [
   "/mi-5s",
   "/mi-cil",
   "/mi-ropa",
+  "/mis-neumaticos",
 ]
 
 function isAllowed(pathname: string) {
