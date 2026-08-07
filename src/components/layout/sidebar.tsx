@@ -47,6 +47,7 @@ import {
   PackageCheck,
   Megaphone,
   TrendingUp,
+  Shirt,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -495,6 +496,11 @@ export const rrhhSections: NavSection[] = [
         label: "Jornadas",
         href: "/rrhh/jornadas",
         icon: <ClockAlert className="size-5" />,
+      },
+      {
+        label: "Ropa y EPP",
+        href: "/rrhh/epp",
+        icon: <Shirt className="size-5" />,
       },
       {
         label: "Configuración RRHH",

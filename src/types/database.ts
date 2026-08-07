@@ -4579,3 +4579,75 @@ export interface SkapMatrizRol {
     acciones_abiertas: number
   }
 }
+
+// =====================================================
+// Ropa y EPP: talles por empleado + entregas con confirmación
+// =====================================================
+
+export interface EmpleadoTalles {
+  empleado_id: string
+  talle_pantalon: string | null
+  talle_remera: string | null
+  talle_campera: string | null
+  talle_buzo: string | null
+  talle_botines: string | null
+  updated_at: string
+}
+
+/** Fila del padrón de talles que ve RRHH en /rrhh/epp. */
+export interface EmpleadoConTalles {
+  id: string
+  legajo: number
+  nombre: string
+  sector: string | null
+  puesto: string | null
+  talles: EmpleadoTalles | null
+}
+
+export type EntregaEppEstado = "pendiente" | "confirmada" | "reclamada" | "resuelta"
+
+export interface EntregaEpp {
+  id: string
+  numero: number
+  empleado_id: string
+  estado: EntregaEppEstado
+  fecha_entrega: string
+  entregado_por: string | null
+  observaciones: string | null
+  confirmado_at: string | null
+  reclamo_motivo: string | null
+  resolucion: string | null
+  resuelto_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EntregaEppItem {
+  id: string
+  entrega_id: string
+  tipo_item: string
+  descripcion: string | null
+  talle: string | null
+  cantidad: number
+  created_at: string
+}
+
+export interface EntregaEppConDetalle extends EntregaEpp {
+  empleado_nombre: string
+  empleado_legajo: number
+  items: EntregaEppItem[]
+}
+
+export const ENTREGA_EPP_ESTADO_LABELS: Record<EntregaEppEstado, string> = {
+  pendiente: "Pendiente de confirmar",
+  confirmada: "Confirmada",
+  reclamada: "Reclamada",
+  resuelta: "Reclamo resuelto",
+}
+
+export const ENTREGA_EPP_ESTADO_COLORS: Record<EntregaEppEstado, string> = {
+  pendiente: "#F59E0B",
+  confirmada: "#10B981",
+  reclamada: "#EF4444",
+  resuelta: "#6B7280",
+}

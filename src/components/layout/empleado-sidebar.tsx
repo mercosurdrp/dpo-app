@@ -28,6 +28,7 @@ import {
   Menu,
   X,
   TrendingUp,
+  Shirt,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -110,6 +111,8 @@ function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpI
       ? []
       : [{ label: "Clasificar envases", href: "/clasificacion-envases", icon: <Boxes className="size-5" /> }]),
     { label: "Mis vacaciones", href: "/rrhh/mis-solicitudes", icon: <CalendarRange className="size-5" /> },
+    // Ropa y EPP: talles propios + confirmación de entregas (ambos tenants).
+    { label: "Mi ropa", href: "/mi-ropa", icon: <Shirt className="size-5" /> },
     { label: "Mis tareas", href: "/mis-tareas", icon: <ClipboardList className="size-5" /> },
   ]
   if (puedeRecepcion) {
