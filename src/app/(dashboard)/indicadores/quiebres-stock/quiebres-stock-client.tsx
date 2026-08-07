@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { Fragment, useMemo, useState, useTransition } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -62,6 +62,9 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
   const [pendiente, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [abierta, setAbierta] = useState<string | null>(null)
+  // "quiebre" para ir al grano; "rotacion" para ver cuáles son los 30 que
+  // cuentan, que en el otro orden quedan salteados entre medio.
+  const [orden, setOrden] = useState<"quiebre" | "rotacion">("quiebre")
 
   const clave = `${datos.anio}-${datos.mes}`
 
@@ -79,6 +82,16 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
   const conQuiebre = useMemo(
     () => datos.familias.filter((f) => f.dias_quiebre > 0),
     [datos.familias],
+  )
+
+  // El action ya devuelve las familias con los quiebres arriba; para el otro
+  // orden alcanza con volver al ranking de rotación.
+  const filas = useMemo(
+    () =>
+      orden === "rotacion"
+        ? [...datos.familias].sort((a, b) => a.rank - b.rank)
+        : datos.familias,
+    [datos.familias, orden],
   )
 
   return (
@@ -187,9 +200,26 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
       {/* Grilla día × producto */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">
-            Calendario de quiebres — los {datos.kpis.familias_totales} productos
-          </CardTitle>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <CardTitle className="text-base">
+              Calendario de quiebres — los {datos.kpis.familias_totales} productos
+            </CardTitle>
+            <div className="flex overflow-hidden rounded-md border border-slate-200 text-xs">
+              {(["quiebre", "rotacion"] as const).map((o) => (
+                <button
+                  key={o}
+                  onClick={() => setOrden(o)}
+                  className={`px-2.5 py-1 ${
+                    orden === o
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {o === "quiebre" ? "Quiebres primero" : `Top ${datos.kpis.universo}`}
+                </button>
+              ))}
+            </div>
+          </div>
           <p className="text-xs text-muted-foreground">
             Los que quebraron van primero. Una fila por producto físico (marca +
             calibre), no por SKU: los códigos migran y una migración imita un quiebre
@@ -218,8 +248,24 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {datos.familias.map((f) => (
-                  <tr key={f.familia} className="hover:bg-slate-50">
+                {filas.map((f, i) => (
+                  <Fragment key={f.familia}>
+                    {/* En el orden por rotación, la línea marca dónde termina
+                        el universo que define el puntaje. */}
+                    {orden === "rotacion" &&
+                      !f.en_universo &&
+                      filas[i - 1]?.en_universo && (
+                        <tr>
+                          <td
+                            colSpan={datos.dias_operativos.length + 2}
+                            className="border-t-2 border-dashed border-slate-300 px-2 pb-1 pt-2 text-[10px] uppercase tracking-wider text-slate-400"
+                          >
+                            fin del top {datos.kpis.universo} — de acá para abajo no
+                            descuenta puntos
+                          </td>
+                        </tr>
+                      )}
+                    <tr className="hover:bg-slate-50">
                     <td
                       className={`sticky left-0 z-10 max-w-[280px] cursor-pointer px-2 py-1 hover:bg-slate-50 ${
                         f.en_universo ? "bg-white" : "bg-white text-slate-400"
@@ -266,7 +312,8 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
-                  </tr>
+                    </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
