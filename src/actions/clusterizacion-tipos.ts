@@ -28,6 +28,71 @@ export const MOTIVO_BAJA_LABELS: Record<MotivoBaja, string> = {
   nps: "Detractor NPS",
 }
 
+// ── Reglas de clasificación (COMPARTIDAS) ────────────────────────────────────
+// Viven acá y no en `clusterizacion.ts` porque ese archivo es "use server" y solo
+// puede exportar funciones async. La priorización de entrega necesita las mismas
+// reglas de forma síncrona: si el corte de pedidos usara otra definición de
+// Ganador que la pantalla 4.2, el SOP dejaría de describir lo que hace el sistema.
+// Tocar estos valores cambia las DOS pantallas a la vez, que es la intención.
+
+/** Tope de PDV del clúster Ganador (devolución de la auditoría DPO H1 2026). */
+export const MAX_GANADORES = 200
+/**
+ * Rechazos por culpa del cliente EN EL PERÍODO que hacen bajar de clúster. Con 2
+ * entraba demasiado ruido (285 PDV sobre 1.811 en el 1º sem 2026); con 3 son 142
+ * y el patrón es real. Con 6 ("uno por mes") solo llegan 27 y la baja terminaría
+ * decidida por RMD y NPS, que son las señales más flojas por falta de cobertura.
+ */
+export const MIN_RECHAZOS_BAJA = 3
+/** RMD promedio por debajo del cual el cliente baja de clúster. */
+export const RMD_MINIMO_BAJA = 4.99
+
+/**
+ * Umbral de facturación alta: la facturación del cliente Nº MAX_GANADORES en el
+ * ranking de los que crecen. Antes era la mediana, que partía la cartera al medio
+ * y dejaba 772 "ganadores". Puede quedar apenas por encima del tope si hay
+ * empates justo en el corte.
+ */
+export function umbralFacturacionAlta(facturacionQueCrecen: number[]): number {
+  if (facturacionQueCrecen.length === 0) return 0
+  const orden = [...facturacionQueCrecen].sort((a, b) => b - a)
+  return orden.length >= MAX_GANADORES ? orden[MAX_GANADORES - 1] : orden[orden.length - 1]
+}
+
+/** El cruce 2×2 puro: facturación alta/baja × crece/no crece. */
+export function clasificarCluster(ingresoAlto: boolean, crecePositivo: boolean): ClusterId {
+  if (ingresoAlto) return crecePositivo ? "ganador" : "basico"
+  return crecePositivo ? "en_crecimiento" : "ventas_bajas"
+}
+
+/** Por qué un cliente pierde un escalón de servicio. Vacío = no baja. */
+export function motivosDeBaja(señales: {
+  rechazosPeriodo: number
+  rmdProm: number | null
+  npsDetractor: boolean
+}): MotivoBaja[] {
+  const motivos: MotivoBaja[] = []
+  if (señales.rechazosPeriodo >= MIN_RECHAZOS_BAJA) motivos.push("rechazos")
+  if (señales.rmdProm != null && señales.rmdProm < RMD_MINIMO_BAJA) motivos.push("rmd")
+  if (señales.npsDetractor) motivos.push("nps")
+  return motivos
+}
+
+/**
+ * Baja un escalón de prioridad de servicio: el cliente pierde uno de los atributos
+ * que lo separan de Ventas Bajas. Ganador tiene dos (factura alto y crece) y pierde
+ * el de facturación; Básico y En Crecimiento tienen uno solo y caen al piso.
+ *
+ * Toda baja "miente" en un eje: el Ganador degradado sigue facturando alto y el
+ * Productor degradado sigue creciendo. Por eso el cliente queda marcado con el
+ * motivo, para que se lea como la penalización de servicio que es.
+ */
+export function bajarEscalon(cluster: ClusterId): ClusterId {
+  if (cluster === "ganador") return "en_crecimiento"
+  if (cluster === "basico" || cluster === "en_crecimiento") return "ventas_bajas"
+  return cluster
+}
+
 /** Categorías de la encuesta NPS tal como vienen del Power BI de Quilmes. */
 export type NpsCategoria = "Promoter" | "Passive" | "Detractor"
 

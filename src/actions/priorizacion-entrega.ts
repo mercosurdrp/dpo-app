@@ -1,6 +1,6 @@
 "use server"
 
-import { getPool } from "@/lib/mercosur-dashboard"
+import { getPool, consultarClusterClientes } from "@/lib/mercosur-dashboard"
 import { getPedidosPendientes } from "@/lib/chess/pedidos-pendientes"
 import { getPedidosGestion } from "@/lib/gescom/pedidos-gestion"
 import {
@@ -12,7 +12,13 @@ import {
   type PesosPriorizacion,
   type CiudadPriorizada,
 } from "@/lib/priorizacion/score"
-import type { ClusterId } from "./clusterizacion-tipos"
+import {
+  umbralFacturacionAlta,
+  clasificarCluster,
+  motivosDeBaja,
+  bajarEscalon,
+} from "./clusterizacion-tipos"
+import type { ClusterId, MotivoBaja } from "./clusterizacion-tipos"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -36,6 +42,29 @@ export interface PriorizacionData {
   pesos: PesosPriorizacion
 }
 
+interface PerfilCliente {
+  nombre: string | null
+  localidad: string | null
+  /** Clúster final, ya con la baja por servicio aplicada. */
+  cluster: ClusterId
+  /** El que le tocaba por facturación × crecimiento, antes de la baja. */
+  cluster_base: ClusterId
+  /** Por qué bajó. Vacío = no bajó. */
+  motivos_baja: MotivoBaja[]
+  entregas: number
+}
+
+/**
+ * Resta meses a un YYYY-MM-DD. Igual que en `clusterizacion.ts`: la ventana de
+ * RMD/NPS tiene que ser la misma en las dos pantallas o un cliente puede bajar
+ * de clúster en una y no en la otra.
+ */
+function restarMeses(fechaYmd: string, meses: number): string {
+  const [y, m, d] = fechaYmd.split("-").map((s) => parseInt(s, 10))
+  const dt = new Date(Date.UTC(y, m - 1 - meses, d))
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`
+}
+
 /** Resta días a un YYYY-MM-DD. */
 function restarDias(fecha: string, dias: number): string {
   const [y, m, d] = fecha.split("-").map((s) => parseInt(s, 10))
@@ -53,18 +82,15 @@ function restarDias(fecha: string, dias: number): string {
 async function getPerfilClientes(
   desde: string,
   hasta: string,
-): Promise<Map<number, { nombre: string | null; localidad: string | null; cluster: ClusterId; entregas: number }>> {
+): Promise<Map<number, PerfilCliente>> {
   const pool = getPool()
-  // Semestre calendario cerrado vs el mismo del año anterior (igual que la clusterización).
+  // 🚨 El clúster NO se recalcula acá con reglas propias: sale del MISMO período y
+  // las MISMAS reglas que la pantalla de Clusterización 4.2 (`consultarClusterClientes`
+  // + los helpers de `clusterizacion-tipos`). Antes esta función cortaba por mediana
+  // sobre fechas fijas, así que el corte de pedidos priorizaba con ~770 "ganadores"
+  // mientras la pantalla mostraba 168, y el SOP describía algo que el sistema no hacía.
   const [ventas, entregas] = await Promise.all([
-    pool.query<{ id_cliente: number; nombre: string; loc: string; act: string; ant: string }>(`
-      select id_cliente, max(nombre_cliente) nombre, max(ds_localidad) loc,
-        sum(case when fecha >= '2026-01-01' and fecha < '2026-07-01' then subtotal_neto else 0 end) act,
-        sum(case when fecha >= '2025-01-01' and fecha < '2025-07-01' then subtotal_neto else 0 end) ant
-      from comprobantes
-      where anulado = 'NO' and id_cliente is not null
-        and fecha >= '2025-01-01' and fecha < '2026-07-01'
-      group by id_cliente`),
+    consultarClusterClientes(),
     pool.query<{ id_cliente: number; n: string }>(`
       select id_cliente, count(distinct fecha::date) n
       from comprobantes
@@ -74,22 +100,46 @@ async function getPerfilClientes(
       group by id_cliente`, [desde, hasta]),
   ])
 
-  const facturacion = ventas.rows.map((v) => Number(v.act)).filter((v) => v > 0).sort((a, b) => a - b)
-  const mediana = facturacion.length ? facturacion[Math.floor(facturacion.length / 2)] : 0
+  const { periodo, clientes } = ventas
+  // Señales de servicio del MISMO período que usa la clusterización para la baja.
+  const [rechazosPeriodo, rmdPeriodo, detractores] = await Promise.all([
+    getRechazosPorCliente(periodo.sem_desde, periodo.sem_hasta),
+    getRmdPromedio(restarMeses(periodo.sem_hasta, 6)),
+    getDetractoresNps(restarMeses(periodo.sem_hasta, 6), periodo.sem_hasta),
+  ])
+
+  const crece = (r: { facturacion_sem: number; facturacion_sem_prev: number }) =>
+    r.facturacion_sem_prev > 0
+      ? (r.facturacion_sem - r.facturacion_sem_prev) / r.facturacion_sem_prev >= 0
+      : true // cliente nuevo cuenta como "crece"
+
+  // El umbral se calcula sobre la misma población que la pantalla (los que
+  // compraron en los últimos 45 días), para que el corte dé idéntico; pero se
+  // clasifica a TODOS los que facturaron, así ningún pedido del día queda sin clúster.
+  const conDrop = clientes.filter((r) => r.dias_45d > 0 && r.bultos_45d > 0)
+  const umbral = umbralFacturacionAlta(
+    conDrop.filter(crece).map((r) => r.facturacion_sem),
+  )
   const entregasPorCliente = new Map(entregas.rows.map((e) => [Number(e.id_cliente), Number(e.n)]))
 
-  const out = new Map<number, { nombre: string | null; localidad: string | null; cluster: ClusterId; entregas: number }>()
-  for (const v of ventas.rows) {
-    const act = Number(v.act)
-    if (act <= 0) continue
-    const ant = Number(v.ant)
-    const crece = ant > 0 ? (act - ant) / ant >= 0 : true   // cliente nuevo cuenta como "crece"
-    const alto = act >= mediana
-    const cluster: ClusterId = alto
-      ? (crece ? "ganador" : "basico")
-      : (crece ? "en_crecimiento" : "ventas_bajas")
-    const id = Number(v.id_cliente)
-    out.set(id, { nombre: v.nombre, localidad: v.loc, cluster, entregas: entregasPorCliente.get(id) ?? 0 })
+  const out = new Map<number, PerfilCliente>()
+  for (const r of clientes) {
+    if (r.facturacion_sem <= 0) continue
+    const base = clasificarCluster(r.facturacion_sem >= umbral, crece(r))
+    const rmd = rmdPeriodo.get(r.id_cliente)
+    const motivos = motivosDeBaja({
+      rechazosPeriodo: rechazosPeriodo.get(r.id_cliente)?.eventos ?? 0,
+      rmdProm: rmd ? rmd.suma / rmd.n : null,
+      npsDetractor: detractores.has(r.id_cliente),
+    })
+    out.set(r.id_cliente, {
+      nombre: r.nombre,
+      localidad: r.localidad,
+      cluster: motivos.length > 0 ? bajarEscalon(base) : base,
+      cluster_base: base,
+      motivos_baja: motivos,
+      entregas: entregasPorCliente.get(r.id_cliente) ?? 0,
+    })
   }
   return out
 }
@@ -113,17 +163,41 @@ async function getRechazosPorCliente(desde: string, hasta: string) {
   return acc
 }
 
-/** RMD y NPS: banderas informativas, NO entran al score (medidos: no discriminan). */
-async function getBanderas(desde: string) {
+/** RMD promedio por cliente desde `desde`, como suma/n para el consumidor. */
+async function getRmdPromedio(desde: string): Promise<Map<number, { suma: number; n: number }>> {
   const supabase = await createClient()
   const rmd = new Map<number, { suma: number; n: number }>()
   // La RPC devuelve un objeto { "<cod>": { prom, n } } en un solo request. Se devuelve
   // como jsonb (no set) justamente para no chocar con el techo de 1.000 filas de PostgREST.
   const { data: rmdData } = await supabase.rpc("rmd_promedio_cliente", { desde })
   for (const [cod, v] of Object.entries((rmdData ?? {}) as Record<string, { prom: number; n: number }>)) {
-    // Se guarda como suma/n para no tocar el consumidor (rmd.suma / rmd.n).
     rmd.set(Number(cod), { suma: Number(v.prom) * v.n, n: v.n })
   }
+  return rmd
+}
+
+/**
+ * Clientes que respondieron como Detractor AL MENOS UNA VEZ en la ventana. Es el
+ * mismo criterio que usa la clusterización para la baja: alcanza con una.
+ */
+async function getDetractoresNps(desde: string, hasta: string): Promise<Set<number>> {
+  const supabase = await createClient()
+  const set = new Set<number>()
+  const { data } = await supabase
+    .from("nps_encuestas")
+    .select("cod_cliente")
+    .eq("categoria", "Detractor")
+    .gte("fecha_enc", desde)
+    .lte("fecha_enc", `${hasta}T23:59:59`)
+    .limit(5000)
+  for (const r of (data ?? []) as { cod_cliente: number }[]) set.add(Number(r.cod_cliente))
+  return set
+}
+
+/** RMD y NPS: banderas informativas, NO entran al score (medidos: no discriminan). */
+async function getBanderas(desde: string) {
+  const supabase = await createClient()
+  const rmd = await getRmdPromedio(desde)
   const nps = new Map<number, string>()
   const { data: enc } = await supabase
     .from("nps_encuestas")

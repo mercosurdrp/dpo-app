@@ -12,13 +12,21 @@ import { getCostoPorPdvYtd } from "./costo-pdv"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
+import {
+  MAX_GANADORES,
+  MIN_RECHAZOS_BAJA,
+  RMD_MINIMO_BAJA,
+  umbralFacturacionAlta,
+  clasificarCluster,
+  motivosDeBaja,
+  bajarEscalon,
+} from "./clusterizacion-tipos"
 import type {
   ClusterId,
   CuadranteId,
   CuboId,
   DominioId,
   FrenteId,
-  MotivoBaja,
   NpsCategoria,
   ClienteClusterizado,
   ClusterResumen,
@@ -39,26 +47,9 @@ const MOTIVOS_CULPA_CLIENTE = new Set(["SIN DINERO", "CERRADO", "SIN ENVASES"])
 const DROP_BAJO = 3 // bultos por visita por debajo de esto = caro de servir
 const RMD_BAJO = 4.5 // RMD promedio por debajo de esto = mal servicio
 
-// ── Reglas del clúster Ganador (devolución de la auditoría DPO, H1 2026) ─────
-// La auditoría marcó dos cosas sobre el punto 4.2: que había demasiados Ganadores
-// (con la mediana como umbral daban 772 sobre 1.813 PDV) y que las variables
-// "pasa / no pasa" tenían que entrar en la clusterización.
-//
-// Tope del clúster Ganador. El umbral de "facturación alta" ya no es la mediana:
-// es la facturación del cliente Nº MAX_GANADORES entre los que crecen, así el
-// clúster queda acotado y lo integran los que más facturan. Puede quedar apenas
-// por encima del tope si hay empates justo en el corte.
-const MAX_GANADORES = 200
-// Rechazos por culpa del cliente EN TODO EL PERÍODO que hacen bajar de clúster.
-// En una ventana de 6 meses un rechazo aislado le pasa a cualquier cliente que
-// recibe entregas todas las semanas, y con dos todavía entra mucho ruido: sobre
-// el 1º semestre 2026, con 2 bajaban 285 PDV contra 142 con 3. Tres rechazos es
-// más de uno cada dos meses — ahí ya hay un patrón. Subirlo a 6 ("uno por mes")
-// vacía la regla: solo 27 PDV llegan, y la baja pasaría a decidirse por RMD/NPS,
-// que es justo la variable que la auditoría pidió que NO fuera la única.
-const MIN_RECHAZOS_BAJA = 3
-// RMD promedio por debajo del cual el cliente baja de clúster (vota mal).
-const RMD_MINIMO_BAJA = 4.99
+// Las reglas del clúster Ganador y de la baja por servicio (tope de 200, umbral
+// de rechazos, piso de RMD) viven en `clusterizacion-tipos.ts` porque la
+// priorización de entrega usa exactamente las mismas: ver el import de arriba.
 
 function mediana(valores: number[]): number {
   if (valores.length === 0) return 0
@@ -110,27 +101,6 @@ function crecePositivoDe(r: ClusterClienteRow): boolean {
     : true
 }
 
-/**
- * Baja un escalón de prioridad de servicio. Ganador y Básico caen al cuadrante de
- * abajo de su misma columna (pierden la facturación alta, conservan el
- * crecimiento); Productor cae a Ventas Bajas, que es el piso y donde el SOP hace
- * empezar el recorte de pedidos y la menor frecuencia.
- *
- * Toda baja "miente" en un eje: el Ganador degradado sigue facturando alto y el
- * Productor degradado sigue creciendo. Por eso el cliente queda marcado con
- * `degradado` y el motivo, para que el descenso se lea como lo que es —una
- * penalización por servicio— y no como un dato de facturación o crecimiento.
- */
-function bajarEscalon(cluster: ClusterId): ClusterId {
-  if (cluster === "ganador") return "en_crecimiento"
-  if (cluster === "basico" || cluster === "en_crecimiento") return "ventas_bajas"
-  return cluster
-}
-
-function clasificar(ingresoAlto: boolean, crecePositivo: boolean): ClusterId {
-  if (ingresoAlto) return crecePositivo ? "ganador" : "basico"
-  return crecePositivo ? "en_crecimiento" : "ventas_bajas"
-}
 
 /**
  * Calificaciones RMD por cliente (promedio y cantidad) desde la ventana indicada.
@@ -435,14 +405,9 @@ export async function getClusterizacion(
   // el ranking de los que crecen (antes era la mediana, que partía la cartera al
   // medio). Con esto el clúster Ganador queda acotado al tope y lo integran los
   // que más facturan, que es lo que pidió la auditoría.
-  const facturacionQueCrecen = conDrop
-    .filter(crecePositivoDe)
-    .map((r) => r.facturacion_sem)
-    .sort((a, b) => b - a)
-  const umbral =
-    facturacionQueCrecen.length >= MAX_GANADORES
-      ? facturacionQueCrecen[MAX_GANADORES - 1]
-      : (facturacionQueCrecen.at(-1) ?? 0)
+  const umbral = umbralFacturacionAlta(
+    conDrop.filter(crecePositivoDe).map((r) => r.facturacion_sem),
+  )
 
   const clientes: ClienteClusterizado[] = conDrop.map((r) => {
     const crecimiento_pct =
@@ -535,11 +500,12 @@ export async function getClusterizacion(
     const salud: "sano" | "atencion" = drop_bajo || rmd_bajo ? "atencion" : "sano"
     // BAJA DE CLÚSTER: el cliente que falla en servicio pierde el escalón de
     // facturación alta. Cada motivo queda registrado para poder justificarlo.
-    const cluster_base = clasificar(ingresoAlto, crecePositivo)
-    const motivos_baja: MotivoBaja[] = []
-    if (rechazos_culpa_periodo >= MIN_RECHAZOS_BAJA) motivos_baja.push("rechazos")
-    if (rmd_prom != null && rmd_prom < RMD_MINIMO_BAJA) motivos_baja.push("rmd")
-    if (nps && nps.detractores > 0) motivos_baja.push("nps")
+    const cluster_base = clasificarCluster(ingresoAlto, crecePositivo)
+    const motivos_baja = motivosDeBaja({
+      rechazosPeriodo: rechazos_culpa_periodo,
+      rmdProm: rmd_prom,
+      npsDetractor: !!nps && nps.detractores > 0,
+    })
     const cluster = motivos_baja.length > 0 ? bajarEscalon(cluster_base) : cluster_base
     return {
       id_cliente: r.id_cliente,
