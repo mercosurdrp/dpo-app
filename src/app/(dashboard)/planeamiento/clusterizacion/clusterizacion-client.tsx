@@ -41,6 +41,8 @@ import {
   Boxes,
   ClipboardCheck,
   FileDown,
+  CheckCircle2,
+  AlertTriangle,
 } from "lucide-react"
 import {
   CLUSTER_LABELS,
@@ -474,10 +476,12 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                   — bajó por servicio, no por plata.{" "}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  <strong>Estado</strong> (responsabilidad del cliente):{" "}
-                  <strong className="text-red-600">No pasa</strong> = rechazó ≥ 1 entrega por su culpa
-                  (sin dinero / cerrado / sin envases) en los <strong>últimos 45 días</strong>; los rechazos por
-                  error interno no cuentan.{" "}
+                  <strong>Estado</strong>:{" "}
+                  <strong className="text-emerald-600">Pasa</strong> = cumplió el criterio de servicio.{" "}
+                  <strong className="text-red-600">No pasa</strong> = no lo cumplió y por eso perdió un
+                  escalón de clúster; es el mismo criterio de la baja, así que todo “No pasa” tiene su
+                  motivo y, si venía de la fila de arriba, dice desde dónde bajó. Un rechazo suelto
+                  reciente se marca aparte como <em>rechazo reciente</em>: avisa, pero no mueve el clúster.{" "}
                   <strong>Salud</strong> (costo de servir):{" "}
                   <strong className="text-amber-600">Atención</strong> = drop bajo (&lt; 3 b/vis, 45 días)
                   o RMD bajo (&lt; 4,5, 6 meses); si no, <strong className="text-emerald-600">Sano</strong>.
@@ -664,10 +668,18 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                                 <TooltipTrigger
                                   render={
                                     <span className="cursor-help">
-                                      <Badge variant="secondary" className="w-fit bg-red-100 text-red-700 hover:bg-red-100">
+                                      <Badge variant="secondary" className="w-fit gap-1 bg-red-100 text-red-700 hover:bg-red-100">
+                                        <AlertTriangle className="h-3.5 w-3.5" />
                                         No pasa
-                                        <span className="ml-1 text-[10px] opacity-70">{fmtNum(c.rechazos_culpa)} rech.</span>
+                                        <span className="text-[10px] opacity-70">
+                                          {c.motivos_baja.map((m) => MOTIVO_BAJA_LABELS[m]).join(" · ")}
+                                        </span>
                                       </Badge>
+                                      {c.degradado ? (
+                                        <div className="mt-0.5 text-[10px] font-medium text-red-600">
+                                          bajó desde {CLUSTER_LABELS[c.cluster_base]}
+                                        </div>
+                                      ) : null}
                                     </span>
                                   }
                                 />
@@ -692,7 +704,19 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                                 </TooltipContent>
                               </Tooltip>
                             ) : (
-                              <span className="text-xs text-emerald-600">Pasa</span>
+                              <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Pasa
+                                {/* Rechazó hace poco pero no llega al patrón que baja de clúster. */}
+                                {c.rechazo_reciente ? (
+                                  <span
+                                    className="text-[10px] text-amber-600"
+                                    title={`Rechazó ${fmtNum(c.rechazos_culpa)} vez/veces en los últimos 45 días, pero no alcanza el criterio de baja (${data.min_rechazos_baja} en el semestre)`}
+                                  >
+                                    · rechazo reciente
+                                  </span>
+                                ) : null}
+                              </span>
                             )}
                           </TableCell>
                           {/* Salud */}

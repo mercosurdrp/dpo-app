@@ -492,12 +492,12 @@ export async function getClusterizacion(
         ? rech.fechas_total.filter((f) => f >= desde45).length
         : rechazos_total_periodo
       : 0
-    // ESTADO: rechazó al menos una vez por su culpa en los últimos 45 días.
-    const estado: "pasa" | "no_pasa" = rechazos_culpa >= 1 ? "no_pasa" : "pasa"
     // SALUD: drop bajo o RMD bajo.
     const drop_bajo = drop_size < DROP_BAJO
     const rmd_bajo = rmd_prom != null && rmd_prom < RMD_BAJO
     const salud: "sano" | "atencion" = drop_bajo || rmd_bajo ? "atencion" : "sano"
+    // Señal operativa aparte del estado: ¿rechazó hace poco? (últimos 45 días).
+    const rechazo_reciente = rechazos_culpa >= 1
     // BAJA DE CLÚSTER: el cliente que falla en servicio pierde el escalón de
     // facturación alta. Cada motivo queda registrado para poder justificarlo.
     const cluster_base = clasificarCluster(ingresoAlto, crecePositivo)
@@ -507,6 +507,11 @@ export async function getClusterizacion(
       npsDetractor: !!nps && nps.detractores > 0,
     })
     const cluster = motivos_baja.length > 0 ? bajarEscalon(cluster_base) : cluster_base
+    // ESTADO: "no_pasa" es exactamente el cliente que NO pasó el criterio de
+    // servicio, o sea el que perdió un escalón. Antes marcaba un rechazo suelto de
+    // los últimos 45 días, que no mueve el clúster: se veían clientes en "No pasa"
+    // que no habían bajado, y el cartel decía una cosa mientras la matriz hacía otra.
+    const estado: "pasa" | "no_pasa" = motivos_baja.length > 0 ? "no_pasa" : "pasa"
     return {
       id_cliente: r.id_cliente,
       nombre: r.nombre,
@@ -542,6 +547,7 @@ export async function getClusterizacion(
       rechazos_total_periodo,
       rechazos_detalle,
       estado,
+      rechazo_reciente,
       drop_bajo,
       rmd_bajo,
       salud,

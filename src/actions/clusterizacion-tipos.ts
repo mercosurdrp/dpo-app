@@ -213,11 +213,19 @@ export interface ClienteClusterizado {
    */
   rechazos_detalle: { fecha: string; motivo: string; bultos: number }[]
   /**
-   * ESTADO (responsabilidad del cliente): "no_pasa" si rechazó ≥ 1 entrega por su
-   * culpa (sin dinero / cerrado / sin envases) en los últimos 45 días. Los rechazos
-   * por error interno (preventa, distribución, etc.) NO cuentan.
+   * ESTADO (responsabilidad del cliente): "no_pasa" = NO pasó el criterio de
+   * servicio y por eso perdió un escalón de clúster (rechazos por su culpa en el
+   * período, RMD bajo o detractor de NPS). Es el mismo criterio que `motivos_baja`,
+   * para que el cartel de la pantalla y el movimiento de la matriz digan lo mismo.
+   * Los rechazos por error interno (preventa, distribución, etc.) NO cuentan.
    */
   estado: "pasa" | "no_pasa"
+  /**
+   * Señal operativa, independiente del estado: rechazó al menos una vez por su
+   * culpa en los últimos 45 días. Sirve para el día a día (¿viene rebotando?), no
+   * decide el clúster: para eso hace falta el patrón del período completo.
+   */
+  rechazo_reciente: boolean
   /** Señal de salud: drop size (45 días) por debajo del piso (caro de servir). */
   drop_bajo: boolean
   /** Señal de salud: RMD promedio por debajo del piso (mal servicio percibido). */
