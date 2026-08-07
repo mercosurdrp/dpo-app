@@ -2451,19 +2451,42 @@ export async function getCostosMantenimiento(): Promise<
 
 // ==================== SEGUIMIENTO DE FLOTA ====================
 
-/** Días en que cada unidad ruteó (para utilización), desde una fecha. */
+/**
+ * Días en que cada unidad ruteó (para utilización y disponibilidad), desde una
+ * fecha.
+ *
+ * 🚨 PAGINA de a 1000. PostgREST topea ahí y esta consulta pide **13 meses**:
+ * al 07/08/2026 la ventana tenía 1513 filas y llegaban 1000, sin `order`, así
+ * que lo que se perdía era arbitrario. Efecto medido ese día: de agosto entraban
+ * **24 días ruteados de 44** y de julio **130 de 201**, y la utilización de flota
+ * mostraba menos de 50 % cuando la real rondaba el 73 %. Nadie veía un error: el
+ * número simplemente estaba mal, calculado sobre la mitad de los datos.
+ *
+ * El `order` explícito no es decorativo — sin él, `range()` no garantiza qué
+ * filas trae cada página y se pueden repetir o saltear registros.
+ */
 export async function getDiasRuteo(
   desde: string
 ): Promise<{ data: DiaRuteo[] } | { error: string }> {
   try {
     await requireAuth()
     const supabase = await createClient()
-    const { data, error } = await supabase
-      .from("vista_dias_ruteo")
-      .select("dominio, fecha")
-      .gte("fecha", desde)
-    if (error) return { error: error.message }
-    return { data: (data || []) as DiaRuteo[] }
+    const PAGE = 1000
+    const out: DiaRuteo[] = []
+    for (let offset = 0; ; offset += PAGE) {
+      const { data, error } = await supabase
+        .from("vista_dias_ruteo")
+        .select("dominio, fecha")
+        .gte("fecha", desde)
+        .order("fecha", { ascending: true })
+        .order("dominio", { ascending: true })
+        .range(offset, offset + PAGE - 1)
+      if (error) return { error: error.message }
+      const filas = (data || []) as DiaRuteo[]
+      out.push(...filas)
+      if (filas.length < PAGE) break
+    }
+    return { data: out }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
