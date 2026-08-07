@@ -18,7 +18,7 @@ import {
   motivosDeBaja,
   bajarEscalon,
 } from "./clusterizacion-tipos"
-import type { ClusterId, MotivoBaja } from "./clusterizacion-tipos"
+import type { ClusterId } from "./clusterizacion-tipos"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -45,12 +45,12 @@ export interface PriorizacionData {
 interface PerfilCliente {
   nombre: string | null
   localidad: string | null
-  /** Clúster final, ya con la baja por servicio aplicada. */
+  /**
+   * Clúster FINAL, ya con la baja por servicio aplicada: es el que le corresponde
+   * al cliente hoy. Acá no interesa de dónde bajó —eso se mira en la pantalla de
+   * Clusterización 4.2—, solo en qué clúster está para priorizar la entrega.
+   */
   cluster: ClusterId
-  /** El que le tocaba por facturación × crecimiento, antes de la baja. */
-  cluster_base: ClusterId
-  /** Por qué bajó. Vacío = no bajó. */
-  motivos_baja: MotivoBaja[]
   entregas: number
 }
 
@@ -136,8 +136,6 @@ async function getPerfilClientes(
       nombre: r.nombre,
       localidad: r.localidad,
       cluster: motivos.length > 0 ? bajarEscalon(base) : base,
-      cluster_base: base,
-      motivos_baja: motivos,
       entregas: entregasPorCliente.get(r.id_cliente) ?? 0,
     })
   }

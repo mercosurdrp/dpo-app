@@ -31,9 +31,22 @@ import {
   edfDiaHabilitado,
   edfMotivoNoHabilitado,
   edfMotivoLabel,
+  SLA_CASOS_NPS_NOMBRE,
+  SLA_CASOS_RMD_NOMBRE,
+  SLA_CASOS_TARGET,
+  SLA_CASOS_MIDE_DESDE,
+  CASO_PLAZO_DETRACTOR_DIAS,
+  CASO_PLAZO_PASIVO_DIAS,
+  categoriaNps,
+  categoriaRmd,
+  casoCategoriaLabel,
+  plazoCasoDias,
+  evaluarCaso,
   cuentaComoCumplido,
   cumpleRecepcion,
   esPicoRecepcion,
+  type CasoCategoria,
+  type CasoSlaDetalle,
   type CumplimientoMes,
   type CumplimientoSlaFila,
   type EstadoCumplimiento,
@@ -1136,6 +1149,273 @@ async function filaEquiposFrio(
 }
 
 // ===========================================================================
+// SLA de cierre de casos NPS (ent_nps) y RMD (ent_rmd) — R4.1.5.
+//
+// Un CASO es una encuesta que dejó al cliente en detractor o pasivo. El reloj
+// arranca en la fecha de la encuesta y se detiene cuando un plan de acción de
+// ESE cliente queda cerrado: ≤ 30 días para un detractor, ≤ 45 para un pasivo.
+//
+// 🚨 El universo son TODAS las encuestas detractoras y pasivas, no los planes.
+// Un detractor al que nunca se le abre un plan cuenta como incumplido al vencer
+// el plazo — si no, el indicador se maquillaría simplemente no abriendo el plan.
+//
+// Estado del día (el día es el de la ENCUESTA):
+//   "na" → sin casos ese día, o día anterior a SLA_CASOS_MIDE_DESDE
+//   "si" → todos los casos del día cerraron dentro del plazo
+//   "no" → al menos un caso venció sin cierre
+//   "sd" → los casos del día siguen dentro del plazo (todavía no se juzgan)
+//
+// 🚨 El % del mes se cuenta POR CASO, no por día (igual que `alm_recepcion`),
+// y sigue moviéndose hasta 45 días después de cerrado el mes: un caso del 30/08
+// recién vence el 14/10. Es inherente a un SLA con plazo de un mes y medio.
+// ===========================================================================
+
+type TipoCasos = "nps" | "rmd"
+
+interface CasoCrudo {
+  cod_cliente: number
+  nombre_cliente: string | null
+  fecha: string // YYYY-MM-DD (fecha de la encuesta)
+  valor: number // score NPS 0-10 o puntuación RMD 1-5
+  categoria: CasoCategoria
+}
+
+const CASOS_CONFIG = {
+  nps: {
+    codigo: "ent_nps",
+    nombre: SLA_CASOS_NPS_NOMBRE,
+    tablaPlanes: "nps_planes",
+    tablaAvances: "nps_planes_avances",
+  },
+  rmd: {
+    codigo: "ent_rmd",
+    nombre: SLA_CASOS_RMD_NOMBRE,
+    tablaPlanes: "rmd_planes",
+    tablaAvances: "rmd_planes_avances",
+  },
+} as const
+
+/**
+ * Encuestas detractoras y pasivas en [desde, hastaExcl). `null` si la consulta
+ * falla (se distingue de "no hubo casos", que es un array vacío).
+ */
+async function getCasosCrudos(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tipo: TipoCasos,
+  desde: string,
+  hastaExcl: string,
+): Promise<CasoCrudo[] | null> {
+  if (tipo === "nps") {
+    const { data, error } = await supabase
+      .from("nps_encuestas")
+      .select("cod_cliente, nombre_cliente, fecha_enc, score, categoria")
+      .in("categoria", ["Detractor", "Passive"])
+      .gte("fecha_enc", desde)
+      .lt("fecha_enc", hastaExcl)
+    if (error || !data) return null
+    const filas = data as unknown as Array<{
+      cod_cliente: number
+      nombre_cliente: string | null
+      fecha_enc: string
+      score: number
+      categoria: string
+    }>
+    const casos: CasoCrudo[] = []
+    for (const r of filas) {
+      const categoria = categoriaNps(r.categoria)
+      if (!categoria) continue
+      casos.push({
+        cod_cliente: Number(r.cod_cliente),
+        nombre_cliente: r.nombre_cliente ?? null,
+        fecha: String(r.fecha_enc).slice(0, 10),
+        valor: Number(r.score),
+        categoria,
+      })
+    }
+    return casos
+  }
+
+  const { data, error } = await supabase
+    .from("nps_rmd_cliente")
+    .select("cod_cliente, nombre_cliente, fecha_puntuacion, puntuacion")
+    .lte("puntuacion", 4)
+    .gte("fecha_puntuacion", desde)
+    .lt("fecha_puntuacion", hastaExcl)
+  if (error || !data) return null
+  const filas = data as unknown as Array<{
+    cod_cliente: number
+    nombre_cliente: string | null
+    fecha_puntuacion: string
+    puntuacion: number
+  }>
+  const casos: CasoCrudo[] = []
+  for (const r of filas) {
+    const categoria = categoriaRmd(Number(r.puntuacion))
+    if (!categoria) continue
+    casos.push({
+      cod_cliente: Number(r.cod_cliente),
+      nombre_cliente: r.nombre_cliente ?? null,
+      fecha: String(r.fecha_puntuacion).slice(0, 10),
+      valor: Number(r.puntuacion),
+      categoria,
+    })
+  }
+  return casos
+}
+
+/**
+ * Fechas (YYYY-MM-DD) en que un plan de cada cliente quedó CERRADO.
+ *
+ * 🚨 El cierre es el avance que dejó el plan en `completado`, no `updated_at`:
+ * cualquier edición posterior pisa `updated_at` y correría la fecha. Sólo se
+ * cae a `updated_at` cuando el plan figura completado sin ningún avance que lo
+ * marque (se cambió el estado editando el plan a mano).
+ */
+async function getCierresPorCliente(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tipo: TipoCasos,
+  clienteIds: number[],
+): Promise<Map<number, string[]>> {
+  const cierres = new Map<number, string[]>()
+  if (clienteIds.length === 0) return cierres
+  const { tablaPlanes, tablaAvances } = CASOS_CONFIG[tipo]
+
+  const { data: planes } = await supabase
+    .from(tablaPlanes)
+    .select("id, foco_cliente_id, estado, updated_at")
+    .in("foco_cliente_id", clienteIds)
+  const filas = (planes ?? []) as unknown as Array<{
+    id: string
+    foco_cliente_id: number | null
+    estado: string
+    updated_at: string
+  }>
+  if (filas.length === 0) return cierres
+
+  // Primer avance que dejó cada plan en "completado".
+  const primerCierre = new Map<string, string>()
+  const { data: avances } = await supabase
+    .from(tablaAvances)
+    .select("plan_id, created_at")
+    .in(
+      "plan_id",
+      filas.map((p) => p.id),
+    )
+    .eq("estado_resultante", "completado")
+  for (const a of (avances ?? []) as Array<{ plan_id: string; created_at: string }>) {
+    const prev = primerCierre.get(a.plan_id)
+    if (!prev || a.created_at < prev) primerCierre.set(a.plan_id, a.created_at)
+  }
+
+  for (const p of filas) {
+    if (p.foco_cliente_id == null) continue
+    const cierre = primerCierre.get(p.id) ?? (p.estado === "completado" ? p.updated_at : null)
+    if (!cierre) continue
+    const lista = cierres.get(p.foco_cliente_id) ?? []
+    lista.push(cierre.slice(0, 10))
+    cierres.set(p.foco_cliente_id, lista)
+  }
+  return cierres
+}
+
+/** Casos del rango ya evaluados contra los cierres de plan de cada cliente. */
+async function evaluarCasosDelRango(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tipo: TipoCasos,
+  desde: string,
+  hastaExcl: string,
+): Promise<CasoSlaDetalle[] | null> {
+  const casos = await getCasosCrudos(supabase, tipo, desde, hastaExcl)
+  if (casos === null) return null
+  if (casos.length === 0) return []
+
+  const clienteIds = [...new Set(casos.map((c) => c.cod_cliente))]
+  const cierres = await getCierresPorCliente(supabase, tipo, clienteIds)
+  const hoy = hoyISO()
+
+  return casos.map((c) => ({
+    cod_cliente: c.cod_cliente,
+    nombre_cliente: c.nombre_cliente,
+    categoria: c.categoria,
+    valor: c.valor,
+    fecha: c.fecha,
+    evaluacion: evaluarCaso(
+      c.fecha,
+      c.categoria,
+      cierres.get(c.cod_cliente) ?? [],
+      hoy,
+    ),
+  }))
+}
+
+async function filaCasos(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tipo: TipoCasos,
+  year: number,
+  month: number,
+  diasDelMes: number,
+): Promise<CumplimientoSlaFila> {
+  const { codigo, nombre } = CASOS_CONFIG[tipo]
+  const base = { codigo, nombre, target: SLA_CASOS_TARGET }
+  const vacio = (estado: EstadoCumplimiento): CumplimientoSlaFila => ({
+    ...base,
+    porcentaje: null,
+    cumplidos: 0,
+    totalAplica: 0,
+    dias: Array.from({ length: diasDelMes }, () => estado),
+  })
+
+  const primeroDelMes = `${year}-${String(month).padStart(2, "0")}-01`
+  const hastaExcl = primerDiaMesSiguiente(year, month)
+  // 🚨 El acuerdo no se mide hacia atrás: antes de SLA_CASOS_MIDE_DESDE las
+  // encuestas están cargadas (baseline) pero los días quedan en "no aplica".
+  const desde =
+    primeroDelMes > SLA_CASOS_MIDE_DESDE ? primeroDelMes : SLA_CASOS_MIDE_DESDE
+  if (desde >= hastaExcl) return vacio("na")
+
+  const casos = await evaluarCasosDelRango(supabase, tipo, desde, hastaExcl)
+  if (casos === null) return vacio("sd")
+
+  const porDia = new Map<
+    number,
+    { cumplidos: number; incumplidos: number; pendientes: number }
+  >()
+  let cumplidos = 0
+  let totalAplica = 0
+  for (const c of casos) {
+    const dia = Number(c.fecha.slice(8, 10))
+    const a = porDia.get(dia) ?? { cumplidos: 0, incumplidos: 0, pendientes: 0 }
+    if (c.evaluacion.estado === "cumplido") {
+      a.cumplidos++
+      cumplidos++
+      totalAplica++
+    } else if (c.evaluacion.estado === "incumplido") {
+      a.incumplidos++
+      totalAplica++
+    } else {
+      a.pendientes++
+    }
+    porDia.set(dia, a)
+  }
+
+  const dias: EstadoCumplimiento[] = []
+  for (let d = 1; d <= diasDelMes; d++) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    const a = porDia.get(d)
+    if (iso < SLA_CASOS_MIDE_DESDE || !a) {
+      dias.push("na") // fuera de vigencia, o ningún caso ese día
+      continue
+    }
+    if (a.incumplidos > 0) dias.push("no")
+    else if (a.pendientes > 0) dias.push("sd") // aún dentro del plazo
+    else dias.push("si")
+  }
+
+  const porcentaje = totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
+  return { ...base, porcentaje, cumplidos, totalAplica, dias }
+}
+
+// ===========================================================================
 // SLA de carga (alm_carga) — cada viaje ruteado queda cargado antes de las
 // 07:00 ARG del día de REPARTO (día de salida del camión). Se cruza por
 // NÚMERO DE VIAJE (no por patente): el WMS expone, por viaje, la hora de carga
@@ -1655,6 +1935,8 @@ export async function getCumplimientoMes(
       filaCargaResuelta,
       await filaRecepcion(year, month, diasDelMes),
       await filaEquiposFrio(supabase, year, month, diasDelMes),
+      await filaCasos(supabase, "nps", year, month, diasDelMes),
+      await filaCasos(supabase, "rmd", year, month, diasDelMes),
     ]
 
     return { data: { year, month, diasDelMes, filas } }
@@ -1690,6 +1972,20 @@ function fmtMin(mins: number): string {
 /** % con una decimal y coma decimal (es-AR). */
 function fmtPct(n: number): string {
   return `${n.toFixed(1).replace(".", ",")}%`
+}
+
+/** 'YYYY-MM-DD' → 'DD/MM/YYYY'. */
+function fmtFechaCorta(iso: string): string {
+  return iso.split("-").reverse().join("/")
+}
+
+/** Días corridos entre dos fechas ISO (b − a). */
+function diasEntre(a: string, b: string): number {
+  const [ya, ma, da] = a.split("-").map(Number)
+  const [yb, mb, db] = b.split("-").map(Number)
+  return Math.round(
+    (Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86_400_000,
+  )
 }
 
 /**
@@ -2313,6 +2609,128 @@ export async function getDetalleDiaSla(
           estado,
           metaLabel,
           valorLabel,
+          filas,
+          nota,
+        },
+      }
+    }
+
+    if (codigo === "ent_nps" || codigo === "ent_rmd") {
+      const tipo: TipoCasos = codigo === "ent_nps" ? "nps" : "rmd"
+      const nombre = CASOS_CONFIG[tipo].nombre
+      const metaLabel = `Cierre ≤ ${CASO_PLAZO_DETRACTOR_DIAS} d (detractor) / ≤ ${CASO_PLAZO_PASIVO_DIAS} d (pasivo)`
+
+      if (fecha < SLA_CASOS_MIDE_DESDE) {
+        return {
+          data: {
+            codigo,
+            nombre,
+            fecha,
+            diaSemana,
+            estado: "na",
+            metaLabel,
+            valorLabel: "Fuera de vigencia",
+            filas: [],
+            nota: `El acuerdo se mide desde el ${fmtFechaCorta(SLA_CASOS_MIDE_DESDE)}. Las encuestas anteriores están cargadas como referencia, pero no se evalúan.`,
+          },
+        }
+      }
+
+      const casos = await evaluarCasosDelRango(supabase, tipo, fecha, nextISO(fecha))
+      if (casos === null) {
+        return {
+          data: {
+            codigo,
+            nombre,
+            fecha,
+            diaSemana,
+            estado: "sd",
+            metaLabel,
+            valorLabel: "—",
+            filas: [],
+            nota: "No se pudieron leer las encuestas de este día.",
+          },
+        }
+      }
+      if (casos.length === 0) {
+        return {
+          data: {
+            codigo,
+            nombre,
+            fecha,
+            diaSemana,
+            estado: "na",
+            metaLabel,
+            valorLabel: "Sin casos",
+            filas: [],
+            nota: `Este día no hubo encuestas ${tipo.toUpperCase()} detractoras ni pasivas.`,
+          },
+        }
+      }
+
+      const escala = tipo === "nps" ? "NPS" : "RMD"
+      const filas = casos
+        .slice()
+        .sort((a, b) => a.valor - b.valor)
+        .map((c) => {
+          const quien = c.nombre_cliente?.trim() || `Cliente ${c.cod_cliente}`
+          const label = `${casoCategoriaLabel(c.categoria)} · ${quien}`
+          const puntaje = `${escala} ${c.valor}`
+          const { estado, cierre, vencimiento, cierreTardio } = c.evaluacion
+          if (estado === "cumplido" && cierre) {
+            const dias = diasEntre(c.fecha, cierre)
+            return {
+              label,
+              valor: `${puntaje} · cerrado ${fmtFechaCorta(cierre)} (${dias} d de ${plazoCasoDias(c.categoria)}) ✓`,
+            }
+          }
+          if (estado === "incumplido") {
+            const cola = cierreTardio
+              ? `cerrado tarde ${fmtFechaCorta(cierreTardio)} (${diasEntre(c.fecha, cierreTardio)} d)`
+              : "sin plan cerrado"
+            return {
+              label,
+              valor: `${puntaje} · venció ${fmtFechaCorta(vencimiento)}, ${cola} ✗`,
+            }
+          }
+          return {
+            label,
+            valor: `${puntaje} · vence ${fmtFechaCorta(vencimiento)} (quedan ${diasEntre(hoyISO(), vencimiento)} d)`,
+          }
+        })
+
+      const cerrados = casos.filter((c) => c.evaluacion.estado === "cumplido").length
+      const vencidos = casos.filter((c) => c.evaluacion.estado === "incumplido").length
+      const pendientes = casos.length - cerrados - vencidos
+
+      let estado: EstadoCumplimiento
+      if (vencidos > 0) estado = "no"
+      else if (pendientes > 0) estado = "sd"
+      else estado = "si"
+
+      const partes = [
+        cerrados ? `${cerrados} en plazo` : null,
+        vencidos ? `${vencidos} vencido(s)` : null,
+        pendientes ? `${pendientes} en curso` : null,
+      ].filter(Boolean)
+
+      let nota: string | undefined
+      if (vencidos > 0) {
+        nota =
+          "Los casos vencidos ya no se recuperan: cerrar el plan del cliente igual y llevar el motivo del atraso al Action Log de la reunión."
+      } else if (pendientes > 0) {
+        nota = `Todavía dentro del plazo: el día no puntúa hasta que venza el último caso. Los casos en curso no cuentan en el % del mes.`
+      }
+
+      return {
+        data: {
+          codigo,
+          nombre,
+          fecha,
+          diaSemana,
+          estado,
+          metaLabel,
+          valorLabel: `${casos.length} caso(s) · ${partes.join(", ")}`,
           filas,
           nota,
         },

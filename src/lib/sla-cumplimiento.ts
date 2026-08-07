@@ -213,6 +213,121 @@ export function cumpleRecepcion(
   return dur <= RECEPCION_MAX_DESCARGA_MIN
 }
 
+// --- SLA de cierre de casos NPS y RMD (ent_nps / ent_rmd) -------------------
+// Un CASO es una encuesta que dejó al cliente en detractor o pasivo. El reloj
+// arranca en la FECHA DE LA ENCUESTA —no en la creación del plan, que puede ser
+// meses después— y se detiene cuando el plan de acción de ese cliente queda
+// cerrado. Un detractor al que nunca se le abre un plan no desaparece de la
+// medición: al vencer el plazo cuenta como incumplido.
+
+export const SLA_CASOS_NPS_NOMBRE = "Cierre de casos NPS (detractores y pasivos)"
+export const SLA_CASOS_RMD_NOMBRE = "Cierre de casos RMD (detractores y pasivos)"
+export const SLA_CASOS_TARGET = 95
+
+/**
+ * 🚨 Primer día MEDIDO. Las encuestas anteriores están cargadas (baseline para
+ * la reunión de firma) pero NO se evalúan: el acuerdo no es retroactivo.
+ * Los días previos quedan en "no aplica". Decidido el 07-08-2026.
+ */
+export const SLA_CASOS_MIDE_DESDE = "2026-08-01"
+
+export const CASO_PLAZO_DETRACTOR_DIAS = 30
+export const CASO_PLAZO_PASIVO_DIAS = 45
+
+export type CasoCategoria = "detractor" | "pasivo"
+
+export function plazoCasoDias(categoria: CasoCategoria): number {
+  return categoria === "detractor"
+    ? CASO_PLAZO_DETRACTOR_DIAS
+    : CASO_PLAZO_PASIVO_DIAS
+}
+
+export function casoCategoriaLabel(categoria: CasoCategoria): string {
+  return categoria === "detractor" ? "Detractor" : "Pasivo"
+}
+
+/**
+ * Categoría de una puntuación RMD (escala 1-5). `null` = promotor: no genera
+ * caso. El corte 1-3 = detractor es el mismo que usa el módulo /rmd; el 4 entra
+ * como pasivo, con el plazo largo.
+ */
+export function categoriaRmd(puntuacion: number): CasoCategoria | null {
+  if (puntuacion <= 3) return "detractor"
+  if (puntuacion === 4) return "pasivo"
+  return null
+}
+
+/** Categoría de una encuesta NPS ('Detractor' | 'Passive' | 'Promoter'). */
+export function categoriaNps(categoria: string): CasoCategoria | null {
+  if (categoria === "Detractor") return "detractor"
+  if (categoria === "Passive") return "pasivo"
+  return null
+}
+
+/** 'YYYY-MM-DD' + n días, sin corrimiento por zona horaria. */
+export function sumarDias(iso: string, dias: number): string {
+  const [y, m, d] = iso.split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d + dias)).toISOString().slice(0, 10)
+}
+
+/** Último día en que el caso puede cerrarse cumpliendo el acuerdo. */
+export function vencimientoCaso(
+  fechaCaso: string,
+  categoria: CasoCategoria,
+): string {
+  return sumarDias(fechaCaso, plazoCasoDias(categoria))
+}
+
+// "pendiente" = todavía dentro del plazo y sin cerrar. No cuenta ni en el
+// numerador ni en el denominador: el caso aún no se puede juzgar.
+export type EstadoCaso = "cumplido" | "incumplido" | "pendiente"
+
+export interface EvaluacionCaso {
+  estado: EstadoCaso
+  /** Cierre que atiende el caso (dentro del plazo), si existe. */
+  cierre: string | null
+  vencimiento: string
+  /** Cierre más temprano posterior al caso, aunque haya llegado tarde. */
+  cierreTardio: string | null
+}
+
+/**
+ * Evalúa un caso contra los cierres de plan del cliente.
+ *
+ * 🚨 `cierres` son las fechas en que un plan de ESE cliente quedó completado.
+ * Un cierre anterior al caso no lo atiende (cerró otra cosa), y uno posterior
+ * al vencimiento llega tarde: el caso incumple igual, pero guardamos la fecha
+ * para poder mostrar cuánto se pasó.
+ */
+export function evaluarCaso(
+  fechaCaso: string,
+  categoria: CasoCategoria,
+  cierres: string[],
+  hoy: string,
+): EvaluacionCaso {
+  const vencimiento = vencimientoCaso(fechaCaso, categoria)
+  const posteriores = cierres.filter((c) => c >= fechaCaso).sort()
+  const enPlazo = posteriores.find((c) => c <= vencimiento) ?? null
+  const cierreTardio = posteriores[0] ?? null
+  if (enPlazo) {
+    return { estado: "cumplido", cierre: enPlazo, vencimiento, cierreTardio }
+  }
+  // Sin cierre en plazo: incumple recién cuando el plazo venció.
+  const estado: EstadoCaso = hoy > vencimiento ? "incumplido" : "pendiente"
+  return { estado, cierre: null, vencimiento, cierreTardio }
+}
+
+/** Caso individual, para el detalle del día. */
+export interface CasoSlaDetalle {
+  cod_cliente: number
+  nombre_cliente: string | null
+  categoria: CasoCategoria
+  /** Score NPS (0-10) o puntuación RMD (1-5). */
+  valor: number
+  fecha: string
+  evaluacion: EvaluacionCaso
+}
+
 // --- Umbrales DIARIOS configurables ------------------------------------------
 /**
  * Un día cumple capacidad si la ocupación promedio (CEq/TARGET_CEQ × 100) ≥

@@ -265,6 +265,121 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
     firmantes: ["Supervisor de Almacén", "Supervisor de Distribución"],
   },
 
+  ent_nps: {
+    objeto:
+      "Acuerdo de nivel de servicio para la atención de los clientes que la encuesta de NPS deja como detractores o pasivos. Compromete el TIEMPO en que cada caso queda cerrado: la queja de un cliente no se archiva ni se diluye en el promedio del mes, se atiende con un plan de acción con responsable y se cierra dentro de un plazo pactado.",
+    nivelServicio: [
+      "Toda encuesta de NPS que deja al cliente como DETRACTOR abre un caso que debe cerrarse dentro de los 30 días corridos.",
+      "Toda encuesta que lo deja como PASIVO abre un caso que debe cerrarse dentro de los 45 días corridos.",
+      "El plazo se cuenta desde la FECHA DE LA ENCUESTA, no desde la fecha en que se abre el plan de acción.",
+      "Un cliente detractor o pasivo al que nunca se le abre un plan cuenta como incumplido al vencer el plazo: el universo del acuerdo son todas las encuestas, no los planes cargados.",
+      "Objetivo de cumplimiento mensual: ≥ 95 % de los casos cerrados en plazo.",
+    ],
+    medicion: [
+      "La medición es automática a partir del módulo NPS de la plataforma DPO: cada fila de la encuesta con categoría Detractor o Passive es un caso.",
+      "El caso se cierra cuando un plan de acción de ESE cliente (plan con cliente foco) queda en estado «completado». La fecha de cierre es la del avance que lo dejó completado, con su evidencia cargada.",
+      "Un caso cumple si el cierre ocurre entre la fecha de la encuesta y su vencimiento (30 o 45 días según la categoría). Un plan cerrado antes de la encuesta no cuenta: estaba atendiendo un caso anterior.",
+      "Mientras el plazo no vence, el caso figura «en curso» y no computa: no cuenta ni como cumplido ni como incumplido.",
+      "El indicador mensual se calcula como: casos cerrados en plazo ÷ casos con plazo vencido o ya cerrados, agrupados por el mes de la encuesta.",
+      "🚨 El porcentaje de un mes sigue moviéndose hasta 45 días después de terminado: un caso pasivo del 30 de agosto recién vence el 14 de octubre. Es propio de un acuerdo con plazo de un mes y medio y hay que tenerlo en cuenta al leerlo en la reunión.",
+    ],
+    roles: [
+      {
+        label: "Carga de datos / medición",
+        valor:
+          "Automática: el sync quincenal del Power BI de Quilmes baja las encuestas de NPS a la plataforma.",
+      },
+      {
+        label: "Apertura del plan de acción",
+        valor:
+          "Jefe de Logística o Jefe de Ventas, según el driver de insatisfacción del cliente.",
+      },
+      {
+        label: "Cierre del caso y evidencia",
+        valor:
+          "Responsable asignado al plan (registra el avance que lo deja completado).",
+      },
+      { label: "Seguimiento del cumplimiento", valor: "Jefe de Logística." },
+    ],
+    gestionIncumplimiento:
+      "Los casos vencidos se repasan en la reunión de Logística-Ventas. El caso vencido se cierra igual —el cliente no deja de importar porque se pasó el plazo— y el motivo del atraso se registra como tarea en el Action Log. Si los vencimientos se repiten sobre el mismo driver o el mismo responsable, se ataca la causa de fondo y no el caso puntual.",
+    vigencia:
+      "La medición del acuerdo comienza el 1 de agosto de 2026. Las encuestas anteriores quedan cargadas como referencia pero no se evalúan: el acuerdo no se aplica de forma retroactiva. Vigencia de 1 año desde la fecha de firma, con revisión anual o inmediata si cambia la frecuencia de la encuesta de NPS.",
+    firmantes: [
+      "Sebastián Roselli — Jefe de Logística",
+      "Nicolás Lescoulie — Jefe de Ventas",
+    ],
+    secciones: [
+      {
+        titulo: "Premisas y condiciones operativas",
+        bullets: [
+          "Un mismo plan puede cerrar más de un caso del mismo cliente, siempre que el cierre caiga dentro del plazo de cada uno.",
+          "El plan tiene que tener cliente foco cargado: un plan general, sin cliente, no cierra ningún caso.",
+          "El cierre exige evidencia en el avance (comentario o archivo): sin registro de lo que se hizo, el caso no se da por atendido.",
+          "Los clientes promotores no generan caso.",
+        ],
+      },
+    ],
+  },
+
+  ent_rmd: {
+    objeto:
+      "Acuerdo de nivel de servicio para la atención de los clientes que puntúan bajo la entrega en la encuesta de Rate My Delivery (RMD). Compromete el TIEMPO en que cada caso queda cerrado, de modo que una mala experiencia de entrega se trabaje mientras el cliente todavía la recuerda y no varias encuestas después.",
+    nivelServicio: [
+      "Toda entrega puntuada 1, 2 o 3 (DETRACTORA) abre un caso que debe cerrarse dentro de los 30 días corridos.",
+      "Toda entrega puntuada 4 (PASIVA) abre un caso que debe cerrarse dentro de los 45 días corridos.",
+      "Las entregas puntuadas 5 no generan caso.",
+      "El plazo se cuenta desde la FECHA DE LA PUNTUACIÓN, no desde la fecha en que se abre el plan de acción.",
+      "Una puntuación baja a la que nunca se le abre un plan cuenta como incumplida al vencer el plazo: el universo del acuerdo son todas las puntuaciones 1-4, no los planes cargados.",
+      "Objetivo de cumplimiento mensual: ≥ 95 % de los casos cerrados en plazo.",
+    ],
+    medicion: [
+      "La medición es automática a partir del módulo RMD de la plataforma DPO: cada entrega puntuada 1 a 4 es un caso.",
+      "El caso se cierra cuando un plan de acción de ESE cliente (plan con cliente foco) queda en estado «completado». La fecha de cierre es la del avance que lo dejó completado, con su evidencia cargada.",
+      "Un caso cumple si el cierre ocurre entre la fecha de la puntuación y su vencimiento (30 días para 1-3, 45 días para 4). Un plan cerrado antes de la puntuación no cuenta: estaba atendiendo un caso anterior.",
+      "Mientras el plazo no vence, el caso figura «en curso» y no computa: no cuenta ni como cumplido ni como incumplido.",
+      "El indicador mensual se calcula como: casos cerrados en plazo ÷ casos con plazo vencido o ya cerrados, agrupados por el mes de la puntuación.",
+      "🚨 El porcentaje de un mes sigue moviéndose hasta 45 días después de terminado: un caso pasivo del 30 de agosto recién vence el 14 de octubre.",
+    ],
+    roles: [
+      {
+        label: "Carga de datos / medición",
+        valor:
+          "Automática: el sync de los lunes baja las puntuaciones de RMD del Power BI de Quilmes a la plataforma.",
+      },
+      {
+        label: "Apertura del plan de acción",
+        valor:
+          "Supervisor de Distribución (el motivo de la baja puntuación suele estar en la entrega: chofer, horario, faltante o estado de la mercadería).",
+      },
+      {
+        label: "Cierre del caso y evidencia",
+        valor:
+          "Responsable asignado al plan (registra el avance que lo deja completado).",
+      },
+      { label: "Seguimiento del cumplimiento", valor: "Jefe de Logística." },
+    ],
+    gestionIncumplimiento:
+      "Los casos vencidos se repasan en la reunión semanal de Logística. El caso vencido se cierra igual y el motivo del atraso se registra como tarea en el Action Log. Cuando las puntuaciones bajas se concentran en un chofer, una ruta o un motivo, se abre un plan de foco sobre esa causa en vez de tratar cada caso por separado.",
+    vigencia:
+      "La medición del acuerdo comienza el 1 de agosto de 2026. Las puntuaciones anteriores quedan cargadas como referencia pero no se evalúan: el acuerdo no se aplica de forma retroactiva. Vigencia de 1 año desde la fecha de firma, con revisión anual o inmediata si cambia la mecánica de la encuesta de RMD.",
+    firmantes: [
+      "Sebastián Roselli — Jefe de Logística",
+      "Supervisor de Distribución",
+    ],
+    secciones: [
+      {
+        titulo: "Premisas y condiciones operativas",
+        bullets: [
+          "Un mismo plan puede cerrar más de un caso del mismo cliente, siempre que el cierre caiga dentro del plazo de cada uno: un cliente que puntúa bajo dos entregas seguidas no exige dos planes.",
+          "El plan tiene que tener cliente foco cargado: un plan general, o uno con foco sólo en un motivo o en un chofer, no cierra ningún caso.",
+          "El cierre exige evidencia en el avance (comentario o archivo): sin registro de lo que se hizo, el caso no se da por atendido.",
+          "Las entregas que recibieron la encuesta y el cliente nunca contestó no generan caso: sin puntuación no hay queja que atender.",
+        ],
+      },
+    ],
+  },
+
   plan_equipos_frio: {
     objeto:
       "Acuerdo de nivel de servicio entre Ventas y Logística para ordenar la entrega y el retiro de equipos de frío (heladeras, choperas y equipos eléctricos) en los puntos de venta. Un equipo de frío ocupa un lugar significativo en el camión y exige tiempo de maniobra en el punto de venta: concentrar estos movimientos en los primeros días de la semana permite planificar la carga sin resentir la entrega de producto ni la puntualidad del reparto.",
