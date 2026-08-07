@@ -513,11 +513,15 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
         </Card>
       )}
 
-      {/* Acciones Vehículo — choferes vinculados y habilitados por lista
-          (maquinistas: cargan los autoelevadores, no salen a ruta).
-          🚨 El CIL entra al bloque con su propia condición: hay gente habilitada
-          a registrarlo que no carga combustible ni sale a ruta. */}
-      {(entrega?.vinculado || puedeVehiculos || puedeCil) && (
+      {/* Acciones sobre la unidad.
+          Checklist y Combustible siguen siendo de choferes vinculados y de la
+          lista de operadores (maquinistas: cargan los autoelevadores, no salen
+          a ruta).
+          🚨 CIL y Neumáticos los ve TODO el personal del portal, sin lista: son
+          tareas que puede hacer cualquiera sobre cualquier unidad, y mantener
+          una lista de emails significaba que cada persona nueva quedaba afuera
+          hasta que alguien se acordara de agregarla (Francisco, 07/08/2026). */}
+      {(
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {(entrega?.vinculado || puedeVehiculos) && (
           <Link href="/vehiculos/checklist">
