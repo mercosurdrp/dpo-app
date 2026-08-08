@@ -28,6 +28,7 @@ import {
   X,
   TrendingUp,
   Shirt,
+  Gauge,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -75,6 +76,12 @@ function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpI
     // Inicio, al lado de Checklist y Carga Combustible. Tenerlo en los dos
     // lugares confundía sobre cuál era el camino bueno. La pantalla /mi-cil sigue
     // existiendo y sigue habilitada en EmpleadoGuard.
+    // Mi productividad: lo que hizo en el depósito (picking, camiones, envases),
+    // un bloque por cada cosa donde tenga datos. Solo Pampeana — las fuentes son
+    // el WMS de Ramallo y la clasificación de envases.
+    ...(IS_MISIONES
+      ? []
+      : [{ label: "Mi productividad", href: "/mi-productividad", icon: <Gauge className="size-5" /> }]),
     // Trivia MERCOSUR: desafío de conocimiento diario (ambos tenants).
     { label: "Trivia", href: "/trivia", icon: <Brain className="size-5" /> },
     // Mi sector 5S: el responsable sorteado del mes carga sus tareas con foto.
