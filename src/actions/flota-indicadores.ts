@@ -116,6 +116,16 @@ export async function updateFlotaMeta(input: {
 export interface PuntoSerieKpi {
   ym: string // "YYYY-MM"
   valor: number | null
+  /**
+   * Tamaño de la muestra detrás del porcentaje (el denominador).
+   *
+   * 🚨 Sin esto, un PI con 1 solo caso en el mes sólo puede valer 0 % o 100 % y
+   * se lee como si fuera una medición estable. En agosto de 2026 la detección
+   * por checklist mostraba 0 % sobre **una única OT correctiva**: el número era
+   * correcto y a la vez no significaba nada. El `n` va SIEMPRE al lado del
+   * porcentaje, igual que en NPS.
+   */
+  n?: number | null
 }
 
 /** Ventana de matcheo defecto de checklist → OT correctiva (días). */
@@ -488,11 +498,16 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         }),
         checklist_deteccion: meses.map((ym) => {
           const a = anticipadas.get(ym)
-          return { ym, valor: a && a.total > 0 ? (a.conDefecto / a.total) * 100 : null }
+          return {
+            ym,
+            valor: a && a.total > 0 ? (a.conDefecto / a.total) * 100 : null,
+            // El denominador viaja con el valor: son las OT correctivas del mes.
+            n: a?.total ?? 0,
+          }
         }),
         checklist_resolucion: meses.map((ym) => {
           const r = resolucion.get(ym)
-          return { ym, valor: r && r.n > 0 ? r.dias / r.n : null }
+          return { ym, valor: r && r.n > 0 ? r.dias / r.n : null, n: r?.n ?? 0 }
         }),
         inventario_exactitud: meses.map((ym) => ({
           ym,

@@ -109,6 +109,14 @@ interface KpiDef {
    * igual el día 7 que el 30.
    */
   acumulativo?: boolean
+  /**
+   * Cómo se llama lo que cuenta el denominador ("OT", "plan"). Si está, la
+   * tarjeta muestra el `n` al lado del valor: "0 % (0 de 1 OT)".
+   *
+   * 🚨 Un porcentaje sobre 1 o 2 casos parece una medición y no lo es. Que el
+   * lector vea el tamaño de la muestra sin tener que ir a buscarlo.
+   */
+  nLabel?: { sing: string; plural: string }
 }
 
 const KPI_DEFS: KpiDef[] = [
@@ -207,6 +215,7 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
     dpo: "1.3",
+    nLabel: { sing: "OT", plural: "OT" },
   },
   {
     kpi: "checklist_resolucion",
@@ -216,6 +225,7 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => `${v.toFixed(1)} d`,
     conSerie: true,
     dpo: "1.3",
+    nLabel: { sing: "plan", plural: "planes" },
   },
   {
     kpi: "inventario_exactitud",
@@ -301,6 +311,8 @@ interface PuntoSerie {
   ym: string
   valor: number | null
   parcial: boolean
+  /** Denominador detrás del valor, cuando el PI lo informa. */
+  n?: number | null
 }
 
 interface Props {
@@ -474,14 +486,18 @@ export function IndicadoresFlota({
     for (const [kpi, serie] of Object.entries(extraSeries) as Array<
       [FlotaKpi, PuntoSerieKpi[]]
     >) {
-      const byYm = new Map(serie.map((p) => [p.ym, p.valor]))
+      const byYm = new Map(serie.map((p) => [p.ym, p]))
       out.set(
         kpi,
-        meses3.map((ym) => ({
-          ym,
-          valor: byYm.get(ym) != null ? Number(byYm.get(ym)) : null,
-          parcial: ym === mesActual,
-        }))
+        meses3.map((ym) => {
+          const p = byYm.get(ym)
+          return {
+            ym,
+            valor: p?.valor != null ? Number(p.valor) : null,
+            parcial: ym === mesActual,
+            n: p?.n ?? null,
+          }
+        })
       )
     }
     return out
@@ -709,6 +725,7 @@ function KpiIndicadorCard({
   const [editMeta, setEditMeta] = useState(false)
 
   const parcialMes = serie.find((p) => p.parcial)?.parcial ?? false
+  const nActual = serie.find((p) => p.parcial)?.n ?? null
   const estado: EstadoKpi = estadoDeKpi(valor, meta, {
     acumulativo: def.acumulativo,
     parcial: parcialMes,
@@ -733,6 +750,14 @@ function KpiIndicadorCard({
       valor={
         <>
           {valor == null ? "—" : def.fmt(valor)}
+          {/* 🚨 El n al lado del valor, no escondido: un 0 % sobre UNA sola OT
+              no es lo mismo que un 0 % sobre veinte, y sin el denominador las
+              dos cosas se leen igual. */}
+          {nActual != null && def.nLabel && (
+            <span className="ml-1 align-middle text-xs font-normal text-muted-foreground">
+              (n={nActual} {nActual === 1 ? def.nLabel.sing : def.nLabel.plural})
+            </span>
+          )}
           {def.conSerie && (
             <span className="ml-1 align-middle text-xs font-normal text-muted-foreground">
               mes en curso
@@ -812,6 +837,11 @@ function KpiIndicadorCard({
                   >
                     {p.valor == null ? "—" : def.fmt(p.valor)}
                   </p>
+                  {p.n != null && def.nLabel && (
+                    <p className="text-[10px] leading-tight text-muted-foreground">
+                      n={p.n}
+                    </p>
+                  )}
                   {plan ? (
                     <button
                       className="mt-0.5 text-[11px] font-medium text-primary hover:underline"
