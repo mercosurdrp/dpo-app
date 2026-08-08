@@ -42,6 +42,7 @@ import {
   Truck,
 } from "lucide-react"
 import { createChecklist } from "@/actions/checklist-vehiculos"
+import { NovedadesUnidad } from "./novedades-unidad"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
 import { createClient } from "@/lib/supabase/client"
 
@@ -585,6 +586,9 @@ export function ChecklistFormClient({
           </div>
         </CardContent>
       </Card>
+
+      {/* Qué pasó con lo que se reportó antes en esta unidad (resuelto / en gestión) */}
+      {dominio && <NovedadesUnidad dominio={dominio} />}
 
       {vehiculoSel && (
       <>

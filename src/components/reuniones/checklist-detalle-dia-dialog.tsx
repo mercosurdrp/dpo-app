@@ -24,6 +24,7 @@ import {
   getChecklistResumenDia,
   type ChecklistResumenDia,
 } from "@/actions/checklist-resumen-dia"
+import { formatDuracion } from "@/lib/vehiculos/tiempo-resolucion"
 
 interface Props {
   open: boolean
@@ -198,28 +199,49 @@ export function ChecklistDetalleDiaDialog({
                           </span>
                         ) : (
                           <div className="flex flex-wrap gap-1">
-                            {c.items_fallados.map((it, k) => (
-                              <Badge
-                                key={k}
-                                variant="outline"
-                                className={cn(
-                                  "text-[10px] font-normal",
-                                  it.critico
-                                    ? "border-red-300 bg-red-50 text-red-700"
-                                    : "border-amber-300 bg-amber-50 text-amber-700",
-                                )}
-                                title={
-                                  (it.critico ? "Ítem crítico · " : "") +
-                                  `${it.categoria}` +
-                                  (it.comentario ? ` · ${it.comentario}` : "")
-                                }
-                              >
-                                {it.critico && (
-                                  <AlertTriangle className="mr-1 size-3" />
-                                )}
-                                {it.nombre}
-                              </Badge>
-                            ))}
+                            {c.items_fallados.map((it, k) => {
+                              // Un foco ya reparado deja de ser un pendiente de
+                              // la reunión: se muestra en verde con el tiempo
+                              // que tardó la respuesta.
+                              const resuelto = it.plan?.estado === "resuelto"
+                              return (
+                                <Badge
+                                  key={k}
+                                  variant="outline"
+                                  className={cn(
+                                    "text-[10px] font-normal",
+                                    resuelto
+                                      ? "border-green-300 bg-green-50 text-green-700"
+                                      : it.critico
+                                        ? "border-red-300 bg-red-50 text-red-700"
+                                        : "border-amber-300 bg-amber-50 text-amber-700",
+                                  )}
+                                  title={
+                                    (it.critico ? "Ítem crítico · " : "") +
+                                    `${it.categoria}` +
+                                    (it.comentario ? ` · ${it.comentario}` : "") +
+                                    (it.plan ? ` · Plan: ${it.plan.descripcion}` : "")
+                                  }
+                                >
+                                  {resuelto ? (
+                                    <CheckCircle2 className="mr-1 size-3" />
+                                  ) : (
+                                    it.critico && (
+                                      <AlertTriangle className="mr-1 size-3" />
+                                    )
+                                  )}
+                                  {it.nombre}
+                                  {resuelto && (
+                                    <span className="ml-1 font-medium">
+                                      · resuelto
+                                      {it.plan?.horasResolucion != null
+                                        ? ` en ${formatDuracion(it.plan.horasResolucion)}`
+                                        : ""}
+                                    </span>
+                                  )}
+                                </Badge>
+                              )
+                            })}
                           </div>
                         )}
                       </TableCell>

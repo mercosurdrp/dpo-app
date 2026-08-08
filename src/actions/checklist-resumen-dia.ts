@@ -2,6 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { fetchPlanesPorRespuesta } from "@/lib/vehiculos/planes-checklist"
+import type { PlanResumen } from "@/lib/vehiculos/tiempo-resolucion"
 
 /** Un ítem del checklist con su respuesta. */
 export interface ChecklistItemDetalle {
@@ -12,6 +14,8 @@ export interface ChecklistItemDetalle {
   comentario: string | null
   /** true si la respuesta no es un fallo (nook/malo). */
   ok: boolean
+  /** Plan de acción del foco: si se resolvió, con qué y en cuánto tiempo. */
+  plan: PlanResumen | null
 }
 
 /** Una unidad con su checklist de liberación del día. */
@@ -98,11 +102,17 @@ export async function getChecklistResumenDia(
       const { data: respRaw, error: e2 } = await supa
         .from("checklist_respuestas")
         .select(
-          "checklist_id, valor, comentario, item:checklist_items(categoria, nombre, critico, orden)",
+          "id, checklist_id, valor, comentario, item:checklist_items(categoria, nombre, critico, orden)",
         )
         .in("checklist_id", ids)
       if (e2) return { error: e2.message }
+      const fallos: Array<{
+        respuestaId: string
+        checklistId: string
+        detalle: ChecklistItemDetalle
+      }> = []
       for (const r of (respRaw ?? []) as unknown as Array<{
+        id: string
         checklist_id: string
         valor: string
         comentario: string | null
@@ -118,15 +128,42 @@ export async function getChecklistResumenDia(
         if (!r.item) continue
         const esFallo = VALORES_FALLO.has((r.valor ?? "").toLowerCase())
         if (!esFallo) continue
-        if (!respPorChk[r.checklist_id]) respPorChk[r.checklist_id] = []
-        respPorChk[r.checklist_id].push({
+        const detalle: ChecklistItemDetalle = {
           categoria: r.item.categoria,
           nombre: r.item.nombre,
           critico: r.item.critico,
           valor: r.valor,
           comentario: r.comentario,
           ok: false,
+          plan: null,
+        }
+        fallos.push({
+          respuestaId: r.id,
+          checklistId: r.checklist_id,
+          detalle,
         })
+        if (!respPorChk[r.checklist_id]) respPorChk[r.checklist_id] = []
+        respPorChk[r.checklist_id].push(detalle)
+      }
+
+      // Estado del foco en la reunión: si mantenimiento ya cerró el plan, el
+      // ítem se muestra resuelto con su tiempo de respuesta.
+      if (fallos.length > 0) {
+        const horaPorChecklist = new Map(checklists.map((c) => [c.id, c.hora]))
+        const horaPorRespuesta = new Map(
+          fallos.map((f) => [
+            f.respuestaId,
+            horaPorChecklist.get(f.checklistId) ?? "",
+          ]),
+        )
+        const planes = await fetchPlanesPorRespuesta(
+          supa,
+          fallos.map((f) => f.respuestaId),
+          horaPorRespuesta,
+        )
+        for (const f of fallos) {
+          f.detalle.plan = planes.get(f.respuestaId) ?? null
+        }
       }
     }
 

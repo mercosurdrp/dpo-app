@@ -15,6 +15,7 @@ import {
   daysBetween,
   type LecturaSugerida,
 } from "@/lib/vehiculos/lecturas"
+import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
 import type {
   CostosMantenimiento,
   DiaRuteo,
@@ -1309,6 +1310,8 @@ export interface ChecklistPlanAccion {
   descripcion: string
   fotoUrl: string | null
   fotoPath: string | null
+  /** Momento en que el plan se cerró (lo sella la base). null = sigue abierto. */
+  resueltoAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -1317,6 +1320,8 @@ export interface ChecklistItemNoOk {
   id: string
   checklistId: string
   fecha: string
+  /** Timestamp de carga del checklist: arranque del tiempo de respuesta. */
+  hora: string | null
   dominio: string
   chofer: string | null
   tipo: string // liberacion | retorno
@@ -1326,7 +1331,16 @@ export interface ChecklistItemNoOk {
   critico: boolean
   comentario: string | null
   plan: ChecklistPlanAccion | null
+  /** Horas entre la carga del checklist y el cierre del plan; null si sigue abierto. */
+  horasResolucion: number | null
 }
+
+/** Columnas del plan de acción. `resuelto_at` sella el fin del tiempo de respuesta. */
+const PLAN_COLUMNAS =
+  "id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, resuelto_at, created_at, updated_at"
+/** Mismo select sin `resuelto_at`, por si la migración todavía no se aplicó. */
+const PLAN_COLUMNAS_LEGACY =
+  "id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, created_at, updated_at"
 
 export interface ChecklistComentario {
   id: string
@@ -1356,7 +1370,7 @@ export async function getChecklistsMtto(): Promise<
       supabase
         .from("checklist_respuestas")
         .select(
-          "id, checklist_id, valor, comentario, item:checklist_items(nombre, categoria, critico), cv:checklist_vehiculos(fecha, dominio, chofer, tipo)"
+          "id, checklist_id, valor, comentario, item:checklist_items(nombre, categoria, critico), cv:checklist_vehiculos(fecha, hora, dominio, chofer, tipo)"
         )
         .not("valor", "in", '("ok","bueno")'),
       supabase
@@ -1375,7 +1389,13 @@ export async function getChecklistsMtto(): Promise<
       valor: string
       comentario: string | null
       item: { nombre: string; categoria: string; critico: boolean } | null
-      cv: { fecha: string; dominio: string; chofer: string | null; tipo: string } | null
+      cv: {
+        fecha: string
+        hora: string | null
+        dominio: string
+        chofer: string | null
+        tipo: string
+      } | null
     }
     const itemsBase = ((respRes.data || []) as unknown as RespRow[])
       .filter((r) => r.cv && r.item)
@@ -1383,6 +1403,7 @@ export async function getChecklistsMtto(): Promise<
         id: r.id,
         checklistId: r.checklist_id,
         fecha: r.cv!.fecha,
+        hora: r.cv!.hora ?? null,
         dominio: r.cv!.dominio,
         chofer: r.cv!.chofer,
         tipo: r.cv!.tipo,
@@ -1397,13 +1418,6 @@ export async function getChecklistsMtto(): Promise<
     const respuestaIds = itemsBase.map((i) => i.id)
     const planesById = new Map<string, ChecklistPlanAccion>()
     if (respuestaIds.length > 0) {
-      const { data: planesData, error: planesErr } = await supabase
-        .from("checklist_planes_accion")
-        .select(
-          "id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, created_at, updated_at"
-        )
-        .in("respuesta_id", respuestaIds)
-      if (planesErr) throw new Error(planesErr.message)
       type PlanRow = {
         id: string
         respuesta_id: string
@@ -1412,10 +1426,28 @@ export async function getChecklistsMtto(): Promise<
         descripcion: string
         foto_url: string | null
         foto_path: string | null
+        resuelto_at?: string | null
         created_at: string
         updated_at: string
       }
-      for (const p of (planesData || []) as PlanRow[]) {
+      let planesData: PlanRow[] = []
+      const { data, error: planesErr } = await supabase
+        .from("checklist_planes_accion")
+        .select(PLAN_COLUMNAS)
+        .in("respuesta_id", respuestaIds)
+      if (planesErr) {
+        // 42703 = todavía no está aplicada la migración de resuelto_at.
+        if (planesErr.code !== "42703") throw new Error(planesErr.message)
+        const legacy = await supabase
+          .from("checklist_planes_accion")
+          .select(PLAN_COLUMNAS_LEGACY)
+          .in("respuesta_id", respuestaIds)
+        if (legacy.error) throw new Error(legacy.error.message)
+        planesData = (legacy.data || []) as unknown as PlanRow[]
+      } else {
+        planesData = (data || []) as unknown as PlanRow[]
+      }
+      for (const p of planesData) {
         planesById.set(p.respuesta_id, {
           id: p.id,
           respuestaId: p.respuesta_id,
@@ -1424,6 +1456,8 @@ export async function getChecklistsMtto(): Promise<
           descripcion: p.descripcion,
           fotoUrl: p.foto_url,
           fotoPath: p.foto_path,
+          resueltoAt:
+            p.estado === "resuelto" ? (p.resuelto_at ?? p.updated_at ?? null) : null,
           createdAt: p.created_at,
           updatedAt: p.updated_at,
         })
@@ -1431,7 +1465,14 @@ export async function getChecklistsMtto(): Promise<
     }
 
     const itemsNoOk: ChecklistItemNoOk[] = itemsBase
-      .map((i) => ({ ...i, plan: planesById.get(i.id) ?? null }))
+      .map((i) => {
+        const plan = planesById.get(i.id) ?? null
+        return {
+          ...i,
+          plan,
+          horasResolucion: horasEntre(i.hora, plan?.resueltoAt ?? null),
+        }
+      })
       .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0))
 
     type CvRow = {
@@ -1535,37 +1576,59 @@ export async function upsertPlanChecklist(
       updated_at: new Date().toISOString(),
     }
 
-    let row
+    // La escritura no pide columnas de vuelta: `resuelto_at` lo escribe el
+    // trigger de la base, así que la fila se relee después (con fallback por si
+    // la migración todavía no está aplicada).
     if (existing) {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("checklist_planes_accion")
         .update(payload)
         .eq("id", existing.id)
-        .select("id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, created_at, updated_at")
-        .single()
       if (error) return { error: error.message }
-      row = data
     } else {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("checklist_planes_accion")
         .insert({ ...payload, created_by: profile.id })
-        .select("id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, created_at, updated_at")
-        .single()
       if (error) return { error: error.message }
-      row = data
     }
 
+    let row: Record<string, unknown> | null = null
+    const releer = await supabase
+      .from("checklist_planes_accion")
+      .select(PLAN_COLUMNAS)
+      .eq("respuesta_id", respuestaId)
+      .single()
+    if (releer.error) {
+      if (releer.error.code !== "42703") return { error: releer.error.message }
+      const legacy = await supabase
+        .from("checklist_planes_accion")
+        .select(PLAN_COLUMNAS_LEGACY)
+        .eq("respuesta_id", respuestaId)
+        .single()
+      if (legacy.error) return { error: legacy.error.message }
+      row = legacy.data as Record<string, unknown>
+    } else {
+      row = releer.data as Record<string, unknown>
+    }
+
+    const estadoRow = row.estado as ChecklistPlanEstado
     return {
       data: {
-        id: row.id,
-        respuestaId: row.respuesta_id,
-        tipo: row.tipo,
-        estado: row.estado,
-        descripcion: row.descripcion,
-        fotoUrl: row.foto_url,
-        fotoPath: row.foto_path,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
+        id: row.id as string,
+        respuestaId: row.respuesta_id as string,
+        tipo: row.tipo as ChecklistPlanTipo,
+        estado: estadoRow,
+        descripcion: row.descripcion as string,
+        fotoUrl: (row.foto_url as string | null) ?? null,
+        fotoPath: (row.foto_path as string | null) ?? null,
+        resueltoAt:
+          estadoRow === "resuelto"
+            ? ((row.resuelto_at as string | null) ??
+              (row.updated_at as string | null) ??
+              null)
+            : null,
+        createdAt: row.created_at as string,
+        updatedAt: row.updated_at as string,
       },
     }
   } catch (e) {

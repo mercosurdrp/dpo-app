@@ -9,6 +9,8 @@ import {
   today,
 } from "@/lib/vehiculos/lecturas"
 import { validarLectura, type LecturaPrevia } from "@/lib/vehiculos/validar-lectura"
+import { fetchPlanesPorRespuesta } from "@/lib/vehiculos/planes-checklist"
+import type { PlanResumen } from "@/lib/vehiculos/tiempo-resolucion"
 import type {
   ChecklistItem,
   ChecklistVehiculo,
@@ -342,6 +344,14 @@ export async function getChecklistDetalle(
 
     if (respError) return { error: respError.message }
 
+    // Plan de acción de cada ítem observado: es lo que le muestra al chofer que
+    // el foco se resolvió, y con qué tiempo de respuesta.
+    const respIds = (respuestas || []).map((r: { id: string }) => r.id)
+    const horaPorRespuesta = new Map(
+      respIds.map((id) => [id, checklist.hora as string]),
+    )
+    const planes = await fetchPlanesPorRespuesta(supabase, respIds, horaPorRespuesta)
+
     // URL pública de la foto adjunta (bucket público, igual que roturas-calle)
     const fotoUrl = checklist.foto_path
       ? supabase.storage
@@ -353,7 +363,10 @@ export async function getChecklistDetalle(
       data: {
         ...checklist,
         foto_url: fotoUrl,
-        respuestas: respuestas || [],
+        respuestas: (respuestas || []).map((r: { id: string }) => ({
+          ...r,
+          plan: planes.get(r.id) ?? null,
+        })),
       } as ChecklistVehiculoConRespuestas,
     }
   } catch (e) {
@@ -664,6 +677,114 @@ export async function getTiempoRutaKpis(filters?: {
         mensual,
       },
     }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== NOVEDADES DE LA UNIDAD (vista del chofer) ============
+
+/** Un ítem observado por el chofer y en qué quedó (lo que ve al abrir el checklist). */
+export interface NovedadUnidad {
+  respuestaId: string
+  checklistId: string
+  fecha: string
+  /** Timestamp de carga del checklist: arranque del tiempo de respuesta. */
+  hora: string
+  dominio: string
+  chofer: string | null
+  categoria: string
+  item: string
+  valor: string
+  critico: boolean
+  comentario: string | null
+  plan: PlanResumen | null
+}
+
+const VALORES_OBSERVADOS = new Set(["nook", "malo", "regular"])
+
+/**
+ * Últimas observaciones no-OK de una unidad, con el estado del plan de acción.
+ * Es lo que el chofer ve arriba del checklist: si lo que reportó ya se reparó,
+ * qué se hizo y cuánto tardó la respuesta. Sin esto el foco desaparecía de su
+ * vista y nunca se enteraba de que se había trabajado.
+ */
+export async function getNovedadesUnidad(
+  dominio: string,
+  dias = 30,
+): Promise<{ data: NovedadUnidad[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const dom = (dominio || "").trim()
+    if (!dom) return { data: [] }
+
+    const desde = addDays(today(), -Math.abs(dias))
+    const { data: checks, error: chkErr } = await supabase
+      .from("checklist_vehiculos")
+      .select("id, fecha, hora, dominio, chofer")
+      .eq("dominio", dom)
+      .gte("fecha", desde)
+      .order("hora", { ascending: false })
+      .limit(120)
+    if (chkErr) return { error: chkErr.message }
+    const cabeceras = (checks || []) as Array<{
+      id: string
+      fecha: string
+      hora: string
+      dominio: string
+      chofer: string | null
+    }>
+    if (cabeceras.length === 0) return { data: [] }
+
+    const porId = new Map(cabeceras.map((c) => [c.id, c]))
+    const { data: resp, error: respErr } = await supabase
+      .from("checklist_respuestas")
+      .select("id, checklist_id, valor, comentario, item:checklist_items(nombre, categoria, critico)")
+      .in("checklist_id", [...porId.keys()])
+    if (respErr) return { error: respErr.message }
+
+    const observadas = ((resp || []) as unknown as Array<{
+      id: string
+      checklist_id: string
+      valor: string
+      comentario: string | null
+      item: { nombre: string; categoria: string; critico: boolean } | null
+    }>).filter(
+      (r) => r.item && VALORES_OBSERVADOS.has((r.valor || "").toLowerCase()),
+    )
+    if (observadas.length === 0) return { data: [] }
+
+    const horaPorRespuesta = new Map(
+      observadas.map((r) => [r.id, porId.get(r.checklist_id)!.hora]),
+    )
+    const planes = await fetchPlanesPorRespuesta(
+      supabase,
+      observadas.map((r) => r.id),
+      horaPorRespuesta,
+    )
+
+    const data: NovedadUnidad[] = observadas
+      .map((r) => {
+        const cab = porId.get(r.checklist_id)!
+        return {
+          respuestaId: r.id,
+          checklistId: r.checklist_id,
+          fecha: cab.fecha,
+          hora: cab.hora,
+          dominio: cab.dominio,
+          chofer: cab.chofer,
+          categoria: r.item!.categoria,
+          item: r.item!.nombre,
+          valor: r.valor,
+          critico: r.item!.critico,
+          comentario: r.comentario,
+          plan: planes.get(r.id) ?? null,
+        }
+      })
+      .sort((a, b) => (a.hora < b.hora ? 1 : a.hora > b.hora ? -1 : 0))
+
+    return { data }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

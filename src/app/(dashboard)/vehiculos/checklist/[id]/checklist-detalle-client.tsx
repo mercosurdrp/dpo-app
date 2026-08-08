@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import type { ChecklistVehiculoConRespuestas } from "@/types/database"
+import { formatDuracion } from "@/lib/vehiculos/tiempo-resolucion"
 import {
   CheckCircle2,
   XCircle,
@@ -191,6 +192,44 @@ export function ChecklistDetalleClient({ checklist }: Props) {
                       <p className="mt-1 ml-6 text-xs text-muted-foreground italic">
                         {r.comentario}
                       </p>
+                    )}
+                    {r.plan && (
+                      <div
+                        className={`mt-2 ml-6 rounded-md border px-2.5 py-1.5 ${
+                          r.plan.estado === "resuelto"
+                            ? "border-green-200 bg-green-50"
+                            : "border-amber-200 bg-amber-50"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          {r.plan.estado === "resuelto" ? (
+                            <>
+                              <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                              <span className="text-xs font-semibold text-green-800">
+                                RESUELTO
+                              </span>
+                              {r.plan.horasResolucion != null && (
+                                <span className="text-xs text-green-800">
+                                  · tiempo de respuesta{" "}
+                                  <strong>{formatDuracion(r.plan.horasResolucion)}</strong>
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="h-3.5 w-3.5 text-amber-600" />
+                              <span className="text-xs font-semibold text-amber-800">
+                                {r.plan.estado === "en_proceso"
+                                  ? "EN REPARACIÓN"
+                                  : "PENDIENTE"}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-xs text-slate-600">
+                          {r.plan.descripcion}
+                        </p>
+                      </div>
                     )}
                   </div>
                   <Badge

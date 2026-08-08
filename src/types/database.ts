@@ -1,4 +1,5 @@
 import type { ArchivoAvance } from "@/lib/adjuntos-avance"
+import type { PlanResumen } from "@/lib/vehiculos/tiempo-resolucion"
 
 // Enum types
 export type UserRole =
@@ -910,7 +911,11 @@ export interface ChecklistRespuesta {
 }
 
 export interface ChecklistVehiculoConRespuestas extends ChecklistVehiculo {
-  respuestas: (ChecklistRespuesta & { item: ChecklistItem })[]
+  respuestas: (ChecklistRespuesta & {
+    item: ChecklistItem
+    /** Plan de acción del ítem observado, con el tiempo de respuesta si ya se cerró. */
+    plan?: PlanResumen | null
+  })[]
 }
 
 // KPI Tiempo en Ruta

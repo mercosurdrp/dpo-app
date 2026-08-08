@@ -59,6 +59,11 @@ import {
   type ChecklistPlanTipo,
   type TareaCil,
 } from "@/actions/mantenimiento-vehiculos"
+import {
+  CLASE_TIEMPO,
+  colorTiempoRespuesta,
+  formatDuracion,
+} from "@/lib/vehiculos/tiempo-resolucion"
 import { TAREAS_CIL, labelTareaCil } from "@/lib/flota/cil-tareas"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
 import { toast } from "sonner"
@@ -213,6 +218,13 @@ export function ChecklistsMtto({
   puedeEditar,
 }: Props) {
   const router = useRouter()
+  // "Hace X que está sin resolver" se calcula recién en el cliente: en el SSR
+  // el reloj del server y el del navegador difieren y React marca hydration
+  // mismatch.
+  const [ahoraMs, setAhoraMs] = useState<number | null>(null)
+  useEffect(() => {
+    setAhoraMs(Date.now())
+  }, [])
   const [fDominio, setFDominio] = useState("todos")
   const [fTipo, setFTipo] = useState("todos")
   const [planItem, setPlanItem] = useState<ChecklistItemNoOk | null>(null)
@@ -264,13 +276,20 @@ export function ChecklistsMtto({
 
   const criticos = items.filter((i) => i.critico).length
   const conPlan = items.filter((i) => i.plan).length
+  // Tiempo de respuesta: promedio de los focos ya cerrados (carga del
+  // checklist → cierre del plan de acción).
+  const resueltos = items.filter((i) => i.horasResolucion != null)
+  const horasProm =
+    resueltos.length > 0
+      ? resueltos.reduce((a, i) => a + (i.horasResolucion ?? 0), 0) / resueltos.length
+      : null
 
   return (
     <div className="space-y-6">
       <DpoSeccionCinta seccionId="checklists" />
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <KpiCard
           label="Ítems no OK"
           valor={items.length}
@@ -297,6 +316,17 @@ export function ChecklistsMtto({
           }
           estado="neutro"
           sub="Observaciones con reparación registrada"
+        />
+        <KpiCard
+          label="Tiempo de respuesta"
+          valor={
+            <span className="text-2xl">{formatDuracion(horasProm)}</span>
+          }
+          estado={
+            horasProm == null ? "neutro" : horasProm <= 72 ? "ok" : "alerta"
+          }
+          dpo="1.3"
+          sub={`Promedio de ${resueltos.length} foco${resueltos.length === 1 ? "" : "s"} resuelto${resueltos.length === 1 ? "" : "s"} (carga del checklist → cierre del plan)`}
         />
         <KpiCard
           label="Con comentarios"
@@ -368,6 +398,7 @@ export function ChecklistsMtto({
                     <TableHead>Chofer</TableHead>
                     <TableHead>Comentario</TableHead>
                     <TableHead>Plan de acción</TableHead>
+                    <TableHead>Tiempo de respuesta</TableHead>
                     {puedeEditar && <TableHead className="text-right">Eliminar</TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -399,6 +430,9 @@ export function ChecklistsMtto({
                       </TableCell>
                       <TableCell className="min-w-44">
                         <PlanCell item={i} puedeEditar={puedeEditar} onEditar={() => setPlanItem(i)} />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <TiempoRespuestaCell item={i} ahoraMs={ahoraMs} />
                       </TableCell>
                       {puedeEditar && (
                         <TableCell className="text-right">
@@ -775,6 +809,59 @@ function TareaCilDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+/**
+ * Tiempo de respuesta del foco: desde que el chofer cargó el checklist hasta
+ * que se cerró el plan de acción. Mientras el plan sigue abierto muestra cuánto
+ * lleva esperando, para que se vea qué está corriendo.
+ */
+function TiempoRespuestaCell({
+  item,
+  ahoraMs,
+}: {
+  item: ChecklistItemNoOk
+  ahoraMs: number | null
+}) {
+  if (item.plan?.estado === "resuelto" && item.horasResolucion != null) {
+    const color = colorTiempoRespuesta(item.horasResolucion, item.critico)
+    return (
+      <span className="flex flex-col">
+        <span className={cn("text-sm font-semibold", CLASE_TIEMPO[color])}>
+          {formatDuracion(item.horasResolucion)}
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          resuelto {fmtFechaHora(item.plan.resueltoAt)}
+        </span>
+      </span>
+    )
+  }
+  const abiertoHace =
+    item.hora && ahoraMs != null
+      ? (ahoraMs - new Date(item.hora).getTime()) / 3_600_000
+      : null
+  if (abiertoHace == null || abiertoHace < 0)
+    return <span className="text-muted-foreground/50">—</span>
+  return (
+    <span className="flex flex-col">
+      <span className="text-sm text-muted-foreground">
+        {formatDuracion(abiertoHace)}
+      </span>
+      <span className="text-[11px] text-muted-foreground">sin resolver</span>
+    </span>
+  )
+}
+
+function fmtFechaHora(iso: string | null): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return "—"
+  return d.toLocaleString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }
 
 function PlanCell({
