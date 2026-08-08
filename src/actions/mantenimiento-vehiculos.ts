@@ -1531,9 +1531,15 @@ export async function upsertPlanChecklist(
     // Plan existente (para conservar foto / created_by si corresponde).
     const { data: existing } = await supabase
       .from("checklist_planes_accion")
-      .select("id, foto_url, foto_path")
+      .select("id, foto_url, foto_path, estado")
       .eq("respuesta_id", respuestaId)
       .maybeSingle()
+    // Un plan que ya estaba cerrado y sigue cerrado NO mueve `updated_at`:
+    // mientras `resuelto_at` no exista en la base, esa fecha es el momento de
+    // cierre que alimenta el tiempo de respuesta, y corregir la descripción o
+    // cambiar la foto no puede reescribir cuánto tardó la reparación.
+    const sigueResuelto =
+      existing?.estado === "resuelto" && estado === "resuelto"
 
     let fotoUrl: string | null = (existing?.foto_url as string | null) ?? null
     let fotoPath: string | null = (existing?.foto_path as string | null) ?? null
@@ -1573,7 +1579,7 @@ export async function upsertPlanChecklist(
       descripcion,
       foto_url: fotoUrl,
       foto_path: fotoPath,
-      updated_at: new Date().toISOString(),
+      ...(sigueResuelto ? {} : { updated_at: new Date().toISOString() }),
     }
 
     // La escritura no pide columnas de vuelta: `resuelto_at` lo escribe el
