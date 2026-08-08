@@ -180,15 +180,20 @@ const KPI_DEFS: KpiDef[] = [
     conSerie: true,
     dpo: "1.1",
   },
-  {
-    kpi: "estandares_conformidad",
-    label: "Conformidad de estándares",
-    descripcion:
-      "Ítems OK ÷ evaluables en la matriz de Estándares de flota (GTS). Meses cerrados: última foto diaria",
-    fmt: (v) => `${v.toFixed(1)}%`,
-    conSerie: true,
-    dpo: "1.2",
-  },
+  // 🚨 Acá estaba "Conformidad de estándares" (el global). SALE del tablero por
+  // decisión de Francisco (08/08/2026), y no por estar mal calculado:
+  //
+  //  - Es el promedio de los otros dos, así que no agrega información.
+  //  - Su meta de 100 % es CONTRADICTORIA con las que fijamos el 01/08: para
+  //    llegar a 100 % global haría falta 100 % de excelencia, que es justo lo
+  //    que decidimos NO exigir (meta 95 %). Cumpliendo las dos metas al pie de
+  //    la letra el global daría 98,3 % y seguiría en rojo: un indicador que no
+  //    se puede cumplir aunque hagas todo bien deja de significar algo.
+  //
+  // El número NO se borró: se sigue calculando, sigue guardándose en
+  // `flota_kpi_snapshots` y se muestra como badge informativo (sin semáforo) en
+  // la pantalla de Estándares. Su meta sigue en `flota_metas` por si se decide
+  // volver atrás.
   {
     kpi: "estandares_mandatorios",
     label: "Conformidad de estándares — mandatorios",
