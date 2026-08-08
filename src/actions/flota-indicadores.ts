@@ -252,7 +252,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .map((it) => it.id),
     )
 
-    const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes] = await Promise.all([
+    const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes, vehRes] = await Promise.all([
       supabase
         .from("mantenimiento_realizados")
         .select("dominio, fecha")
@@ -263,7 +263,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       // correctivas que tocan la ventana (pueden arrancar antes del 1er mes).
       supabase
         .from("mantenimiento_realizados")
-        .select("fuera_servicio_desde, fuera_servicio_hasta")
+        .select("dominio, fuera_servicio_desde, fuera_servicio_hasta")
         .eq("tipo", "correctivo")
         .neq("estado", "cancelado")
         .not("fuera_servicio_desde", "is", null)
@@ -293,9 +293,12 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .order("fecha", { ascending: true }),
       supabase
         .from("registro_combustible")
-        .select("fecha, litros, km_recorridos")
+        .select("dominio, fecha, litros, km_recorridos")
         .gte("fecha", inicioVentana),
       supabase.from("mantenimiento_cil").select("fecha").gte("fecha", inicioVentana),
+      // Catálogo: hace falta para saber QUÉ unidad es cada dominio. Sin esto,
+      // los días parado contaban equipos de depósito y unidades dadas de baja.
+      supabase.from("catalogo_vehiculos").select("dominio, tipo, sector, active"),
     ])
     if (otRes.error) return { error: otRes.error.message }
     if (otParadaRes.error) return { error: otParadaRes.error.message }
@@ -305,6 +308,33 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     if (conteosRes.error) return { error: conteosRes.error.message }
     if (cargasRes.error) return { error: cargasRes.error.message }
     if (cilRes.error) return { error: cilRes.error.message }
+    if (vehRes.error) return { error: vehRes.error.message }
+
+    /**
+     * Unidades que cuentan para los PI de flota: camiones activos de
+     * distribución. Mismo criterio que `flotaDeRuta()` de disponibilidad.
+     *
+     * 🚨 Los días parado NO filtraban nada: contaban el `TOYOTA3`, que es un
+     * autoelevador de depósito DADO DE BAJA, y le sumaban ~30 días por mes al
+     * indicador de la flota de reparto.
+     */
+    const esFlotaDeRuta = new Set(
+      ((vehRes.data || []) as Array<{
+        dominio: string
+        tipo: string | null
+        sector: string | null
+        active: boolean | null
+      }>)
+        .filter(
+          (v) =>
+            v.active !== false &&
+            v.sector !== "deposito" &&
+            v.tipo !== "autoelevador" &&
+            v.tipo !== "acoplado" &&
+            v.tipo !== "camioneta",
+        )
+        .map((v) => v.dominio),
+    )
 
     // Fechas de defecto por dominio, ordenadas, para el matcheo por ventana.
     const defectosPorDominio = new Map<string, string[]>()
@@ -369,12 +399,17 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       { km: number; litrosConKm: number; litros: number }
     >()
     for (const c of (cargasRes.data || []) as Array<{
+      dominio: string
       fecha: string
       litros: number | null
       km_recorridos: number | null
     }>) {
       const ym = String(c.fecha).slice(0, 7)
       if (!meses.includes(ym)) continue
+      // 🚨 Sólo flota de reparto. Entraban las cargas de los autoelevadores y de
+      // una camioneta: para el CO2 sumaban litros ajenos, y para el km/l era peor
+      // todavía porque un autoelevador mide HORAS, no kilómetros.
+      if (!esFlotaDeRuta.has(c.dominio)) continue
       const acc = combustible.get(ym) ?? { km: 0, litrosConKm: 0, litros: 0 }
       const litros = Number(c.litros ?? 0)
       const km = Number(c.km_recorridos ?? 0)
@@ -413,11 +448,27 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     const hoyArg = new Intl.DateTimeFormat("en-CA", {
       timeZone: "America/Argentina/Buenos_Aires",
     }).format(new Date())
-    const diasParado = new Map<string, number>()
+    /**
+     * 🚨 Se cuentan DÍAS-UNIDAD ÚNICOS, no la suma de los rangos de cada OT.
+     *
+     * Un camión con dos OT abiertas a la vez estuvo parado UNA vez. Sumando
+     * rangos, el `OJA403` tenía las OT 1723 y 1724 con el mismo período exacto
+     * (04/06 → 21/07) más otras dos adentro: el indicador le contaba **60 días
+     * de parada en un mes de 31**. Junio daba 87 días cuando eran 29, y julio
+     * 125 cuando eran 55.
+     *
+     * El set `(dominio|fecha)` hace que el mismo día de la misma unidad valga
+     * una sola vez, sin importar cuántas OT lo cubran.
+     */
+    const paradoPorMes = new Map<string, Set<string>>()
+    for (const ym of meses) paradoPorMes.set(ym, new Set())
     for (const ot of (otParadaRes.data || []) as Array<{
+      dominio: string
       fuera_servicio_desde: string
       fuera_servicio_hasta: string | null
     }>) {
+      // Sólo flota de reparto activa: ver `esFlotaDeRuta`.
+      if (!esFlotaDeRuta.has(ot.dominio)) continue
       const desde = ot.fuera_servicio_desde.slice(0, 10)
       const hasta = (ot.fuera_servicio_hasta ?? hoyArg).slice(0, 10)
       if (hasta < desde) continue
@@ -428,13 +479,18 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         const ini = desde > mesIni ? desde : mesIni
         const fin = hasta < mesFin ? hasta : mesFin
         if (fin < ini) continue
-        const dias =
-          (new Date(`${fin}T00:00:00`).getTime() - new Date(`${ini}T00:00:00`).getTime()) /
-            MS_DIA +
-          1
-        diasParado.set(ym, (diasParado.get(ym) ?? 0) + dias)
+        const set = paradoPorMes.get(ym)!
+        for (
+          let t = new Date(`${ini}T00:00:00`).getTime();
+          t <= new Date(`${fin}T00:00:00`).getTime();
+          t += MS_DIA
+        ) {
+          set.add(`${ot.dominio}|${new Date(t).toISOString().slice(0, 10)}`)
+        }
       }
     }
+    const diasParado = new Map<string, number>()
+    for (const [ym, set] of paradoPorMes) diasParado.set(ym, set.size)
 
     // Conformidad de neumáticos: última medición DEL MES por cubierta, OK si
     // profundidad ≥3mm y presión 90–120 psi (cuando están medidas), sobre el
@@ -520,6 +576,16 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         neumaticos_conformidad: meses.map((ym) => ({
           ym,
           valor: neumaticosConf.get(ym) ?? null,
+          /**
+           * 🚨 El `n` acá es CUÁNTAS CUBIERTAS SE MIDIERON, y es imprescindible
+           * para leer el número: el denominador del KPI son las 108 instaladas,
+           * así que **una cubierta sin medir pesa igual que una en mal estado**.
+           * En julio de 2026 el indicador daba 73,1 %, pero de las 79 medidas
+           * **las 79 estaban conformes**: el 27 % que faltaba no eran cubiertas
+           * gastadas, eran cubiertas sin medir. Sin el `n`, el tablero acusa a la
+           * flota de un problema que en realidad es de relevamiento.
+           */
+          n: medPorMes.get(ym)?.size ?? 0,
         })),
       },
     }

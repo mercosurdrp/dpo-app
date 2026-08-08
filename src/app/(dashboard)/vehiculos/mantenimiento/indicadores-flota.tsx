@@ -293,6 +293,7 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
     dpo: "3.4",
+    nLabel: { sing: "cubierta medida", plural: "cubiertas medidas" },
   },
 ]
 
