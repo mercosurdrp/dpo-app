@@ -211,7 +211,7 @@ const KPI_DEFS: KpiDef[] = [
     kpi: "checklist_deteccion",
     label: "Defectos anticipados por checklist",
     descripcion:
-      "OTs correctivas del mes con defecto detectado en el checklist de la unidad en los 15 días previos ÷ OTs correctivas",
+      "OTs correctivas del mes con defecto detectado en el checklist de la unidad en los 15 días previos ÷ OTs correctivas. Si la OT es de neumáticos, el defecto tiene que ser de neumáticos: un desperfecto de otro sistema no la anticipa",
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
     dpo: "1.3",

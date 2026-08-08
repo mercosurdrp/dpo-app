@@ -132,6 +132,28 @@ export interface PuntoSerieKpi {
 const DETECCION_VENTANA_DIAS = 15
 
 /**
+ * Qué categorías de checklist pueden considerarse anticipación de una OT, según
+ * el rubro de la OT. `null` = no se puede exigir correspondencia.
+ *
+ * 🚨 Antes valía CUALQUIER defecto de la unidad en los 15 días previos, y eso
+ * daba falsos positivos: el único caso "anticipado" de junio a agosto de 2026
+ * era la OT 1714 del HELI1 —**una reparación de neumático**— emparejada con un
+ * defecto de **MOTOR** («Pérdida de fluidos», marcado `regular`, que era la
+ * gotita de la tapa ya reparada). Un defecto de motor no anticipa una rotura de
+ * cubierta: contarlo infla el PI y es de lo primero que un auditor desarma.
+ *
+ * 🚨 `general` queda en `null` a propósito: hoy `mantenimiento_realizados.rubro`
+ * sólo tiene dos valores (`general` 189 · `neumaticos` 34), así que en el 85 % de
+ * las OT el sistema no informa QUÉ falló y exigir correspondencia sería inventar
+ * un criterio. Cuando el rubro se abra por sistema (motor, frenos, eléctrico…),
+ * se agregan acá y el PI se vuelve más exigente solo.
+ */
+const CATEGORIAS_POR_RUBRO: Record<string, readonly string[] | null> = {
+  neumaticos: ["NEUMÁTICOS"],
+  general: null,
+}
+
+/**
  * DPO Flota 4.1 (ATO/CIL) — las tres familias de defecto que el CIL anticipa.
  *
  * `cil_tareas` cuenta ACTIVIDAD (cuántas limpiezas/lubricaciones se hicieron);
@@ -255,7 +277,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes, vehRes] = await Promise.all([
       supabase
         .from("mantenimiento_realizados")
-        .select("dominio, fecha")
+        .select("dominio, fecha, rubro")
         .eq("tipo", "correctivo")
         .neq("estado", "cancelado")
         .gte("fecha", inicioVentana),
@@ -337,24 +359,45 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     )
 
     // Fechas de defecto por dominio, ordenadas, para el matcheo por ventana.
-    const defectosPorDominio = new Map<string, string[]>()
+    // El defecto viaja con su CATEGORÍA: sin eso no se puede saber si tiene algo
+    // que ver con la falla que después mandó la unidad al taller.
+    const catPorItem = new Map(
+      ((itemsRes.data || []) as ItemChecklist[]).map((i) => [i.id, i.categoria]),
+    )
+    const defectosPorDominio = new Map<
+      string,
+      Array<{ fecha: string; categoria: string | null }>
+    >()
     for (const d of defectos) {
       if (!defectosPorDominio.has(d.dominio)) defectosPorDominio.set(d.dominio, [])
-      defectosPorDominio.get(d.dominio)!.push(d.fecha)
+      defectosPorDominio.get(d.dominio)!.push({
+        fecha: d.fecha,
+        categoria: d.itemId ? (catPorItem.get(d.itemId) ?? null) : null,
+      })
     }
-    for (const fechas of defectosPorDominio.values()) fechas.sort()
+    for (const arr of defectosPorDominio.values())
+      arr.sort((a, b) => a.fecha.localeCompare(b.fecha))
 
     const MS_DIA = 86_400_000
     const anticipadas = new Map<string, { conDefecto: number; total: number }>()
-    for (const ot of (otRes.data || []) as Array<{ dominio: string; fecha: string }>) {
+    for (const ot of (otRes.data || []) as Array<{
+      dominio: string
+      fecha: string
+      rubro: string | null
+    }>) {
       const ym = ot.fecha.slice(0, 7)
       if (!meses.includes(ym)) continue
       const acc = anticipadas.get(ym) ?? { conDefecto: 0, total: 0 }
       acc.total++
       const tOt = new Date(`${ot.fecha}T00:00:00`).getTime()
-      const hubo = (defectosPorDominio.get(ot.dominio) ?? []).some((f) => {
-        const t = new Date(`${f}T00:00:00`).getTime()
-        return t <= tOt && tOt - t <= DETECCION_VENTANA_DIAS * MS_DIA
+      // Categorías admitidas para esta OT; `null` = cualquiera (ver el comentario
+      // de CATEGORIAS_POR_RUBRO).
+      const admitidas = CATEGORIAS_POR_RUBRO[ot.rubro ?? "general"] ?? null
+      const hubo = (defectosPorDominio.get(ot.dominio) ?? []).some((d) => {
+        const t = new Date(`${d.fecha}T00:00:00`).getTime()
+        const enVentana = t <= tOt && tOt - t <= DETECCION_VENTANA_DIAS * MS_DIA
+        if (!enVentana) return false
+        return admitidas === null || admitidas.includes(d.categoria ?? "")
       })
       if (hubo) acc.conDefecto++
       anticipadas.set(ym, acc)
