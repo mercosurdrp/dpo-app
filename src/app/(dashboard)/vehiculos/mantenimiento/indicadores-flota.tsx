@@ -235,6 +235,7 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
     dpo: "2.3",
+    nLabel: { sing: "repuesto contado", plural: "repuestos contados" },
   },
   {
     kpi: "combustible_kml",

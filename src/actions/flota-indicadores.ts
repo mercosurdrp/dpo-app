@@ -422,6 +422,9 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     // Exactitud de inventario: el ÚLTIMO conteo de cada mes (viene ordenado asc,
     // así que el último visto por mes pisa a los anteriores).
     const exactitud = new Map<string, number | null>()
+    // Cuántos ítems tuvo el conteo del mes: un 100 % sobre 2 repuestos de 19 no
+    // es lo mismo que un 100 % sobre los 19, y sin el n se leen igual.
+    const exactitudN = new Map<string, number>()
     for (const c of (conteosRes.data || []) as unknown as Array<{
       fecha: string
       items: Array<{ stock_sistema: number; stock_contado: number }>
@@ -432,6 +435,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         (i) => Number(i.stock_sistema) === Number(i.stock_contado)
       ).length
       exactitud.set(ym, (sinDif / c.items.length) * 100)
+      exactitudN.set(ym, c.items.length)
     }
 
     // Combustible: km/l ponderado del mes (Σ km ÷ Σ litros de cargas con
@@ -611,6 +615,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         inventario_exactitud: meses.map((ym) => ({
           ym,
           valor: exactitud.get(ym) ?? null,
+          n: exactitudN.get(ym) ?? null,
         })),
         correctivo_dias_parado: meses.map((ym) => ({
           ym,
