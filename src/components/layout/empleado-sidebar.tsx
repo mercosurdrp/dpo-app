@@ -176,6 +176,7 @@ export function EmpleadoSidebar({ puedeRecepcion = false, puedeCombustible = fal
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 title={collapsed ? item.label : undefined}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
@@ -273,6 +274,7 @@ export function EmpleadoMobileNav({ puedeRecepcion = false, puedeCombustible = f
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={false}
                   onClick={() => setOpen(false)}
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",

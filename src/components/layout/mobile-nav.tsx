@@ -117,6 +117,7 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
                       <Link
                         key={item.href}
                         href={item.href}
+                        prefetch={false}
                         target={item.external ? "_blank" : undefined}
                         rel={item.external ? "noopener noreferrer" : undefined}
                         onClick={() => setOpen(false)}
@@ -154,6 +155,7 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
                     <Link
                       key={pilar.id}
                       href={pilarPath}
+                      prefetch={false}
                       onClick={() => setOpen(false)}
                       className={cn(
                         "flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors",
@@ -197,6 +199,7 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
                       <Link
                         key={item.href}
                         href={item.href}
+                        prefetch={false}
                         onClick={() => setOpen(false)}
                         className={cn(
                           "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
@@ -231,6 +234,7 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
                     <Link
                       key={item.href}
                       href={item.href}
+                      prefetch={false}
                       onClick={() => setOpen(false)}
                       className={cn(
                         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",

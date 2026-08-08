@@ -13,6 +13,10 @@ import {
 } from "@/lib/sueno/arbol-config"
 import { estadoSemaforo } from "@/lib/sueno/semaforo"
 import {
+  arbolSuenoCacheado,
+  invalidarArbolSueno,
+} from "@/lib/sueno/arbol-cache"
+import {
   KPI_EXTERNOS,
   esKpiExterno,
   resolverValoresExternos,
@@ -129,6 +133,23 @@ export async function getSuenoArbol(
   try {
     await requireAuth()
     const year = anio ?? anioActual()
+    // El recálculo anual es carísimo (TLP + PDV + ruta + OTIF sobre todo el
+    // año) y el resultado es el mismo para cualquier usuario → se cachea por
+    // año con single-flight. Ver lib/sueno/arbol-cache.ts.
+    return await arbolSuenoCacheado(
+      `arbol:${year}`,
+      () => computarArbolSueno(year),
+      (res) => !("error" in res),
+    )
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+async function computarArbolSueno(
+  year: number,
+): Promise<{ data: { anio: number; nodos: SuenoNodo[] } } | { error: string }> {
+  try {
     const supabase = await createClient()
 
     const { data, error } = await supabase
@@ -516,6 +537,7 @@ export async function refreshSuenoAuto(
         .eq("anio", year)
     }
 
+    invalidarArbolSueno()
     revalidatePath("/")
     revalidatePath("/mis-capacitaciones")
     return { ok: true }
@@ -629,6 +651,7 @@ export async function setSuenoMensual(input: {
     )
     if (upsertError) return { error: upsertError.message }
 
+    invalidarArbolSueno()
     revalidatePath("/")
     revalidatePath("/mis-capacitaciones")
     return { ok: true, valorYtd }
@@ -674,6 +697,7 @@ export async function setSuenoValor(input: {
 
     if (error) return { error: error.message }
 
+    invalidarArbolSueno()
     revalidatePath("/")
     revalidatePath("/mis-capacitaciones")
     return { ok: true }
