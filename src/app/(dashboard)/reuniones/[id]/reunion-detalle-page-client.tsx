@@ -326,6 +326,34 @@ const SEMAFORO_3_ZONAS = new Set([
   "auto_tlp",
 ])
 
+// Indicadores cuyo target y gatillo son MENSUALES: el semáforo se lee sobre el
+// acumulado del mes (columna MTD) y no sobre la celda del día. Hoy sólo SIO,
+// que mide cuántos incidentes se reportaron en el mes (20 target / 15 gatillo).
+const SEMAFORO_MENSUAL = new Set(["auto_sio"])
+
+/**
+ * Clase del MTD para los indicadores de umbral mensual. Devuelve null cuando el
+ * indicador no es de ese tipo o le faltan umbrales, y en ese caso el MTD
+ * conserva el formato neutro de siempre.
+ */
+function semaforoMensualMtd(ind: {
+  id: string
+  mtd: number | null
+  meta: number | null
+  gatillo?: number | null
+  mejor_si?: "menor" | "mayor"
+}): string | null {
+  if (!SEMAFORO_MENSUAL.has(ind.id)) return null
+  if (ind.mtd == null || ind.meta == null || !ind.mejor_si) return null
+  const cumpleTarget =
+    ind.mejor_si === "menor" ? ind.mtd <= ind.meta : ind.mtd >= ind.meta
+  if (cumpleTarget) return "bg-emerald-50 text-emerald-700"
+  if (ind.gatillo == null) return "bg-amber-50 text-amber-700"
+  const peorQueGatillo =
+    ind.mejor_si === "menor" ? ind.mtd > ind.gatillo : ind.mtd < ind.gatillo
+  return peorQueGatillo ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"
+}
+
 function EstadoActividadBadge({
   estado,
 }: {
@@ -1932,7 +1960,17 @@ export function ReunionDetallePageClient({
                       <td className="sticky left-[280px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right align-middle text-xs tabular-nums text-rose-600">
                         {ind.gatillo == null ? "—" : formatearValor(ind.gatillo)}
                       </td>
-                      <td className="sticky left-[340px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
+                      <td
+                        className={cn(
+                          "sticky left-[340px] w-[70px] min-w-[70px] max-w-[70px] border-r px-2 py-2 text-right align-middle text-sm font-bold tabular-nums",
+                          semaforoMensualMtd(ind) ?? "bg-white text-blue-700",
+                        )}
+                        title={
+                          semaforoMensualMtd(ind)
+                            ? `Acumulado del mes contra el target mensual (${ind.meta}) y el gatillo (${ind.gatillo})`
+                            : undefined
+                        }
+                      >
                         {/* El DQI no tiene valor por día (su denominador es mensual):
                             el detalle por camión se abre desde el MTD. */}
                         {ind.id === "auto_dqi" && ind.mtd != null ? (
@@ -1959,16 +1997,18 @@ export function ReunionDetallePageClient({
                         const reunionIdEnFecha =
                           indicadoresMes.reuniones_por_fecha[f] ?? null
 
-                        // Filas AUTO (LTI/TRI desde reportes_seguridad, Rechazos %
+                        // Filas AUTO (SIO desde reportes_seguridad, Rechazos %
                         // desde rechazos+ventas_diarias): se muestran como read-only,
                         // independientemente de si hubo reunión. Sólo hasta `f <= fecha`
                         // (no anticipamos futuro).
-                        // LTI/TRI ocultan 0 (días sin accidente). Rechazos % usa
+                        // SIO muestra 0 (día sin incidentes reportados). Rechazos % usa
                         // `mostrar_cero` para que los días con 0% también se vean.
                         if (ind.auto) {
                           const valor = cell?.valor ?? null
-                          const esLtiTri =
-                            ind.id === "auto_lti" || ind.id === "auto_tri"
+                          // SIO: su target (20) y su gatillo (15) son MENSUALES, así
+                          // que el semáforo va en la columna MTD; el día suelto es
+                          // sólo el conteo de ese día y va neutro.
+                          const esSio = ind.id === "auto_sio"
                           // Errores de picking: un día con datos y 0 errores
                           // se muestra como 0 (no como "—"). El "—" queda
                           // reservado a los días sin datos (valor null).
@@ -1983,11 +2023,9 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_faltantes"
                           const valorValido =
                             valor != null && Number.isFinite(valor) && f <= detalle.fecha
-                          // LTI/TRI muestran 0 (días sin accidente) como el resto
-                          // de indicadores con `mostrar_cero`.
                           const muestra =
                             valorValido &&
-                            (ind.mostrar_cero || esLtiTri || esErroresPicking || esWqiPerdidasCero
+                            (ind.mostrar_cero || esErroresPicking || esWqiPerdidasCero
                               ? true
                               : valor! > 0)
                           const esPct = ind.unidad === "%"
@@ -1997,13 +2035,12 @@ export function ReunionDetallePageClient({
                           // indicadores sin meta cargada (tiempo en ruta, tiempo
                           // por PDV, km, paradas no autorizadas, resecuenciado)
                           // se vieran siempre en rojo con cualquier valor.
-                          // Excepción: LTI/TRI son indicadores de EVENTO, donde
-                          // cualquier valor > 0 es malo de por sí y el rojo no
-                          // depende de ninguna meta (el 0 se neutraliza abajo).
-                          let colorClass = esLtiTri
-                            ? "bg-red-50 font-semibold text-red-700"
-                            : "font-medium text-slate-700"
-                          if (ind.mejor_si && ind.meta != null && valor != null) {
+                          let colorClass = "font-medium text-slate-700"
+                          // SIO queda fuera del semáforo diario: comparar 1
+                          // incidente del día contra un target de 20 del mes
+                          // pintaría de rojo todos los días, incluso un mes que
+                          // termina cumpliendo.
+                          if (!esSio && ind.mejor_si && ind.meta != null && valor != null) {
                             const cumple =
                               ind.mejor_si === "menor"
                                 ? valor <= ind.meta
@@ -2021,11 +2058,11 @@ export function ReunionDetallePageClient({
                           ) {
                             colorClass = "font-medium text-slate-700"
                           }
-                          // LTI/TRI: un 0 (día sin accidente) en gris neutro,
-                          // el rojo se reserva para los días con evento.
+                          // SIO: un día sin incidentes reportados (0) en gris
+                          // neutro, para que se lean los días que sí tuvieron.
                           // Errores de picking: ídem, un 0 (día sin errores)
                           // en gris neutro y no en rojo.
-                          if ((esLtiTri || esErroresPicking) && valor === 0) {
+                          if ((esSio || esErroresPicking) && valor === 0) {
                             colorClass = "text-slate-300"
                           }
                           // Indicadores de almacén (WQI, WNP, Productividad,
@@ -2062,7 +2099,7 @@ export function ReunionDetallePageClient({
                                   "bg-amber-50 font-semibold text-amber-700"
                               }
                             } else if (
-                              !((esLtiTri || esErroresPicking) && valor === 0)
+                              !((esSio || esErroresPicking) && valor === 0)
                             ) {
                               // Sin umbrales usables: neutro (no se pinta rojo
                               // sólo por tener valor). El 0 de errores conserva

@@ -185,6 +185,7 @@ async function crearEspejo5S(
 const BUCKET = "reuniones"
 const REVALIDATE_PATH = "/reuniones"
 
+
 const DIAS_NOMBRES: Record<number, string> = {
   1: "lunes",
   2: "martes",
@@ -3058,9 +3059,14 @@ async function getIndicadoresMesCore(
 
     if (errCfg) return { error: errCfg.message }
     // Dedupe: descartamos indicadores manuales con nombre que coincide con
-    // una fila auto (LTI/TRI, Rechazos / Rechazos %). La versión auto los
+    // una fila auto (SIO, Rechazos / Rechazos %). La versión auto los
     // reemplaza en todos los tipos de reunión.
+    // "lti"/"tri" siguen en la lista aunque ya no existan como fila auto: sus
+    // filas de config quedaron desactivadas, y si alguien las reactivara por
+    // error volverían a aparecer vacías. Se ocultan igual.
     const NOMBRES_AUTO = new Set([
+      "sio",
+      "incidentes",
       "lti",
       "tri",
       "rechazos",
@@ -3216,27 +3222,25 @@ async function getIndicadoresMesCore(
       }
     })
 
-    // 7. Indicadores AUTO desde reportes_seguridad: LTI y TRI.
-    //    LTI = count(tipo_accidente='lti'), TRI = count(tipo_accidente ∈ {lti,mdi,mti}).
+    // 7. Indicador AUTO desde reportes_seguridad: SIO (incidentes sin lesión).
+    //    SIO = count(tipo_accidente='sio'). Reemplaza a LTI/TRI, que la reunión
+    //    no usaba (10/08/2026): son indicadores de EVENTO —casi siempre 0— y lo
+    //    que la operación mira es cuántos incidentes se REPORTAN.
+    //    Por eso es "mejor_si: mayor": no reportar no significa que no pasó nada.
+    //    Target 20 reportes en el mes, gatillo 15 (rojo por debajo). Ambos son
+    //    umbrales MENSUALES: se leen contra el MTD, no contra el día suelto.
     //    MTD se calcula hasta la fecha de la reunión actual (incluida).
     const { data: reportesRaw, error: errRep } = await (pReportesSeguridad ??
       qReportesSeguridad())
 
-    const ltiPorFecha: Record<string, number> = {}
-    const triPorFecha: Record<string, number> = {}
+    const sioPorFecha: Record<string, number> = {}
     if (!errRep) {
-      const triSet = new Set(["lti", "mdi", "mti"])
       for (const r of (reportesRaw ?? []) as Array<{
         fecha: string
         tipo_accidente: string | null
       }>) {
-        if (!r.tipo_accidente) continue
-        if (r.tipo_accidente === "lti") {
-          ltiPorFecha[r.fecha] = (ltiPorFecha[r.fecha] ?? 0) + 1
-        }
-        if (triSet.has(r.tipo_accidente)) {
-          triPorFecha[r.fecha] = (triPorFecha[r.fecha] ?? 0) + 1
-        }
+        if (r.tipo_accidente !== "sio") continue
+        sioPorFecha[r.fecha] = (sioPorFecha[r.fecha] ?? 0) + 1
       }
     }
 
@@ -3244,6 +3248,7 @@ async function getIndicadoresMesCore(
       id: string,
       nombre: string,
       porFecha: Record<string, number>,
+      extra?: Partial<ReunionIndicadoresMes["indicadores"][number]>,
     ) {
       const valoresPorFecha: Record<
         string,
@@ -3269,12 +3274,21 @@ async function getIndicadoresMesCore(
         valores: valoresPorFecha,
         mtd,
         auto: true,
+        ...extra,
       }
     }
 
     const indicadoresAuto: ReunionIndicadoresMes["indicadores"] = [
-      buildAutoRow("auto_lti", "LTI", ltiPorFecha),
-      buildAutoRow("auto_tri", "TRI", triPorFecha),
+      // Target (20) y gatillo (15) NO van hardcodeados: viven en la fila de
+      // config "SIO" del tipo de reunión, porque el wrapper le da prioridad al
+      // código (`ind.gatillo ?? c.gatillo`) y fijarlos acá dejaría muerto el
+      // editor de gatillo del diálogo de indicadores. Acá sólo va la polaridad,
+      // que es semántica del indicador y no un umbral a negociar.
+      buildAutoRow("auto_sio", "SIO", sioPorFecha, {
+        unidad: "reportes",
+        mejor_si: "mayor",
+        mostrar_cero: true,
+      }),
     ]
 
     // 7b. Indicador AUTO "Rechazos %" — todos los tipos salvo warehouse.
