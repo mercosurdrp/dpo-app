@@ -57,19 +57,38 @@ export async function getUnmappedFleteros(): Promise<
 > {
   const supabase = await createClient()
 
-  // Patentes distintas en rechazos que no están en mapeo
-  const { data: fleteros } = await supabase
-    .from("rechazos")
-    .select("ds_fletero_carga")
-    .not("ds_fletero_carga", "is", null)
+  // Patentes distintas en rechazos Y en ventas que no están en mapeo. Solo
+  // rechazos no alcanza: un fletero de Gestión con ventas pero sin rechazos
+  // nunca aparecía como candidato a mapear. Ventas: últimos 90 días, paginado
+  // (PostgREST corta en 1000 filas por request).
+  const desdeVentas = new Date(Date.now() - 90 * 86400_000).toISOString().slice(0, 10)
+  const fleterosVentas: string[] = []
+  for (let from = 0; ; from += 1000) {
+    const { data } = await supabase
+      .from("ventas_diarias")
+      .select("ds_fletero_carga")
+      .not("ds_fletero_carga", "is", null)
+      .gte("fecha", desdeVentas)
+      .order("id")
+      .range(from, from + 999)
+    if (!data || data.length === 0) break
+    for (const f of data) if (f.ds_fletero_carga) fleterosVentas.push(f.ds_fletero_carga)
+    if (data.length < 1000) break
+  }
 
-  const { data: mapeados } = await supabase
-    .from("mapeo_empleado_fletero")
-    .select("ds_fletero_carga")
+  const [{ data: fleteros }, { data: mapeados }] = await Promise.all([
+    supabase
+      .from("rechazos")
+      .select("ds_fletero_carga")
+      .not("ds_fletero_carga", "is", null),
+    supabase.from("mapeo_empleado_fletero").select("ds_fletero_carga"),
+  ])
 
   const mapeadosSet = new Set((mapeados ?? []).map((m) => m.ds_fletero_carga))
   const uniqueFleteros = [
-    ...new Set((fleteros ?? []).map((f) => f.ds_fletero_carga).filter(Boolean)),
+    ...new Set(
+      [...(fleteros ?? []).map((f) => f.ds_fletero_carga), ...fleterosVentas].filter(Boolean),
+    ),
   ].filter((f) => !mapeadosSet.has(f))
 
   uniqueFleteros.sort()

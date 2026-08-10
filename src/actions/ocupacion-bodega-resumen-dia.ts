@@ -6,7 +6,9 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 
-const TARGET_CEQ = 600
+// Mismo target que la columna generada `ob_pct_target` (migración 093) y que
+// el sync — antes decía 600 y el resto del sistema 525.
+const TARGET_CEQ = 525
 
 export interface ViajeDelDia {
   patente: string
@@ -26,7 +28,7 @@ export interface OBResumenDia {
   ceq_total: number
   ceq_promedio: number
   pct_promedio: number   // promedio simple de OB% por viaje
-  en_meta: number        // viajes con CEq ≥ 600
+  en_meta: number        // viajes con CEq ≥ target
   patente_top: string | null
   ceq_max: number
   ceq_min: number

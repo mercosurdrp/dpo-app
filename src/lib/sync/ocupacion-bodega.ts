@@ -11,6 +11,7 @@
  * mes en curso) y lo persiste en la tabla `indicadores`.
  */
 import { chessLogin, type ChessCredentials } from "./rechazos-sync"
+import { cargaGescomPorViaje } from "@/lib/gescom/carga-viaje"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 // La pregunta 1.2 EN RUTA tiene key estable '5_1_23_74' en master_seed.
@@ -24,9 +25,17 @@ function chessFetch(url: string, init?: RequestInit): Promise<Response> {
   return fetch(url, init)
 }
 
-function isPatenteValida(s: string | null | undefined): boolean {
-  if (!s) return false
-  return /^[A-Z]{2,3}[0-9]{3,4}[A-Z]{0,2}$/i.test(s.trim()) || /^[A-Z0-9]{6,9}$/i.test(s.trim())
+/**
+ * Patente canónica del ds_fletero_carga de Chess: sin espacios y sin el sufijo
+ * `.N` de la 2ª vuelta del día (Chess emite "AE 908 DH" y "AE908DH.1" — el
+ * regex de rechazos-sync los acepta, y acá se descartaban en silencio, así que
+ * la 2ª vuelta no sumaba CEq). Devuelve null si no parece patente/código.
+ */
+function patenteCanonica(s: string | null | undefined): string | null {
+  if (!s) return null
+  const t = s.trim().toUpperCase().replace(/\s+/g, "").replace(/\.\d+$/, "")
+  if (/^[A-Z]{2,3}[0-9]{3,4}[A-Z]{0,2}$/.test(t) || /^[A-Z0-9]{6,9}$/.test(t)) return t
+  return null
 }
 
 // ---------- 1) maestro chess_articulos ----------
@@ -182,7 +191,8 @@ export async function recalcOcupacionBodegaDia(
   let skipNoBp = 0
   for (const v of lineas) {
     if (v.idDocumento !== "FCVTA") continue
-    if (!isPatenteValida(v.dsFleteroCarga ?? null)) continue
+    const patente = patenteCanonica(v.dsFleteroCarga ?? null)
+    if (!patente) continue
     const idArt = Number(v.idArticulo)
     const bpa = bp.get(idArt)
     if (!bpa) { skipNoBp++; continue }
@@ -191,7 +201,6 @@ export async function recalcOcupacionBodegaDia(
     const ceq = (120 / bpa) * bultos
     const hl = Math.abs(Number(v.unimedtotal) || 0)
     const peso = (pesoBulto.get(idArt) ?? 0) * bultos
-    const patente = (v.dsFleteroCarga as string).trim().toUpperCase()
     const slot = agg.get(patente) ?? { ceq: 0, bultos: 0, hl: 0, peso: 0, lineas: 0, skus: new Set<number>() }
     slot.ceq += ceq
     slot.bultos += bultos
@@ -211,16 +220,19 @@ export async function recalcOcupacionBodegaDia(
     aggLoc.set(lkey, lslot)
   }
 
-  // 4) Upsert en ocupacion_bodega_diaria
+  // 4) Upsert en ocupacion_bodega_diaria — SOLO la parte Chess. La parte de
+  //    Gestión la escribe `recalcCargaGescomOB` en `*_gescom`; los totales
+  //    (`ceq_total`, `bultos_total`, `hl_total`, `ob_pct_target`) son columnas
+  //    GENERADAS = chess + gescom (migración 20260810120000).
   let ceqTotal = 0
   const rows = [...agg.entries()].map(([patente, d]) => {
     ceqTotal += d.ceq
     return {
       fecha,
       patente,
-      ceq_total: Math.round(d.ceq * 100) / 100,
-      bultos_total: Math.round(d.bultos * 100) / 100,
-      hl_total: Math.round(d.hl * 10000) / 10000,
+      ceq_chess: Math.round(d.ceq * 100) / 100,
+      bultos_chess: Math.round(d.bultos * 100) / 100,
+      hl_chess: Math.round(d.hl * 10000) / 10000,
       peso_total: Math.round(d.peso * 100) / 100,
       lineas: d.lineas,
       skus_distintos: d.skus.size,
@@ -250,6 +262,69 @@ export async function recalcOcupacionBodegaDia(
   }
 
   return { fecha, viajes: rows.length, ceqTotal, lineas: lineas.length, skipNoBp }
+}
+
+// ---------- 2b) carga de GESCOM en la OB ----------
+
+/**
+ * Vuelca la carga de Gestión del rango en `ocupacion_bodega_diaria.*_gescom`,
+ * imputada a la patente del día vía `cargaGescomPorViaje`. Lo llama el sync de
+ * GESCOM (07:00, últimos 30 días) después de actualizar las ventas — con lo
+ * que además re-sana solo el mes hacia atrás. Idempotente: recalcula el rango
+ * completo y pone en 0 los viajes que dejaron de tener carga de Gestión.
+ */
+export async function recalcCargaGescomOB(
+  supabase: SupabaseClient,
+  desde: string,
+  hasta: string,
+): Promise<{ viajes: number; ceqGescom: number; reseteados: number }> {
+  const carga = await cargaGescomPorViaje(supabase, desde, hasta)
+
+  const rows = [...carga.entries()].map(([key, c]) => {
+    const sep = key.indexOf("|")
+    return {
+      patente: key.slice(0, sep),
+      fecha: key.slice(sep + 1),
+      ceq_gescom: Math.round(c.ceq * 100) / 100,
+      bultos_gescom: Math.round(c.bultos * 100) / 100,
+      hl_gescom: Math.round(c.hl * 10000) / 10000,
+    }
+  })
+
+  // Viajes del rango que hoy tienen carga de Gestión pero el recálculo ya no
+  // la trae (ej. chofer marcado venta_directa a posteriori): volver a 0.
+  const vigentes = new Set(rows.map((r) => `${r.patente}|${r.fecha}`))
+  const { data: existentes, error: errEx } = await supabase
+    .from("ocupacion_bodega_diaria")
+    .select("fecha, patente")
+    .gte("fecha", desde)
+    .lte("fecha", hasta)
+    .gt("ceq_gescom", 0)
+  if (errEx) console.error(`[ob-gescom] read existentes: ${errEx.message}`)
+  let reseteados = 0
+  for (const e of (existentes ?? []) as { fecha: string; patente: string }[]) {
+    if (vigentes.has(`${e.patente}|${e.fecha}`)) continue
+    rows.push({
+      patente: e.patente,
+      fecha: e.fecha,
+      ceq_gescom: 0,
+      bultos_gescom: 0,
+      hl_gescom: 0,
+    })
+    reseteados++
+  }
+
+  let ceqGescom = 0
+  for (const r of rows) ceqGescom += r.ceq_gescom
+  const batchSize = 500
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const { error } = await supabase
+      .from("ocupacion_bodega_diaria")
+      .upsert(rows.slice(i, i + batchSize), { onConflict: "fecha,patente" })
+    if (error) console.error(`[ob-gescom] upsert: ${error.message}`)
+  }
+
+  return { viajes: carga.size, ceqGescom: Math.round(ceqGescom), reseteados }
 }
 
 // ---------- 3) update indicador AVG MTD ----------
@@ -287,7 +362,7 @@ export async function updateIndicadorOB(supabase: SupabaseClient): Promise<{ upd
     actual: avgRounded,
     unidad: "CEq",
     meta: TARGET_CEQ,
-    notas: `Promedio CEq por viaje del mes (${arr.length} viajes). Target ${TARGET_CEQ} CEq por camión. Fórmula: CEq = 120/bultosPallet × cantidadesTotal por línea, agrupado por (patente, fecha).`,
+    notas: `Promedio CEq por viaje del mes (${arr.length} viajes). Target ${TARGET_CEQ} CEq por camión. Fórmula: CEq = 120/bultosPallet × bultos por línea (Chess + Gestión), agrupado por (patente, fecha).`,
     updated_at: new Date().toISOString(),
   }).eq("id", ind.id)
   if (error) {

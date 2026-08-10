@@ -13,6 +13,31 @@
  * `src/actions/registros-vehiculos.ts:60-63`).
  */
 import type { SupaClient } from "@/lib/rechazos/comparado"
+import {
+  loadResolucionGescom,
+  traducirFilasGescom,
+} from "@/lib/gescom/ventas-patente"
+import { esFleteroGescom } from "@/lib/gescom/etiqueta-fletero"
+
+const PAGE = 1000
+
+/** SELECT paginado: PostgREST corta en 1000 filas y un mes de ventas_diarias
+ *  (~40 camiones × 30 días × 2 orígenes) las supera — sin esto se subcontaba
+ *  en silencio. */
+async function fetchTodo<T>(
+  query: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
+  tabla: string,
+): Promise<T[]> {
+  const rows: T[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await query(from, from + PAGE - 1)
+    if (error) throw new Error(`${tabla}: ${error.message}`)
+    if (!data || data.length === 0) break
+    rows.push(...(data as T[]))
+    if (data.length < PAGE) break
+  }
+  return rows
+}
 
 export interface ChoferResumenRow {
   /** ID del catálogo, o null si "Sin asignar". */
@@ -61,24 +86,48 @@ export async function getChoferesResumenMes(
     throw new Error("Rango de fechas inválido")
   }
 
-  const [ventasRaw, registrosRaw, rechazosRaw, mapeoRaw, choferesRaw] =
+  interface VentaRow {
+    fecha: string
+    ds_fletero_carga: string
+    total_bultos: number | null
+    total_hl: number | null
+    viajes: number | null
+  }
+  interface RechazoRow {
+    fecha: string
+    ds_fletero_carga: string
+    bultos_rechazados: number | null
+  }
+  const [ventasCrudas, registros, rechazosCrudos, mapeoRaw, choferesRaw, resolucionGescom] =
     await Promise.all([
-      supa
-        .from("ventas_diarias")
-        .select("fecha, ds_fletero_carga, total_bultos, total_hl, viajes")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta),
-      supa
-        .from("registros_vehiculos")
-        .select("fecha, dominio, chofer, hora, tml_minutos")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta)
-        .eq("tipo", "egreso"),
-      supa
-        .from("rechazos")
-        .select("fecha, ds_fletero_carga, bultos_rechazados")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta),
+      fetchTodo<VentaRow>((a, b) =>
+        supa
+          .from("ventas_diarias")
+          .select("fecha, ds_fletero_carga, total_bultos, total_hl, viajes")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+          .order("id")
+          .range(a, b),
+      "ventas_diarias"),
+      fetchTodo<{ fecha: string; dominio: string; chofer: string; hora: string; tml_minutos: number | null }>((a, b) =>
+        supa
+          .from("registros_vehiculos")
+          .select("fecha, dominio, chofer, hora, tml_minutos")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+          .eq("tipo", "egreso")
+          .order("id")
+          .range(a, b),
+      "registros_vehiculos"),
+      fetchTodo<RechazoRow>((a, b) =>
+        supa
+          .from("rechazos")
+          .select("fecha, ds_fletero_carga, bultos_rechazados")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+          .order("id")
+          .range(a, b),
+      "rechazos"),
       supa
         .from("mapeo_patente_chofer")
         .select("patente, chofer_id")
@@ -87,12 +136,20 @@ export async function getChoferesResumenMes(
         .from("catalogo_choferes")
         .select("id, nombre")
         .eq("active", true),
+      loadResolucionGescom(supa, fechaDesde, fechaHasta),
     ])
 
-  if (ventasRaw.error) throw new Error(`ventas_diarias: ${ventasRaw.error.message}`)
-  if (registrosRaw.error)
-    throw new Error(`registros_vehiculos: ${registrosRaw.error.message}`)
-  if (rechazosRaw.error) throw new Error(`rechazos: ${rechazosRaw.error.message}`)
+  // Filas de Gestión (`GESTION-<código>`): traducirlas a la patente del día
+  // para que resolveChofer (egreso TML / mapeo nominal) les encuentre chofer —
+  // si no, TODOS los bultos de Gestión caían en "(Sin asignar)". La venta
+  // directa (mayoreo) queda afuera; las irresolubles siguen "sin asignar".
+  const viajesChess = new Set(
+    ventasCrudas
+      .filter((v) => !esFleteroGescom(v.ds_fletero_carga))
+      .map((v) => `${v.fecha}|${v.ds_fletero_carga}`),
+  )
+  const ventasRows = traducirFilasGescom(ventasCrudas, resolucionGescom, { viajesChess })
+  const rechazosRows = traducirFilasGescom(rechazosCrudos, resolucionGescom)
 
   // Catálogo: id → nombre y nombre.upper() → id
   const idToNombre = new Map<string, string>()
@@ -120,13 +177,7 @@ export async function getChoferesResumenMes(
     string,
     { chofer_id: string | null; chofer_nombre_raw: string; tml: number | null; hora: string }
   >()
-  for (const r of (registrosRaw.data ?? []) as Array<{
-    fecha: string
-    dominio: string
-    chofer: string
-    hora: string
-    tml_minutos: number | null
-  }>) {
+  for (const r of registros) {
     const key = `${r.fecha}|${r.dominio}`
     const choferUpper = (r.chofer ?? "").toUpperCase().trim()
     const chofer_id = nombreUpperToId.get(choferUpper) ?? null
@@ -230,13 +281,7 @@ export async function getChoferesResumenMes(
   }
 
   // 1) Sumar ventas por chofer
-  for (const v of (ventasRaw.data ?? []) as Array<{
-    fecha: string
-    ds_fletero_carga: string
-    total_bultos: number | null
-    total_hl: number | null
-    viajes: number | null
-  }>) {
+  for (const v of ventasRows) {
     const res = resolveChofer(v.fecha, v.ds_fletero_carga)
     if (res.chofer_id == null && res.fuente == null) {
       patentesSinResolver.add(v.ds_fletero_carga)
@@ -259,11 +304,7 @@ export async function getChoferesResumenMes(
   }
 
   // 2) Sumar rechazos por chofer (numerador del % rechazo)
-  for (const r of (rechazosRaw.data ?? []) as Array<{
-    fecha: string
-    ds_fletero_carga: string
-    bultos_rechazados: number | null
-  }>) {
+  for (const r of rechazosRows) {
     const res = resolveChofer(r.fecha, r.ds_fletero_carga)
     const acc = ensureAcc(res.chofer_id, res.chofer_nombre)
     const b = Number(r.bultos_rechazados ?? 0)
