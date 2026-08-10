@@ -312,7 +312,7 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
     // Proveedor compartido: el NPS se mueve por drivers comerciales Y de
     // entrega, así que firman las dos jefaturas, no sólo Ventas.
     firmantes: [
-      "Gerencia",
+      "Francisco Pérez — Gerente",
       "Nicolás Lescoulie — Jefe de Ventas",
       "Sebastián Roselli — Jefe de Logística",
     ],
