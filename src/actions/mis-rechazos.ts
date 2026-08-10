@@ -161,21 +161,6 @@ export async function getMisRechazos(): Promise<
     const desde = primerDiaMesAnterior
     const hasta = hoy
 
-    if (!nombreChofer && fleteros.size === 0) {
-      return {
-        data: {
-          vinculado: false,
-          nombre_chofer: null,
-          mes_actual: vacio(mesActual),
-          mes_anterior: vacio(mesAnterior),
-          por_cliente: [],
-          por_motivo: [],
-          por_patente: [],
-          por_dia: [],
-        },
-      }
-    }
-
     interface RegistroRow {
       fecha: string
       dominio: string | null
@@ -197,7 +182,15 @@ export async function getMisRechazos(): Promise<
       total_bultos: number | null
     }
 
-    const [registros, rechazosCrudos, ventasCrudas, resolucion] = await Promise.all([
+    interface SalidaProgRow {
+      fecha: string
+      patente: string | null
+      chofer_empleado_id: string | null
+      ayudante1_empleado_id: string | null
+      ayudante2_empleado_id: string | null
+    }
+
+    const [registros, rechazosCrudos, ventasCrudas, resolucion, salidasProg] = await Promise.all([
       fetchTodo<RegistroRow>((a, b) =>
         admin
           .from("registros_vehiculos")
@@ -227,6 +220,15 @@ export async function getMisRechazos(): Promise<
           .range(a, b),
       ),
       loadResolucionGescom(admin, desde, hasta),
+      fetchTodo<SalidaProgRow>((a, b) =>
+        admin
+          .from("salidas_programadas")
+          .select("fecha, patente, chofer_empleado_id, ayudante1_empleado_id, ayudante2_empleado_id")
+          .gte("fecha", desde)
+          .lte("fecha", hasta)
+          .order("id")
+          .range(a, b),
+      ),
     ])
 
     // Días-patente del empleado: egresos TML donde figura como chofer O ayudante.
@@ -238,6 +240,34 @@ export async function getMisRechazos(): Promise<
         if ([r.chofer, r.ayudante1, r.ayudante2].some((n) => norm(n) === nombreNorm)) {
           clavesEmpleado.add(`${r.fecha}|${norm(r.dominio)}`)
         }
+      }
+    }
+    // Salidas programadas (/salidas): atribución directa por empleado_id, sin
+    // depender del nombre que tipeó seguridad en el egreso.
+    for (const s of salidasProg) {
+      if (!s.patente) continue
+      if (
+        s.chofer_empleado_id === empleado.id ||
+        s.ayudante1_empleado_id === empleado.id ||
+        s.ayudante2_empleado_id === empleado.id
+      ) {
+        clavesEmpleado.add(`${s.fecha}|${norm(s.patente)}`)
+      }
+    }
+
+    // Vinculado por mapeo de chofer, fletero fijo O salida programada.
+    if (!nombreChofer && fleteros.size === 0 && clavesEmpleado.size === 0) {
+      return {
+        data: {
+          vinculado: false,
+          nombre_chofer: null,
+          mes_actual: vacio(mesActual),
+          mes_anterior: vacio(mesAnterior),
+          por_cliente: [],
+          por_motivo: [],
+          por_patente: [],
+          por_dia: [],
+        },
       }
     }
 

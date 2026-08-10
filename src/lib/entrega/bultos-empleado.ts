@@ -58,6 +58,14 @@ interface VentaRow {
   total_bultos: number | null
 }
 
+interface SalidaProgRow {
+  fecha: string
+  patente: string | null
+  chofer_empleado_id: string | null
+  ayudante1_empleado_id: string | null
+  ayudante2_empleado_id: string | null
+}
+
 /**
  * Bultos por día para VARIOS empleados a la vez (vista equipo y también la
  * individual, pasando un solo id): resuelve todo con 4 lecturas paginadas,
@@ -72,7 +80,7 @@ export async function getBultosRangoEmpleados(
   const out = new Map<string, BultosEmpleadoRango>()
   if (empleadoIds.length === 0) return out
 
-  const [choferMaps, fleteroMaps, registros, ventasRaw, resolucionGescom] = await Promise.all([
+  const [choferMaps, fleteroMaps, registros, ventasRaw, resolucionGescom, salidasProg] = await Promise.all([
     fetchPaginado<{ empleado_id: string; nombre_chofer: string | null }>((a, b) =>
       admin
         .from("mapeo_empleado_chofer")
@@ -108,6 +116,18 @@ export async function getBultosRangoEmpleados(
         .range(a, b),
     ),
     loadResolucionGescom(admin, desde, hasta),
+    // Salidas programadas (/salidas): formación definida por administración,
+    // con empleado_id directo — cubre los días en que el egreso TML no cargó
+    // al ayudante (o no se cargó). El egreso real sigue sumando igual.
+    fetchPaginado<SalidaProgRow>((a, b) =>
+      admin
+        .from("salidas_programadas")
+        .select("fecha, patente, chofer_empleado_id, ayudante1_empleado_id, ayudante2_empleado_id")
+        .gte("fecha", desde)
+        .lte("fecha", hasta)
+        .order("id")
+        .range(a, b),
+    ),
   ])
 
   // Filas de Gestión (`ds_fletero_carga = 'GESTION-<código>'`): traducirlas a
@@ -150,6 +170,22 @@ export async function getBultosRangoEmpleados(
     }
   }
 
+  // Salidas programadas: empleado_id → set de "fecha|patente" (chofer o ayudante).
+  const salidasPorEmpleado = new Map<string, Set<string>>()
+  for (const s of salidasProg) {
+    if (!s.patente) continue
+    const key = `${s.fecha}|${norm(s.patente)}`
+    for (const id of [s.chofer_empleado_id, s.ayudante1_empleado_id, s.ayudante2_empleado_id]) {
+      if (!id) continue
+      let set = salidasPorEmpleado.get(id)
+      if (!set) {
+        set = new Set()
+        salidasPorEmpleado.set(id, set)
+      }
+      set.add(key)
+    }
+  }
+
   // Ventas indexadas por "fecha|patente" (agregando duplicados).
   const ventasPorDiaPatente = new Map<string, number>()
   for (const v of ventas) {
@@ -162,7 +198,8 @@ export async function getBultosRangoEmpleados(
   for (const id of empleadoIds) {
     const nombreChofer = choferPorEmpleado.get(id) ?? null
     const fleteros = fleterosPorEmpleado.get(id) ?? new Set<string>()
-    const vinculado = nombreChofer !== null || fleteros.size > 0
+    const salidas = salidasPorEmpleado.get(id)
+    const vinculado = nombreChofer !== null || fleteros.size > 0 || (salidas?.size ?? 0) > 0
     const porDia = new Map<string, number>()
 
     if (vinculado) {
@@ -170,6 +207,8 @@ export async function getBultosRangoEmpleados(
       const claves = new Set<string>(
         nombreChofer ? (diasPatentePorNombre.get(norm(nombreChofer)) ?? []) : [],
       )
+      // Salidas programadas: la formación que cargó administración en /salidas.
+      for (const key of salidas ?? []) claves.add(key)
       // Patentes estáticas de fletero: cuentan todos los días del rango.
       if (fleteros.size > 0) {
         for (const key of ventasPorDiaPatente.keys()) {

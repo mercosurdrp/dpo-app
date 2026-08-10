@@ -98,8 +98,17 @@ export async function getChoferesResumenMes(
     ds_fletero_carga: string
     bultos_rechazados: number | null
   }
-  const [ventasCrudas, registros, rechazosCrudos, mapeoRaw, choferesRaw, resolucionGescom] =
-    await Promise.all([
+  const [
+    ventasCrudas,
+    registros,
+    rechazosCrudos,
+    mapeoRaw,
+    choferesRaw,
+    resolucionGescom,
+    salidasProg,
+    mapeoEmpleadoRaw,
+    empleadosRaw,
+  ] = await Promise.all([
       fetchTodo<VentaRow>((a, b) =>
         supa
           .from("ventas_diarias")
@@ -137,6 +146,24 @@ export async function getChoferesResumenMes(
         .select("id, nombre")
         .eq("active", true),
       loadResolucionGescom(supa, fechaDesde, fechaHasta),
+      // Salidas programadas (/salidas): fuente de chofer entre el egreso TML
+      // (que gana si existe: refleja lo que pasó) y el mapeo nominal. Con
+      // .catch para que un tenant sin la tabla no rompa la página.
+      fetchTodo<{
+        fecha: string
+        patente: string | null
+        chofer_empleado_id: string | null
+      }>((a, b) =>
+        supa
+          .from("salidas_programadas")
+          .select("fecha, patente, chofer_empleado_id")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+          .order("id")
+          .range(a, b),
+      "salidas_programadas").catch(() => []),
+      supa.from("mapeo_empleado_chofer").select("empleado_id, nombre_chofer"),
+      supa.from("empleados").select("id, nombre").eq("activo", true),
     ])
 
   // Filas de Gestión (`GESTION-<código>`): traducirlas a la patente del día
@@ -169,6 +196,33 @@ export async function getChoferesResumenMes(
     chofer_id: string | null
   }>) {
     if (m.chofer_id) mapeoNominal.set(m.patente, m.chofer_id)
+  }
+
+  // Salidas programadas → chofer del catálogo: empleado_id → nombre (gana el
+  // de mapeo_empleado_chofer, que es el que matchea el catálogo; fallback el
+  // nombre del legajo) → id del catálogo.
+  const empleadoToCatalogo = new Map<string, string>()
+  {
+    const nombrePorEmpleado = new Map<string, string>()
+    for (const e of (empleadosRaw.data ?? []) as Array<{ id: string; nombre: string }>) {
+      nombrePorEmpleado.set(e.id, e.nombre)
+    }
+    for (const m of (mapeoEmpleadoRaw.data ?? []) as Array<{
+      empleado_id: string
+      nombre_chofer: string | null
+    }>) {
+      if (m.nombre_chofer) nombrePorEmpleado.set(m.empleado_id, m.nombre_chofer)
+    }
+    for (const [empId, nombre] of nombrePorEmpleado) {
+      const catId = nombreUpperToId.get(nombre.toUpperCase().trim())
+      if (catId) empleadoToCatalogo.set(empId, catId)
+    }
+  }
+  const salidaIdx = new Map<string, string>() // "fecha|PATENTE" → chofer_id del catálogo
+  for (const s of salidasProg) {
+    if (!s.patente || !s.chofer_empleado_id) continue
+    const catId = empleadoToCatalogo.get(s.chofer_empleado_id)
+    if (catId) salidaIdx.set(`${s.fecha}|${s.patente.trim().toUpperCase()}`, catId)
   }
 
   // Egresos TML: (fecha + dominio) → { chofer_id, tml_minutos }
@@ -211,6 +265,17 @@ export async function getChoferesResumenMes(
         chofer_nombre: nombre || BUCKET_SIN_ASIGNAR_NOMBRE,
         fuente: "tml",
         tml: egreso.tml,
+      }
+    }
+    // Salida programada del día (cargada en /salidas): más específica que el
+    // mapeo nominal porque es por fecha.
+    const salidaId = salidaIdx.get(`${fecha}|${patente.trim().toUpperCase()}`)
+    if (salidaId) {
+      return {
+        chofer_id: salidaId,
+        chofer_nombre: idToNombre.get(salidaId) ?? BUCKET_SIN_ASIGNAR_NOMBRE,
+        fuente: "mapeo",
+        tml: null,
       }
     }
     const nominalId = mapeoNominal.get(patente)

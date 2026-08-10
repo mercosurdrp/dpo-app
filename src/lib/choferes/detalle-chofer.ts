@@ -99,8 +99,18 @@ export async function getChoferDetalle(
     ds_fletero_carga: string
     bultos_rechazados: number | null
   }
-  const [ventasCrudas, registros, rechazosCrudos, mapeoRaw, choferesRaw, reunionesRaw, resolucionGescom] =
-    await Promise.all([
+  const [
+    ventasCrudas,
+    registros,
+    rechazosCrudos,
+    mapeoRaw,
+    choferesRaw,
+    reunionesRaw,
+    resolucionGescom,
+    salidasProg,
+    mapeoEmpleadoRaw,
+    empleadosRaw,
+  ] = await Promise.all([
       fetchTodo<VentaRow>((a, b) =>
         supa
           .from("ventas_diarias")
@@ -143,6 +153,23 @@ export async function getChoferDetalle(
         .gte("fecha", fechaDesde)
         .lte("fecha", fechaHasta),
       loadResolucionGescom(supa, fechaDesde, fechaHasta),
+      // Salidas programadas: misma cadena que resumen-mes (egreso > salida >
+      // mapeo nominal). Con .catch para tenants sin la tabla.
+      fetchTodo<{
+        fecha: string
+        patente: string | null
+        chofer_empleado_id: string | null
+      }>((a, b) =>
+        supa
+          .from("salidas_programadas")
+          .select("fecha, patente, chofer_empleado_id")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+          .order("id")
+          .range(a, b),
+      "salidas_programadas").catch(() => []),
+      supa.from("mapeo_empleado_chofer").select("empleado_id, nombre_chofer"),
+      supa.from("empleados").select("id, nombre").eq("activo", true),
     ])
 
   // Filas de Gestión (`GESTION-<código>`): traducirlas a la patente del día
@@ -180,6 +207,31 @@ export async function getChoferDetalle(
     if (m.chofer_id) mapeoNominal.set(m.patente, m.chofer_id)
   }
 
+  // Salidas programadas → chofer del catálogo (igual que resumen-mes.ts).
+  const empleadoToCatalogo = new Map<string, string>()
+  {
+    const nombrePorEmpleado = new Map<string, string>()
+    for (const e of (empleadosRaw.data ?? []) as Array<{ id: string; nombre: string }>) {
+      nombrePorEmpleado.set(e.id, e.nombre)
+    }
+    for (const m of (mapeoEmpleadoRaw.data ?? []) as Array<{
+      empleado_id: string
+      nombre_chofer: string | null
+    }>) {
+      if (m.nombre_chofer) nombrePorEmpleado.set(m.empleado_id, m.nombre_chofer)
+    }
+    for (const [empId, nombre] of nombrePorEmpleado) {
+      const catId = nombreUpperToId.get(nombre.toUpperCase().trim())
+      if (catId) empleadoToCatalogo.set(empId, catId)
+    }
+  }
+  const salidaIdx = new Map<string, string>()
+  for (const s of salidasProg) {
+    if (!s.patente || !s.chofer_empleado_id) continue
+    const catId = empleadoToCatalogo.get(s.chofer_empleado_id)
+    if (catId) salidaIdx.set(`${s.fecha}|${s.patente.trim().toUpperCase()}`, catId)
+  }
+
   // Egresos: (fecha + patente) → primer egreso del día por hora
   const egresoIdx = new Map<
     string,
@@ -213,6 +265,8 @@ export async function getChoferDetalle(
         tml: egreso.tml,
       }
     }
+    const salidaId = salidaIdx.get(`${fecha}|${patente.trim().toUpperCase()}`)
+    if (salidaId) return { chofer_id: salidaId, fuente: "mapeo", tml: null }
     const nominalId = mapeoNominal.get(patente)
     if (nominalId) return { chofer_id: nominalId, fuente: "mapeo", tml: null }
     return { chofer_id: null, fuente: null, tml: null }
