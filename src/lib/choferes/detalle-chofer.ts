@@ -7,6 +7,30 @@
  *   egreso TML del día > mapeo nominal > "Sin asignar"
  */
 import type { SupaClient } from "@/lib/rechazos/comparado"
+import {
+  loadResolucionGescom,
+  traducirFilasGescom,
+} from "@/lib/gescom/ventas-patente"
+import { esFleteroGescom } from "@/lib/gescom/etiqueta-fletero"
+
+const PAGE = 1000
+
+/** SELECT paginado: PostgREST corta en 1000 filas y un mes de ventas_diarias
+ *  o de egresos las supera — sin esto se subcontaba en silencio. */
+async function fetchTodo<T>(
+  query: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
+  tabla: string,
+): Promise<T[]> {
+  const rows: T[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await query(from, from + PAGE - 1)
+    if (error) throw new Error(`${tabla}: ${error.message}`)
+    if (!data || data.length === 0) break
+    rows.push(...(data as T[]))
+    if (data.length < PAGE) break
+  }
+  return rows
+}
 
 export interface ChoferDetalleDia {
   fecha: string
@@ -63,24 +87,58 @@ export async function getChoferDetalle(
   const buscarSinAsignar = choferIdOrSentinel === SIN_ASIGNAR_SENTINEL
   const choferIdBuscado = buscarSinAsignar ? null : choferIdOrSentinel
 
-  const [ventasRaw, registrosRaw, rechazosRaw, mapeoRaw, choferesRaw, reunionesRaw] =
-    await Promise.all([
-      supa
-        .from("ventas_diarias")
-        .select("fecha, ds_fletero_carga, total_bultos, total_hl, viajes")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta),
-      supa
-        .from("registros_vehiculos")
-        .select("fecha, dominio, chofer, hora, tml_minutos")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta)
-        .eq("tipo", "egreso"),
-      supa
-        .from("rechazos")
-        .select("fecha, ds_fletero_carga, bultos_rechazados")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta),
+  interface VentaRow {
+    fecha: string
+    ds_fletero_carga: string
+    total_bultos: number | null
+    total_hl: number | null
+    viajes: number | null
+  }
+  interface RechazoRow {
+    fecha: string
+    ds_fletero_carga: string
+    bultos_rechazados: number | null
+  }
+  const [
+    ventasCrudas,
+    registros,
+    rechazosCrudos,
+    mapeoRaw,
+    choferesRaw,
+    reunionesRaw,
+    resolucionGescom,
+    salidasProg,
+    mapeoEmpleadoRaw,
+    empleadosRaw,
+  ] = await Promise.all([
+      fetchTodo<VentaRow>((a, b) =>
+        supa
+          .from("ventas_diarias")
+          .select("fecha, ds_fletero_carga, total_bultos, total_hl, viajes")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+          .order("id")
+          .range(a, b),
+      "ventas_diarias"),
+      fetchTodo<{ fecha: string; dominio: string; chofer: string; hora: string; tml_minutos: number | null }>((a, b) =>
+        supa
+          .from("registros_vehiculos")
+          .select("fecha, dominio, chofer, hora, tml_minutos")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+          .eq("tipo", "egreso")
+          .order("id")
+          .range(a, b),
+      "registros_vehiculos"),
+      fetchTodo<RechazoRow>((a, b) =>
+        supa
+          .from("rechazos")
+          .select("fecha, ds_fletero_carga, bultos_rechazados")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+          .order("id")
+          .range(a, b),
+      "rechazos"),
       supa
         .from("mapeo_patente_chofer")
         .select("patente, chofer_id")
@@ -94,12 +152,36 @@ export async function getChoferDetalle(
         .select("id, fecha")
         .gte("fecha", fechaDesde)
         .lte("fecha", fechaHasta),
+      loadResolucionGescom(supa, fechaDesde, fechaHasta),
+      // Salidas programadas: misma cadena que resumen-mes (egreso > salida >
+      // mapeo nominal). Con .catch para tenants sin la tabla.
+      fetchTodo<{
+        fecha: string
+        patente: string | null
+        chofer_empleado_id: string | null
+      }>((a, b) =>
+        supa
+          .from("salidas_programadas")
+          .select("fecha, patente, chofer_empleado_id")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+          .order("id")
+          .range(a, b),
+      "salidas_programadas").catch(() => []),
+      supa.from("mapeo_empleado_chofer").select("empleado_id, nombre_chofer"),
+      supa.from("empleados").select("id, nombre").eq("activo", true),
     ])
 
-  if (ventasRaw.error) throw new Error(`ventas_diarias: ${ventasRaw.error.message}`)
-  if (registrosRaw.error)
-    throw new Error(`registros_vehiculos: ${registrosRaw.error.message}`)
-  if (rechazosRaw.error) throw new Error(`rechazos: ${rechazosRaw.error.message}`)
+  // Filas de Gestión (`GESTION-<código>`): traducirlas a la patente del día
+  // para que resolveChofer les encuentre chofer — si no, todos los bultos de
+  // Gestión caían en "(Sin asignar)". Igual que en resumen-mes.ts.
+  const viajesChess = new Set(
+    ventasCrudas
+      .filter((v) => !esFleteroGescom(v.ds_fletero_carga))
+      .map((v) => `${v.fecha}|${v.ds_fletero_carga}`),
+  )
+  const ventasRows = traducirFilasGescom(ventasCrudas, resolucionGescom, { viajesChess })
+  const rechazosRows = traducirFilasGescom(rechazosCrudos, resolucionGescom)
 
   const idToNombre = new Map<string, string>()
   const nombreUpperToId = new Map<string, string>()
@@ -125,18 +207,37 @@ export async function getChoferDetalle(
     if (m.chofer_id) mapeoNominal.set(m.patente, m.chofer_id)
   }
 
+  // Salidas programadas → chofer del catálogo (igual que resumen-mes.ts).
+  const empleadoToCatalogo = new Map<string, string>()
+  {
+    const nombrePorEmpleado = new Map<string, string>()
+    for (const e of (empleadosRaw.data ?? []) as Array<{ id: string; nombre: string }>) {
+      nombrePorEmpleado.set(e.id, e.nombre)
+    }
+    for (const m of (mapeoEmpleadoRaw.data ?? []) as Array<{
+      empleado_id: string
+      nombre_chofer: string | null
+    }>) {
+      if (m.nombre_chofer) nombrePorEmpleado.set(m.empleado_id, m.nombre_chofer)
+    }
+    for (const [empId, nombre] of nombrePorEmpleado) {
+      const catId = nombreUpperToId.get(nombre.toUpperCase().trim())
+      if (catId) empleadoToCatalogo.set(empId, catId)
+    }
+  }
+  const salidaIdx = new Map<string, string>()
+  for (const s of salidasProg) {
+    if (!s.patente || !s.chofer_empleado_id) continue
+    const catId = empleadoToCatalogo.get(s.chofer_empleado_id)
+    if (catId) salidaIdx.set(`${s.fecha}|${s.patente.trim().toUpperCase()}`, catId)
+  }
+
   // Egresos: (fecha + patente) → primer egreso del día por hora
   const egresoIdx = new Map<
     string,
     { chofer_id: string | null; chofer_nombre_raw: string; tml: number | null; hora: string }
   >()
-  for (const r of (registrosRaw.data ?? []) as Array<{
-    fecha: string
-    dominio: string
-    chofer: string
-    hora: string
-    tml_minutos: number | null
-  }>) {
+  for (const r of registros) {
     const key = `${r.fecha}|${r.dominio}`
     const choferUpper = (r.chofer ?? "").toUpperCase().trim()
     const chofer_id = nombreUpperToId.get(choferUpper) ?? null
@@ -164,6 +265,8 @@ export async function getChoferDetalle(
         tml: egreso.tml,
       }
     }
+    const salidaId = salidaIdx.get(`${fecha}|${patente.trim().toUpperCase()}`)
+    if (salidaId) return { chofer_id: salidaId, fuente: "mapeo", tml: null }
     const nominalId = mapeoNominal.get(patente)
     if (nominalId) return { chofer_id: nominalId, fuente: "mapeo", tml: null }
     return { chofer_id: null, fuente: null, tml: null }
@@ -207,13 +310,7 @@ export async function getChoferDetalle(
   }
 
   // Ventas → acreditar al chofer del día
-  for (const v of (ventasRaw.data ?? []) as Array<{
-    fecha: string
-    ds_fletero_carga: string
-    total_bultos: number | null
-    total_hl: number | null
-    viajes: number | null
-  }>) {
+  for (const v of ventasRows) {
     const res = resolveChofer(v.fecha, v.ds_fletero_carga)
     if (!matchChofer(res.chofer_id)) continue
     const d = ensureDay(v.fecha)
@@ -232,11 +329,7 @@ export async function getChoferDetalle(
   }
 
   // Rechazos
-  for (const r of (rechazosRaw.data ?? []) as Array<{
-    fecha: string
-    ds_fletero_carga: string
-    bultos_rechazados: number | null
-  }>) {
+  for (const r of rechazosRows) {
     const res = resolveChofer(r.fecha, r.ds_fletero_carga)
     if (!matchChofer(res.chofer_id)) continue
     const d = ensureDay(r.fecha)

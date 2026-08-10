@@ -179,6 +179,16 @@ const navItemsFlat: NavItem[] = [
     roles: ["admin", "supervisor"],
   },
   {
+    // Formación del día (patente + chofer + ayudantes) que define administración;
+    // también alimenta la atribución persona↔camión de rechazos/bultos.
+    label: "Salidas",
+    href: "/salidas",
+    icon: <Truck className="size-5" />,
+    pampeanaOnly: true,
+    roles: ["admin", "supervisor"],
+    hideForEmpleado: true,
+  },
+  {
     label: "Acarreo (detalle)",
     href: "https://acarreo-rdf.vercel.app/historico",
     icon: <PackageCheck className="size-5" />,
@@ -358,6 +368,7 @@ export const navSections: NavGroup[] = [
     "/owd",
     "/reuniones",
     "/agenda",
+    "/salidas",
     "/orden-salida",
     "/asistencia",
     "/recepcion",

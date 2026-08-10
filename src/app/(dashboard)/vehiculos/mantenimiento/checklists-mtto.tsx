@@ -72,6 +72,22 @@ function fmtFecha(f: string): string {
   return f.slice(0, 10).split("-").reverse().join("/")
 }
 
+/** Valor del selector que desactiva el corte por mes y muestra todo el histórico. */
+const MES_HISTORICO = "historico"
+
+/** Mes (YYYY-MM) de una fecha ISO. */
+function mesDe(f: string): string {
+  return f.slice(0, 7)
+}
+
+/** "agosto 2026" a partir de YYYY-MM. */
+function fmtMes(ym: string): string {
+  const [y, m] = ym.split("-").map(Number)
+  return new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(
+    new Date(y, m - 1, 1)
+  )
+}
+
 /** El mes en curso en hora argentina: el servidor puede estar en UTC. */
 function mesActualArgentina(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -201,6 +217,94 @@ function ScrollX({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ * Tabla de focos. Se usa dos veces: los del mes elegido y el arrastre abierto
+ * de meses anteriores, que se listan aparte pero con el mismo formato.
+ */
+function TablaItemsNoOk({
+  items,
+  puedeEditar,
+  ahoraMs,
+  onEditarPlan,
+  onEliminar,
+}: {
+  items: ChecklistItemNoOk[]
+  puedeEditar: boolean
+  ahoraMs: number | null
+  onEditarPlan: (i: ChecklistItemNoOk) => void
+  onEliminar: (i: ChecklistItemNoOk) => void
+}) {
+  return (
+    <ScrollX>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Fecha</TableHead>
+            <TableHead>Unidad</TableHead>
+            <TableHead>Tipo</TableHead>
+            <TableHead>Categoría</TableHead>
+            <TableHead>Ítem</TableHead>
+            <TableHead>Estado</TableHead>
+            <TableHead>Chofer</TableHead>
+            <TableHead>Comentario</TableHead>
+            <TableHead>Plan de acción</TableHead>
+            <TableHead>Tiempo de respuesta</TableHead>
+            {puedeEditar && <TableHead className="text-right">Eliminar</TableHead>}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((i) => (
+            <TableRow key={i.id}>
+              <TableCell className="whitespace-nowrap">{fmtFecha(i.fecha)}</TableCell>
+              <TableCell className="font-medium">{i.dominio}</TableCell>
+              <TableCell>
+                <TipoBadge tipo={i.tipo} />
+              </TableCell>
+              <TableCell className="text-muted-foreground">{i.categoria}</TableCell>
+              <TableCell>
+                <span className="flex items-center gap-1.5">
+                  {i.item}
+                  {i.critico && (
+                    <span title="Ítem crítico">
+                      <ShieldAlert className="size-3.5 text-destructive" />
+                    </span>
+                  )}
+                </span>
+              </TableCell>
+              <TableCell>
+                <ValorBadge valor={i.valor} />
+              </TableCell>
+              <TableCell className="text-muted-foreground">{i.chofer || "—"}</TableCell>
+              <TableCell className="max-w-72 text-muted-foreground">
+                {i.comentario || <span className="text-muted-foreground/50">—</span>}
+              </TableCell>
+              <TableCell className="min-w-44">
+                <PlanCell item={i} puedeEditar={puedeEditar} onEditar={() => onEditarPlan(i)} />
+              </TableCell>
+              <TableCell className="whitespace-nowrap">
+                <TiempoRespuestaCell item={i} ahoraMs={ahoraMs} />
+              </TableCell>
+              {puedeEditar && (
+                <TableCell className="text-right">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                    title="Eliminar esta observación"
+                    onClick={() => onEliminar(i)}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </TableCell>
+              )}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </ScrollX>
+  )
+}
+
 interface Props {
   itemsNoOk: ChecklistItemNoOk[]
   comentarios: ChecklistComentario[]
@@ -227,6 +331,10 @@ export function ChecklistsMtto({
   }, [])
   const [fDominio, setFDominio] = useState("todos")
   const [fTipo, setFTipo] = useState("todos")
+  // La vista arranca en el mes en curso: sin esto la lista acumulaba TODO el
+  // histórico y los focos ya cerrados de meses viejos tapaban lo del mes.
+  // MES_HISTORICO muestra el acumulado completo, como antes.
+  const [fMes, setFMes] = useState<string>(() => mesActualArgentina())
   const [planItem, setPlanItem] = useState<ChecklistItemNoOk | null>(null)
   const [delItem, setDelItem] = useState<ChecklistItemNoOk | null>(null)
   const [delError, setDelError] = useState<string | null>(null)
@@ -254,31 +362,61 @@ export function ChecklistsMtto({
     return Array.from(s).sort()
   }, [itemsNoOk, comentarios])
 
+  // Meses con actividad, del más nuevo al más viejo. El mes en curso entra
+  // siempre aunque todavía no tenga focos: es el que se muestra por defecto.
+  const meses = useMemo(() => {
+    const s = new Set<string>([mesActualArgentina()])
+    itemsNoOk.forEach((i) => s.add(mesDe(i.fecha)))
+    comentarios.forEach((c) => s.add(mesDe(c.fecha)))
+    return Array.from(s).sort((a, b) => b.localeCompare(a))
+  }, [itemsNoOk, comentarios])
+
+  const coincide = (i: { dominio: string; tipo: string }) =>
+    (fDominio === "todos" || i.dominio === fDominio) &&
+    (fTipo === "todos" || i.tipo === fTipo)
+
+  const historico = fMes === MES_HISTORICO
+
+  /** Focos del mes elegido (en histórico, todos). */
   const items = useMemo(
     () =>
-      itemsNoOk.filter(
-        (i) =>
-          (fDominio === "todos" || i.dominio === fDominio) &&
-          (fTipo === "todos" || i.tipo === fTipo)
-      ),
-    [itemsNoOk, fDominio, fTipo]
+      itemsNoOk.filter((i) => coincide(i) && (historico || mesDe(i.fecha) === fMes)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [itemsNoOk, fDominio, fTipo, fMes, historico]
   )
+
+  // Arrastre: focos de meses ANTERIORES que siguen sin resolverse. No se
+  // esconden nunca — son deuda abierta, no ruido histórico.
+  const arrastre = useMemo(
+    () =>
+      historico
+        ? []
+        : itemsNoOk.filter(
+            (i) =>
+              coincide(i) &&
+              mesDe(i.fecha) < fMes &&
+              i.plan?.estado !== "resuelto"
+          ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [itemsNoOk, fDominio, fTipo, fMes, historico]
+  )
+
+  // Los KPI miden lo que se está viendo: mes elegido + arrastre abierto.
+  const visibles = useMemo(() => [...items, ...arrastre], [items, arrastre])
 
   const coments = useMemo(
     () =>
-      comentarios.filter(
-        (c) =>
-          (fDominio === "todos" || c.dominio === fDominio) &&
-          (fTipo === "todos" || c.tipo === fTipo)
-      ),
-    [comentarios, fDominio, fTipo]
+      comentarios.filter((c) => coincide(c) && (historico || mesDe(c.fecha) === fMes)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [comentarios, fDominio, fTipo, fMes, historico]
   )
 
-  const criticos = items.filter((i) => i.critico).length
-  const conPlan = items.filter((i) => i.plan).length
+  const criticos = visibles.filter((i) => i.critico).length
+  const conPlan = visibles.filter((i) => i.plan).length
+  const abiertos = visibles.filter((i) => i.plan?.estado !== "resuelto").length
   // Tiempo de respuesta: promedio de los focos ya cerrados (carga del
   // checklist → cierre del plan de acción).
-  const resueltos = items.filter((i) => i.horasResolucion != null)
+  const resueltos = visibles.filter((i) => i.horasResolucion != null)
   const horasProm =
     resueltos.length > 0
       ? resueltos.reduce((a, i) => a + (i.horasResolucion ?? 0), 0) / resueltos.length
@@ -292,10 +430,19 @@ export function ChecklistsMtto({
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <KpiCard
           label="Ítems no OK"
-          valor={items.length}
-          estado={items.length > 0 ? "alerta" : "ok"}
+          valor={
+            <>
+              {abiertos}
+              <span className="ml-1 text-sm font-normal text-muted-foreground">
+                / {visibles.length}
+              </span>
+            </>
+          }
+          estado={abiertos > 0 ? "alerta" : "ok"}
           dpo="1.3"
-          sub="Observaciones abiertas en los checklists"
+          sub={`Sin resolver, sobre ${visibles.length} observación${
+            visibles.length === 1 ? "" : "es"
+          } ${historico ? "del histórico" : "en vista"}`}
         />
         <KpiCard
           label="Críticos no OK"
@@ -339,6 +486,22 @@ export function ChecklistsMtto({
       {/* Filtros */}
       <div className="flex flex-wrap items-end gap-3">
         <div>
+          <Label className="text-xs text-muted-foreground">Mes</Label>
+          <Select value={fMes} onValueChange={(v: string | null) => setFMes(v ?? MES_HISTORICO)}>
+            <SelectTrigger className="w-44 capitalize">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {meses.map((m) => (
+                <SelectItem key={m} value={m} className="capitalize">
+                  {fmtMes(m)}
+                </SelectItem>
+              ))}
+              <SelectItem value={MES_HISTORICO}>Ver histórico</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
           <Label className="text-xs text-muted-foreground">Unidad</Label>
           <Select value={fDominio} onValueChange={(v: string | null) => setFDominio(v ?? "todos")}>
             <SelectTrigger className="w-36">
@@ -369,11 +532,14 @@ export function ChecklistsMtto({
         </div>
       </div>
 
-      {/* Ítems observados (no OK) */}
+      {/* Ítems observados (no OK) del mes elegido */}
       <Card>
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2 text-base">
             <AlertTriangle className="size-4 text-muted-foreground" /> Ítems observados (no OK)
+            <span className="text-sm font-normal capitalize text-muted-foreground">
+              · {historico ? "histórico completo" : fmtMes(fMes)}
+            </span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -381,83 +547,60 @@ export function ChecklistsMtto({
             <div className="flex flex-col items-center py-10 text-center">
               <ClipboardCheck className="size-8 text-emerald-600 dark:text-emerald-400" />
               <p className="mt-3 text-sm text-muted-foreground">
-                Sin ítems observados en los checklists. Todo OK.
+                {historico
+                  ? "Sin ítems observados en los checklists. Todo OK."
+                  : `Sin ítems observados en ${fmtMes(fMes)}.`}
               </p>
             </div>
           ) : (
-            <ScrollX>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Unidad</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead>Ítem</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Chofer</TableHead>
-                    <TableHead>Comentario</TableHead>
-                    <TableHead>Plan de acción</TableHead>
-                    <TableHead>Tiempo de respuesta</TableHead>
-                    {puedeEditar && <TableHead className="text-right">Eliminar</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((i) => (
-                    <TableRow key={i.id}>
-                      <TableCell className="whitespace-nowrap">{fmtFecha(i.fecha)}</TableCell>
-                      <TableCell className="font-medium">{i.dominio}</TableCell>
-                      <TableCell>
-                        <TipoBadge tipo={i.tipo} />
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{i.categoria}</TableCell>
-                      <TableCell>
-                        <span className="flex items-center gap-1.5">
-                          {i.item}
-                          {i.critico && (
-                            <span title="Ítem crítico">
-                              <ShieldAlert className="size-3.5 text-destructive" />
-                            </span>
-                          )}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <ValorBadge valor={i.valor} />
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{i.chofer || "—"}</TableCell>
-                      <TableCell className="max-w-72 text-muted-foreground">
-                        {i.comentario || <span className="text-muted-foreground/50">—</span>}
-                      </TableCell>
-                      <TableCell className="min-w-44">
-                        <PlanCell item={i} puedeEditar={puedeEditar} onEditar={() => setPlanItem(i)} />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <TiempoRespuestaCell item={i} ahoraMs={ahoraMs} />
-                      </TableCell>
-                      {puedeEditar && (
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                            title="Eliminar esta observación"
-                            onClick={() => {
-                              setDelError(null)
-                              setDelItem(i)
-                            }}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollX>
+            <TablaItemsNoOk
+              items={items}
+              puedeEditar={puedeEditar}
+              ahoraMs={ahoraMs}
+              onEditarPlan={setPlanItem}
+              onEliminar={(i) => {
+                setDelError(null)
+                setDelItem(i)
+              }}
+            />
           )}
         </CardContent>
       </Card>
+
+      {/* Arrastre: focos viejos que siguen abiertos. Se muestran aparte para que
+          acortar la lista por mes no esconda deuda sin resolver. */}
+      {arrastre.length > 0 && (
+        <Card className="border-amber-500/40">
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
+              Arrastre de meses anteriores
+              <Badge
+                variant="outline"
+                className="border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+              >
+                {arrastre.length} sin resolver
+              </Badge>
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Focos anteriores a {fmtMes(fMes)} que todavía no tienen el plan de acción cerrado.
+              Siguen acá hasta que se resuelvan.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <TablaItemsNoOk
+              items={arrastre}
+              puedeEditar={puedeEditar}
+              ahoraMs={ahoraMs}
+              onEditarPlan={setPlanItem}
+              onEliminar={(i) => {
+                setDelError(null)
+                setDelItem(i)
+              }}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Comentarios y observaciones */}
       <Card>

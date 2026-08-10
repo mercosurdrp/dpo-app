@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/server"
 import { IS_MISIONES } from "@/lib/empresa"
 import { gescomCredsFromEnv } from "@/lib/gescom/client"
 import { syncGescomRechazos } from "@/lib/sync/gescom-rechazos-sync"
+import { recalcCargaGescomOB, updateIndicadorOB } from "@/lib/sync/ocupacion-bodega"
 
 const CRON_SECRET = process.env.CRON_SECRET
 const ALLOWED_ROLES = ["admin", "supervisor", "admin_rrhh"] as const
@@ -117,6 +118,21 @@ export async function POST(request: NextRequest) {
       supabase, creds, desde: fechaDesdeStr, hasta: fechaHastaStr, modo, paginas: body.paginas,
     })
 
+    // Ocupación de Bodega: volcar la carga de Gestión recién sincronizada en
+    // `ocupacion_bodega_diaria.*_gescom` y refrescar el indicador AVG MTD.
+    let obGescom = { viajes: 0, ceqGescom: 0, reseteados: 0 }
+    try {
+      obGescom = await recalcCargaGescomOB(supabase, fechaDesdeStr, fechaHastaStr)
+      await updateIndicadorOB(supabase)
+    } catch (eOB) {
+      const msg = eOB instanceof Error ? eOB.message : String(eOB)
+      console.error(`[gescom-sync] ob-gescom error: ${msg}`)
+      r.errors.push({ kind: "fatal", message: `ob-gescom: ${msg}` })
+    }
+    console.log(
+      `[gescom-sync] ob-gescom viajes=${obGescom.viajes} ceq=${obGescom.ceqGescom} reseteados=${obGescom.reseteados}`,
+    )
+
     const durationMs = Date.now() - startedAt
     console.log(
       `[gescom-sync] done source=${source} ventas=${r.ventas_consideradas} ` +
@@ -135,7 +151,7 @@ export async function POST(request: NextRequest) {
     })
     if (logErr) console.error(`[gescom-sync] could not write sync_log: ${logErr.message}`)
 
-    return NextResponse.json({ success: true, source, ...r, duration_ms: durationMs })
+    return NextResponse.json({ success: true, source, ...r, ocupacion_bodega_gescom: obGescom, duration_ms: durationMs })
   } catch (err) {
     const durationMs = Date.now() - startedAt
     const message = err instanceof Error ? err.message : "Error syncing GESCOM"
