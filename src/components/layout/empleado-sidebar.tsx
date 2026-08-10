@@ -84,6 +84,11 @@ function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpI
       : [{ label: "Mi sector 5S", href: "/mi-5s", icon: <Sparkles className="size-5" /> }]),
     // Rechazos: solo Pampeana (fuente de datos).
     ...(IS_MISIONES ? [] : [{ label: "Rechazos", href: "/rechazos", icon: <PackageX className="size-5" /> }]),
+    // Mis Rechazos: los del empleado (chofer o ayudante), con detalle por
+    // cliente y por camión. Solo Pampeana.
+    ...(IS_MISIONES
+      ? []
+      : [{ label: "Mis Rechazos", href: "/mis-rechazos", icon: <PackageX className="size-5" /> }]),
     // Roturas en la calle: solo Pampeana (fuente de datos / DQI).
     ...(IS_MISIONES
       ? []

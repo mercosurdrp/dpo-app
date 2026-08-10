@@ -18,6 +18,7 @@ const ALLOWED_PATHS = [
   "/recepcion",
   "/portal",
   "/rechazos",
+  "/mis-rechazos",
   "/mis-buenas-practicas",
   "/mis-roturas",
   "/mi-feedback",
