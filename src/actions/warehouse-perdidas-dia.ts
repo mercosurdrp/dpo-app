@@ -1,7 +1,13 @@
 "use server"
 /**
- * Detalle diario del WQI para el popover de /reuniones (celda WQI, tanto en
- * warehouse como en logística).
+ * Detalle diario de pérdidas para el popover de /reuniones (celdas WQI y
+ * Faltantes, tanto en warehouse como en logística).
+ *
+ * Sirve a dos vistas del diálogo, que eligen qué campos leer según el
+ * indicador clickeado:
+ *   - WQI/Roturas → los `wqi_*` / `roturas_*` de abajo.
+ *   - Faltantes   → los `faltantes_*`. Van en HL, sin PPM: el indicador
+ *     `auto_faltantes` se mide y se compara contra su target en HL.
  *
  * Muestra las dos lecturas del mismo día, con el MISMO denominador (HL
  * entregado) para que sean comparables entre sí:
@@ -44,6 +50,12 @@ export interface WarehousePerdidasDia {
   roturas_hl_dia: number | null
   /** Qué se rompió ese día, agregado por SKU y origen (ordenado por HL desc). */
   roturas_detalle: RoturaDetalleSku[]
+  /** HL de faltantes del día. */
+  faltantes_hl_dia: number | null
+  /** HL de faltantes acumulados del mes hasta ese día. */
+  faltantes_hl_mtd: number | null
+  /** Qué faltó ese día, agregado por SKU (ordenado por HL desc). */
+  faltantes_detalle: RoturaDetalleSku[]
 }
 
 interface SerieDiariaResp {
@@ -61,6 +73,13 @@ interface SerieDiariaResp {
   hl_entregado_dia?: Record<string, number | null>
   /** Detalle de roturas por SKU de cada día. */
   roturas_detalle_dia?: Record<string, RoturaDetalleSku[]>
+  /** HL de faltantes del día y acumulado MTD. Misma fuente y mismo filtrado
+   *  que la fila `auto_faltantes` de la grilla. */
+  faltantes_dia?: Record<string, number | null>
+  faltantes?: Record<string, number | null>
+  /** Detalle de faltantes por SKU de cada día (sin `origen`: un faltante no
+   *  se abre por almacén/distribución como las roturas). */
+  faltantes_detalle_dia?: Record<string, RoturaDetalleSku[]>
 }
 
 function num(v: unknown): number | null {
@@ -112,6 +131,9 @@ export async function getWarehousePerdidasDia(
         roturas_ppm_mtd: num(serie.wqi_merma_final?.[fecha]),
         roturas_hl_dia: num(serie.roturas_almacen_dia?.[fecha]),
         roturas_detalle: serie.roturas_detalle_dia?.[fecha] ?? [],
+        faltantes_hl_dia: num(serie.faltantes_dia?.[fecha]),
+        faltantes_hl_mtd: num(serie.faltantes?.[fecha]),
+        faltantes_detalle: serie.faltantes_detalle_dia?.[fecha] ?? [],
       },
     }
   } catch (e) {

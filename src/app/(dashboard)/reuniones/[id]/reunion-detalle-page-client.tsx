@@ -109,7 +109,10 @@ import { DqiPatentesDialog } from "@/components/reuniones/dqi-patentes-dialog"
 import { FoxtrotKpiDetalleDiaDialog } from "@/components/reuniones/foxtrot-kpi-detalle-dia-dialog"
 import type { FoxtrotKpiId } from "@/lib/foxtrot/matinal-kpi-types"
 import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-detalle-dia-dialog"
-import { WarehousePerdidasDetalleDiaDialog } from "@/components/reuniones/warehouse-perdidas-detalle-dia-dialog"
+import {
+  WarehousePerdidasDetalleDiaDialog,
+  type PerdidasDetalleTipo,
+} from "@/components/reuniones/warehouse-perdidas-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -948,7 +951,12 @@ export function ReunionDetallePageClient({
   const [ventasHlFecha, setVentasHlFecha] = useState<string | null>(null)
   // Detalle del día al hacer click en celda WQI / Roturas / Faltantes (warehouse):
   // popover con bultos vendidos + pérdidas del día (blob precocido warehouse-dia-detalle).
-  const [wqiDetalleFecha, setWqiDetalleFecha] = useState<string | null>(null)
+  // El popover de pérdidas sirve a dos indicadores distintos: hay que llevar
+  // cuál se clickeó, si no Faltantes termina mostrando roturas.
+  const [wqiDetalle, setWqiDetalle] = useState<{
+    fecha: string
+    tipo: PerdidasDetalleTipo
+  } | null>(null)
   // Detalle del día seleccionado al hacer click en celda TML
   const [tmlDetalleFecha, setTmlDetalleFecha] = useState<string | null>(null)
   const [obDetalleFecha, setObDetalleFecha] = useState<string | null>(null)
@@ -2099,8 +2107,10 @@ export function ReunionDetallePageClient({
                           const esOB = ind.id === "auto_ocupacion_bodega"
                           const esTlp = ind.id === "auto_tlp"
                           // WQI / Roturas / Faltantes (warehouse): mismo popover de
-                          // detalle del día (bultos vendidos + pérdidas). Explica el
-                          // "WQI = 0" (día sin roturas o sin venta cargada todavía).
+                          // detalle del día, en dos vistas — Faltantes abre la
+                          // suya (HL faltantes + qué faltó), WQI y Roturas abren
+                          // la del WQI. Explica también el "WQI = 0" (día sin
+                          // roturas o sin venta cargada todavía).
                           const esWqiPerdidas =
                             ind.id === "auto_wqi" ||
                             ind.id === "auto_roturas" ||
@@ -2153,7 +2163,14 @@ export function ReunionDetallePageClient({
                             else if (esAusentismo) setAusentismoFecha(f)
                             else if (esOB) setObDetalleFecha(f)
                             else if (esTlp) setTlpDetalleFecha(f)
-                            else if (esWqiPerdidas) setWqiDetalleFecha(f)
+                            else if (esWqiPerdidas)
+                              setWqiDetalle({
+                                fecha: f,
+                                tipo:
+                                  ind.id === "auto_faltantes"
+                                    ? "faltantes"
+                                    : "wqi",
+                              })
                             else if (esWnp) setWnpDetalleFecha(f)
                             else if (esFoxtrotKpi)
                               setFxKpiDetalle({ fecha: f, kpiId: ind.id as FoxtrotKpiId })
@@ -2507,11 +2524,12 @@ export function ReunionDetallePageClient({
       />
 
       <WarehousePerdidasDetalleDiaDialog
-        open={wqiDetalleFecha !== null}
+        open={wqiDetalle !== null}
         onOpenChange={(o) => {
-          if (!o) setWqiDetalleFecha(null)
+          if (!o) setWqiDetalle(null)
         }}
-        fecha={wqiDetalleFecha}
+        fecha={wqiDetalle?.fecha ?? null}
+        tipo={wqiDetalle?.tipo}
       />
 
     </div>

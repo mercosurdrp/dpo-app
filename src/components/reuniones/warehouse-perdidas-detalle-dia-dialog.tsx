@@ -23,10 +23,17 @@ import {
   type WarehousePerdidasDia,
 } from "@/actions/warehouse-perdidas-dia"
 
+/** Qué indicador se clickeó. Cambia el contenido entero del diálogo: "wqi"
+ *  abre las dos lecturas del WQI + las roturas por SKU; "faltantes" abre los
+ *  HL faltantes del día + qué faltó. Antes las celdas de Faltantes caían en la
+ *  vista de WQI y mostraban roturas, que es otro indicador. */
+export type PerdidasDetalleTipo = "wqi" | "faltantes"
+
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   fecha: string | null
+  tipo?: PerdidasDetalleTipo
 }
 
 function formatFechaLarga(s: string): string {
@@ -51,7 +58,12 @@ function fmt(n: number | null, dec = 0): string {
   })
 }
 
-export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
+export function WarehousePerdidasDetalleDiaDialog({
+  open,
+  onOpenChange,
+  fecha,
+  tipo = "wqi",
+}: Props) {
   const [data, setData] = useState<WarehousePerdidasDia | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,7 +92,9 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
     }
   }, [open, fecha])
 
+  const esFaltantes = tipo === "faltantes"
   const sinRoturas = data != null && (data.roturas_hl_dia ?? 0) === 0
+  const sinFaltantes = data != null && (data.faltantes_hl_dia ?? 0) === 0
   // Parte del volumen afectado que NO pasó por reempaque (rotura directa de
   // depósito). Sólo se muestra cuando el día tuvo las dos cosas.
   const directasHl =
@@ -96,7 +110,7 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
       <DialogContent className="max-h-[92vh] w-[95vw] max-w-[760px] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            WQI del día
+            {esFaltantes ? "Faltantes del día" : "WQI del día"}
             {fecha && (
               <span className="text-base font-normal text-muted-foreground">
                 · {formatFechaLarga(fecha)}
@@ -104,10 +118,21 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
             )}
           </DialogTitle>
           <DialogDescription>
-            Las dos lecturas del día sobre el mismo denominador (HL entregado):
-            el <strong>WQI total</strong>, que cuenta todo el volumen afectado
-            por rotura —incluido lo que se reempaca y se recupera—, y las{" "}
-            <strong>roturas reales</strong>, que es la merma final del almacén.
+            {esFaltantes ? (
+              <>
+                Los <strong>HL faltantes</strong> del día y su apertura por SKU.
+                Es el mismo número de la celda: va en HL, no en PPM, y se compara
+                contra el target de faltantes del mes.
+              </>
+            ) : (
+              <>
+                Las dos lecturas del día sobre el mismo denominador (HL
+                entregado): el <strong>WQI total</strong>, que cuenta todo el
+                volumen afectado por rotura —incluido lo que se reempaca y se
+                recupera—, y las <strong>roturas reales</strong>, que es la merma
+                final del almacén.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -123,7 +148,7 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
           </div>
         )}
 
-        {!loading && !error && data && (
+        {!loading && !error && data && !esFaltantes && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               {/* WQI total: el valor de la celda sobre la que se hizo click */}
@@ -275,6 +300,79 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
                   <strong>Sin roturas reales</strong> este día: nada se terminó
                   descartando. Si el WQI total no es 0, es volumen que entró a
                   reempaque y se recuperó.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!loading && !error && data && esFaltantes && (
+          <div className="space-y-4">
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Faltantes del día
+                </p>
+                <p className="mt-1 text-3xl font-bold tabular-nums text-amber-700">
+                  {fmt(data.faltantes_hl_dia, 2)}
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">
+                    HL
+                  </span>
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Acumulado del mes: {fmt(data.faltantes_hl_mtd, 2)} HL
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Detalle por SKU: qué faltó ese día */}
+            {data.faltantes_detalle.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-slate-700">
+                  Faltantes por SKU ({data.faltantes_detalle.length})
+                </p>
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>SKU</TableHead>
+                        <TableHead>Descripción</TableHead>
+                        <TableHead className="text-right">Bultos</TableHead>
+                        <TableHead className="text-right">HL</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.faltantes_detalle.map((r) => (
+                        <TableRow key={r.sku}>
+                          <TableCell className="font-mono font-medium">
+                            {r.sku}
+                          </TableCell>
+                          <TableCell
+                            className="max-w-[280px] truncate"
+                            title={r.descripcion}
+                          >
+                            {r.descripcion || "—"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {fmt(r.bultos_eq ?? r.bultos, 2)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums text-amber-700">
+                            {fmt(r.hl, 4)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            {sinFaltantes && (
+              <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                <p>
+                  <strong>Sin faltantes</strong> este día: no se registró ningún
+                  faltante en el almacén.
                 </p>
               </div>
             )}
