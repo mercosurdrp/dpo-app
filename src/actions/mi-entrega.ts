@@ -3,6 +3,11 @@
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth } from "@/lib/session"
+import { hoyAR } from "@/lib/herramientas-gestion"
+import {
+  loadResolucionGescom,
+  resolverFleteroGescom,
+} from "@/lib/gescom/ventas-patente"
 
 // ---------- Types ----------
 
@@ -41,6 +46,24 @@ export interface MiEntregaData {
   historial: MiEntregaDia[]
   vinculado: boolean
   nombre_chofer: string | null
+}
+
+// ---------- Helpers ----------
+
+/** SELECT paginado: PostgREST corta en 1000 filas y las de Gestión (un mes de
+ *  todos los repartos) pueden superarlo. */
+async function fetchTodo<T>(
+  query: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const PAGE = 1000
+  const rows: T[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await query(from, from + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    rows.push(...(data as T[]))
+    if (data.length < PAGE) break
+  }
+  return rows
 }
 
 // ---------- Action ----------
@@ -92,12 +115,14 @@ export async function getMiEntrega(): Promise<
       }
     }
 
-    // 3. Date ranges
-    const hoy = new Date().toISOString().slice(0, 10)
-    const mes = new Date().getMonth() + 1
-    const anio = new Date().getFullYear()
+    // 3. Date ranges — en hora ARGENTINA: el server corre en UTC, y con
+    // toISOString() después de las 21:00 el "hoy" ya era mañana (la tarjeta
+    // del día mostraba 0 justo cuando el chofer volvía del reparto).
+    const hoy = hoyAR()
+    const anio = Number(hoy.slice(0, 4))
+    const mes = Number(hoy.slice(5, 7))
     const primerDia = `${anio}-${String(mes).padStart(2, "0")}-01`
-    const ultimoDia = new Date(anio, mes, 0).getDate()
+    const ultimoDia = new Date(Date.UTC(anio, mes, 0)).getUTCDate()
     const ultimaFecha = `${anio}-${String(mes).padStart(2, "0")}-${ultimoDia}`
 
     // 4. Fetch data in parallel
@@ -106,7 +131,9 @@ export async function getMiEntrega(): Promise<
       ? admin
           .from("registros_vehiculos")
           .select("fecha, dominio, tml_minutos, tipo")
-          .or(`chofer.eq.${nombreChofer},ayudante1.eq.${nombreChofer},ayudante2.eq.${nombreChofer}`)
+          // Comillas: sin ellas, una coma o paréntesis en el nombre rompe el
+          // filtro de PostgREST y el chofer queda sin patentes (bultos 0).
+          .or(`chofer.eq."${nombreChofer}",ayudante1.eq."${nombreChofer}",ayudante2.eq."${nombreChofer}"`)
           .gte("fecha", primerDia)
           .lte("fecha", ultimaFecha)
           .order("fecha", { ascending: false })
@@ -157,6 +184,62 @@ export async function getMiEntrega(): Promise<
     const rechazos = (rechazosResult.data ?? []) as {
       fecha: string; ds_fletero_carga: string; bultos_rechazados: number
     }[]
+
+    // 4e. Ventas y rechazos de GESCOM ("Gestión"): se guardan con
+    // ds_fletero_carga = 'GESTION-<codigoChofer>', NO con la patente, así que
+    // el .in() por patentes de arriba no los ve — un chofer que reparte carga
+    // de Gestión veía solo la mitad Chess de sus bultos. Se resuelve la
+    // patente del día (checklist → patente_default de mapeo_chofer_gescom) y
+    // se suma lo que caiga en las patentes del empleado.
+    if (platesArr.length > 0) {
+      const resolucion = await loadResolucionGescom(admin, primerDia, ultimaFecha)
+      if (resolucion.choferes.size > 0) {
+        const platesNorm = new Set(platesArr.map((p) => (p ?? "").trim().toUpperCase()))
+        const [ventasGescom, rechazosGescom] = await Promise.all([
+          fetchTodo<(typeof ventas)[number]>((a, b) =>
+            admin
+              .from("ventas_diarias")
+              .select("fecha, ds_fletero_carga, total_bultos, total_hl, viajes")
+              .like("ds_fletero_carga", "GESTION%")
+              .gte("fecha", primerDia)
+              .lte("fecha", ultimaFecha)
+              .order("id")
+              .range(a, b),
+          ),
+          fetchTodo<(typeof rechazos)[number]>((a, b) =>
+            admin
+              .from("rechazos")
+              .select("fecha, ds_fletero_carga, bultos_rechazados")
+              .like("ds_fletero_carga", "GESTION%")
+              .gte("fecha", primerDia)
+              .lte("fecha", ultimaFecha)
+              .order("id")
+              .range(a, b),
+          ),
+        ])
+        const patenteDelEmpleado = (row: { fecha: string; ds_fletero_carga: string }): string | null => {
+          // Si el código GESTION-xxxx está mapeado a mano como fletero del
+          // empleado, ya entró por el .in() de arriba: no doble-contar.
+          if (platesNorm.has((row.ds_fletero_carga ?? "").trim().toUpperCase())) return null
+          const r = resolverFleteroGescom(row.ds_fletero_carga, row.fecha, resolucion)
+          return r.tipo === "patente" && platesNorm.has(r.patente) ? r.patente : null
+        }
+        // En Gestión `viajes` guarda COMPROBANTES (decenas), no planillas como
+        // Chess — y la carga va arriba del mismo camión: 0 viajes si Chess ya
+        // contó el viaje de esa patente ese día, 1 si fue solo de Gestión.
+        const viajesChess = new Set(
+          ventas.map((v) => `${v.fecha}|${(v.ds_fletero_carga ?? "").trim().toUpperCase()}`),
+        )
+        for (const row of ventasGescom) {
+          const patente = patenteDelEmpleado(row)
+          if (!patente) continue
+          ventas.push({ ...row, viajes: viajesChess.has(`${row.fecha}|${patente}`) ? 0 : 1 })
+        }
+        for (const row of rechazosGescom) {
+          if (patenteDelEmpleado(row)) rechazos.push(row)
+        }
+      }
+    }
 
     // 5. Build TML lookup: fecha → { dominio, tml_minutos } (use latest egreso)
     const tmlByDate = new Map<string, { dominio: string; tml_minutos: number | null }>()
@@ -238,8 +321,9 @@ export async function getMiEntrega(): Promise<
     // 10. Build LAST 7 DAYS
     const historial: MiEntregaDia[] = []
     for (let i = 0; i < 7; i++) {
-      const d = new Date()
-      d.setDate(d.getDate() - i)
+      // Derivar del "hoy" argentino, no del reloj UTC del server.
+      const d = new Date(`${hoy}T00:00:00Z`)
+      d.setUTCDate(d.getUTCDate() - i)
       const fecha = d.toISOString().slice(0, 10)
 
       const tml = tmlByDate.get(fecha)

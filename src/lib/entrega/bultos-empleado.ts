@@ -9,6 +9,10 @@
 // mapeo estático de fletero (mapeo_empleado_fletero, cuenta todos los días).
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import {
+  loadResolucionGescom,
+  traducirFilasGescom,
+} from "@/lib/gescom/ventas-patente"
 
 export interface BultosEmpleadoRango {
   /** Tiene algún mapeo a camión (chofer o fletero). */
@@ -68,7 +72,7 @@ export async function getBultosRangoEmpleados(
   const out = new Map<string, BultosEmpleadoRango>()
   if (empleadoIds.length === 0) return out
 
-  const [choferMaps, fleteroMaps, registros, ventas] = await Promise.all([
+  const [choferMaps, fleteroMaps, registros, ventasRaw, resolucionGescom] = await Promise.all([
     fetchPaginado<{ empleado_id: string; nombre_chofer: string | null }>((a, b) =>
       admin
         .from("mapeo_empleado_chofer")
@@ -103,7 +107,13 @@ export async function getBultosRangoEmpleados(
         .order("id")
         .range(a, b),
     ),
+    loadResolucionGescom(admin, desde, hasta),
   ])
+
+  // Filas de Gestión (`ds_fletero_carga = 'GESTION-<código>'`): traducirlas a
+  // la patente del día para que matcheen con el egreso TML / mapeo de fletero
+  // del empleado — si no, esos bultos sumaban 0. Venta directa queda afuera.
+  const ventas = traducirFilasGescom(ventasRaw, resolucionGescom)
 
   // Índices de mapeos por empleado.
   const choferPorEmpleado = new Map<string, string>()

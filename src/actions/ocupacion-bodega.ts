@@ -7,7 +7,10 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 
-const TARGET_CEQ = 600
+// Mismo target que la columna generada `ob_pct_target` (migración 093) y que
+// el sync (`src/lib/sync/ocupacion-bodega.ts`). Acá decía 600 y el resto 525:
+// el mismo CEq daba 12,5% menos de ocupación según la pantalla.
+const TARGET_CEQ = 525
 
 export interface ViajeOB {
   fecha: string
@@ -27,7 +30,7 @@ export interface OBKpis {
   viajes: number
   ceq_promedio: number
   ceq_total: number
-  pct_meta: number              // pct viajes que alcanzan 600 CEq
+  pct_meta: number              // pct viajes que alcanzan el target CEq
   ceq_max: number
   ceq_min: number
   patente_top: string | null
