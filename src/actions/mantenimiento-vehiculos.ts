@@ -1954,6 +1954,67 @@ export async function createTareaCil(
   }
 }
 
+/**
+ * Adjunta la evidencia a una tarea CIL ya registrada.
+ *
+ * 🚨 Existe porque la foto y la tarea no siempre se pueden cargar juntas: el
+ * 10/08/2026 se hizo la limpieza profunda de dos camionetas y del HELI1 y el
+ * celular no dejó tomar la foto, así que la tarea quedó registrada sin
+ * evidencia. Sin esto la única salida era borrar la fila y cargarla de nuevo,
+ * que es justo lo que hace que se abandone la carga.
+ *
+ * No pisa una evidencia existente: si la fila ya tiene foto hay que borrar la
+ * tarea y rehacerla, para que no se reemplace en silencio lo que ya miró el
+ * auditor.
+ */
+export async function subirFotoTareaCil(
+  id: string,
+  formData: FormData
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+
+    const foto = formData.get("foto")
+    if (!(foto instanceof File) || foto.size === 0)
+      return { error: "Elegí la foto" }
+
+    const { data: fila, error: errFila } = await supabase
+      .from("mantenimiento_cil")
+      .select("dominio, foto_path")
+      .eq("id", id)
+      .maybeSingle()
+    if (errFila) return { error: errFila.message }
+    if (!fila) return { error: "No se encontró la tarea" }
+    if (fila.foto_path)
+      return { error: "Esa tarea ya tiene evidencia cargada" }
+
+    const clean = foto.name.replace(/[^a-zA-Z0-9._-]/g, "_")
+    const path = `cil/${fila.dominio}/${Date.now()}-${clean}`
+    const { error: upErr } = await supabase.storage
+      .from(CIL_BUCKET)
+      .upload(path, await foto.arrayBuffer(), {
+        contentType: foto.type || "application/octet-stream",
+        upsert: false,
+      })
+    if (upErr) return { error: upErr.message }
+
+    const { data: pub } = supabase.storage.from(CIL_BUCKET).getPublicUrl(path)
+    const { error } = await supabase
+      .from("mantenimiento_cil")
+      .update({ foto_url: pub.publicUrl, foto_path: path })
+      .eq("id", id)
+    if (error) {
+      // Si la fila no se actualiza, la foto no queda colgada en el bucket.
+      await supabase.storage.from(CIL_BUCKET).remove([path])
+      return { error: error.message }
+    }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 export async function deleteTareaCil(
   id: string
 ): Promise<{ success: true } | { error: string }> {

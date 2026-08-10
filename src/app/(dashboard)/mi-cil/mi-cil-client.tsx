@@ -2,7 +2,15 @@
 
 import { useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Camera, CheckCircle2, CircleAlert, Plus, Sparkles, X } from "lucide-react"
+import {
+  Camera,
+  CheckCircle2,
+  CircleAlert,
+  Image as ImageIcon,
+  Plus,
+  Sparkles,
+  X,
+} from "lucide-react"
 import { createMiTareaCil, type MiCilData } from "@/actions/mi-cil"
 import { TAREAS_CIL, labelTareaCil } from "@/lib/flota/cil-tareas"
 import { cn } from "@/lib/utils"
@@ -27,7 +35,8 @@ export function MiCilClient({ data }: { data: MiCilData }) {
   const [foto, setFoto] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
-  const fotoRef = useRef<HTMLInputElement>(null)
+  const camaraRef = useRef<HTMLInputElement>(null)
+  const galeriaRef = useRef<HTMLInputElement>(null)
 
   /** Los nombres cargados, en una sola línea: así los guarda la tabla. */
   const nombres = operarios.map((n) => n.trim()).filter(Boolean)
@@ -52,7 +61,8 @@ export function MiCilClient({ data }: { data: MiCilData }) {
       setTarea("")
       setDescripcion("")
       setFoto(null)
-      if (fotoRef.current) fotoRef.current.value = ""
+      if (camaraRef.current) camaraRef.current.value = ""
+      if (galeriaRef.current) galeriaRef.current.value = ""
       router.refresh()
       setTimeout(() => setOk(false), 4000)
     })
@@ -226,26 +236,51 @@ export function MiCilClient({ data }: { data: MiCilData }) {
           <p className="mt-1 text-xs text-muted-foreground">
             Es obligatoria: es la prueba de que la tarea se hizo.
           </p>
+          {/*
+            🚨 DOS botones y DOS inputs, no uno solo. Con un único input
+            `accept="image/*"` el celular decide si ofrece la cámara o no: en el
+            depósito (10/08/2026) sólo aparecía la galería y la limpieza profunda
+            de dos camionetas y del HELI1 no se pudo registrar, porque sin foto el
+            botón de guardar queda deshabilitado. `capture="environment"` abre la
+            cámara trasera directo, sin pasar por el menú del sistema.
+          */}
           <input
-            ref={fotoRef}
+            ref={camaraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => setFoto(e.target.files?.[0] ?? null)}
+            className="hidden"
+          />
+          <input
+            ref={galeriaRef}
             type="file"
             accept="image/*"
             onChange={(e) => setFoto(e.target.files?.[0] ?? null)}
             className="hidden"
           />
-          <button
-            type="button"
-            onClick={() => fotoRef.current?.click()}
-            className={cn(
-              "mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed p-4 text-sm transition-colors",
-              foto
-                ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
-                : "text-muted-foreground hover:bg-accent",
-            )}
-          >
-            <Camera className="size-5" />
-            {foto ? foto.name.slice(0, 40) : "Sacar o elegir una foto"}
-          </button>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => camaraRef.current?.click()}
+              className="flex items-center justify-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground transition-colors hover:bg-accent"
+            >
+              <Camera className="size-5" /> Sacar foto
+            </button>
+            <button
+              type="button"
+              onClick={() => galeriaRef.current?.click()}
+              className="flex items-center justify-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground transition-colors hover:bg-accent"
+            >
+              <ImageIcon className="size-5" /> De la galería
+            </button>
+          </div>
+          {foto && (
+            <p className="mt-2 flex items-center gap-2 rounded-lg border border-emerald-400 bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
+              <CheckCircle2 className="size-4 shrink-0" />
+              <span className="truncate">{foto.name}</span>
+            </p>
+          )}
         </div>
 
         <div>

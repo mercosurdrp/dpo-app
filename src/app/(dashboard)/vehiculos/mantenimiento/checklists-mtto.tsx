@@ -41,6 +41,7 @@ import {
   ImageIcon,
   Loader2,
   Trash2,
+  Upload,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoPuntoBadge, DpoSeccionCinta } from "./_components/dpo-badge"
@@ -50,6 +51,7 @@ import { KpiCard } from "./_components/kpi-card"
 import {
   createTareaCil,
   deleteTareaCil,
+  subirFotoTareaCil,
   eliminarItemChecklist,
   eliminarPlanChecklist,
   upsertPlanChecklist,
@@ -788,6 +790,8 @@ function TareasCilSection({
                       >
                         <ImageIcon className="size-3.5" /> Ver
                       </a>
+                    ) : puedeEditar ? (
+                      <SubirFotoCil id={t.id} onSubida={refresh} />
                     ) : (
                       <span className="text-muted-foreground/50">—</span>
                     )}
@@ -828,6 +832,53 @@ function TareasCilSection({
         />
       )}
     </Card>
+  )
+}
+
+/**
+ * Adjunta la evidencia a una tarea CIL que quedó sin foto. La tarea y la foto no
+ * siempre se pueden cargar juntas (ver `subirFotoTareaCil`), y sin esto la única
+ * salida era borrar la fila y rehacerla.
+ */
+function SubirFotoCil({ id, onSubida }: { id: string; onSubida: () => void }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const [subiendo, setSubiendo] = useState(false)
+
+  return (
+    <>
+      <input
+        ref={ref}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          setSubiendo(true)
+          try {
+            const fd = new FormData()
+            fd.set("foto", await comprimirImagen(file))
+            const res = await subirFotoTareaCil(id, fd)
+            if ("error" in res) toast.error(res.error)
+            else {
+              toast.success("Evidencia cargada")
+              onSubida()
+            }
+          } finally {
+            setSubiendo(false)
+            if (ref.current) ref.current.value = ""
+          }
+        }}
+      />
+      <button
+        type="button"
+        disabled={subiendo}
+        onClick={() => ref.current?.click()}
+        className="inline-flex items-center gap-1 text-muted-foreground hover:text-primary hover:underline disabled:opacity-50"
+      >
+        <Upload className="size-3.5" /> {subiendo ? "Subiendo…" : "Subir"}
+      </button>
+    </>
   )
 }
 
