@@ -299,15 +299,22 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
         valor:
           "Responsable asignado al plan (registra el avance que lo deja completado).",
       },
-      { label: "Seguimiento del cumplimiento", valor: "Jefe de Logística." },
+      {
+        label: "Seguimiento del cumplimiento",
+        valor:
+          "Gerencia, como parte cliente del acuerdo: es quien responde por el NPS y quien reclama si los casos no se cierran.",
+      },
     ],
     gestionIncumplimiento:
       "Los casos vencidos se repasan en la reunión de Logística-Ventas. El caso vencido se cierra igual —el cliente no deja de importar porque se pasó el plazo— y el motivo del atraso se registra como tarea en el Action Log. Si los vencimientos se repiten sobre el mismo driver o el mismo responsable, se ataca la causa de fondo y no el caso puntual.",
     vigencia:
       "La medición del acuerdo comienza el 1 de agosto de 2026. Las encuestas anteriores quedan cargadas como referencia pero no se evalúan: el acuerdo no se aplica de forma retroactiva. Vigencia de 1 año desde la fecha de firma, con revisión anual o inmediata si cambia la frecuencia de la encuesta de NPS.",
+    // Proveedor compartido: el NPS se mueve por drivers comerciales Y de
+    // entrega, así que firman las dos jefaturas, no sólo Ventas.
     firmantes: [
-      "Sebastián Roselli — Jefe de Logística",
+      "Gerencia",
       "Nicolás Lescoulie — Jefe de Ventas",
+      "Sebastián Roselli — Jefe de Logística",
     ],
     secciones: [
       {
@@ -357,15 +364,22 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
         valor:
           "Responsable asignado al plan (registra el avance que lo deja completado).",
       },
-      { label: "Seguimiento del cumplimiento", valor: "Jefe de Logística." },
+      {
+        label: "Seguimiento del cumplimiento",
+        valor:
+          "Jefe de Ventas, como parte cliente del acuerdo: es la cara ante el punto de venta y quien recibe el reclamo en la visita siguiente.",
+      },
     ],
     gestionIncumplimiento:
       "Los casos vencidos se repasan en la reunión semanal de Logística. El caso vencido se cierra igual y el motivo del atraso se registra como tarea en el Action Log. Cuando las puntuaciones bajas se concentran en un chofer, una ruta o un motivo, se abre un plan de foco sobre esa causa en vez de tratar cada caso por separado.",
     vigencia:
       "La medición del acuerdo comienza el 1 de agosto de 2026. Las puntuaciones anteriores quedan cargadas como referencia pero no se evalúan: el acuerdo no se aplica de forma retroactiva. Vigencia de 1 año desde la fecha de firma, con revisión anual o inmediata si cambia la mecánica de la encuesta de RMD.",
+    // Firma el cliente (Ventas, que reclama) y el proveedor (Logística, que se
+    // compromete a cerrar el caso). El punto de venta es el beneficiario final
+    // del acuerdo, pero no es parte: no firma ni reclama internamente.
     firmantes: [
+      "Nicolás Lescoulie — Jefe de Ventas",
       "Sebastián Roselli — Jefe de Logística",
-      "Supervisor de Distribución",
     ],
     secciones: [
       {

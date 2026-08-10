@@ -22,10 +22,15 @@ BEGIN;
 
 -- 1) ent_rmd ya existía sembrado en 088_sla como "SLA de cierre de RMD /
 --    quejas de clientes", cubriendo NPS y RMD juntos. Ahora es solo el de RMD.
+--    Las partes venían invertidas del seed (proveedor = 'Cliente', o sea que
+--    el punto de venta se comprometía con nosotros). En este catálogo el
+--    PROVEEDOR es quien se compromete y puede incumplir, y el CLIENTE quien
+--    reclama: en RMD se compromete Distribución y reclama Ventas, que es la
+--    cara ante el PDV. El punto de venta es el beneficiario final, no la parte.
 UPDATE slas
 SET nombre = 'SLA de cierre de casos RMD',
-    parte_cliente = 'Entrega',
-    parte_proveedor = 'Cliente',
+    parte_cliente = 'Ventas',
+    parte_proveedor = 'Entrega / Distribución',
     descripcion = 'Toda entrega puntuada 1-4 en Rate My Delivery abre un caso. '
       || 'Se cierra con el plan de acción del cliente: 30 días corridos para una '
       || 'puntuación detractora (1-3) y 45 para una pasiva (4), contados '
@@ -34,14 +39,18 @@ SET nombre = 'SLA de cierre de casos RMD',
 WHERE codigo = 'ent_rmd';
 
 -- 2) El gemelo de NPS, que no estaba en el catálogo.
+--    Proveedor COMPARTIDO: el NPS no se mueve sólo por drivers comerciales,
+--    también por los de entrega, así que se comprometen las dos áreas. Cliente
+--    es Gerencia, que responde por el indicador ante la marca y es quien tiene
+--    con qué reclamar si los casos no se cierran.
 INSERT INTO slas (codigo, nombre, pilar, parte_cliente, parte_proveedor,
                   requisito_manual, descripcion, es_predefinido, orden)
 VALUES (
   'ent_nps',
   'SLA de cierre de casos NPS',
   'entrega',
-  'Entrega',
-  'Cliente',
+  'Gerencia',
+  'Ventas / Logística',
   'R4.1.5',
   'Toda encuesta NPS que deja al cliente detractor o pasivo abre un caso. Se '
     || 'cierra con el plan de acción del cliente: 30 días corridos para un '
@@ -51,6 +60,18 @@ VALUES (
   11
 )
 ON CONFLICT (codigo) DO NOTHING;
+
+-- 🚨 El INSERT de arriba no toca la fila si ya existe, así que las partes de
+-- un ent_nps sembrado antes de esta corrección quedarían con los valores
+-- viejos. Se fuerzan acá, que además deja la migración auto-correctiva si se
+-- vuelve a correr.
+UPDATE slas
+SET parte_cliente = 'Gerencia',
+    parte_proveedor = 'Ventas / Logística',
+    updated_at = now()
+WHERE codigo = 'ent_nps'
+  AND (parte_cliente IS DISTINCT FROM 'Gerencia'
+       OR parte_proveedor IS DISTINCT FROM 'Ventas / Logística');
 
 -- 3) Orden de la lista: ent_nps entra pegado a ent_rmd, en el pilar de Entrega,
 --    y todo lo que venía después corre un lugar. Se reasignan los códigos de
