@@ -68,6 +68,8 @@ export interface AdherenciaChecklist {
   diaEnCursoExcluido: boolean
   /** Camión-día descartados por ser sólo venta de gestión (patente deducida). */
   soloGestionExcluidos: number
+  /** Camión-día descartados porque la unidad estaba fuera de servicio. */
+  fueraDeServicioExcluidos: number
   /** Camión-día con reparto real: el denominador. */
   ruteados: number
   /** Con liberación Y retorno. */
@@ -118,7 +120,7 @@ export async function getAdherenciaChecklist(
     const hastaEfectivo = hasta >= hoyArg() ? ayerDe(hoyArg()) : hasta
     const diaEnCursoExcluido = hastaEfectivo !== hasta
 
-    const [vehRes, repartoRes, chkRes] = await Promise.all([
+    const [vehRes, repartoRes, chkRes, indispRes] = await Promise.all([
       supabase.from("catalogo_vehiculos").select("dominio, tipo"),
       traerTodo<{ patente: string | null; fecha: string; ds_fletero_carga: string | null }>(
         (a, b) =>
@@ -137,11 +139,17 @@ export async function getAdherenciaChecklist(
           .lte("fecha", hastaEfectivo)
           .range(a, b),
       ),
+      supabase
+        .from("flota_indisponibilidad")
+        .select("dominio, fecha_desde, fecha_hasta")
+        .gte("fecha_hasta", desde)
+        .lte("fecha_desde", hastaEfectivo),
     ])
 
     if (vehRes.error) return { error: vehRes.error.message }
     if ("error" in repartoRes) return { error: repartoRes.error }
     if ("error" in chkRes) return { error: chkRes.error }
+    if (indispRes.error) return { error: indispRes.error.message }
 
     const esCamion = new Set(
       ((vehRes.data || []) as Array<{ dominio: string; tipo: string | null }>)
@@ -184,9 +192,35 @@ export async function getAdherenciaChecklist(
         observada: (prev?.observada ?? false) || !derivada,
       })
     }
+    // 🚨 Una unidad FUERA DE SERVICIO no repartió: si aparece con reparto ese
+    // día, el dato está mal atribuido y exigirle el checklist es absurdo.
+    // AF469UR estuvo en taller del 23/06 al 03/08/2026 por la ECU (OT 1733) y
+    // aun así figuraba con 9 camión-día. La indisponibilidad ya está cargada en
+    // el sistema: alcanza con mirarla.
+    const indisponible = (
+      (indispRes.data || []) as Array<{
+        dominio: string
+        fecha_desde: string
+        fecha_hasta: string
+      }>
+    ).map((i) => ({
+      dominio: (i.dominio || "").trim().toUpperCase(),
+      desde: i.fecha_desde,
+      hasta: i.fecha_hasta,
+    }))
+    const estaFueraDeServicio = (dominio: string, fecha: string) =>
+      indisponible.some(
+        (i) => i.dominio === dominio && fecha >= i.desde && fecha <= i.hasta,
+      )
+
     const ruteados = new Map<string, { fecha: string; dominio: string }>()
     let soloGestionExcluidos = 0
+    let fueraDeServicioExcluidos = 0
     for (const [k, v] of filas) {
+      if (estaFueraDeServicio(v.dominio, v.fecha)) {
+        fueraDeServicioExcluidos++
+        continue
+      }
       if (!v.observada) {
         soloGestionExcluidos++
         continue
@@ -248,6 +282,7 @@ export async function getAdherenciaChecklist(
         hasta: hastaEfectivo,
         diaEnCursoExcluido,
         soloGestionExcluidos,
+        fueraDeServicioExcluidos,
         ruteados: total,
         completos,
         soloLiberacion,

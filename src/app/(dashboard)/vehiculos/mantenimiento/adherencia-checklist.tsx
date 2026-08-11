@@ -109,7 +109,9 @@ export function AdherenciaChecklistCard() {
           cargar nada no desaparece de la cuenta. Quedan afuera el{" "}
           <strong>día en curso</strong> —el retorno todavía no pudo hacerse— y los días de{" "}
           <strong>sólo venta de gestión</strong>, donde la patente no se observa: se deduce
-          del chofer y termina cayendo en su unidad anterior.
+          del chofer y termina cayendo en su unidad anterior. Las unidades{" "}
+          <strong>fuera de servicio</strong> tampoco cuentan: si están en taller no
+          repartieron, por más que el reparto figure a su nombre.
         </p>
 
         {cargando ? (
@@ -140,6 +142,9 @@ export function AdherenciaChecklistCard() {
                   {data.diaEnCursoExcluido ? " (sin el día de hoy)" : ""}
                   {data.soloGestionExcluidos > 0
                     ? ` · ${data.soloGestionExcluidos} día(s) de sólo gestión afuera`
+                    : ""}
+                  {data.fueraDeServicioExcluidos > 0
+                    ? ` · ${data.fueraDeServicioExcluidos} día(s) de unidades fuera de servicio afuera`
                     : ""}
                 </p>
               </div>
