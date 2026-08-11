@@ -327,9 +327,10 @@ const SEMAFORO_3_ZONAS = new Set([
 ])
 
 // Indicadores cuyo target y gatillo son MENSUALES: el semáforo se lee sobre el
-// acumulado del mes (columna MTD) y no sobre la celda del día. Hoy sólo SIO,
-// que mide cuántos incidentes se reportaron en el mes (20 target / 15 gatillo).
-const SEMAFORO_MENSUAL = new Set(["auto_sio"])
+// acumulado del mes (columna MTD) y no sobre la celda del día. Hoy sólo SHO,
+// que mide cuántas condiciones y comportamientos inseguros se reportaron en el
+// mes (20 target / 15 gatillo).
+const SEMAFORO_MENSUAL = new Set(["auto_sho"])
 
 /**
  * Clase del MTD para los indicadores de umbral mensual. Devuelve null cuando el
@@ -1997,18 +1998,18 @@ export function ReunionDetallePageClient({
                         const reunionIdEnFecha =
                           indicadoresMes.reuniones_por_fecha[f] ?? null
 
-                        // Filas AUTO (SIO desde reportes_seguridad, Rechazos %
+                        // Filas AUTO (SHO desde reportes_seguridad, Rechazos %
                         // desde rechazos+ventas_diarias): se muestran como read-only,
                         // independientemente de si hubo reunión. Sólo hasta `f <= fecha`
                         // (no anticipamos futuro).
-                        // SIO muestra 0 (día sin incidentes reportados). Rechazos % usa
+                        // SHO muestra 0 (día sin reportes). Rechazos % usa
                         // `mostrar_cero` para que los días con 0% también se vean.
                         if (ind.auto) {
                           const valor = cell?.valor ?? null
-                          // SIO: su target (20) y su gatillo (15) son MENSUALES, así
+                          // SHO: su target (20) y su gatillo (15) son MENSUALES, así
                           // que el semáforo va en la columna MTD; el día suelto es
                           // sólo el conteo de ese día y va neutro.
-                          const esSio = ind.id === "auto_sio"
+                          const esSho = ind.id === "auto_sho"
                           // Errores de picking: un día con datos y 0 errores
                           // se muestra como 0 (no como "—"). El "—" queda
                           // reservado a los días sin datos (valor null).
@@ -2036,11 +2037,11 @@ export function ReunionDetallePageClient({
                           // por PDV, km, paradas no autorizadas, resecuenciado)
                           // se vieran siempre en rojo con cualquier valor.
                           let colorClass = "font-medium text-slate-700"
-                          // SIO queda fuera del semáforo diario: comparar 1
-                          // incidente del día contra un target de 20 del mes
+                          // SHO queda fuera del semáforo diario: comparar 1
+                          // reporte del día contra un target de 20 del mes
                           // pintaría de rojo todos los días, incluso un mes que
                           // termina cumpliendo.
-                          if (!esSio && ind.mejor_si && ind.meta != null && valor != null) {
+                          if (!esSho && ind.mejor_si && ind.meta != null && valor != null) {
                             const cumple =
                               ind.mejor_si === "menor"
                                 ? valor <= ind.meta
@@ -2058,11 +2059,11 @@ export function ReunionDetallePageClient({
                           ) {
                             colorClass = "font-medium text-slate-700"
                           }
-                          // SIO: un día sin incidentes reportados (0) en gris
+                          // SHO: un día sin reportes (0) en gris
                           // neutro, para que se lean los días que sí tuvieron.
                           // Errores de picking: ídem, un 0 (día sin errores)
                           // en gris neutro y no en rojo.
-                          if ((esSio || esErroresPicking) && valor === 0) {
+                          if ((esSho || esErroresPicking) && valor === 0) {
                             colorClass = "text-slate-300"
                           }
                           // Indicadores de almacén (WQI, WNP, Productividad,
@@ -2099,7 +2100,7 @@ export function ReunionDetallePageClient({
                                   "bg-amber-50 font-semibold text-amber-700"
                               }
                             } else if (
-                              !((esSio || esErroresPicking) && valor === 0)
+                              !((esSho || esErroresPicking) && valor === 0)
                             ) {
                               // Sin umbrales usables: neutro (no se pinta rojo
                               // sólo por tener valor). El 0 de errores conserva
