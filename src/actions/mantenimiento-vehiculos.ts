@@ -16,6 +16,7 @@ import {
   type LecturaSugerida,
 } from "@/lib/vehiculos/lecturas"
 import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
+import { TAREAS_CIL } from "@/lib/flota/cil-tareas"
 import type {
   CostosMantenimiento,
   DiaRuteo,
@@ -1935,21 +1936,30 @@ export async function getTareasCil(): Promise<
 }
 
 /**
- * Registra una tarea CIL. FormData: fecha, dominio, tarea, operario,
- * descripcion? y foto? (evidencia opcional, comprimida en el cliente).
+ * Registra las tareas CIL de una unidad. FormData: fecha, dominio, operario,
+ * descripcion?, foto? (evidencia opcional, comprimida en el cliente) y `tarea`
+ * REPETIDO, una vez por trabajo.
+ *
+ * 🚨 Varias tareas en una sola carga, igual que en `/mi-cil`: lavar, controlar
+ * fluidos y engrasar se hacen en la misma parada y cargarlas de a una obligaba a
+ * repetir el formulario entero. Se inserta una fila por trabajo —el KPI cuenta
+ * tareas y la cobertura mira las tres letras por separado— compartiendo la foto.
  */
 export async function createTareaCil(
   formData: FormData
-): Promise<{ success: true } | { error: string }> {
+): Promise<{ success: true; creadas: number } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
 
     const fecha = String(formData.get("fecha") || "").trim()
     const dominio = String(formData.get("dominio") || "").trim().toUpperCase()
-    const tarea = String(formData.get("tarea") || "").trim()
     const operario = String(formData.get("operario") || "").trim()
-    if (!fecha || !dominio || !tarea || !operario)
+    // Se valida contra el catálogo y se deduplica: la columna tiene un CHECK y
+    // un id inventado hace fallar el INSERT entero.
+    const pedidas = new Set(formData.getAll("tarea").map((t) => String(t).trim()))
+    const tareas = TAREAS_CIL.filter((t) => pedidas.has(t.id)).map((t) => t.id)
+    if (!fecha || !dominio || tareas.length === 0 || !operario)
       return { error: "Completá fecha, unidad, tarea y operario" }
 
     let fotoUrl: string | null = null
@@ -1971,21 +1981,24 @@ export async function createTareaCil(
       fotoPath = path
     }
 
-    const { error } = await supabase.from("mantenimiento_cil").insert({
-      fecha,
-      dominio,
-      tarea,
-      operario,
-      descripcion: String(formData.get("descripcion") || "").trim() || null,
-      foto_url: fotoUrl,
-      foto_path: fotoPath,
-      created_by: profile.id,
-    })
+    const descripcion = String(formData.get("descripcion") || "").trim() || null
+    const { error } = await supabase.from("mantenimiento_cil").insert(
+      tareas.map((tarea) => ({
+        fecha,
+        dominio,
+        tarea,
+        operario,
+        descripcion,
+        foto_url: fotoUrl,
+        foto_path: fotoPath,
+        created_by: profile.id,
+      }))
+    )
     if (error) {
       if (fotoPath) await supabase.storage.from(CIL_BUCKET).remove([fotoPath])
       return { error: error.message }
     }
-    return { success: true }
+    return { success: true, creadas: tareas.length }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
@@ -2066,7 +2079,17 @@ export async function deleteTareaCil(
     const { error } = await supabase.from("mantenimiento_cil").delete().eq("id", id)
     if (error) return { error: error.message }
     if (row?.foto_path) {
-      await supabase.storage.from(CIL_BUCKET).remove([row.foto_path])
+      // 🚨 La foto puede estar compartida: una carga con los tres trabajos deja
+      // tres filas apuntando al mismo archivo. Borrarlo al eliminar una sola
+      // dejaría a las otras dos con la evidencia rota — justo lo que el auditor
+      // va a abrir.
+      const { count } = await supabase
+        .from("mantenimiento_cil")
+        .select("id", { count: "exact", head: true })
+        .eq("foto_path", row.foto_path)
+      if (!count) {
+        await supabase.storage.from(CIL_BUCKET).remove([row.foto_path])
+      }
     }
     return { success: true }
   } catch (e) {

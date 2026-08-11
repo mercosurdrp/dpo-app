@@ -174,15 +174,24 @@ export async function getMiCil(): Promise<{ data: MiCilData } | { error: string 
   }
 }
 
+/**
+ * Registra en UNA sola carga todos los trabajos que se le hicieron a la unidad.
+ *
+ * 🚨 `tarea` viene REPETIDO en el FormData (`getAll`), no una sola vez: el que
+ * lava el camión aprovecha y controla fluidos y engrasa en la misma parada, y
+ * obligarlo a repetir el formulario entero —con su foto— tres veces es lo que
+ * hacía que se cargara una sola de las tres. Se inserta una fila por trabajo
+ * porque el KPI `cil_tareas` cuenta tareas y la cobertura mira las tres letras
+ * del ciclo por separado; lo que se comparte es la foto, no la fila.
+ */
 export async function createMiTareaCil(
   formData: FormData,
-): Promise<{ success: true } | { error: string }> {
+): Promise<{ success: true; creadas: number } | { error: string }> {
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
 
     const dominio = String(formData.get("dominio") || "").trim().toUpperCase()
-    const tareaId = String(formData.get("tarea") || "").trim()
     const descripcion = String(formData.get("descripcion") || "").trim()
     // 🚨 El nombre se ESCRIBE y arranca VACÍO, no se elige de una lista ni se
     // precarga con el usuario logueado: la tarea la puede haber hecho un ayudante
@@ -199,10 +208,14 @@ export async function createMiTareaCil(
       .map((n) => n.trim())
       .filter(Boolean)
       .join(", ")
-    const tarea = TAREAS_CIL.find((t) => t.id === tareaId)
+
+    // Se ordenan como el catálogo y se deduplican: si la pantalla manda la misma
+    // tarea dos veces, no se cargan dos filas iguales.
+    const pedidas = new Set(formData.getAll("tarea").map((t) => String(t).trim()))
+    const tareas = TAREAS_CIL.filter((t) => pedidas.has(t.id))
 
     if (!dominio) return { error: "Elegí la unidad." }
-    if (!tarea) return { error: "Elegí qué tarea hiciste." }
+    if (tareas.length === 0) return { error: "Marcá qué trabajos le hiciste." }
     if (!operario) return { error: "Escribí el nombre de quien hizo la tarea." }
 
     const foto = formData.get("foto")
@@ -232,26 +245,32 @@ export async function createMiTareaCil(
 
     const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path)
 
-    const { error } = await supabase.from("mantenimiento_cil").insert({
-      fecha: hoyArgentina(),
-      dominio,
-      // 🚨 El `id`, nunca el `label`: la columna tiene un CHECK y el label lo
-      // viola. Ver el comentario de `lib/flota/cil-tareas.ts`.
-      tarea: tarea.id,
-      operario,
-      descripcion: descripcion || null,
-      foto_url: pub.publicUrl,
-      foto_path: path,
-      created_by: profile.id,
-    })
+    // Una foto, varias filas: las tres letras del ciclo se hacen en la misma
+    // parada y pedir una foto por trabajo sólo suma fricción. `foto_path`
+    // compartido es deliberado — ver `deleteTareaCil`, que no borra el archivo
+    // mientras otra fila lo siga usando.
+    const { error } = await supabase.from("mantenimiento_cil").insert(
+      tareas.map((t) => ({
+        fecha: hoyArgentina(),
+        dominio,
+        // 🚨 El `id`, nunca el `label`: la columna tiene un CHECK y el label lo
+        // viola. Ver el comentario de `lib/flota/cil-tareas.ts`.
+        tarea: t.id,
+        operario,
+        descripcion: descripcion || null,
+        foto_url: pub.publicUrl,
+        foto_path: path,
+        created_by: profile.id,
+      })),
+    )
     if (error) {
-      // Si la fila no entra, la foto no queda colgada en el bucket.
+      // Si las filas no entran, la foto no queda colgada en el bucket.
       await supabase.storage.from(BUCKET).remove([path])
       return { error: error.message }
     }
 
     revalidatePath("/mi-cil")
-    return { success: true }
+    return { success: true, creadas: tareas.length }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
