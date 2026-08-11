@@ -504,6 +504,13 @@ export const rrhhSections: NavSection[] = [
         pampeanaOnly: true,
       },
       {
+        // Demo de integración con YAM Capital Humano (nómina + reloj + licencias).
+        label: "YAM (Capital Humano)",
+        href: "/rrhh/yam",
+        icon: <Users className="size-5" />,
+        pampeanaOnly: true,
+      },
+      {
         label: "Jornadas",
         href: "/rrhh/jornadas",
         icon: <ClockAlert className="size-5" />,
