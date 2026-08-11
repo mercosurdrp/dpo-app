@@ -307,6 +307,186 @@ function TablaItemsNoOk({
   )
 }
 
+/**
+ * Un defecto que dura tres semanas no es deuda nueva cada día: el chofer lo
+ * vuelve a marcar en cada checklist. La pérdida de fluidos del HELI1 dejó 16
+ * filas en julio. En el arrastre se agrupan por unidad + ítem, de modo que el
+ * listado muestre focos y no repeticiones, y que un solo plan cierre la serie.
+ */
+interface GrupoArrastre {
+  clave: string
+  /** El más viejo: desde cuándo viene la deuda. */
+  origen: ChecklistItemNoOk
+  /** El que lleva el plan (o el origen): es el que recibe la foto al editar. */
+  principal: ChecklistItemNoOk
+  /** Toda la serie, para cerrarla junta. */
+  ids: string[]
+  repeticiones: number
+  ultimaFecha: string
+}
+
+function agruparArrastre(items: ChecklistItemNoOk[]): GrupoArrastre[] {
+  const porClave = new Map<string, ChecklistItemNoOk[]>()
+  for (const i of items) {
+    const clave = `${i.dominio}|${i.categoria}|${i.item}`
+    const previos = porClave.get(clave)
+    if (previos) previos.push(i)
+    else porClave.set(clave, [i])
+  }
+  return Array.from(porClave, ([clave, filas]) => {
+    const orden = [...filas].sort((a, b) => a.fecha.localeCompare(b.fecha))
+    const origen = orden[0]
+    return {
+      clave,
+      origen,
+      principal: orden.find((f) => f.plan) ?? origen,
+      ids: orden.map((f) => f.id),
+      repeticiones: orden.length,
+      ultimaFecha: orden[orden.length - 1].fecha,
+    }
+  }).sort((a, b) => a.origen.fecha.localeCompare(b.origen.fecha))
+}
+
+/**
+ * Tiempo de respuesta POR FOCO: un defecto que se repitió en 16 checklists es
+ * UN foco, y tardó lo que va de la PRIMERA vez que se detectó hasta que se
+ * cerró el plan. Contado fila por fila, las repeticiones del final —de un par
+ * de días cada una— bajaban el promedio sin que se hubiera gestionado nada:
+ * la pérdida de fluidos del HELI1 daba 16 tiempos en vez de los 25 días que
+ * estuvo abierta. Mismo vicio de denominador que la adherencia auto-reportada.
+ */
+function duracionesPorFoco(items: ChecklistItemNoOk[]): number[] {
+  const focos = new Map<string, { desdeMs: number; hastaMs: number }>()
+  for (const i of items) {
+    const cierre = i.plan?.estado === "resuelto" ? i.plan.resueltoAt : null
+    if (!cierre || !i.hora) continue
+    const desdeMs = new Date(i.hora).getTime()
+    const hastaMs = new Date(cierre).getTime()
+    if (Number.isNaN(desdeMs) || Number.isNaN(hastaMs) || hastaMs < desdeMs) continue
+    const clave = `${i.dominio}|${i.categoria}|${i.item}|${cierre.slice(0, 10)}`
+    const previo = focos.get(clave)
+    if (previo) {
+      previo.desdeMs = Math.min(previo.desdeMs, desdeMs)
+      previo.hastaMs = Math.max(previo.hastaMs, hastaMs)
+    } else {
+      focos.set(clave, { desdeMs, hastaMs })
+    }
+  }
+  return Array.from(focos.values(), (f) => (f.hastaMs - f.desdeMs) / 3_600_000)
+}
+
+/**
+ * Arrastre agrupado: una fila por foco, con desde cuándo viene y en cuántos
+ * checklists se repitió.
+ */
+function TablaArrastre({
+  grupos,
+  puedeEditar,
+  ahoraMs,
+  onEditarPlan,
+  onEliminar,
+}: {
+  grupos: GrupoArrastre[]
+  puedeEditar: boolean
+  ahoraMs: number | null
+  onEditarPlan: (g: GrupoArrastre) => void
+  onEliminar: (g: GrupoArrastre) => void
+}) {
+  return (
+    <ScrollX>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Desde</TableHead>
+            <TableHead>Unidad</TableHead>
+            <TableHead>Tipo</TableHead>
+            <TableHead>Categoría</TableHead>
+            <TableHead>Ítem</TableHead>
+            <TableHead>Estado</TableHead>
+            <TableHead>Se repitió</TableHead>
+            <TableHead>Comentario</TableHead>
+            <TableHead>Plan de acción</TableHead>
+            <TableHead>Abierto hace</TableHead>
+            {puedeEditar && <TableHead className="text-right">Eliminar</TableHead>}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {grupos.map((g) => {
+            const i = g.origen
+            return (
+              <TableRow key={g.clave}>
+                <TableCell className="whitespace-nowrap">{fmtFecha(i.fecha)}</TableCell>
+                <TableCell className="font-medium">{i.dominio}</TableCell>
+                <TableCell>
+                  <TipoBadge tipo={i.tipo} />
+                </TableCell>
+                <TableCell className="text-muted-foreground">{i.categoria}</TableCell>
+                <TableCell>
+                  <span className="flex items-center gap-1.5">
+                    {i.item}
+                    {i.critico && (
+                      <span title="Ítem crítico">
+                        <ShieldAlert className="size-3.5 text-destructive" />
+                      </span>
+                    )}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <ValorBadge valor={i.valor} />
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {g.repeticiones === 1 ? (
+                    <span className="text-sm text-muted-foreground">1 checklist</span>
+                  ) : (
+                    <span className="flex flex-col">
+                      <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+                        {g.repeticiones} checklists
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        último {fmtFecha(g.ultimaFecha)}
+                      </span>
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="max-w-72 text-muted-foreground">
+                  {i.comentario || <span className="text-muted-foreground/50">—</span>}
+                </TableCell>
+                <TableCell className="min-w-44">
+                  <PlanCell
+                    item={g.principal}
+                    puedeEditar={puedeEditar}
+                    onEditar={() => onEditarPlan(g)}
+                  />
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <TiempoRespuestaCell item={i} ahoraMs={ahoraMs} />
+                </TableCell>
+                {puedeEditar && (
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                      title={
+                        g.repeticiones === 1
+                          ? "Eliminar esta observación"
+                          : `Eliminar las ${g.repeticiones} observaciones de esta serie`
+                      }
+                      onClick={() => onEliminar(g)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </TableCell>
+                )}
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </ScrollX>
+  )
+}
+
 interface Props {
   itemsNoOk: ChecklistItemNoOk[]
   comentarios: ChecklistComentario[]
@@ -337,22 +517,36 @@ export function ChecklistsMtto({
   // histórico y los focos ya cerrados de meses viejos tapaban lo del mes.
   // MES_HISTORICO muestra el acumulado completo, como antes.
   const [fMes, setFMes] = useState<string>(() => mesActualArgentina())
-  const [planItem, setPlanItem] = useState<ChecklistItemNoOk | null>(null)
-  const [delItem, setDelItem] = useState<ChecklistItemNoOk | null>(null)
+  // El plan se edita sobre un ítem, pero puede cerrar toda una serie: `ids`
+  // lleva las respuestas del grupo cuando viene del arrastre agrupado.
+  const [planTarget, setPlanTarget] = useState<{
+    item: ChecklistItemNoOk
+    ids: string[]
+  } | null>(null)
+  // Borrado: una observación suelta o la serie completa de un foco agrupado.
+  const [delSerie, setDelSerie] = useState<ChecklistItemNoOk[] | null>(null)
   const [delError, setDelError] = useState<string | null>(null)
   const [pendingDel, startDel] = useTransition()
 
-  function confirmarBorrado() {
-    if (!delItem) return
+  function pedirBorrado(items: ChecklistItemNoOk[]) {
     setDelError(null)
-    const id = delItem.id
+    setDelSerie(items)
+  }
+
+  function confirmarBorrado() {
+    if (!delSerie) return
+    setDelError(null)
+    const ids = delSerie.map((i) => i.id)
     startDel(async () => {
-      const res = await eliminarItemChecklist(id)
-      if ("error" in res) {
-        setDelError(res.error)
-        return
+      for (const id of ids) {
+        const res = await eliminarItemChecklist(id)
+        if ("error" in res) {
+          setDelError(res.error)
+          router.refresh()
+          return
+        }
       }
-      setDelItem(null)
+      setDelSerie(null)
       router.refresh()
     })
   }
@@ -406,6 +600,10 @@ export function ChecklistsMtto({
   // Los KPI miden lo que se está viendo: mes elegido + arrastre abierto.
   const visibles = useMemo(() => [...items, ...arrastre], [items, arrastre])
 
+  // El arrastre se lista por FOCO, no por checklist: ver 16 veces la misma
+  // pérdida de fluidos no es ver 16 problemas.
+  const grupos = useMemo(() => agruparArrastre(arrastre), [arrastre])
+
   const coments = useMemo(
     () =>
       comentarios.filter((c) => coincide(c) && (historico || mesDe(c.fecha) === fMes)),
@@ -416,12 +614,12 @@ export function ChecklistsMtto({
   const criticos = visibles.filter((i) => i.critico).length
   const conPlan = visibles.filter((i) => i.plan).length
   const abiertos = visibles.filter((i) => i.plan?.estado !== "resuelto").length
-  // Tiempo de respuesta: promedio de los focos ya cerrados (carga del
-  // checklist → cierre del plan de acción).
-  const resueltos = visibles.filter((i) => i.horasResolucion != null)
+  // Tiempo de respuesta: promedio de los focos ya cerrados, medido de la
+  // primera detección al cierre del plan.
+  const duraciones = useMemo(() => duracionesPorFoco(visibles), [visibles])
   const horasProm =
-    resueltos.length > 0
-      ? resueltos.reduce((a, i) => a + (i.horasResolucion ?? 0), 0) / resueltos.length
+    duraciones.length > 0
+      ? duraciones.reduce((a, h) => a + h, 0) / duraciones.length
       : null
 
   return (
@@ -458,8 +656,11 @@ export function ChecklistsMtto({
           valor={
             <>
               {conPlan}
+              {/* Sobre lo que se está viendo, igual que el resto de los KPI: el
+                  numerador contaba el arrastre y el denominador no, así que
+                  podía dar más planes que observaciones. */}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
-                / {items.length}
+                / {visibles.length}
               </span>
             </>
           }
@@ -475,7 +676,7 @@ export function ChecklistsMtto({
             horasProm == null ? "neutro" : horasProm <= 72 ? "ok" : "alerta"
           }
           dpo="1.3"
-          sub={`Promedio de ${resueltos.length} foco${resueltos.length === 1 ? "" : "s"} resuelto${resueltos.length === 1 ? "" : "s"} (carga del checklist → cierre del plan)`}
+          sub={`Promedio de ${duraciones.length} foco${duraciones.length === 1 ? "" : "s"} resuelto${duraciones.length === 1 ? "" : "s"} (primera detección → cierre del plan)`}
         />
         <KpiCard
           label="Con comentarios"
@@ -559,11 +760,8 @@ export function ChecklistsMtto({
               items={items}
               puedeEditar={puedeEditar}
               ahoraMs={ahoraMs}
-              onEditarPlan={setPlanItem}
-              onEliminar={(i) => {
-                setDelError(null)
-                setDelItem(i)
-              }}
+              onEditarPlan={(i) => setPlanTarget({ item: i, ids: [i.id] })}
+              onEliminar={(i) => pedirBorrado([i])}
             />
           )}
         </CardContent>
@@ -581,24 +779,32 @@ export function ChecklistsMtto({
                 variant="outline"
                 className="border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
               >
-                {arrastre.length} sin resolver
+                {grupos.length} sin resolver
               </Badge>
             </CardTitle>
             <p className="text-xs text-muted-foreground">
               Focos anteriores a {fmtMes(fMes)} que todavía no tienen el plan de acción cerrado.
-              Siguen acá hasta que se resuelvan.
+              Siguen acá hasta que se resuelvan. Un mismo defecto se cuenta{" "}
+              <strong>una vez</strong>: la columna «Se repitió» dice en cuántos checklists volvió
+              a aparecer{arrastre.length !== grupos.length && <> ({arrastre.length} en total)</>}, y
+              el plan de acción cierra toda la serie de una.
             </p>
           </CardHeader>
           <CardContent>
-            <TablaItemsNoOk
-              items={arrastre}
+            <TablaArrastre
+              grupos={grupos}
               puedeEditar={puedeEditar}
               ahoraMs={ahoraMs}
-              onEditarPlan={setPlanItem}
-              onEliminar={(i) => {
-                setDelError(null)
-                setDelItem(i)
-              }}
+              onEditarPlan={(g) => setPlanTarget({ item: g.principal, ids: g.ids })}
+              // De la más vieja a la más nueva: el diálogo muestra el rango de
+              // fechas y `arrastre` viene ordenado al revés.
+              onEliminar={(g) =>
+                pedirBorrado(
+                  arrastre
+                    .filter((i) => g.ids.includes(i.id))
+                    .sort((a, b) => a.fecha.localeCompare(b.fecha))
+                )
+              }
             />
           </CardContent>
         </Card>
@@ -647,31 +853,45 @@ export function ChecklistsMtto({
         </CardContent>
       </Card>
 
-      {planItem && (
+      {planTarget && (
         <PlanDialog
-          item={planItem}
-          onClose={() => setPlanItem(null)}
+          item={planTarget.item}
+          ids={planTarget.ids}
+          onClose={() => setPlanTarget(null)}
         />
       )}
 
-      <Dialog open={!!delItem} onOpenChange={(o: boolean) => !o && !pendingDel && setDelItem(null)}>
+      <Dialog open={!!delSerie} onOpenChange={(o: boolean) => !o && !pendingDel && setDelSerie(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Eliminar observación</DialogTitle>
+            <DialogTitle>
+              {delSerie && delSerie.length > 1
+                ? `Eliminar ${delSerie.length} observaciones`
+                : "Eliminar observación"}
+            </DialogTitle>
             <DialogDescription>
-              {delItem && (
+              {delSerie && delSerie.length > 0 && (
                 <>
-                  {delItem.dominio} · {delItem.item} · {fmtFecha(delItem.fecha)}
+                  {delSerie[0].dominio} · {delSerie[0].item} ·{" "}
+                  {delSerie.length > 1
+                    ? `${fmtFecha(delSerie[0].fecha)} a ${fmtFecha(
+                        delSerie[delSerie.length - 1].fecha
+                      )}`
+                    : fmtFecha(delSerie[0].fecha)}
                 </>
               )}
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Se quita esta observación No OK del listado{delItem?.plan ? " junto con su plan de acción" : ""}. Esta acción no se puede deshacer.
+            {delSerie && delSerie.length > 1
+              ? `Se quitan las ${delSerie.length} observaciones No OK de esta serie`
+              : "Se quita esta observación No OK del listado"}
+            {delSerie?.some((i) => i.plan) ? " junto con su plan de acción" : ""}. Esta acción no
+            se puede deshacer.
           </p>
           {delError && <p className="text-sm text-destructive">{delError}</p>}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDelItem(null)} disabled={pendingDel}>
+            <Button type="button" variant="outline" onClick={() => setDelSerie(null)} disabled={pendingDel}>
               Cancelar
             </Button>
             <Button
@@ -1112,7 +1332,16 @@ function PlanCell({
   )
 }
 
-function PlanDialog({ item, onClose }: { item: ChecklistItemNoOk; onClose: () => void }) {
+function PlanDialog({
+  item,
+  ids,
+  onClose,
+}: {
+  item: ChecklistItemNoOk
+  /** Respuestas que cierra este plan: una sola, o toda la serie del foco. */
+  ids: string[]
+  onClose: () => void
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -1134,6 +1363,9 @@ function PlanDialog({ item, onClose }: { item: ChecklistItemNoOk; onClose: () =>
     fd.set("tipo", tipo)
     fd.set("estado", estado)
     fd.set("descripcion", descripcion.trim())
+    // El resto de la serie recibe el mismo plan: es un defecto, no uno por día.
+    const resto = ids.filter((id) => id !== item.id)
+    if (resto.length > 0) fd.set("respuesta_ids_extra", resto.join(","))
     if (foto) fd.set("foto", foto)
     if (eliminarFoto) fd.set("eliminar_foto", "1")
     startTransition(async () => {
@@ -1170,6 +1402,11 @@ function PlanDialog({ item, onClose }: { item: ChecklistItemNoOk; onClose: () =>
           <DialogTitle>Plan de acción</DialogTitle>
           <DialogDescription>
             {item.dominio} · {item.item} · {fmtFecha(item.fecha)}
+            {ids.length > 1 && (
+              <span className="mt-1 block text-amber-600 dark:text-amber-400">
+                Este plan se aplica a los {ids.length} checklists en los que se repitió el foco.
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
 

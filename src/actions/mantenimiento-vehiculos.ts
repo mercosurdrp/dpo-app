@@ -1598,6 +1598,43 @@ export async function upsertPlanChecklist(
       if (error) return { error: error.message }
     }
 
+    // Un mismo defecto se reporta un checklist por día mientras dura: la
+    // pérdida de fluidos del HELI1 dejó 16 filas en julio. Cuando el plan se
+    // carga desde el arrastre agrupado llegan acá los ids de toda la serie y se
+    // cierran todos con el mismo plan; si no, el foco sigue figurando abierto
+    // una vez por día. La foto queda sólo en el ítem de origen: es una
+    // reparación, no una por checklist.
+    const extras = String(formData.get("respuesta_ids_extra") || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s && s !== respuestaId)
+    if (extras.length > 0) {
+      const { data: yaTienen, error: leerErr } = await supabase
+        .from("checklist_planes_accion")
+        .select("id, respuesta_id")
+        .in("respuesta_id", extras)
+      if (leerErr) return { error: `Leyendo la serie: ${leerErr.message}` }
+      const planPorRespuesta = new Map(
+        ((yaTienen ?? []) as { id: string; respuesta_id: string }[]).map((p) => [
+          p.respuesta_id,
+          p.id,
+        ])
+      )
+      const comunes = { tipo, estado, descripcion, updated_at: new Date().toISOString() }
+      for (const rid of extras) {
+        const planExistente = planPorRespuesta.get(rid)
+        const { error } = planExistente
+          ? await supabase
+              .from("checklist_planes_accion")
+              .update(comunes)
+              .eq("id", planExistente)
+          : await supabase
+              .from("checklist_planes_accion")
+              .insert({ respuesta_id: rid, ...comunes, created_by: profile.id })
+        if (error) return { error: `Propagando a la serie: ${error.message}` }
+      }
+    }
+
     let row: Record<string, unknown> | null = null
     const releer = await supabase
       .from("checklist_planes_accion")
