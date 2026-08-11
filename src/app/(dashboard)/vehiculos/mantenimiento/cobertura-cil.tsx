@@ -185,10 +185,11 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
             )}
 
             <p className="text-xs text-muted-foreground">
-              No entran en el seguimiento las <strong>camionetas</strong> —la inspección
-              y la lubricación se hacen en la base, pero el lavado a veces va a un
-              lavadero externo y no deja registro— ni el <strong>acoplado</strong>, que
-              no tiene motor.
+              Entran camiones, <strong>camionetas</strong> y autoelevadores. Cuando el
+              lavado de una camioneta se hace en un lavadero externo, la tarea se carga
+              igual aclarándolo en la descripción: que lo haga un tercero no la deja
+              afuera del registro. El único que no entra es el{" "}
+              <strong>acoplado</strong>, que no tiene motor.
             </p>
           </>
         )}

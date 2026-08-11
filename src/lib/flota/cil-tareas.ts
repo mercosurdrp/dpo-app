@@ -94,15 +94,19 @@ export function tareaDelCiclo(tareaGuardada: string): string {
 }
 
 /**
- * Alcance del seguimiento mensual, por `catalogo_vehiculos.tipo`: camiones y
- * autoelevadores.
+ * Alcance del seguimiento mensual, por `catalogo_vehiculos.tipo`: camiones,
+ * camionetas y autoelevadores.
  *
- * Quedan afuera, por decisión de Francisco el 06/08/2026:
- *  - **camionetas**: la inspección y la lubricación se hacen en la base, pero el
- *    lavado a veces va a un lavadero externo y no deja registro propio;
- *  - **acoplado**: no tiene motor, así que fluidos y lubricación no le aplican.
+ * 🚨 Las **camionetas** entraron el 11/08/2026. Habían quedado afuera el
+ * 06/08 porque el lavado a veces se hace en un lavadero externo y no dejaba
+ * registro propio; el motivo se cayó solo: las dos se lavaron y una ya se cargó
+ * a mano. Cuando el lavado va al lavadero, la tarea se registra igual y se
+ * aclara en la descripción — que lo haga un tercero no lo vuelve invisible.
+ *
+ * Sigue afuera el **acoplado**: no tiene motor, así que fluidos y lubricación
+ * no le aplican.
  */
-export const TIPOS_CIL_OBLIGATORIOS = ["camion", "autoelevador"] as const
+export const TIPOS_CIL_OBLIGATORIOS = ["camion", "camioneta", "autoelevador"] as const
 
 /**
  * Unidades que no entran aunque su tipo sí: no ruedan y no tienen chofer

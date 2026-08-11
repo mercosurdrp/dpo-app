@@ -71,9 +71,13 @@ export const PRESION_MAX_PSI = 120
 /**
  * Alcance del control mensual, por `catalogo_vehiculos.tipo`.
  *
- * Igual que en el CIL: camiones y autoelevadores. Las camionetas y el acoplado
- * se ven en el módulo de Neumáticos del supervisor, pero no entran en el
- * porcentaje mensual del chofer.
+ * Camiones y autoelevadores. Las camionetas y el acoplado se ven en el módulo
+ * de Neumáticos del supervisor, pero no entran en el porcentaje mensual del
+ * chofer.
+ *
+ * 🚨 Ya NO coincide con el alcance del CIL: ahí las camionetas entraron el
+ * 11/08/2026 y acá quedaron afuera. Si alguna vez tienen que volver a ir
+ * juntas, es una decisión explícita, no un descuido de este comentario.
  */
 export const TIPOS_NEUMATICOS_OBLIGATORIOS = ["camion", "autoelevador"] as const
 
