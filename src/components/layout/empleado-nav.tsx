@@ -11,6 +11,7 @@ import {
   CalendarRange,
   CalendarCheck,
   Boxes,
+  CircleDot,
   PackageCheck,
   Megaphone,
   Wrench,
@@ -37,6 +38,10 @@ const items = [
   ...(IS_MISIONES ? [] : [{ label: "Rechazos", href: "/rechazos", icon: PackageX }]),
   { label: "Mis vacaciones", href: "/rrhh/mis-solicitudes", icon: CalendarRange },
   { label: "Vehículos", href: "/vehiculos/checklist", icon: Truck },
+  // Ronda mensual de cubiertas: la mide el chofer sobre su unidad. Tiene
+  // pantalla propia porque el módulo de mantenimiento es una consola de
+  // escritorio y desde el celular no se puede cargar.
+  { label: "Neumáticos", href: "/mis-neumaticos", icon: CircleDot },
   // "Mis tareas" al final del menú (preferencia del usuario).
   { label: "Mis tareas", href: "/mis-tareas", icon: ClipboardList },
 ]

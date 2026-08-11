@@ -1,6 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth, requireRole } from "@/lib/session"
 import type { EjeNeumatico } from "@/lib/vehiculos/neumaticos-layout"
 import {
@@ -28,6 +29,20 @@ export interface KmFlotaUnidad {
   kmActual: number | null
   kmDia: number | null
   fecha: string | null
+}
+
+/**
+ * Día de hoy en horario argentino: el server corre en UTC y una medición
+ * cargada después de las 21 se guardaba con la fecha del día siguiente, que
+ * a fin de mes la corría de la ronda.
+ */
+function hoyArgentina(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())
 }
 
 // ==================== LECTURA ====================
@@ -646,7 +661,19 @@ export async function volvioDelRecapado(input: {
 // que había dos formas de hacer lo mismo y ninguna dejaba evidencia: se quitó.
 // Para sacar una cubierta de circulación se usa `marcarParaDesecho`.
 
-/** Registra una medición de desgaste y actualiza la profundidad actual. */
+/**
+ * Registra una medición de desgaste y actualiza la profundidad actual.
+ *
+ * La ronda mensual la mide el chofer sobre su propia unidad, así que alcanza
+ * con estar logueado: medir no cambia el parque de cubiertas, sólo agrega una
+ * lectura. Montar, desmontar, dar de baja o editar la cubierta siguen siendo
+ * de mantenimiento (admin/supervisor).
+ *
+ * La escritura va con el cliente de servicio porque las dos tablas tienen RLS
+ * de admin/supervisor: con la sesión del chofer la base rechazaba el insert
+ * ("row-level security"), que es el error que veían al guardar. Queda
+ * `created_by` para saber quién midió.
+ */
 export async function registrarMedicionNeumatico(input: {
   neumatico_id: string
   profundidad_mm?: number | null
@@ -656,13 +683,13 @@ export async function registrarMedicionNeumatico(input: {
   fecha?: string
 }): Promise<{ success: true } | { error: string }> {
   try {
-    const profile = await requireRole(["admin", "supervisor"])
-    const supabase = await createClient()
+    const profile = await requireAuth()
+    const supabase = createAdminClient()
     const { error: insErr } = await supabase
       .from("mantenimiento_neumatico_mediciones")
       .insert({
         neumatico_id: input.neumatico_id,
-        fecha: input.fecha ?? new Date().toISOString().slice(0, 10),
+        fecha: input.fecha ?? hoyArgentina(),
         profundidad_mm: input.profundidad_mm ?? null,
         km: input.km ?? null,
         presion_psi: input.presion_psi ?? null,
@@ -672,13 +699,17 @@ export async function registrarMedicionNeumatico(input: {
     if (insErr) return { error: insErr.message }
 
     if (input.profundidad_mm != null) {
-      await supabase
+      // Antes este update no miraba el error: con la sesión de un usuario sin
+      // permiso de escritura la medición entraba y la profundidad de la
+      // cubierta quedaba en el valor viejo, sin avisar.
+      const { error: updErr } = await supabase
         .from("mantenimiento_neumaticos")
         .update({
           profundidad_actual_mm: input.profundidad_mm,
           updated_at: new Date().toISOString(),
         })
         .eq("id", input.neumatico_id)
+      if (updErr) return { error: updErr.message }
     }
     return { success: true }
   } catch (e) {
