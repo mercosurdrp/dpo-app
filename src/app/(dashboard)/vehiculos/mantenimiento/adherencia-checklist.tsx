@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { CircleAlert, Loader2, ShieldCheck } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -44,11 +44,43 @@ function restarDias(fecha: string, dias: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-const RANGOS = [
-  { id: "30", label: "Últimos 30 días", dias: 30 },
-  { id: "60", label: "Últimos 60 días", dias: 60 },
-  { id: "90", label: "Últimos 90 días", dias: 90 },
+const MESES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 ]
+
+/**
+ * El KPI es MENSUAL, no una ventana móvil. Con "últimos 30 días" el mes en
+ * curso arrastraba el anterior —en agosto seguía pesando todo julio, que fue
+ * malo— y el número nunca terminaba de reflejar cómo viene el mes. Se mide mes
+ * calendario, que además es como se reporta el DPO.
+ */
+function ultimosMeses(hoy: string, cantidad: number) {
+  const [y, m] = [Number(hoy.slice(0, 4)), Number(hoy.slice(5, 7))]
+  const out: { id: string; label: string; desde: string; hasta: string }[] = []
+  for (let i = 0; i < cantidad; i++) {
+    const d = new Date(Date.UTC(y, m - 1 - i, 1))
+    const yy = d.getUTCFullYear()
+    const mm = d.getUTCMonth()
+    const ultimo = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate()
+    const id = `${yy}-${String(mm + 1).padStart(2, "0")}`
+    out.push({
+      id,
+      label: `${MESES[mm]} ${yy}${i === 0 ? " (en curso)" : ""}`,
+      desde: `${id}-01`,
+      hasta: `${id}-${String(ultimo).padStart(2, "0")}`,
+    })
+  }
+  return out
+}
+
+/**
+ * Un checklist no se carga retroactivo: pide el odómetro, y a los dos días
+ * nadie sabe con qué número volvió el camión. Inventarlo sería peor que la
+ * falta. Así que sólo tiene sentido reclamar lo de ayer y anteayer; lo más
+ * viejo ya no se recupera y queda como incumplimiento del mes.
+ */
+const DIAS_RECLAMABLES = 2
 
 const FALTA_LABEL: Record<string, string> = {
   ambos: "Sin ningún checklist",
@@ -57,28 +89,37 @@ const FALTA_LABEL: Record<string, string> = {
 }
 
 export function AdherenciaChecklistCard() {
-  const [rango, setRango] = useState("30")
+  const meses = useMemo(() => ultimosMeses(hoyArg(), 6), [])
+  const [rango, setRango] = useState(meses[0].id)
   const [data, setData] = useState<AdherenciaChecklist | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [verTodos, setVerTodos] = useState(false)
 
-  const cargar = useCallback(async (id: string) => {
-    setCargando(true)
-    setError(null)
-    const dias = RANGOS.find((r) => r.id === id)?.dias ?? 30
-    const hasta = hoyArg()
-    const res = await getAdherenciaChecklist(restarDias(hasta, dias), hasta)
-    if ("error" in res) setError(res.error)
-    else setData(res.data)
-    setCargando(false)
-  }, [])
+  const cargar = useCallback(
+    async (id: string) => {
+      setCargando(true)
+      setError(null)
+      const mes = meses.find((m) => m.id === id) ?? meses[0]
+      const res = await getAdherenciaChecklist(mes.desde, mes.hasta)
+      if ("error" in res) setError(res.error)
+      else setData(res.data)
+      setCargando(false)
+    },
+    [meses],
+  )
 
   useEffect(() => {
     void cargar(rango)
   }, [rango, cargar])
 
   const cumple = data?.pct === 100
+
+  // Se reclama sólo lo de los últimos días: más atrás el odómetro ya no se
+  // puede saber y cargarlo sería inventarlo.
+  const corteReclamo = restarDias(hoyArg(), DIAS_RECLAMABLES)
+  const reclamables = (data?.faltantes ?? []).filter((f) => f.fecha >= corteReclamo)
+  const cerrados = (data?.faltantes ?? []).filter((f) => f.fecha < corteReclamo)
 
   return (
     <Card>
@@ -92,7 +133,7 @@ export function AdherenciaChecklistCard() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {RANGOS.map((r) => (
+            {meses.map((r) => (
               <SelectItem key={r.id} value={r.id}>
                 {r.label}
               </SelectItem>
@@ -171,7 +212,9 @@ export function AdherenciaChecklistCard() {
                 <CircleAlert className="mt-0.5 size-4 shrink-0" />
                 <span>
                   Por debajo del 100 %: cada día en rojo necesita una acción registrada.
-                  Mostrar el número sin la acción no alcanza para el requisito.
+                  Mostrar el número sin la acción no alcanza para el requisito. La acción
+                  es de gestión con el chofer —no cargar el checklist tarde: el odómetro
+                  de ese día ya no se puede saber.
                 </span>
               </p>
             )}
@@ -211,14 +254,15 @@ export function AdherenciaChecklistCard() {
               </table>
             </div>
 
-            {/* El detalle, que es lo que hay que ir a reclamar */}
-            {data.faltantes.length > 0 && (
+            {/* Lo que TODAVÍA se puede pedir: el chofer se acuerda del odómetro. */}
+            {reclamables.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">
-                  Días a reclamar ({data.faltantes.length})
+                  Para reclamar hoy ({reclamables.length}) — de los últimos{" "}
+                  {DIAS_RECLAMABLES} días
                 </p>
                 <ul className="space-y-1">
-                  {(verTodos ? data.faltantes : data.faltantes.slice(0, 12)).map((f) => (
+                  {reclamables.map((f) => (
                     <li
                       key={`${f.fecha}|${f.dominio}`}
                       className="flex items-center justify-between border-b pb-1 text-sm last:border-0"
@@ -239,15 +283,47 @@ export function AdherenciaChecklistCard() {
                     </li>
                   ))}
                 </ul>
-                {data.faltantes.length > 12 && (
+              </div>
+            )}
+
+            {/* Lo viejo no se reclama: un checklist retroactivo pide un odómetro
+                que ya nadie sabe, y ponerlo a ojo es peor que la falta. Queda
+                listado como lo que es: incumplimiento cerrado del mes. */}
+            {cerrados.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Ya no se cargan ({cerrados.length}) — el odómetro de ese día no se
+                  puede saber; cuentan como incumplimiento del mes
+                </p>
+                <ul className="space-y-1">
+                  {(verTodos ? cerrados : cerrados.slice(0, 12)).map((f) => (
+                    <li
+                      key={`${f.fecha}|${f.dominio}`}
+                      className="flex items-center justify-between border-b pb-1 text-sm last:border-0"
+                    >
+                      <span>
+                        <span className="font-medium">{f.dominio}</span>
+                        <span className="text-muted-foreground"> · {fmtDia(f.fecha)}</span>
+                      </span>
+                      <span
+                        className={
+                          f.falta === "ambos"
+                            ? "text-xs text-red-600 dark:text-red-400"
+                            : "text-xs text-amber-600 dark:text-amber-400"
+                        }
+                      >
+                        {FALTA_LABEL[f.falta]}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {cerrados.length > 12 && (
                   <button
                     type="button"
                     onClick={() => setVerTodos((v) => !v)}
                     className="text-xs text-primary hover:underline"
                   >
-                    {verTodos
-                      ? "Ver menos"
-                      : `Ver los ${data.faltantes.length - 12} restantes`}
+                    {verTodos ? "Ver menos" : `Ver los ${cerrados.length - 12} restantes`}
                   </button>
                 )}
               </div>
