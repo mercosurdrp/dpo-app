@@ -986,7 +986,7 @@ function TareasCilSection({
         </div>
       </CardHeader>
       {verDetalle && (
-        <CardContent className="overflow-x-auto">
+        <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
             Limpieza, inspección y lubricación autónomas hechas por los operarios
             (incrementales al checklist diario).
@@ -996,36 +996,53 @@ function TareasCilSection({
               Sin tareas CIL registradas.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Unidad</TableHead>
-                  <TableHead>Tarea</TableHead>
-                  <TableHead>Operario</TableHead>
-                  <TableHead>Detalle</TableHead>
-                  <TableHead>Evidencia</TableHead>
-                  {puedeEditar && <TableHead className="w-10" />}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tareasCil.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="whitespace-nowrap">{fmtFecha(t.fecha)}</TableCell>
-                    <TableCell className="font-medium">{t.dominio}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className="border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
-                      >
-                        {labelTareaCil(t.tarea)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{t.operario}</TableCell>
-                    <TableCell className="max-w-64 text-muted-foreground">
-                      {t.descripcion ?? "—"}
-                    </TableCell>
-                    <TableCell>
+            /*
+              🚨 `ScrollX` + `min-w` en la tabla, y NO un `overflow-x-auto` en el
+              CardContent: con la tabla libre de comprimirse, el Detalle largo
+              desbordaba su celda y se PISABA con «Ver»/«Subir» y con el botón de
+              borrar (se leía "…se hizo eVerel"). El ancho mínimo la deja
+              scrollear en vez de aplastarse, con la barra arriba como en las
+              otras tablas de esta pantalla.
+            */
+            <ScrollX>
+              <Table className="min-w-[60rem]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Unidad</TableHead>
+                    <TableHead>Tarea</TableHead>
+                    <TableHead>Operario</TableHead>
+                    <TableHead>Detalle</TableHead>
+                    <TableHead>Evidencia</TableHead>
+                    {puedeEditar && <TableHead className="w-10" />}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tareasCil.map((t) => (
+                    <TableRow key={t.id}>
+                      <TableCell className="align-top whitespace-nowrap">
+                        {fmtFecha(t.fecha)}
+                      </TableCell>
+                      <TableCell className="align-top font-medium">{t.dominio}</TableCell>
+                      <TableCell className="align-top">
+                        <Badge
+                          variant="outline"
+                          className="border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                        >
+                          {labelTareaCil(t.tarea)}
+                        </Badge>
+                      </TableCell>
+                      {/* El operario puede ser más de uno: se deja quebrar. */}
+                      <TableCell className="w-44 align-top break-words whitespace-normal text-muted-foreground">
+                        {t.operario}
+                      </TableCell>
+                      {/* 🚨 `whitespace-normal break-words` con ancho fijo: sin
+                          esto el texto largo salía de la celda en vez de bajar de
+                          renglón, y tapaba las columnas de la derecha. */}
+                      <TableCell className="w-80 max-w-80 align-top break-words whitespace-normal text-muted-foreground">
+                        {t.descripcion ?? "—"}
+                      </TableCell>
+                      <TableCell className="align-top whitespace-nowrap">
                       {t.foto_url ? (
                         <a
                           href={t.foto_url}
@@ -1040,30 +1057,31 @@ function TareasCilSection({
                       ) : (
                         <span className="text-muted-foreground/50">—</span>
                       )}
-                    </TableCell>
-                    {puedeEditar && (
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-7 text-destructive"
-                          onClick={async () => {
-                            const res = await deleteTareaCil(t.id)
-                            if ("error" in res) toast.error(res.error)
-                            else {
-                              toast.success("Eliminada")
-                              refresh()
-                            }
-                          }}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
                       </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                      {puedeEditar && (
+                        <TableCell className="align-top">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 text-destructive"
+                            onClick={async () => {
+                              const res = await deleteTareaCil(t.id)
+                              if ("error" in res) toast.error(res.error)
+                              else {
+                                toast.success("Eliminada")
+                                refresh()
+                              }
+                            }}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollX>
           )}
         </CardContent>
       )}
