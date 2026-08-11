@@ -34,6 +34,8 @@ import {
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
+  ChevronRight,
   MessageSquareText,
   ShieldAlert,
   ClipboardCheck,
@@ -945,10 +947,15 @@ function TareasCilSection({
   const [, startTransition] = useTransition()
   const refresh = () => startTransition(() => router.refresh())
   const [abrirCarga, setAbrirCarga] = useState(false)
+  // 🚨 Arranca CERRADO: es el detalle fila por fila de todo el histórico y
+  // empujaba para abajo la lectura que importa —la Cobertura del CIL, que está
+  // justo arriba—. El conteo queda a la vista en el título, así que cerrado
+  // igual se sabe cuántas hay.
+  const [verDetalle, setVerDetalle] = useState(false)
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-3">
         <CardTitle className="flex flex-wrap items-center gap-2 text-base">
           <ClipboardCheck className="size-4 text-muted-foreground" /> Tareas CIL / ATO
           <Badge variant="outline" className="bg-muted text-muted-foreground">
@@ -956,92 +963,110 @@ function TareasCilSection({
           </Badge>
           <DpoPuntoBadge numero="4.1" />
         </CardTitle>
-        {puedeEditar && (
-          <Button size="sm" onClick={() => setAbrirCarga(true)}>
-            <Plus className="mr-1 size-4" /> Registrar tarea
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1 text-xs"
+            aria-expanded={verDetalle}
+            onClick={() => setVerDetalle((v) => !v)}
+          >
+            {verDetalle ? (
+              <ChevronDown className="size-3.5" />
+            ) : (
+              <ChevronRight className="size-3.5" />
+            )}
+            {verDetalle ? "Ocultar detalle" : "Ver detalle"}
           </Button>
-        )}
+          {puedeEditar && (
+            <Button size="sm" onClick={() => setAbrirCarga(true)}>
+              <Plus className="mr-1 size-4" /> Registrar tarea
+            </Button>
+          )}
+        </div>
       </CardHeader>
-      <CardContent className="overflow-x-auto">
-        <p className="mb-3 text-sm text-muted-foreground">
-          Limpieza, inspección y lubricación autónomas hechas por los operarios
-          (incrementales al checklist diario).
-        </p>
-        {tareasCil.length === 0 ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            Sin tareas CIL registradas.
+      {verDetalle && (
+        <CardContent className="overflow-x-auto">
+          <p className="mb-3 text-sm text-muted-foreground">
+            Limpieza, inspección y lubricación autónomas hechas por los operarios
+            (incrementales al checklist diario).
           </p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Unidad</TableHead>
-                <TableHead>Tarea</TableHead>
-                <TableHead>Operario</TableHead>
-                <TableHead>Detalle</TableHead>
-                <TableHead>Evidencia</TableHead>
-                {puedeEditar && <TableHead className="w-10" />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tareasCil.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="whitespace-nowrap">{fmtFecha(t.fecha)}</TableCell>
-                  <TableCell className="font-medium">{t.dominio}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className="border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
-                    >
-                      {labelTareaCil(t.tarea)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{t.operario}</TableCell>
-                  <TableCell className="max-w-64 text-muted-foreground">
-                    {t.descripcion ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    {t.foto_url ? (
-                      <a
-                        href={t.foto_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-primary hover:underline"
-                      >
-                        <ImageIcon className="size-3.5" /> Ver
-                      </a>
-                    ) : puedeEditar ? (
-                      <SubirFotoCil id={t.id} onSubida={refresh} />
-                    ) : (
-                      <span className="text-muted-foreground/50">—</span>
-                    )}
-                  </TableCell>
-                  {puedeEditar && (
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-7 text-destructive"
-                        onClick={async () => {
-                          const res = await deleteTareaCil(t.id)
-                          if ("error" in res) toast.error(res.error)
-                          else {
-                            toast.success("Eliminada")
-                            refresh()
-                          }
-                        }}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </TableCell>
-                  )}
+          {tareasCil.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              Sin tareas CIL registradas.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Unidad</TableHead>
+                  <TableHead>Tarea</TableHead>
+                  <TableHead>Operario</TableHead>
+                  <TableHead>Detalle</TableHead>
+                  <TableHead>Evidencia</TableHead>
+                  {puedeEditar && <TableHead className="w-10" />}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
+              </TableHeader>
+              <TableBody>
+                {tareasCil.map((t) => (
+                  <TableRow key={t.id}>
+                    <TableCell className="whitespace-nowrap">{fmtFecha(t.fecha)}</TableCell>
+                    <TableCell className="font-medium">{t.dominio}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className="border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                      >
+                        {labelTareaCil(t.tarea)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{t.operario}</TableCell>
+                    <TableCell className="max-w-64 text-muted-foreground">
+                      {t.descripcion ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      {t.foto_url ? (
+                        <a
+                          href={t.foto_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-primary hover:underline"
+                        >
+                          <ImageIcon className="size-3.5" /> Ver
+                        </a>
+                      ) : puedeEditar ? (
+                        <SubirFotoCil id={t.id} onSubida={refresh} />
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      )}
+                    </TableCell>
+                    {puedeEditar && (
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-destructive"
+                          onClick={async () => {
+                            const res = await deleteTareaCil(t.id)
+                            if ("error" in res) toast.error(res.error)
+                            else {
+                              toast.success("Eliminada")
+                              refresh()
+                            }
+                          }}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      )}
       {abrirCarga && (
         <TareaCilDialog
           dominios={dominios}
