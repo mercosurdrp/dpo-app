@@ -465,4 +465,72 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       },
     ],
   },
+
+  flo_checklist: {
+    objeto:
+      "Acuerdo de nivel de servicio entre Flota y Distribución para el tratamiento de los defectos que el chofer detecta en el checklist de salida y de retorno. El checklist sólo sirve si lo que se reporta se repara: este acuerdo fija en cuánto tiempo Flota se compromete a cerrar cada defecto, según su criticidad, y cómo se sigue el cumplimiento.",
+    nivelServicio: [
+      "Defecto CRÍTICO: reparado dentro de las 24 horas de cargado el checklist, o la unidad queda fuera de servicio hasta su reparación. Un defecto crítico abierto no habilita la salida a ruta.",
+      "Defecto NO crítico: reparado dentro de las 72 horas de cargado el checklist.",
+      "Todo defecto lleva un plan de acción registrado con qué se trabajó, aunque la reparación se resuelva en el día. Un defecto reparado sin plan cargado se considera incumplido: no hay evidencia.",
+      "Objetivo mensual: promedio de resolución ≤ 7 días y ≥ 90 % de los focos cerrados dentro del plazo que les corresponde por criticidad.",
+    ],
+    medicion: [
+      "La medición es automática a partir del módulo Checklists de la plataforma DPO (Vehículos → Mantenimiento → Checklists).",
+      "El reloj arranca cuando el chofer carga el checklist y se detiene cuando se cierra el plan de acción. El sello de cierre lo escribe la base de datos, no la aplicación: corregir la descripción o la foto después no mueve el tiempo, y reabrir el plan borra el sello.",
+      "El tiempo se mide POR FOCO, no por checklist. Un mismo defecto que el chofer vuelve a marcar día tras día mientras dura es UN solo foco, y se mide desde la PRIMERA vez que se detectó hasta que se cerró: si no, las repeticiones cortas del final bajan el promedio sin que se haya gestionado nada.",
+      "La criticidad no se decide caso por caso: sale del catálogo de ítems del checklist, donde cada ítem está marcado como crítico o no.",
+      "El indicador mensual se calcula sobre los focos cerrados en el mes.",
+      "El chofer ve el estado de lo que reportó en el bloque Novedades de la unidad de su checklist, sin tener que confirmar nada: cuando el plan se cierra, le aparece resuelto.",
+    ],
+    roles: [
+      {
+        label: "Detección",
+        valor: "Chofer (carga el checklist de salida y de retorno con el estado real de la unidad).",
+      },
+      {
+        label: "Reparación y carga del plan de acción",
+        valor: "Supervisor de Flota.",
+      },
+      {
+        label: "Decisión de parar la unidad",
+        valor:
+          "Supervisor de Flota ante un defecto crítico; si la unidad tiene reparto comprometido, en conjunto con el Jefe de Logística.",
+      },
+      {
+        label: "Seguimiento del cumplimiento",
+        valor: "Supervisor de Flota y Jefe de Logística, en la reunión semanal de flota.",
+      },
+    ],
+    gestionIncumplimiento:
+      "Los focos que superan su plazo se repasan en la reunión semanal de flota. El foco vencido se cierra igual —la unidad no deja de necesitar la reparación porque se pasó el plazo— y el motivo de la demora se registra como tarea en el Action Log, con responsable. Cuando las demoras se concentran en un mismo sistema, una misma unidad o un mismo repuesto faltante, se ataca esa causa de fondo en vez del caso puntual.",
+    vigencia:
+      "La medición del acuerdo comienza el primer día del mes siguiente a la firma. Los focos anteriores quedan registrados como referencia pero no se evalúan: el acuerdo no se aplica de forma retroactiva. Vigencia de 1 año desde la fecha de firma, con revisión anual o inmediata si cambia el catálogo de ítems del checklist o el esquema de criticidad.",
+    firmantes: [
+      "Ezequiel Teves — Supervisor de Flota",
+      "Sebastián Roselli — Jefe de Logística",
+    ],
+    secciones: [
+      {
+        titulo: "Premisas y condiciones operativas",
+        parrafos: [
+          "El acuerdo cubre el circuito liviano de reparación: el defecto del checklist se cierra con un plan de acción y NO genera orden de trabajo. Un cambio de foco hecho en el depósito no pasa por taller, no tiene costo de servicio ni unidad fuera de servicio; la trazabilidad la da el plan de acción y, si consume repuesto, el movimiento de stock imputado al camión.",
+        ],
+        bullets: [
+          "Sí corresponde abrir orden de trabajo cuando la reparación va a taller, tiene costo imputable a la unidad o la deja fuera de servicio.",
+          "El plazo corre sobre horas corridas desde la carga del checklist, no sobre días hábiles: un defecto crítico detectado un viernes vence el sábado.",
+          "La falta de un repuesto no suspende el plazo. Si el repuesto no está en el pañol, el foco se registra como incumplido y la reposición se trata como causa de fondo en la reunión semanal.",
+          "El acuerdo mide la reparación, no la detección: un defecto que el chofer no reporta no entra acá y se cubre por la adherencia al checklist (R1.3.1a).",
+        ],
+      },
+      {
+        titulo: "Fuera de alcance",
+        bullets: [
+          "Defectos detectados fuera del checklist (rotura en ruta, aviso verbal, hallazgo del mecánico).",
+          "Mantenimiento preventivo programado y services de la unidad.",
+          "Defectos de los autoelevadores de depósito, que tienen su propio checklist de inicio de jornada y no afectan la salida a reparto.",
+        ],
+      },
+    ],
+  },
 }
