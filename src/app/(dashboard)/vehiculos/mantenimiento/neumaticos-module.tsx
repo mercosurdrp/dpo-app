@@ -540,9 +540,7 @@ export function NeumaticosModule({
                     intervaloGlobalKm={rotacionKm}
                     puedeEditar={puedeEditar}
                     onPos={(pos) =>
-                      // La posición se abre para todos: el chofer entra a cargar
-                      // la profundidad y la presión de su unidad. Adentro, lo que
-                      // toca el parque de cubiertas queda para mantenimiento.
+                      puedeEditar &&
                       setPosDialog({ pos, actual: porPosicion.get(pos.code) ?? null })
                     }
                     onRefresh={refresh}
@@ -950,7 +948,6 @@ export function NeumaticosModule({
           stock={stock}
           kmActual={kmUnidad.kmActual}
           vida={posDialog.actual ? (vidaPorId.get(posDialog.actual.id) ?? null) : null}
-          puedeEditar={puedeEditar}
           onClose={() => setPosDialog(null)}
           onDone={() => {
             setPosDialog(null)
@@ -3187,9 +3184,6 @@ function MontajeDialog({
               ? vidaNeumatico(posDialog.actual, kmU.kmActual, kmU.kmDia)
               : null
           }
-          /* A este diálogo se entra desde "Montar / desmontar", que ya es sólo
-             de mantenimiento. */
-          puedeEditar
           onClose={() => setPosDialog(null)}
           onDone={() => {
             setPosDialog(null)
@@ -3363,7 +3357,6 @@ function PosicionDialog({
   stock,
   kmActual,
   vida,
-  puedeEditar,
   onClose,
   onDone,
   onEditar,
@@ -3376,11 +3369,6 @@ function PosicionDialog({
   stock: Neumatico[]
   kmActual: number | null
   vida: VidaNeumatico | null
-  /**
-   * Mantenimiento (admin/supervisor). Sin esto el diálogo queda en lo único que
-   * carga el chofer: la medición de profundidad y presión de la ronda mensual.
-   */
-  puedeEditar: boolean
   onClose: () => void
   onDone: () => void
   onEditar: (n: Neumatico) => void
@@ -3481,27 +3469,11 @@ function PosicionDialog({
           <DialogDescription>
             {actual
               ? `Cubierta ${actual.numero || "s/n"} (${TIPO_LABEL[actual.tipo]})`
-              : puedeEditar
-                ? "Posición vacía — cargá una cubierta acá mismo o asigná una del stock."
-                : "Posición vacía — todavía no hay una cubierta cargada en este lugar."}
+              : "Posición vacía — cargá una cubierta acá mismo o asigná una del stock."}
           </DialogDescription>
         </DialogHeader>
 
-        {!actual && !puedeEditar ? (
-          // La posición sin cubierta no la puede resolver el chofer: montar una
-          // es de mantenimiento. Se avisa en vez de dejar el diálogo vacío.
-          <div className="space-y-3">
-            <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
-              No hay nada para medir en esta posición. Avisale a mantenimiento
-              para que carguen la cubierta que está puesta.
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={onClose}>
-                Cerrar
-              </Button>
-            </DialogFooter>
-          </div>
-        ) : !actual ? (
+        {!actual ? (
           // ----- Posición vacía: cargar directo o asignar desde stock -----
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
@@ -3768,32 +3740,30 @@ function PosicionDialog({
                     .join(" · ")}
                 </p>
               )}
-              {puedeEditar && (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {(actual.factura_urls?.length ?? 0) > 0 &&
-                    actual.factura_urls!.map((url, fi) => (
-                      <a
-                        key={url}
-                        href={url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                      >
-                        <Paperclip className="size-3" /> Factura
-                        {actual.factura_urls!.length > 1 ? ` ${fi + 1}` : ""}
-                      </a>
-                    ))}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => onEditar(actual)}
-                  >
-                    <Pencil className="mr-1 size-3" /> Editar cubierta / factura
-                  </Button>
-                </div>
-              )}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {(actual.factura_urls?.length ?? 0) > 0 &&
+                  actual.factura_urls!.map((url, fi) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                    >
+                      <Paperclip className="size-3" /> Factura
+                      {actual.factura_urls!.length > 1 ? ` ${fi + 1}` : ""}
+                    </a>
+                  ))}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => onEditar(actual)}
+                >
+                  <Pencil className="mr-1 size-3" /> Editar cubierta / factura
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-2 rounded-md border border-border p-3">
@@ -3832,90 +3802,82 @@ function PosicionDialog({
               </Button>
             </div>
 
-            {/* Sacar, desechar o generar la OT es de mantenimiento: el chofer
-                mide y nada más. */}
-            {puedeEditar && (
-              <>
-                {/* La baja ocurre en UN solo lugar: el retiro a la recicladora.
-                    Acá la cubierta se saca de la unidad y queda en la bandeja de
-                    desecho, así no hay dos formas de darla de baja. */}
-                <div className="space-y-2 rounded-md border border-destructive/30 p-3">
-                  <p className="text-xs font-medium text-foreground">Mandar a desecho</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Sale de la unidad y espera a la recicladora. La baja se hace al
-                    registrar el retiro, con el certificado.
-                  </p>
-                  <Input
-                    placeholder="Motivo (desgaste, pinchadura, etc.)"
-                    value={motivoBaja}
-                    onChange={(e) => setMotivoBaja(e.target.value)}
-                  />
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    disabled={saving || !motivoBaja.trim()}
-                    onClick={() =>
-                      wrap(
-                        () => marcarParaDesecho({ ids: [actual.id], motivo: motivoBaja }),
-                        "Cubierta puesta para desecho"
-                      )
-                    }
-                  >
-                    <Trash2 className="mr-1 size-4" /> Mandar a desecho
-                  </Button>
-                </div>
+            {/* La baja ocurre en UN solo lugar: el retiro a la recicladora.
+                Acá la cubierta se saca de la unidad y queda en la bandeja de
+                desecho, así no hay dos formas de darla de baja. */}
+            <div className="space-y-2 rounded-md border border-destructive/30 p-3">
+              <p className="text-xs font-medium text-foreground">Mandar a desecho</p>
+              <p className="text-[11px] text-muted-foreground">
+                Sale de la unidad y espera a la recicladora. La baja se hace al
+                registrar el retiro, con el certificado.
+              </p>
+              <Input
+                placeholder="Motivo (desgaste, pinchadura, etc.)"
+                value={motivoBaja}
+                onChange={(e) => setMotivoBaja(e.target.value)}
+              />
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={saving || !motivoBaja.trim()}
+                onClick={() =>
+                  wrap(
+                    () => marcarParaDesecho({ ids: [actual.id], motivo: motivoBaja }),
+                    "Cubierta puesta para desecho"
+                  )
+                }
+              >
+                <Trash2 className="mr-1 size-4" /> Mandar a desecho
+              </Button>
+            </div>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full gap-1"
-                  disabled={saving}
-                  onClick={() => setGenOtOpen(true)}
-                >
-                  <ClipboardPlus className="size-4" /> Generar OT de cambio
-                </Button>
-                {genOtOpen && (
-                  <GenerarOtNeumaticosDialog
-                    dominio={unidad.dominio}
-                    kmActual={kmActual}
-                    descripcionInicial={`Cambio de neumático posición ${pos.label}${actual.numero ? ` (N° ${actual.numero})` : ""}`}
-                    onClose={() => setGenOtOpen(false)}
-                    onDone={() => {
-                      setGenOtOpen(false)
-                      onDone()
-                    }}
-                  />
-                )}
-
-                {/* Comprobante del último movimiento de esta cubierta (montaje /
-                    desmontaje / baja). Si no hay movimiento registrado, sale con
-                    los datos actuales de la cubierta. */}
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  render={
-                    <a
-                      href={`/api/vehiculos/neumaticos/${actual.id}/comprobante`}
-                      target="_blank"
-                      rel="noreferrer"
-                    />
-                  }
-                >
-                  <FileDown className="mr-1 size-4 text-red-600" /> Comprobante en PDF
-                </Button>
-              </>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-1"
+              disabled={saving}
+              onClick={() => setGenOtOpen(true)}
+            >
+              <ClipboardPlus className="size-4" /> Generar OT de cambio
+            </Button>
+            {genOtOpen && (
+              <GenerarOtNeumaticosDialog
+                dominio={unidad.dominio}
+                kmActual={kmActual}
+                descripcionInicial={`Cambio de neumático posición ${pos.label}${actual.numero ? ` (N° ${actual.numero})` : ""}`}
+                onClose={() => setGenOtOpen(false)}
+                onDone={() => {
+                  setGenOtOpen(false)
+                  onDone()
+                }}
+              />
             )}
 
+            {/* Comprobante del último movimiento de esta cubierta (montaje /
+                desmontaje / baja). Si no hay movimiento registrado, sale con los
+                datos actuales de la cubierta. */}
+            <Button
+              variant="outline"
+              className="w-full"
+              render={
+                <a
+                  href={`/api/vehiculos/neumaticos/${actual.id}/comprobante`}
+                  target="_blank"
+                  rel="noreferrer"
+                />
+              }
+            >
+              <FileDown className="mr-1 size-4 text-red-600" /> Comprobante en PDF
+            </Button>
+
             <DialogFooter className="sm:justify-between">
-              {puedeEditar && (
-                <Button
-                  variant="outline"
-                  disabled={saving}
-                  onClick={() => wrap(() => quitarNeumatico({ id: actual.id }), "Cubierta enviada al stock")}
-                >
-                  Quitar (al stock)
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                disabled={saving}
+                onClick={() => wrap(() => quitarNeumatico({ id: actual.id }), "Cubierta enviada al stock")}
+              >
+                Quitar (al stock)
+              </Button>
               <Button variant="ghost" onClick={onClose}>
                 Cerrar
               </Button>
@@ -4133,7 +4095,7 @@ function DiagramaConAcciones({
               <p className="pt-1 text-muted-foreground/80">
                 {puedeEditar
                   ? "Hacé clic en una posición para asignar / medir / dar de baja."
-                  : "Hacé clic en una posición para cargar profundidad y presión."}
+                  : "Vista de solo lectura."}
               </p>
             </div>
           )}

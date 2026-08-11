@@ -1,7 +1,6 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth, requireRole } from "@/lib/session"
 import type { EjeNeumatico } from "@/lib/vehiculos/neumaticos-layout"
 import {
@@ -662,17 +661,9 @@ export async function volvioDelRecapado(input: {
 // Para sacar una cubierta de circulación se usa `marcarParaDesecho`.
 
 /**
- * Registra una medición de desgaste y actualiza la profundidad actual.
- *
- * La ronda mensual la mide el chofer sobre su propia unidad, así que alcanza
- * con estar logueado: medir no cambia el parque de cubiertas, sólo agrega una
- * lectura. Montar, desmontar, dar de baja o editar la cubierta siguen siendo
- * de mantenimiento (admin/supervisor).
- *
- * La escritura va con el cliente de servicio porque las dos tablas tienen RLS
- * de admin/supervisor: con la sesión del chofer la base rechazaba el insert
- * ("row-level security"), que es el error que veían al guardar. Queda
- * `created_by` para saber quién midió.
+ * Registra una medición de desgaste y actualiza la profundidad actual, desde el
+ * módulo de mantenimiento. La ronda mensual del chofer NO pasa por acá: va por
+ * /mis-neumaticos (`guardarMedicionesNeumaticos`).
  */
 export async function registrarMedicionNeumatico(input: {
   neumatico_id: string
@@ -683,8 +674,8 @@ export async function registrarMedicionNeumatico(input: {
   fecha?: string
 }): Promise<{ success: true } | { error: string }> {
   try {
-    const profile = await requireAuth()
-    const supabase = createAdminClient()
+    const profile = await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
     const { error: insErr } = await supabase
       .from("mantenimiento_neumatico_mediciones")
       .insert({

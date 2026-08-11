@@ -1,31 +1,46 @@
 "use server"
 
+import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth } from "@/lib/session"
-import type { VehiculoTipo } from "@/types/database"
+import {
+  TIPOS_NEUMATICOS_OBLIGATORIOS,
+  cubiertaConforme,
+} from "@/lib/flota/neumaticos-control"
 
 /**
- * Revisión de neumáticos del chofer.
+ * Mis Neumáticos — el chofer u operador mide sus propias cubiertas una vez por
+ * mes: profundidad de dibujo y presión (DPO Flota 3.4).
  *
- * La ronda mensual la mide el que maneja la unidad, no mantenimiento: la
- * pantalla de /vehiculos/mantenimiento es una consola de escritorio con diez
- * solapas y el chofer entra desde el celular, así que la carga vive acá, con
- * el mismo formato que /mi-cil.
+ * Mismo camino que Mi CIL: hasta ahora las mediciones sólo se cargaban desde el
+ * módulo de Neumáticos de `/vehiculos/mantenimiento`, que pide rol admin o
+ * supervisor. Con 13 unidades y 85 cubiertas, medir una vez por mes desde una
+ * sola pantalla de escritorio no ocurre.
  *
- * Las tablas de cubiertas tienen RLS de admin/supervisor —medir con la sesión
- * del chofer la rechazaba con "row-level security"—, así que la escritura va
- * con el cliente de servicio y queda firmada con `created_by`.
+ * 🚨 Escribe en `mantenimiento_neumatico_mediciones`, la MISMA tabla que ya usa
+ * el módulo del supervisor y de la que sale el KPI `neumaticos_conformidad`. No
+ * hay tabla nueva ni número paralelo.
  */
 
-export interface CubiertaParaMedir {
+import {
+  PROF_MIN_MM,
+  PROF_MAX_MM,
+  PRESION_MIN_PSI,
+  PRESION_MAX_PSI,
+} from "@/lib/flota/neumaticos-control"
+
+export interface CubiertaMedir {
   id: string
-  posicion: string
+  /** Posición en la unidad: 1D, 1I, 2DE, 2DI, 2IE, 2II, AUX. */
+  posicion: string | null
   eje: string | null
   numero: string | null
+  marca: string | null
   medida: string | null
-  profundidad_actual_mm: number | null
-  /** Última medición de este mes, si ya se cargó. */
+  /** Último dibujo conocido, para que el chofer vea de dónde viene. */
+  profundidadActual: number | null
+  /** Medición de ESTE mes, si ya la cargó. */
   medidaEsteMes: {
     fecha: string
     profundidad_mm: number | null
@@ -33,20 +48,37 @@ export interface CubiertaParaMedir {
   } | null
 }
 
-export interface UnidadParaMedir {
+export interface UnidadNeumaticos {
   dominio: string
-  tipo: VehiculoTipo | null
+  tipo: string | null
   numero: string | null
-  cubiertas: CubiertaParaMedir[]
+  cubiertas: CubiertaMedir[]
+  /** Cuántas cubiertas ya tienen medición este mes. */
+  medidas: number
+  total: number
+  completa: boolean
 }
 
 export interface MisNeumaticosData {
-  unidades: UnidadParaMedir[]
-  /** Mes de la ronda (YYYY-MM, hora argentina). */
-  mes: string
+  ym: string
+  unidades: UnidadNeumaticos[]
+  /** Unidades del alcance con el mes cerrado. */
+  completas: number
+  totalUnidades: number
+  limites: { profMin: number; psiMin: number; psiMax: number }
 }
 
-/** Hoy en horario argentino: el server corre en UTC. */
+function ymActual(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(new Date())
+    .slice(0, 7)
+}
+
 function hoyArgentina(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Argentina/Buenos_Aires",
@@ -56,167 +88,236 @@ function hoyArgentina(): string {
   }).format(new Date())
 }
 
+function inicioMesSiguiente(ym: string): string {
+  const [a, m] = ym.split("-").map(Number)
+  return m === 12
+    ? `${a + 1}-01-01`
+    : `${a}-${String(m + 1).padStart(2, "0")}-01`
+}
+
 export async function getMisNeumaticos(): Promise<
   { data: MisNeumaticosData } | { error: string }
 > {
   try {
     await requireAuth()
     const supabase = await createClient()
-    const mes = hoyArgentina().slice(0, 7)
+    const ym = ymActual()
 
-    const { data: cubiertas, error } = await supabase
-      .from("mantenimiento_neumaticos")
-      .select("id, dominio, posicion, eje, numero, medida, profundidad_actual_mm")
-      .eq("estado", "instalado")
-      .not("dominio", "is", null)
-      .order("dominio")
-    if (error) return { error: error.message }
+    const tipos = TIPOS_NEUMATICOS_OBLIGATORIOS as readonly string[]
 
-    const ids = (cubiertas || []).map((c) => c.id)
-    const [medRes, vehRes, fichaRes] = await Promise.all([
-      ids.length > 0
-        ? supabase
-            .from("mantenimiento_neumatico_mediciones")
-            .select("neumatico_id, fecha, profundidad_mm, presion_psi")
-            .in("neumatico_id", ids)
-            .gte("fecha", `${mes}-01`)
-            .order("fecha", { ascending: false })
-        : Promise.resolve({ data: [], error: null }),
-      supabase.from("catalogo_vehiculos").select("dominio, tipo").eq("active", true),
-      supabase.from("vehiculos_ficha").select("dominio, numero_asignado"),
+    const [vehRes, neuRes] = await Promise.all([
+      supabase
+        .from("catalogo_vehiculos")
+        .select("dominio, tipo")
+        .eq("active", true)
+        .in("tipo", tipos)
+        .order("dominio"),
+      supabase
+        .from("mantenimiento_neumaticos")
+        .select("id, dominio, posicion, eje, numero, marca, medida, profundidad_actual_mm")
+        .eq("estado", "instalado")
+        .order("posicion"),
     ])
-    if (medRes.error) return { error: medRes.error.message }
 
-    // Primera fila por cubierta = la más reciente del mes (viene ordenado).
-    const medPorCubierta = new Map<
+    if (vehRes.error) return { error: vehRes.error.message }
+    if (neuRes.error) return { error: neuRes.error.message }
+
+    const dominios = (vehRes.data || []).map((v) => v.dominio)
+    const cubiertas = (neuRes.data || []).filter((n) =>
+      dominios.includes(n.dominio),
+    )
+
+    // Mediciones del mes, sólo de estas cubiertas.
+    const ids = cubiertas.map((c) => c.id)
+    const { data: meds, error: medErr } = ids.length
+      ? await supabase
+          .from("mantenimiento_neumatico_mediciones")
+          .select("neumatico_id, fecha, profundidad_mm, presion_psi")
+          .in("neumatico_id", ids)
+          .gte("fecha", `${ym}-01`)
+          .lt("fecha", inicioMesSiguiente(ym))
+          .order("fecha", { ascending: false })
+      : { data: [], error: null }
+    if (medErr) return { error: medErr.message }
+
+    // La primera de cada cubierta es la más reciente del mes.
+    const porCubierta = new Map<
       string,
       { fecha: string; profundidad_mm: number | null; presion_psi: number | null }
     >()
-    for (const m of medRes.data || []) {
-      if (!medPorCubierta.has(m.neumatico_id))
-        medPorCubierta.set(m.neumatico_id, {
+    for (const m of meds || []) {
+      if (!porCubierta.has(m.neumatico_id)) {
+        porCubierta.set(m.neumatico_id, {
           fecha: m.fecha,
           profundidad_mm: m.profundidad_mm,
           presion_psi: m.presion_psi,
         })
+      }
     }
 
-    const tipos = new Map<string, VehiculoTipo | null>(
-      (vehRes.data || []).map((v: { dominio: string; tipo: VehiculoTipo | null }) => [
-        v.dominio,
-        v.tipo,
-      ])
-    )
-    const numeros = new Map<string, string | null>(
-      (fichaRes.data || []).map(
-        (f: { dominio: string; numero_asignado: string | null }) => [
-          f.dominio,
-          f.numero_asignado,
-        ]
-      )
+    const { data: fichas } = await supabase
+      .from("vehiculos_ficha")
+      .select("dominio, numero_asignado")
+      .in("dominio", dominios)
+    const numeros = new Map(
+      (fichas || []).map((f: { dominio: string; numero_asignado: string | null }) => [
+        f.dominio,
+        f.numero_asignado,
+      ]),
     )
 
-    const porDominio = new Map<string, CubiertaParaMedir[]>()
-    for (const c of cubiertas || []) {
-      const arr = porDominio.get(c.dominio!) ?? []
-      arr.push({
-        id: c.id,
-        posicion: c.posicion ?? "—",
-        eje: c.eje,
-        numero: c.numero,
-        medida: c.medida,
-        profundidad_actual_mm: c.profundidad_actual_mm,
-        medidaEsteMes: medPorCubierta.get(c.id) ?? null,
-      })
-      porDominio.set(c.dominio!, arr)
+    const unidades: UnidadNeumaticos[] = (vehRes.data || []).map((v) => {
+      const propias = cubiertas
+        .filter((c) => c.dominio === v.dominio)
+        .map((c) => ({
+          id: c.id,
+          posicion: c.posicion,
+          eje: c.eje,
+          numero: c.numero,
+          marca: c.marca,
+          medida: c.medida,
+          profundidadActual: c.profundidad_actual_mm,
+          medidaEsteMes: porCubierta.get(c.id) ?? null,
+        }))
+      const medidas = propias.filter((c) => c.medidaEsteMes).length
+      return {
+        dominio: v.dominio,
+        tipo: v.tipo,
+        numero: numeros.get(v.dominio) ?? null,
+        cubiertas: propias,
+        medidas,
+        total: propias.length,
+        // 🚨 Una unidad sin cubiertas cargadas en el maestro NO está "completa":
+        // sería un 100 % que en realidad es "no hay nada que medir".
+        completa: propias.length > 0 && medidas === propias.length,
+      }
+    })
+
+    return {
+      data: {
+        ym,
+        unidades,
+        completas: unidades.filter((u) => u.completa).length,
+        totalUnidades: unidades.length,
+        limites: {
+          profMin: PROF_MIN_MM,
+          psiMin: PRESION_MIN_PSI,
+          psiMax: PRESION_MAX_PSI,
+        },
+      },
     }
-
-    const unidades: UnidadParaMedir[] = [...porDominio.entries()]
-      .map(([dominio, cubiertas]) => ({
-        dominio,
-        tipo: tipos.get(dominio) ?? null,
-        numero: numeros.get(dominio) ?? null,
-        // Orden estable: las de auxilio al final, el resto por código.
-        cubiertas: cubiertas.sort((a, b) =>
-          a.posicion === "AUX"
-            ? 1
-            : b.posicion === "AUX"
-              ? -1
-              : a.posicion.localeCompare(b.posicion)
-        ),
-      }))
-      .sort((a, b) => a.dominio.localeCompare(b.dominio))
-
-    return { data: { unidades, mes } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
 }
 
+export interface MedicionInput {
+  neumatico_id: string
+  profundidad_mm: number | null
+  presion_psi: number | null
+}
+
 /**
- * Guarda la revisión de una unidad: una medición por cubierta medida.
+ * Guarda las mediciones de una unidad. Se cargan todas juntas porque el chofer
+ * recorre el camión una sola vez, no cubierta por cubierta.
  *
- * Se guarda todo junto —no una cubierta por vez— porque el chofer recorre las
- * seis con el calibre en la mano; con un formulario por rueda la carga se
- * abandona por la mitad.
+ * 🚨 Las cubiertas que vengan sin ningún valor se SALTEAN, no se guardan en
+ * cero: un cero es un dibujo de 0 mm y dispararía el desvío.
  */
-export async function guardarRevisionNeumaticos(input: {
-  dominio: string
-  km?: number | null
-  mediciones: {
-    neumatico_id: string
-    profundidad_mm?: number | null
-    presion_psi?: number | null
-  }[]
-}): Promise<{ success: true; guardadas: number } | { error: string }> {
+export async function guardarMedicionesNeumaticos(
+  dominio: string,
+  mediciones: MedicionInput[],
+  km?: number | null,
+): Promise<{ success: true; guardadas: number; desvios: number } | { error: string }> {
   try {
     const profile = await requireAuth()
+    const supabase = await createClient()
 
-    const filas = input.mediciones.filter(
-      (m) => m.profundidad_mm != null || m.presion_psi != null
+    const dom = String(dominio || "").trim().toUpperCase()
+    if (!dom) return { error: "Elegí la unidad." }
+
+    const utiles = (mediciones || []).filter(
+      (m) => m.neumatico_id && (m.profundidad_mm != null || m.presion_psi != null),
     )
-    if (filas.length === 0) return { error: "No cargaste ninguna medición" }
-
-    for (const m of filas) {
-      if (m.profundidad_mm != null && (m.profundidad_mm <= 0 || m.profundidad_mm > 40))
-        return { error: "La profundidad tiene que estar entre 0 y 40 mm" }
-      if (m.presion_psi != null && (m.presion_psi <= 0 || m.presion_psi > 200))
-        return { error: "La presión tiene que estar entre 0 y 200 psi" }
+    if (utiles.length === 0) {
+      return { error: "Cargá al menos una cubierta con profundidad o presión." }
     }
 
-    const supabase = createAdminClient()
+    // 🚨 Segundo control del rango, del lado del servidor. La pantalla ya exige
+    // el decimal, pero la validación que sólo vive en el navegador no protege el
+    // dato: una cubierta cargada con 115 mm en vez de 11,5 queda impecable para
+    // siempre y nadie la mira más.
+    for (const m of utiles) {
+      if (m.profundidad_mm != null) {
+        if (m.profundidad_mm <= 0 || m.profundidad_mm > PROF_MAX_MM) {
+          return {
+            error: `Profundidad fuera de rango (${m.profundidad_mm} mm). Tiene que estar entre 0 y ${PROF_MAX_MM} mm.`,
+          }
+        }
+      }
+      if (m.presion_psi != null && (m.presion_psi <= 0 || m.presion_psi > 200)) {
+        return { error: `Presión fuera de rango (${m.presion_psi} psi).` }
+      }
+    }
+
+    // Las cubiertas tienen que ser de esta unidad y estar instaladas: si no, la
+    // medición queda colgada de una cubierta que ya no rueda ahí.
+    const { data: propias, error: pErr } = await supabase
+      .from("mantenimiento_neumaticos")
+      .select("id")
+      .eq("dominio", dom)
+      .eq("estado", "instalado")
+    if (pErr) return { error: pErr.message }
+    const validas = new Set((propias || []).map((p) => p.id))
+    const filtradas = utiles.filter((m) => validas.has(m.neumatico_id))
+    if (filtradas.length === 0) {
+      return { error: "Esas cubiertas ya no figuran instaladas en la unidad." }
+    }
+
+    // 🚨 La escritura va con el cliente de servicio, NO con la sesión del que
+    // mide. Las dos tablas de cubiertas tienen RLS de admin/supervisor —son del
+    // módulo de mantenimiento—, así que al chofer la base le rechazaba el
+    // insert con "row-level security" y la pantalla no guardaba nada: el 11/08
+    // el AE908DG se midió entero y no entró una sola fila. Quién midió queda en
+    // `created_by`, y arriba ya se validó el rango y que la cubierta esté
+    // instalada en esa unidad.
+    const escritura = createAdminClient()
+
     const fecha = hoyArgentina()
+    const { error } = await escritura.from("mantenimiento_neumatico_mediciones").insert(
+      filtradas.map((m) => ({
+        neumatico_id: m.neumatico_id,
+        fecha,
+        profundidad_mm: m.profundidad_mm,
+        presion_psi: m.presion_psi,
+        km: km ?? null,
+        nota: "Control mensual cargado por el operador",
+        created_by: profile.id,
+      })),
+    )
+    if (error) return { error: error.message }
 
-    const { error: insErr } = await supabase
-      .from("mantenimiento_neumatico_mediciones")
-      .insert(
-        filas.map((m) => ({
-          neumatico_id: m.neumatico_id,
-          fecha,
-          profundidad_mm: m.profundidad_mm ?? null,
-          km: input.km ?? null,
-          presion_psi: m.presion_psi ?? null,
-          nota: null,
-          created_by: profile.id,
-        }))
-      )
-    if (insErr) return { error: insErr.message }
-
-    // La profundidad de la cubierta queda con la última lectura: es lo que
-    // pinta el semáforo del diagrama y lo que mira el desgaste crítico.
-    for (const m of filas) {
-      if (m.profundidad_mm == null) continue
-      const { error: updErr } = await supabase
-        .from("mantenimiento_neumaticos")
-        .update({
-          profundidad_actual_mm: m.profundidad_mm,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", m.neumatico_id)
-      if (updErr) return { error: updErr.message }
+    // 🚨 `profundidad_actual_mm` de la cubierta es lo que mira el módulo del
+    // supervisor y el cálculo de desgaste: si sólo se inserta la medición, esa
+    // pantalla sigue mostrando el dibujo viejo.
+    for (const m of filtradas) {
+      if (m.profundidad_mm != null) {
+        // Sin mirar el error, un rechazo acá dejaba la medición cargada y la
+        // cubierta con el dibujo viejo, sin avisarle a nadie.
+        const { error: updErr } = await escritura
+          .from("mantenimiento_neumaticos")
+          .update({ profundidad_actual_mm: m.profundidad_mm })
+          .eq("id", m.neumatico_id)
+        if (updErr) return { error: updErr.message }
+      }
     }
 
-    return { success: true, guardadas: filas.length }
+    const desvios = filtradas.filter(
+      (m) => !cubiertaConforme(m.profundidad_mm, m.presion_psi),
+    ).length
+
+    revalidatePath("/mis-neumaticos")
+    return { success: true, guardadas: filtradas.length, desvios }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
