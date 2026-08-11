@@ -62,6 +62,15 @@ export const META_CIL_MENSUAL = 30
 /**
  * El ciclo que una unidad tiene que completar cada mes para estar al día: las
  * tres letras del CIL.
+ *
+ * 🚨 La **I (`inspeccion`, control de fluidos) se queda**, decidido el
+ * 11/08/2026. Se había planteado sacarla porque el checklist diario de
+ * liberación ya tiene los ítems de fluidos («Nivel de aceite motor», «Nivel de
+ * agua», «Pérdida de fluidos y/o alarmas») y parecía repetida: no lo es. El
+ * checklist diario es una VERIFICACIÓN de que la unidad puede salir; la I del
+ * CIL es la tarea autónoma del operador sobre su equipo, con su evidencia, y es
+ * lo que mira el auditor del ATO. Sacarla dejaría el ciclo en dos letras y haría
+ * saltar la cobertura de golpe sin que nadie hubiera hecho más trabajo.
  */
 export const CICLO_CIL_MENSUAL = [
   "limpieza_profunda",
