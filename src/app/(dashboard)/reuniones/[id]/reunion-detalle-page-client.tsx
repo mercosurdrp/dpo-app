@@ -73,6 +73,10 @@ import {
 } from "@/components/reuniones/seccion-sla"
 import { TlpDetalleDiaDialog } from "@/components/reuniones/tlp-detalle-dia-dialog"
 import { WnpDetalleDiaDialog } from "@/components/reuniones/wnp-detalle-dia-dialog"
+import {
+  ShoDetalleDiaDialog,
+  type ShoDetalleRango,
+} from "@/components/reuniones/sho-detalle-dia-dialog"
 import { SeccionAccionesComerciales } from "@/components/reuniones/seccion-acciones-comerciales"
 import {
   SeccionFlotaRuteo,
@@ -991,6 +995,10 @@ export function ReunionDetallePageClient({
   const [obDetalleFecha, setObDetalleFecha] = useState<string | null>(null)
   const [tlpDetalleFecha, setTlpDetalleFecha] = useState<string | null>(null)
   const [wnpDetalleFecha, setWnpDetalleFecha] = useState<string | null>(null)
+  // SHO: qué se reportó. Desde la celda abre el día; desde el MTD, el mes
+  // hasta la fecha de la reunión (mismo corte que usa el acumulado).
+  const [shoDetalleRango, setShoDetalleRango] =
+    useState<ShoDetalleRango | null>(null)
   // Detalle del día al hacer click en la celda Productividad de picking:
   // abre el sub-cuadro con los 3 operadores Troli/Galvez/Ovejero. La fila
   // Precisión de picking NO abre este detalle (es un valor global del día).
@@ -1983,6 +1991,23 @@ export function ReunionDetallePageClient({
                           >
                             {formatearValor(ind.mtd)}
                           </button>
+                        ) : ind.id === "auto_sho" && (ind.mtd ?? 0) > 0 ? (
+                          /* SHO: desde el acumulado se abren todos los reportes
+                             del mes hasta la fecha de la reunión — el mismo
+                             corte con el que se calculó el MTD. */
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShoDetalleRango({
+                                desde: indicadoresMes.fechas[0],
+                                hasta: detalle.fecha,
+                              })
+                            }
+                            className="underline decoration-dotted underline-offset-2 hover:opacity-80"
+                            title="Ver los reportes del mes"
+                          >
+                            {formatearValor(ind.mtd!)}
+                          </button>
                         ) : ind.mtd_texto != null ? (
                           ind.mtd_texto
                         ) : ind.mtd == null ? (
@@ -2160,6 +2185,9 @@ export function ReunionDetallePageClient({
                           // KPIs de Foxtrot (matinal Pampeana): drill por día con
                           // detalle por patente. Todos los id arrancan con auto_fx_.
                           const esFoxtrotKpi = ind.id.startsWith("auto_fx_")
+                          // SHO: sólo tiene sentido abrir los días con reporte;
+                          // el 0 no tiene nada que mostrar.
+                          const esShoConReporte = esSho && (valor ?? 0) > 0
                           const clickable =
                             (esRechazosPct ||
                               esBultosVendidos ||
@@ -2175,6 +2203,7 @@ export function ReunionDetallePageClient({
                               esTlp ||
                               esWqiPerdidas ||
                               esWnp ||
+                              esShoConReporte ||
                               esFoxtrotKpi) &&
                             muestra
                           const onCellClick = () => {
@@ -2210,6 +2239,8 @@ export function ReunionDetallePageClient({
                                     : "wqi",
                               })
                             else if (esWnp) setWnpDetalleFecha(f)
+                            else if (esShoConReporte)
+                              setShoDetalleRango({ desde: f, hasta: f })
                             else if (esFoxtrotKpi)
                               setFxKpiDetalle({ fecha: f, kpiId: ind.id as FoxtrotKpiId })
                           }
@@ -2479,6 +2510,14 @@ export function ReunionDetallePageClient({
           if (!o) setTlpDetalleFecha(null)
         }}
         fecha={tlpDetalleFecha}
+      />
+
+      <ShoDetalleDiaDialog
+        open={shoDetalleRango !== null}
+        onOpenChange={(o) => {
+          if (!o) setShoDetalleRango(null)
+        }}
+        rango={shoDetalleRango}
       />
 
       <WnpDetalleDiaDialog
