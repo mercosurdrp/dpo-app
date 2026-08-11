@@ -106,7 +106,10 @@ export function AdherenciaChecklistCard() {
           Por cada día que un camión <strong>efectivamente repartió</strong>, si hizo el
           checklist de salida <strong>y</strong> el de retorno. El denominador sale de las
           entregas reales, no de los checklists cargados: así el camión que salió sin
-          cargar nada no desaparece de la cuenta.
+          cargar nada no desaparece de la cuenta. Quedan afuera el{" "}
+          <strong>día en curso</strong> —el retorno todavía no pudo hacerse— y los días de{" "}
+          <strong>sólo venta de gestión</strong>, donde la patente no se observa: se deduce
+          del chofer y termina cayendo en su unidad anterior.
         </p>
 
         {cargando ? (
@@ -131,6 +134,13 @@ export function AdherenciaChecklistCard() {
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {data.completos} de {data.ruteados} camión-día
+                </p>
+                <p className="text-xs text-muted-foreground/80">
+                  hasta el {fmtDia(data.hasta)}
+                  {data.diaEnCursoExcluido ? " (sin el día de hoy)" : ""}
+                  {data.soloGestionExcluidos > 0
+                    ? ` · ${data.soloGestionExcluidos} día(s) de sólo gestión afuera`
+                    : ""}
                 </p>
               </div>
               <div>

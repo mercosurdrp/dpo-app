@@ -7,12 +7,19 @@ import { requireAuth } from "@/lib/session"
  * Adherencia al checklist de flota (DPO Flota 1.3, requisito R1.3.1a).
  *
  * 🚨 El denominador son los días que la unidad EFECTIVAMENTE REPARTIÓ
- * (`vista_dias_ruteo`, que sale de las entregas reales), NO los días en que hay
- * algún checklist cargado. Medir contra los propios checklists es un denominador
+ * (`ventas_diarias_cliente`, las entregas reales), NO los días en que hay algún
+ * checklist cargado. Medir contra los propios checklists es un denominador
  * auto-reportado: el camión que salió y no cargó nada desaparece del cálculo y
  * el número se infla solo. Con los datos del 07/07 al 06/08/2026 la diferencia
  * era 90,2 % (auto-reportado) contra 71,0 % (real), y esos 19 puntos eran 43
  * camión-día que rutearon sin ningún checklist.
+ *
+ * Dos cosas NO son incumplimiento y quedan afuera del denominador (11/08/2026):
+ * el día en curso —el retorno todavía no pudo hacerse— y los camión-día de sólo
+ * venta de gestión, donde la patente no se observa sino que se deduce del
+ * `patente_default` del chofer. Se leía de `vista_dias_ruteo`, que es
+ * `distinct patente + fecha` de esa misma tabla pero sin el fletero, así que no
+ * permitía distinguir la patente observada de la deducida.
  *
  * Por qué importa el número exacto: el R1.3.1a se activa porque el checklist NO
  * impide usar la unidad, y exige adherencia del 100 % más medidas de gestión
@@ -37,9 +44,30 @@ export interface AdherenciaPunto {
   pct: number
 }
 
+/** Hoy en hora de Argentina (el server corre en UTC). */
+function hoyArg(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())
+}
+
+function ayerDe(fecha: string): string {
+  const d = new Date(`${fecha}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
 export interface AdherenciaChecklist {
   desde: string
+  /** Último día medido: si el rango llega a hoy, es AYER (ver `diaEnCursoExcluido`). */
   hasta: string
+  /** El día en curso quedó afuera porque los camiones todavía no volvieron. */
+  diaEnCursoExcluido: boolean
+  /** Camión-día descartados por ser sólo venta de gestión (patente deducida). */
+  soloGestionExcluidos: number
   /** Camión-día con reparto real: el denominador. */
   ruteados: number
   /** Con liberación Y retorno. */
@@ -83,28 +111,36 @@ export async function getAdherenciaChecklist(
     await requireAuth()
     const supabase = await createClient()
 
-    const [vehRes, ruteoRes, chkRes] = await Promise.all([
+    // El día en curso no se puede exigir: el camión salió, hizo la liberación y
+    // todavía no volvió, así que el retorno no existe todavía. Contarlo hunde el
+    // número sin que nadie haya incumplido nada (11/08/2026: 3 de 9 a media
+    // mañana). El corte real es AYER.
+    const hastaEfectivo = hasta >= hoyArg() ? ayerDe(hoyArg()) : hasta
+    const diaEnCursoExcluido = hastaEfectivo !== hasta
+
+    const [vehRes, repartoRes, chkRes] = await Promise.all([
       supabase.from("catalogo_vehiculos").select("dominio, tipo"),
-      traerTodo<{ dominio: string; fecha: string }>((a, b) =>
-        supabase
-          .from("vista_dias_ruteo")
-          .select("dominio, fecha")
-          .gte("fecha", desde)
-          .lte("fecha", hasta)
-          .range(a, b),
+      traerTodo<{ patente: string | null; fecha: string; ds_fletero_carga: string | null }>(
+        (a, b) =>
+          supabase
+            .from("ventas_diarias_cliente")
+            .select("patente, fecha, ds_fletero_carga")
+            .gte("fecha", desde)
+            .lte("fecha", hastaEfectivo)
+            .range(a, b),
       ),
       traerTodo<{ dominio: string; fecha: string; tipo: string }>((a, b) =>
         supabase
           .from("checklist_vehiculos")
           .select("dominio, fecha, tipo")
           .gte("fecha", desde)
-          .lte("fecha", hasta)
+          .lte("fecha", hastaEfectivo)
           .range(a, b),
       ),
     ])
 
     if (vehRes.error) return { error: vehRes.error.message }
-    if ("error" in ruteoRes) return { error: ruteoRes.error }
+    if ("error" in repartoRes) return { error: repartoRes.error }
     if ("error" in chkRes) return { error: chkRes.error }
 
     const esCamion = new Set(
@@ -124,11 +160,38 @@ export async function getAdherenciaChecklist(
     }
 
     // Denominador: camión-día con reparto real, sin repetir.
+    //
+    // 🚨 Se descartan los camión-día cuya actividad es SÓLO venta de gestión
+    // (`ds_fletero_carga = 'GESTION-<código>'`). GESCOM no expone la patente:
+    // `patenteDeChofer()` la deduce del checklist del día y, si no hay, cae al
+    // `mapeo_chofer_gescom.patente_default`. O sea que el chofer que no carga el
+    // checklist FABRICA un camión-día con su patente vieja, y ese camión-día
+    // entra al denominador con 0 % garantizado: la falta se castiga dos veces y
+    // encima en la unidad equivocada. Caso real: FRÍAS pasó de AF469UR a OJA403
+    // y AF469UR seguía sumando 8 camión-día de 1 a 7 clientes, con el último
+    // checklist propio en junio. Si el camión además repartió su ruta (el
+    // fletero ES su patente), el día cuenta normalmente aunque lleve gestión.
+    const filas = new Map<string, { fecha: string; dominio: string; observada: boolean }>()
+    for (const r of repartoRes.data) {
+      const dom = (r.patente || "").trim().toUpperCase()
+      if (!dom || !esCamion.has(dom)) continue
+      const k = clave(r.fecha, dom)
+      const derivada = (r.ds_fletero_carga || "").trim().toUpperCase().startsWith("GESTION")
+      const prev = filas.get(k)
+      filas.set(k, {
+        fecha: r.fecha,
+        dominio: dom,
+        observada: (prev?.observada ?? false) || !derivada,
+      })
+    }
     const ruteados = new Map<string, { fecha: string; dominio: string }>()
-    for (const r of ruteoRes.data) {
-      const dom = (r.dominio || "").trim().toUpperCase()
-      if (!esCamion.has(dom)) continue
-      ruteados.set(clave(r.fecha, dom), { fecha: r.fecha, dominio: dom })
+    let soloGestionExcluidos = 0
+    for (const [k, v] of filas) {
+      if (!v.observada) {
+        soloGestionExcluidos++
+        continue
+      }
+      ruteados.set(k, { fecha: v.fecha, dominio: v.dominio })
     }
 
     let completos = 0
@@ -182,7 +245,9 @@ export async function getAdherenciaChecklist(
     return {
       data: {
         desde,
-        hasta,
+        hasta: hastaEfectivo,
+        diaEnCursoExcluido,
+        soloGestionExcluidos,
         ruteados: total,
         completos,
         soloLiberacion,
