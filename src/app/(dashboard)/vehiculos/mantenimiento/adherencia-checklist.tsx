@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { CircleAlert, Loader2, ShieldCheck } from "lucide-react"
+import { ChevronRight, CircleAlert, Loader2, ShieldCheck } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -95,6 +95,7 @@ export function AdherenciaChecklistCard() {
   const [error, setError] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [verTodos, setVerTodos] = useState(false)
+  const [verCerrados, setVerCerrados] = useState(false)
 
   const cargar = useCallback(
     async (id: string) => {
@@ -287,37 +288,52 @@ export function AdherenciaChecklistCard() {
             )}
 
             {/* Lo viejo no se reclama: un checklist retroactivo pide un odómetro
-                que ya nadie sabe, y ponerlo a ojo es peor que la falta. Queda
-                listado como lo que es: incumplimiento cerrado del mes. */}
+                que ya nadie sabe, y ponerlo a ojo es peor que la falta. Va
+                CERRADO por defecto —no es una tarea, no hay nada que hacer con
+                esos días y llenaba la pantalla— pero no se borra: es la
+                evidencia del mes que pide el auditor del R1.3.1a. */}
             {cerrados.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Ya no se cargan ({cerrados.length}) — el odómetro de ese día no se
-                  puede saber; cuentan como incumplimiento del mes
-                </p>
-                <ul className="space-y-1">
-                  {(verTodos ? cerrados : cerrados.slice(0, 12)).map((f) => (
-                    <li
-                      key={`${f.fecha}|${f.dominio}`}
-                      className="flex items-center justify-between border-b pb-1 text-sm last:border-0"
-                    >
-                      <span>
-                        <span className="font-medium">{f.dominio}</span>
-                        <span className="text-muted-foreground"> · {fmtDia(f.fecha)}</span>
-                      </span>
-                      <span
-                        className={
-                          f.falta === "ambos"
-                            ? "text-xs text-red-600 dark:text-red-400"
-                            : "text-xs text-amber-600 dark:text-amber-400"
-                        }
+                <button
+                  type="button"
+                  onClick={() => setVerCerrados((v) => !v)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <ChevronRight
+                    className={`size-3 transition-transform ${verCerrados ? "rotate-90" : ""}`}
+                    aria-hidden
+                  />
+                  {cerrados.length} día(s) que ya no se pueden cargar
+                  {verCerrados ? "" : " — ver detalle"}
+                </button>
+                {verCerrados && (
+                  <ul className="space-y-1">
+                    {(verTodos ? cerrados : cerrados.slice(0, 12)).map((f) => (
+                      <li
+                        key={`${f.fecha}|${f.dominio}`}
+                        className="flex items-center justify-between border-b pb-1 text-sm last:border-0"
                       >
-                        {FALTA_LABEL[f.falta]}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                {cerrados.length > 12 && (
+                        <span>
+                          <span className="font-medium">{f.dominio}</span>
+                          <span className="text-muted-foreground">
+                            {" "}
+                            · {fmtDia(f.fecha)}
+                          </span>
+                        </span>
+                        <span
+                          className={
+                            f.falta === "ambos"
+                              ? "text-xs text-red-600 dark:text-red-400"
+                              : "text-xs text-amber-600 dark:text-amber-400"
+                          }
+                        >
+                          {FALTA_LABEL[f.falta]}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {verCerrados && cerrados.length > 12 && (
                   <button
                     type="button"
                     onClick={() => setVerTodos((v) => !v)}
