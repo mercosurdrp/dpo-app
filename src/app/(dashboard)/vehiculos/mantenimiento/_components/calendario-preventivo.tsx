@@ -6,6 +6,12 @@
 //
 // Las tareas que vencen por km u horas no tienen fecha propia: se estiman con el
 // ritmo de uso de cada unidad y se marcan con "~". Ver `lib/flota/calendario-preventivo`.
+//
+// 🚨 El SERVICE GENERAL no se recalcula acá: se toma de `programacion`, la misma
+// proyección que muestra el Tablero operativo ("faltan 8 días"). Si el calendario
+// lo midiera por su cuenta, el mismo service caería en dos días distintos según
+// dónde se lo mire. Por eso el ritmo del tablero (`kmDia`) manda también sobre el
+// resto de las tareas.
 
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -38,8 +44,10 @@ import {
   ritmoDiarioPorDominio,
   type EventoPreventivo,
   type LecturaDia,
+  type ServiceProyectado,
 } from "@/lib/flota/calendario-preventivo"
 import type { EstadoPlanVehiculo, MantenimientoPlanTarea } from "@/types/database"
+import type { ServiceGeneralUnidad } from "@/lib/vehiculos/service-general"
 
 const DIAS_CORTOS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 const MESES = [
@@ -68,6 +76,7 @@ export function CalendarioPreventivo({
   estados,
   tareas,
   historialLecturas,
+  programacion,
   puedeEditar,
   onProgramar,
   refreshToken,
@@ -76,6 +85,8 @@ export function CalendarioPreventivo({
   tareas: MantenimientoPlanTarea[]
   /** Historial de lecturas por dominio (de `getEstadoPlanFlota`), para el ritmo de uso. */
   historialLecturas: Record<string, LecturaDia[]>
+  /** Service general por unidad, el mismo que muestra el Tablero operativo. */
+  programacion: ServiceGeneralUnidad[]
   puedeEditar: boolean
   /** Abre el diálogo de programación del padre con la fecha (y unidad) elegida. */
   onProgramar: (fecha: string, dominio?: string, tareasSugeridas?: string[]) => void
@@ -115,12 +126,35 @@ export function CalendarioPreventivo({
 
   const tareasById = useMemo(() => new Map(tareas.map((t) => [t.id, t])), [tareas])
 
+  const servicePorDominio = useMemo(() => {
+    const map = new Map<string, ServiceProyectado>()
+    for (const p of programacion) {
+      if (p.estado === "no_aplica") continue
+      map.set(p.dominio, {
+        dominio: p.dominio,
+        proximaFecha: p.proximaFecha,
+        diasRestantes: p.diasRestantes,
+        kmDia: p.kmDia,
+        motivo: p.motivo,
+        kmRestante: p.kmRestante,
+        mide: p.mide,
+      })
+    }
+    return map
+  }, [programacion])
+
   const eventos = useMemo(() => {
     const tipos = new Map(estados.map((e) => [e.vehiculo.dominio, e.vehiculo.tipo ?? "camion"]))
     const ritmo = ritmoDiarioPorDominio(historialLecturas, tipos)
-    const todos = eventosPreventivos({ estados, tareasById, ritmoPorDominio: ritmo, hoy })
+    const todos = eventosPreventivos({
+      estados,
+      tareasById,
+      ritmoPorDominio: ritmo,
+      servicePorDominio,
+      hoy,
+    })
     return fUnidad === "todas" ? todos : todos.filter((e) => e.dominio === fUnidad)
-  }, [estados, tareasById, historialLecturas, fUnidad, hoy])
+  }, [estados, tareasById, historialLecturas, servicePorDominio, fUnidad, hoy])
 
   /** Vencidas con fecha anterior a la grilla: si no se muestran aparte, desaparecen. */
   const arrastre = useMemo(
@@ -213,7 +247,10 @@ export function CalendarioPreventivo({
               <span className="size-2.5 rounded-sm bg-destructive/70" /> Vencido (
               {delMes.filter((e) => e.estado === "vencido").length + arrastre.length})
             </span>
-            <span>· «~» = fecha estimada por el uso (km/horas), no por plazo</span>
+            <span>
+              · «~» = fecha estimada por el uso (km/horas) · el Service general cae el mismo
+              día que dice el Tablero operativo
+            </span>
           </div>
         </CardHeader>
         <CardContent>

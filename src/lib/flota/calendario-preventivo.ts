@@ -22,6 +22,26 @@ export interface LecturaDia {
 
 export type EjeVencimiento = "tiempo" | "km" | "horas"
 
+/**
+ * El service general proyectado que ya muestra el Tablero operativo
+ * (`ServiceGeneralUnidad`). El calendario lo toma tal cual: si el tablero dice
+ * "faltan 8 días", en el calendario cae ese mismo día. Un solo cálculo.
+ */
+export interface ServiceProyectado {
+  dominio: string
+  proximaFecha: string | null
+  diasRestantes: number | null
+  kmDia: number | null
+  /** Qué disparó la proyección en el tablero: km, horas o el plazo en meses. */
+  motivo: "km" | "horas" | "tiempo" | null
+  /** Lo que falta para el corte, en km o en horas. */
+  kmRestante: number | null
+  mide: "km" | "horas"
+}
+
+/** Código de la tarea del plan que ES el service general: lo aporta el tablero. */
+const CODIGO_SERVICE = "service"
+
 export interface EventoPreventivo {
   /** Fecha ISO en la que la tarea vence (real si es por tiempo, estimada si es por uso). */
   fecha: string
@@ -105,19 +125,53 @@ export function eventosPreventivos(params: {
   estados: EstadoPlanVehiculo[]
   tareasById: Map<string, MantenimientoPlanTarea>
   ritmoPorDominio: Map<string, number>
+  /** Service general por unidad, tal como lo proyecta el Tablero operativo. */
+  servicePorDominio?: Map<string, ServiceProyectado>
   hoy: string
 }): EventoPreventivo[] {
-  const { estados, tareasById, ritmoPorDominio, hoy } = params
+  const { estados, tareasById, ritmoPorDominio, servicePorDominio, hoy } = params
   const eventos: EventoPreventivo[] = []
 
   for (const e of estados) {
     const dominio = e.vehiculo.dominio
-    const ritmo = ritmoPorDominio.get(dominio) ?? null
+    const service = servicePorDominio?.get(dominio)
+    // La tasa del tablero manda: si el calendario midiera por su cuenta, el
+    // mismo service caería en dos días distintos según dónde se lo mire.
+    const ritmo = service?.kmDia && service.kmDia > 0
+      ? service.kmDia
+      : ritmoPorDominio.get(dominio) ?? null
+
+    // El service general lo aporta el tablero, con su fecha y su semáforo.
+    if (service?.proximaFecha) {
+      const dias = service.diasRestantes
+      const unidad = service.mide === "horas" ? "hs" : "km"
+      eventos.push({
+        fecha: service.proximaFecha,
+        dominio,
+        tareaId: `service:${dominio}`,
+        tarea: "Service general",
+        estado: dias == null ? "ok" : dias < 0 ? "vencido" : dias <= 15 ? "proximo" : "ok",
+        eje: service.motivo === "tiempo" ? "tiempo" : service.motivo === "horas" ? "horas" : "km",
+        estimada: service.motivo !== "tiempo",
+        detalle:
+          service.kmRestante != null
+            ? service.kmRestante >= 0
+              ? `faltan ${fmtNum(service.kmRestante)} ${unidad}`
+              : `${fmtNum(-service.kmRestante)} ${unidad} pasado`
+            : dias != null
+              ? dias >= 0
+                ? `faltan ${dias} días`
+                : `vencido hace ${-dias} días`
+              : null,
+      })
+    }
 
     for (const c of e.celdas) {
       if (c.estado === "sin_datos") continue
       const tarea = tareasById.get(c.tareaId)
       if (!tarea) continue
+      // No duplicar: el service ya entró con la fecha del tablero.
+      if (service?.proximaFecha && tarea.codigo === CODIGO_SERVICE) continue
 
       const candidatos: { fecha: string; eje: EjeVencimiento; estimada: boolean; detalle: string | null }[] =
         []

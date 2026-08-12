@@ -795,6 +795,7 @@ export function MantenimientoClient({
             estados={estados}
             tareas={tareas}
             historialLecturas={historialLecturas}
+            programacion={tablero.programacion}
             proveedores={provList}
             onProveedorCreado={agregarProveedor}
             puedeEditar={puedeEditar}
