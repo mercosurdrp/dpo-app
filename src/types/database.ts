@@ -1626,18 +1626,34 @@ export const GASTO_TIPO_MANTENIMIENTO_LABELS: Record<MantenimientoTipo, string> 
   proactivo: "Proactivo",
 }
 
-/** Rubros sugeridos (el campo es texto libre, esto solo alimenta el selector). */
-export const GASTO_RUBROS = [
+/**
+ * Motivo del gasto: el "por qué se gastó", la dimensión que pide el R3.2.2 del
+ * punto 3.2 de Flota (costos de mantenimiento preventivo y correctivo, **daños
+ * evitables** de cada vehículo y **sanciones/multas**). Preventivo/correctivo ya
+ * viven en `tipo_mantenimiento`; acá van los motivos que ese campo no cubre.
+ *
+ * Se persiste en `mantenimiento_gastos.rubro`, que es texto libre: cambiar esta
+ * lista no necesita migración, pero un motivo renombrado deja huérfanos los
+ * gastos ya cargados con el nombre viejo.
+ */
+export const GASTO_MOTIVOS = [
   "Repuestos",
-  "Combustible",
   "Taller / mano de obra",
   "Neumáticos",
   "Lubricantes",
-  "Peajes",
+  "Combustible",
+  "Daño evitable",
+  "Multa / infracción",
   "Seguros / patentes",
+  "Peajes",
   "Librería / insumos",
   "Varios",
 ] as const
+
+export type GastoMotivo = (typeof GASTO_MOTIVOS)[number]
+
+/** Valor del filtro para los gastos que todavía no tienen motivo cargado. */
+export const GASTO_MOTIVO_SIN = "__sin_motivo"
 
 export interface MantenimientoGasto {
   id: string

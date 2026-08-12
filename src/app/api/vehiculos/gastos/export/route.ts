@@ -2,6 +2,7 @@
  * Excel del libro de gastos de mantenimiento (pestaña Gastos).
  *
  * GET /api/vehiculos/gastos/export?mes=YYYY-MM&tipo=factura|boleta|caja_chica
+ *     &motivo=<motivo>&mantenimiento=preventivo|correctivo|proactivo
  */
 export const maxDuration = 60
 
@@ -28,10 +29,12 @@ export async function GET(req: NextRequest) {
 
   const mes = req.nextUrl.searchParams.get("mes")
   const tipo = req.nextUrl.searchParams.get("tipo")
+  const motivo = req.nextUrl.searchParams.get("motivo")
+  const mantenimiento = req.nextUrl.searchParams.get("mantenimiento")
 
   let gastos: MantenimientoGasto[]
   try {
-    gastos = await fetchGastosExport({ mes, tipo })
+    gastos = await fetchGastosExport({ mes, tipo, motivo, mantenimiento })
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Error" },
@@ -44,6 +47,7 @@ export async function GET(req: NextRequest) {
     "Fecha de carga": g.fecha_carga?.slice(0, 10) ?? "",
     Tipo: GASTO_TIPO_LABELS[g.tipo] ?? g.tipo,
     Proveedor: g.proveedor ?? "",
+    Motivo: g.rubro ?? "",
     "Tipo mantenimiento": g.tipo_mantenimiento
       ? GASTO_TIPO_MANTENIMIENTO_LABELS[g.tipo_mantenimiento] ?? g.tipo_mantenimiento
       : "",
@@ -66,6 +70,7 @@ export async function GET(req: NextRequest) {
     { wch: 13 }, // Fecha de carga
     { wch: 11 }, // Tipo
     { wch: 28 }, // Proveedor
+    { wch: 20 }, // Motivo
     { wch: 18 }, // Tipo mantenimiento
     { wch: 12 }, // Monto
     { wch: 12 }, // Mes imputación

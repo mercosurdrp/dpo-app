@@ -59,6 +59,8 @@ import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard } from "./_components/kpi-card"
 import {
   GASTO_MEDIO_PAGO_LABELS,
+  GASTO_MOTIVOS,
+  GASTO_MOTIVO_SIN,
   GASTO_TIPO_LABELS,
   GASTO_TIPO_MANTENIMIENTO_LABELS,
   type GastoMedioPago,
@@ -112,6 +114,15 @@ function hoyISO() {
   return new Date().toISOString().slice(0, 10)
 }
 
+/** Etiqueta del motivo de un gasto; los que todavía no lo tienen cargado se
+ *  muestran como tales en vez de esconderse en un guion. */
+const motivoLabel = (rubro: string | null) => rubro?.trim() || "Sin motivo"
+
+/** Filtro de tipo de mantenimiento: además de los 3 tipos, "no corresponde"
+ *  (NULL) es un valor legítimo — son los gastos que no son de mantenimiento
+ *  (multas, seguros, peajes). */
+const MANT_SIN = "__sin_mant"
+
 export function GastosTab({
   gastos,
   proveedores,
@@ -133,6 +144,8 @@ export function GastosTab({
   const [nuevoOpen, setNuevoOpen] = useState(false)
   const [fMes, setFMes] = useState("todos")
   const [fTipo, setFTipo] = useState("todos")
+  const [fMotivo, setFMotivo] = useState("todos")
+  const [fMant, setFMant] = useState("todos")
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const meses = useMemo(() => {
@@ -140,14 +153,56 @@ export function GastosTab({
     return Array.from(s).sort().reverse()
   }, [gastos])
 
-  const filtrados = useMemo(
+  /** Motivos del selector: el catálogo más los que ya estén cargados con otro
+   *  texto (el campo es libre y viene de antes de que existiera la lista). */
+  const motivosOpciones = useMemo(() => {
+    const delCatalogo = new Set<string>(GASTO_MOTIVOS)
+    const extra = gastos
+      .map((g) => g.rubro?.trim())
+      .filter((r): r is string => !!r && !delCatalogo.has(r))
+    return [...GASTO_MOTIVOS, ...Array.from(new Set(extra)).sort()]
+  }, [gastos])
+
+  /** Base del desglose: todo menos el filtro de motivo, para que la tabla por
+   *  motivo siga mostrando el reparto completo con un motivo seleccionado. */
+  const baseMotivos = useMemo(
     () =>
       gastos.filter(
         (g) =>
           (fMes === "todos" || g.mes_imputacion === fMes) &&
-          (fTipo === "todos" || g.tipo === fTipo)
+          (fTipo === "todos" || g.tipo === fTipo) &&
+          (fMant === "todos" ||
+            (fMant === MANT_SIN ? !g.tipo_mantenimiento : g.tipo_mantenimiento === fMant))
       ),
-    [gastos, fMes, fTipo]
+    [gastos, fMes, fTipo, fMant]
+  )
+
+  const filtrados = useMemo(
+    () =>
+      baseMotivos.filter((g) => {
+        if (fMotivo === "todos") return true
+        if (fMotivo === GASTO_MOTIVO_SIN) return !g.rubro?.trim()
+        return g.rubro?.trim() === fMotivo
+      }),
+    [baseMotivos, fMotivo]
+  )
+
+  /** Reparto del gasto por motivo — es la lectura que pide el R3.2.2. */
+  const porMotivo = useMemo(() => {
+    const acc = new Map<string, { motivo: string; monto: number; n: number }>()
+    for (const g of baseMotivos) {
+      const k = motivoLabel(g.rubro)
+      const cur = acc.get(k) ?? { motivo: k, monto: 0, n: 0 }
+      cur.monto += Number(g.monto)
+      cur.n += 1
+      acc.set(k, cur)
+    }
+    return Array.from(acc.values()).sort((a, b) => b.monto - a.monto)
+  }, [baseMotivos])
+
+  const totalMotivos = useMemo(
+    () => porMotivo.reduce((a, m) => a + m.monto, 0),
+    [porMotivo]
   )
 
   const total = useMemo(() => filtrados.reduce((a, g) => a + Number(g.monto), 0), [filtrados])
@@ -167,6 +222,8 @@ export function GastosTab({
     const params = new URLSearchParams()
     if (fMes !== "todos") params.set("mes", fMes)
     if (fTipo !== "todos") params.set("tipo", fTipo)
+    if (fMotivo !== "todos") params.set("motivo", fMotivo)
+    if (fMant !== "todos") params.set("mantenimiento", fMant)
     const qs = params.toString()
     return `/api/vehiculos/gastos/${formato === "xlsx" ? "export" : "pdf"}${qs ? `?${qs}` : ""}`
   }
@@ -286,6 +343,42 @@ export function GastosTab({
                   </SelectContent>
                 </Select>
               </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Motivo</Label>
+                <Select value={fMotivo} onValueChange={(v) => setFMotivo(v ?? "todos")}>
+                  <SelectTrigger className="w-52">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos los motivos</SelectItem>
+                    {motivosOpciones.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={GASTO_MOTIVO_SIN}>Sin motivo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Mantenimiento</Label>
+                <Select value={fMant} onValueChange={(v) => setFMant(v ?? "todos")}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    {(Object.keys(GASTO_TIPO_MANTENIMIENTO_LABELS) as MantenimientoTipo[]).map(
+                      (k) => (
+                        <SelectItem key={k} value={k}>
+                          {GASTO_TIPO_MANTENIMIENTO_LABELS[k]}
+                        </SelectItem>
+                      )
+                    )}
+                    <SelectItem value={MANT_SIN}>No corresponde</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="flex items-end gap-2">
               <Button
@@ -311,6 +404,63 @@ export function GastosTab({
             </div>
           </div>
 
+          {/* Desglose por motivo — R3.2.2: el gasto de flota abierto por su causa */}
+          {porMotivo.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  Gasto por motivo
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {fMes === "todos" ? "todos los meses" : fmtMesLabel(fMes)} · click para filtrar
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-x-auto p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Motivo</TableHead>
+                      <TableHead className="text-right">Comprobantes</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
+                      <TableHead className="text-right">% del total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {porMotivo.map((m) => {
+                      const valor = m.motivo === "Sin motivo" ? GASTO_MOTIVO_SIN : m.motivo
+                      const activo = fMotivo === valor
+                      return (
+                        <TableRow
+                          key={m.motivo}
+                          className={`cursor-pointer ${activo ? "bg-muted/60" : ""}`}
+                          onClick={() => setFMotivo(activo ? "todos" : valor)}
+                        >
+                          <TableCell className="font-medium text-foreground">
+                            {m.motivo}
+                            {m.motivo === "Sin motivo" && (
+                              <span className="ml-2 text-[11px] text-amber-600 dark:text-amber-400">
+                                falta clasificar
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {m.n}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums text-foreground">
+                            {fmtMoney(m.monto)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {totalMotivos > 0 ? `${((100 * m.monto) / totalMotivos).toFixed(1)}%` : "—"}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Tabla */}
           <Card>
             <CardContent className="overflow-x-auto p-0">
@@ -320,6 +470,7 @@ export function GastosTab({
                     <TableHead>Fecha</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead>Proveedor</TableHead>
+                    <TableHead>Motivo</TableHead>
                     <TableHead className="text-right">Monto</TableHead>
                     <TableHead>Mes imp.</TableHead>
                     <TableHead>Estado</TableHead>
@@ -330,7 +481,7 @@ export function GastosTab({
                   {filtrados.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={7}
+                        colSpan={8}
                         className="py-8 text-center text-sm text-muted-foreground"
                       >
                         No hay gastos cargados para este filtro.
@@ -373,6 +524,13 @@ export function GastosTab({
                               <Wrench className="size-3" />
                               {GASTO_TIPO_MANTENIMIENTO_LABELS[g.tipo_mantenimiento]}
                             </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {g.rubro?.trim() ? (
+                            <span className="text-foreground">{g.rubro}</span>
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400">Sin motivo</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right font-semibold tabular-nums text-foreground">
@@ -645,6 +803,7 @@ function NuevoGastoDialog({
   const [mes, setMes] = useState(hoyISO().slice(0, 7))
   const [monto, setMonto] = useState("")
   const [proveedor, setProveedor] = useState("")
+  const [motivo, setMotivo] = useState("")
   const [tipoMant, setTipoMant] = useState<MantenimientoTipo | "">("")
   const [medioPago, setMedioPago] = useState<GastoMedioPago | "">("")
   const [nroComp, setNroComp] = useState("")
@@ -666,6 +825,12 @@ function NuevoGastoDialog({
       toast.error("Ingresá el N° de orden de trabajo (obligatorio para facturas)")
       return
     }
+    // Sin motivo el gasto no se puede analizar contra el presupuesto (R3.2.2):
+    // así se llenaban todos los comprobantes hasta ahora.
+    if (!motivo) {
+      toast.error("Elegí el motivo del gasto")
+      return
+    }
     setSaving(true)
     const fd = new FormData()
     fd.set("tipo", tipo)
@@ -674,6 +839,7 @@ function NuevoGastoDialog({
     fd.set("mes_imputacion", mes)
     fd.set("monto", monto)
     fd.set("proveedor", proveedor)
+    fd.set("rubro", motivo)
     fd.set("tipo_mantenimiento", tipoMant)
     fd.set("medio_pago", medioPago)
     fd.set("numero_comprobante", nroComp)
@@ -777,6 +943,24 @@ function NuevoGastoDialog({
               onChange={setProveedor}
               onCreado={onProveedorCreado}
             />
+          </div>
+          <div className="col-span-2">
+            <Label>
+              Motivo del gasto <span className="text-destructive">*</span>
+            </Label>
+            <Select value={motivo || "__none"} onValueChange={(v) => setMotivo(!v || v === "__none" ? "" : v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Elegí el motivo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">Elegí el motivo</SelectItem>
+                {GASTO_MOTIVOS.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="col-span-2">
             <Label>Tipo de mantenimiento</Label>
