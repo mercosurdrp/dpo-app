@@ -32,6 +32,7 @@ import type {
   VehiculoKmDia,
   VehiculoTimelineEvento,
 } from "@/types/database"
+import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 
 export async function getKmPorVehiculo(filters?: {
   dominio?: string
@@ -530,6 +531,7 @@ export async function getAlertasVehiculos(): Promise<
     const { data: combData, error: combErr } = await supabase
       .from("registro_combustible")
       .select("dominio, fecha, rendimiento")
+      .eq("tipo_combustible", TIPO_CARGA_GASOIL)
       .not("rendimiento", "is", null)
       .order("fecha", { ascending: false })
     if (combErr) return { error: combErr.message }

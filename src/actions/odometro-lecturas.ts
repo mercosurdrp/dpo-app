@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import type { FuenteLectura } from "@/types/database"
+import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 
 // Corrección puntual del odómetro de una lectura ya cargada.
 //
@@ -100,7 +101,7 @@ async function recalcularCargas(
 ): Promise<string | null> {
   const { data, error } = await supabase
     .from("registro_combustible")
-    .select("id, odometro, litros, km_recorridos, rendimiento")
+    .select("id, odometro, litros, km_recorridos, rendimiento, tipo_combustible")
     .eq("dominio", dominio)
     .order("odometro", { ascending: true })
   if (error) return error.message
@@ -111,10 +112,16 @@ async function recalcularCargas(
     litros: number | string
     km_recorridos: number | null
     rendimiento: number | string | null
+    tipo_combustible: string | null
   }>
 
-  let odometroPrevio: number | null = null
+  // 🚨 Cada tipo de carga se encadena con las de SU tipo. La urea comparte esta
+  // tabla, y recorrer todo junto mediría el gasoil contra la carga de urea
+  // anterior: km_recorridos y rendimiento saldrían inventados en las dos series.
+  const odometroPrevioPorTipo = new Map<string, number>()
   for (const carga of cargas) {
+    const tipo = carga.tipo_combustible || TIPO_CARGA_GASOIL
+    const odometroPrevio = odometroPrevioPorTipo.get(tipo) ?? null
     let kmRecorridos: number | null = null
     let rendimiento: number | null = null
 
@@ -138,7 +145,7 @@ async function recalcularCargas(
       if (errUpd) return errUpd.message
     }
 
-    odometroPrevio = carga.odometro
+    odometroPrevioPorTipo.set(tipo, carga.odometro)
   }
 
   return null

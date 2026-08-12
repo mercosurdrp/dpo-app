@@ -49,6 +49,7 @@ import {
 import { cn } from "@/lib/utils"
 import { DpoPuntoBadge, DpoSeccionCinta } from "./_components/dpo-badge"
 import { CoberturaCil } from "./cobertura-cil"
+import { ConsumoUrea } from "./consumo-urea"
 import { AdherenciaChecklistCard } from "./adherencia-checklist"
 import { KpiCard } from "./_components/kpi-card"
 import {
@@ -923,6 +924,9 @@ export function ChecklistsMtto({
         dominios={dominiosFlota}
         puedeEditar={puedeEditar}
       />
+
+      {/* ===== Consumo de urea: cada cuántos km la pide cada camión ===== */}
+      <ConsumoUrea />
     </div>
   )
 }

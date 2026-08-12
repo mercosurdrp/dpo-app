@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 
 export interface CombustibleCamion {
   dominio: string
@@ -81,6 +82,7 @@ export async function getAnalisisCombustible(
     const { data: cargas, error } = await supa
       .from("registro_combustible")
       .select("dominio, litros, km_recorridos")
+      .eq("tipo_combustible", TIPO_CARGA_GASOIL)
       .gte("fecha", desde)
       .lt("fecha", hasta)
     if (error) return { error: error.message }

@@ -23,6 +23,7 @@ import {
   Ban,
   Gauge,
   ClipboardCheck,
+  Droplet,
   Droplets,
   Fuel,
   ExternalLink,
@@ -575,6 +576,21 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
                 <div>
                   <p className="font-semibold text-slate-900">Neumáticos</p>
                   <p className="text-sm text-violet-600">Dibujo y presión, 1 vez al mes</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          {/* Urea: como CIL y Neumáticos, sin lista de habilitados — la carga la
+              puede hacer cualquiera sobre cualquier camión. */}
+          <Link href="/mi-urea">
+            <Card className="group cursor-pointer border-sky-200 bg-sky-50 transition-shadow hover:shadow-md">
+              <CardContent className="flex items-center gap-4 py-5">
+                <div className="rounded-xl bg-sky-100 p-3 transition-colors group-hover:bg-sky-200">
+                  <Droplet className="size-6 text-sky-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">Carga de Urea</p>
+                  <p className="text-sm text-sky-600">Litros y odómetro</p>
                 </div>
               </CardContent>
             </Card>

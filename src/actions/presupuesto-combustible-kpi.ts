@@ -2,6 +2,7 @@
 
 import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
+import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 
 /**
  * KPI físico de las iniciativas de ahorro de combustible: km recorridos por
@@ -102,6 +103,7 @@ export async function getKpiCombustible(
   const { data, error } = await supabase
     .from("registro_combustible")
     .select("fecha, dominio, km_recorridos, litros, rendimiento")
+    .eq("tipo_combustible", TIPO_CARGA_GASOIL)
     .in("dominio", todosLosDominios)
     .gte("fecha", `${anio}-01-01`)
     .lte("fecha", `${anio}-12-31`)

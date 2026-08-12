@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { validarLitros } from "@/lib/vehiculos/combustible-limites"
+import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 import { validarLectura } from "@/lib/vehiculos/validar-lectura"
 import { addDays, fetchLecturas, kmActualPorDominio } from "@/lib/vehiculos/lecturas"
 import type {
@@ -52,10 +53,14 @@ export async function createRegistroCombustible(
     if (errorLectura) return { error: errorLectura }
 
     // Find previous record for same vehicle to calculate km_recorridos
+    // 🚨 Del MISMO tipo de carga: la urea comparte tabla, y medir el gasoil
+    // contra una carga de urea (o al revés) da un km/l inventado.
+    const tipoCarga = input.tipo_combustible || TIPO_CARGA_GASOIL
     const { data: prevRecord } = await supabase
       .from("registro_combustible")
       .select("odometro")
       .eq("dominio", input.dominio.trim().toUpperCase())
+      .eq("tipo_combustible", tipoCarga)
       .lt("odometro", input.odometro)
       .order("odometro", { ascending: false })
       .limit(1)
@@ -81,7 +86,7 @@ export async function createRegistroCombustible(
         litros: input.litros,
         km_recorridos: kmRecorridos,
         rendimiento,
-        tipo_combustible: input.tipo_combustible || "gasoil",
+        tipo_combustible: tipoCarga,
         proveedor: input.proveedor?.trim() || null,
         numero_remito: input.numero_remito?.trim() || null,
         costo_total: input.costo_total || null,
@@ -115,9 +120,12 @@ export async function getRegistrosCombustible(
     await requireAuth()
     const supabase = await createClient()
 
+    // 🚨 El módulo de Combustible muestra SÓLO gasoil: la urea vive en la misma
+    // tabla y tiene su propia pantalla.
     let query = supabase
       .from("registro_combustible")
       .select("*")
+      .eq("tipo_combustible", TIPO_CARGA_GASOIL)
       .order("fecha", { ascending: false })
       .order("created_at", { ascending: false })
 
@@ -163,10 +171,13 @@ export async function updateRegistroCombustible(
     // Recalcular km_recorridos + rendimiento en base al registro previo del
     // mismo vehículo (el que tiene odómetro inmediatamente menor, ignorando
     // el mismo registro que estoy editando).
+    const tipoCarga = input.tipo_combustible || TIPO_CARGA_GASOIL
     const { data: prev } = await supabase
       .from("registro_combustible")
       .select("odometro")
       .eq("dominio", input.dominio.trim().toUpperCase())
+      // 🚨 Mismo tipo: ver el comentario de `createRegistroCombustible`.
+      .eq("tipo_combustible", tipoCarga)
       .lt("odometro", input.odometro)
       .neq("id", input.id)
       .order("odometro", { ascending: false })
@@ -192,7 +203,7 @@ export async function updateRegistroCombustible(
         litros: input.litros,
         km_recorridos: kmRecorridos,
         rendimiento,
-        tipo_combustible: input.tipo_combustible || "gasoil",
+        tipo_combustible: tipoCarga,
         proveedor: input.proveedor?.trim() || null,
         numero_remito: input.numero_remito?.trim() || null,
         costo_total: input.costo_total ?? null,
@@ -259,6 +270,8 @@ export async function getRendimientoKpis(filters?: {
     let query = supabase
       .from("registro_combustible")
       .select("*")
+      // 🚨 El km/l es del gasoil; la urea no es combustible.
+      .eq("tipo_combustible", TIPO_CARGA_GASOIL)
       .not("km_recorridos", "is", null)
       .not("rendimiento", "is", null)
       .order("fecha", { ascending: true })

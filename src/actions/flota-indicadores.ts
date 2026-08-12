@@ -6,6 +6,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
+import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 
 export type FlotaKpi =
   | "disponibilidad"
@@ -316,6 +317,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       supabase
         .from("registro_combustible")
         .select("dominio, fecha, litros, km_recorridos")
+        .eq("tipo_combustible", TIPO_CARGA_GASOIL)
         .gte("fecha", inicioVentana),
       supabase.from("mantenimiento_cil").select("fecha").gte("fecha", inicioVentana),
       // Catálogo: hace falta para saber QUÉ unidad es cada dominio. Sin esto,

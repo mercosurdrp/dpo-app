@@ -23,6 +23,7 @@ import type {
   FlotaIndisponibilidad,
   MantenimientoRealizado,
 } from "@/types/database"
+import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -140,6 +141,7 @@ export async function getFlotaRuteoReunion(
           supabase
             .from("registro_combustible")
             .select("litros, km_recorridos")
+            .eq("tipo_combustible", TIPO_CARGA_GASOIL)
             .gte("fecha", inicioMes)
             .lte("fecha", fechaReunion)
             .range(desde, hasta)
