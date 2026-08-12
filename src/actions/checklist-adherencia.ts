@@ -120,7 +120,7 @@ export async function getAdherenciaChecklist(
     const hastaEfectivo = hasta >= hoyArg() ? ayerDe(hoyArg()) : hasta
     const diaEnCursoExcluido = hastaEfectivo !== hasta
 
-    const [vehRes, repartoRes, chkRes, indispRes] = await Promise.all([
+    const [vehRes, repartoRes, chkRes, indispRes, otRes] = await Promise.all([
       supabase.from("catalogo_vehiculos").select("dominio, tipo"),
       traerTodo<{ patente: string | null; fecha: string; ds_fletero_carga: string | null }>(
         (a, b) =>
@@ -144,12 +144,26 @@ export async function getAdherenciaChecklist(
         .select("dominio, fecha_desde, fecha_hasta")
         .gte("fecha_hasta", desde)
         .lte("fecha_desde", hastaEfectivo),
+      // 🚨 La parada por una ORDEN DE TRABAJO se guarda acá, no en
+      // `flota_indisponibilidad`: son dos lugares distintos y mirar sólo el
+      // primero castigaba al camión que estuvo en el taller. Caso real: el
+      // AF588SU el 03/08/2026 entró por la OT 1755 (pérdida de aire en una
+      // manguera, taller Luval) con `fuera_servicio` ese mismo día, no cargó
+      // checklist —lógico, no salió— y figuraba en ventas con UN cliente y 0,33
+      // bultos. Contaba como incumplimiento del chofer, que había cargado
+      // normalmente el 01, el 04 y el 05.
+      supabase
+        .from("mantenimiento_realizados")
+        .select("dominio, fuera_servicio_desde, fuera_servicio_hasta")
+        .not("fuera_servicio_desde", "is", null)
+        .lte("fuera_servicio_desde", hastaEfectivo),
     ])
 
     if (vehRes.error) return { error: vehRes.error.message }
     if ("error" in repartoRes) return { error: repartoRes.error }
     if ("error" in chkRes) return { error: chkRes.error }
     if (indispRes.error) return { error: indispRes.error.message }
+    if (otRes.error) return { error: otRes.error.message }
 
     const esCamion = new Set(
       ((vehRes.data || []) as Array<{ dominio: string; tipo: string | null }>)
@@ -197,17 +211,32 @@ export async function getAdherenciaChecklist(
     // AF469UR estuvo en taller del 23/06 al 03/08/2026 por la ECU (OT 1733) y
     // aun así figuraba con 9 camión-día. La indisponibilidad ya está cargada en
     // el sistema: alcanza con mirarla.
-    const indisponible = (
-      (indispRes.data || []) as Array<{
+    const indisponible = [
+      ...((indispRes.data || []) as Array<{
         dominio: string
         fecha_desde: string
         fecha_hasta: string
-      }>
-    ).map((i) => ({
-      dominio: (i.dominio || "").trim().toUpperCase(),
-      desde: i.fecha_desde,
-      hasta: i.fecha_hasta,
-    }))
+      }>).map((i) => ({
+        dominio: (i.dominio || "").trim().toUpperCase(),
+        desde: i.fecha_desde,
+        hasta: i.fecha_hasta,
+      })),
+      // Las paradas por orden de trabajo. Si la OT no cerró
+      // (`fuera_servicio_hasta` en null) la unidad sigue afuera: se toma el
+      // final del rango medido, no la fecha de inicio, o el día de la parada
+      // sería el único perdonado y los siguientes volverían a contar.
+      ...((otRes.data || []) as Array<{
+        dominio: string
+        fuera_servicio_desde: string | null
+        fuera_servicio_hasta: string | null
+      }>)
+        .filter((o) => o.fuera_servicio_desde)
+        .map((o) => ({
+          dominio: (o.dominio || "").trim().toUpperCase(),
+          desde: o.fuera_servicio_desde as string,
+          hasta: o.fuera_servicio_hasta ?? hastaEfectivo,
+        })),
+    ]
     const estaFueraDeServicio = (dominio: string, fecha: string) =>
       indisponible.some(
         (i) => i.dominio === dominio && fecha >= i.desde && fecha <= i.hasta,
