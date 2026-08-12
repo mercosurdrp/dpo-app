@@ -105,6 +105,109 @@ function inicioMesSiguiente(ym: string): string {
     : `${a}-${String(m + 1).padStart(2, "0")}-01`
 }
 
+/** Último día que se le puede exigir CIL al mes: hoy si está en curso. */
+function ultimoDiaExigible(ym: string): string {
+  const hoy = hoyArgentina()
+  const finDeMes = new Date(
+    Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0),
+  )
+    .toISOString()
+    .slice(0, 10)
+  return hoy < finDeMes ? hoy : finDeMes
+}
+
+interface Parada {
+  dominio: string
+  desde: string
+  hasta: string | null
+}
+
+/**
+ * Trae las paradas de la flota desde las DOS fuentes en las que se registran:
+ * la indisponibilidad cargada a mano y el fuera de servicio de las órdenes de
+ * trabajo. Son dos tablas distintas y mirar una sola deja afuera la mitad de los
+ * casos — ver `actions/checklist-adherencia.ts`, donde pasó lo mismo.
+ */
+async function traerParadas(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  desde: string,
+  hasta: string,
+): Promise<Parada[]> {
+  const [indispRes, otRes] = await Promise.all([
+    supabase
+      .from("flota_indisponibilidad")
+      .select("dominio, fecha_desde, fecha_hasta")
+      .gte("fecha_hasta", desde)
+      .lte("fecha_desde", hasta),
+    supabase
+      .from("mantenimiento_realizados")
+      .select("dominio, fuera_servicio_desde, fuera_servicio_hasta")
+      .not("fuera_servicio_desde", "is", null)
+      .lte("fuera_servicio_desde", hasta),
+  ])
+
+  const norm = (d: string | null) => (d || "").trim().toUpperCase()
+  return [
+    ...((indispRes.data || []) as Array<{
+      dominio: string
+      fecha_desde: string
+      fecha_hasta: string
+    }>).map((i) => ({
+      dominio: norm(i.dominio),
+      desde: i.fecha_desde,
+      hasta: i.fecha_hasta,
+    })),
+    ...((otRes.data || []) as Array<{
+      dominio: string
+      fuera_servicio_desde: string | null
+      fuera_servicio_hasta: string | null
+    }>)
+      .filter((o) => o.fuera_servicio_desde)
+      .map((o) => ({
+        dominio: norm(o.dominio),
+        desde: o.fuera_servicio_desde as string,
+        // OT abierta = sigue parada.
+        hasta: o.fuera_servicio_hasta,
+      })),
+  ]
+}
+
+/**
+ * ¿La unidad estuvo fuera de servicio TODOS los días exigibles del mes?
+ *
+ * 🚨 El corte es "todo el mes", no "algún día": el CIL es mensual, así que una
+ * unidad que estuvo tres días en el taller tuvo las otras tres semanas para que
+ * le hicieran la limpieza, la inspección y la lubricación — sacarla del
+ * denominador por eso sería regalar cobertura. La que no tuvo NINGÚN día
+ * disponible es otra cosa: exigirle el ciclo es pedir algo imposible, y arrastra
+ * el porcentaje sin que nadie haya dejado de hacer nada.
+ */
+function paradaTodoElMes(
+  dominio: string,
+  ym: string,
+  paradas: Parada[],
+): Parada | null {
+  const primero = `${ym}-01`
+  const ultimo = ultimoDiaExigible(ym)
+  if (ultimo < primero) return null // el mes todavía no empezó
+  return (
+    paradas.find(
+      (p) =>
+        p.dominio === dominio &&
+        p.desde <= primero &&
+        (p.hasta === null || p.hasta >= ultimo),
+    ) ?? null
+  )
+}
+
+/** "3/7 al 12/8" para explicar en pantalla por qué la unidad no cuenta. */
+function motivoParada(p: Parada): string {
+  const d = (f: string) => f.slice(0, 10).split("-").reverse().slice(0, 2).join("/")
+  return p.hasta === null
+    ? `fuera de servicio desde el ${d(p.desde)} (sigue en el taller)`
+    : `fuera de servicio del ${d(p.desde)} al ${d(p.hasta)}`
+}
+
 export async function getCoberturaCilMes(
   ym?: string,
 ): Promise<{ data: CoberturaCilMes } | { error: string }> {
@@ -154,6 +257,12 @@ export async function getCoberturaCilMes(
     const obligatorios = TIPOS_CIL_OBLIGATORIOS as readonly string[]
     const ciclo = CICLO_CIL_MENSUAL as readonly string[]
 
+    // 🚨 La unidad que estuvo TODO el mes fuera de servicio no entra en el
+    // porcentaje: no se le puede hacer el CIL a un camión que está en el taller.
+    // El AF469UR está parado desde el 03/07/2026 por la OT 1733 (falla de ECU) y
+    // arrastraba la cobertura de agosto a 40 % cuando sin él era 43 %.
+    const paradas = await traerParadas(supabase, `${mes}-01`, ultimoDiaExigible(mes))
+
     const unidades: UnidadCobertura[] = (vehRes.data || [])
       .filter((v: { tipo: string | null }) => obligatorios.includes(v.tipo ?? ""))
       .map((v: { dominio: string; tipo: string | null }) => {
@@ -169,7 +278,12 @@ export async function getCoberturaCilMes(
             : undefined
         }
         const faltan = ciclo.filter((t) => !hechas[t])
-        const motivoExclusion = DOMINIOS_CIL_EXCLUIDOS[v.dominio] ?? null
+        // La lista fija primero (unidades que nunca ruedan), y si no, la parada
+        // del mes. Se muestran igual en pantalla, con el motivo a la vista: que
+        // no cuenten no significa esconderlas del auditor.
+        const parada = paradaTodoElMes(v.dominio, mes, paradas)
+        const motivoExclusion =
+          DOMINIOS_CIL_EXCLUIDOS[v.dominio] ?? (parada ? motivoParada(parada) : null)
         return {
           dominio: v.dominio,
           tipo: v.tipo,
@@ -297,6 +411,11 @@ export async function getSerieCoberturaCil(
       .map((v: { dominio: string }) => v.dominio)
       .filter((d: string) => !(d in DOMINIOS_CIL_EXCLUIDOS))
 
+    // Mismo criterio que el mes: la unidad parada TODO un mes no cuenta ese mes.
+    // Se trae una vez para toda la ventana y se evalúa mes por mes, porque el
+    // denominador cambia según qué unidad estuvo en el taller en cada uno.
+    const paradas = await traerParadas(supabase, desde, ultimoDiaExigible(ventana[ventana.length - 1]))
+
     const tareas = (cilRes.data || []) as Array<{
       fecha: string
       dominio: string
@@ -317,14 +436,15 @@ export async function getSerieCoberturaCil(
     }
 
     const data: PuntoSerieCil[] = ventana.map((ym) => {
-      const completas = unidades.filter(
+      const delMes = unidades.filter((d) => !paradaTodoElMes(d, ym, paradas))
+      const completas = delMes.filter(
         (d) => (hechas.get(`${ym}|${d}`)?.size ?? 0) === ciclo.length,
       ).length
       return {
         ym,
         completas,
-        total: unidades.length,
-        pct: unidades.length ? Math.round((completas / unidades.length) * 100) : 0,
+        total: delMes.length,
+        pct: delMes.length ? Math.round((completas / delMes.length) * 100) : 0,
         tareas: porMes.get(ym) ?? 0,
       }
     })
