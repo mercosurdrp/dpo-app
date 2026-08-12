@@ -48,6 +48,7 @@ import {
   Megaphone,
   TrendingUp,
   Shirt,
+  Thermometer,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -327,6 +328,13 @@ const navItemsFlat: NavItem[] = [
     hideForEmpleado: true,
   },
   {
+    // Encuesta de Clima (2 olas por año): resultados de la empresa y los
+    // planes de acción que salen de ellos.
+    label: "Clima",
+    href: "/clima",
+    icon: <Thermometer className="size-5" />,
+  },
+  {
     // Colocaciones y retiros de heladeras que cargan los choferes desde
     // /mis-heladeras, con la foto como evidencia.
     label: "Heladeras",
@@ -392,6 +400,7 @@ export const navSections: NavGroup[] = [
     "/riesgos-externos",
   ]),
   grupo("Gente", [
+    "/clima",
     "/capacitaciones",
     "/gente/matriz-skap",
     "/mis-capacitaciones",
