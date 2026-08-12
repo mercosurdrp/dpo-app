@@ -1043,20 +1043,16 @@ function TareasCilSection({
                         {t.descripcion ?? "—"}
                       </TableCell>
                       <TableCell className="align-top whitespace-nowrap">
-                      {t.foto_url ? (
-                        <a
-                          href={t.foto_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-primary hover:underline"
-                        >
-                          <ImageIcon className="size-3.5" /> Ver
-                        </a>
-                      ) : puedeEditar ? (
-                        <SubirFotoCil id={t.id} onSubida={refresh} />
-                      ) : (
-                        <span className="text-muted-foreground/50">—</span>
-                      )}
+                        {t.foto_url ? (
+                          <MiniaturaEvidencia
+                            url={t.foto_url}
+                            pie={`${t.dominio} · ${labelTareaCil(t.tarea)} · ${fmtFecha(t.fecha)}`}
+                          />
+                        ) : puedeEditar ? (
+                          <SubirFotoCil id={t.id} onSubida={refresh} />
+                        ) : (
+                          <span className="text-muted-foreground/50">—</span>
+                        )}
                       </TableCell>
                       {puedeEditar && (
                         <TableCell className="align-top">
@@ -1096,6 +1092,61 @@ function TareasCilSection({
         />
       )}
     </Card>
+  )
+}
+
+/**
+ * La evidencia, como miniatura en la fila, que se agranda al tocarla.
+ *
+ * 🚨 Antes era un link «Ver» que abría otra pestaña: para revisar el mes había
+ * que salir y volver por cada foto. Con la miniatura se reconoce la unidad sin
+ * abrir nada, y el visor deja mirarlas sin perder la tabla. El link a la imagen
+ * original sigue estando adentro, que es lo que se le pasa al auditor.
+ */
+function MiniaturaEvidencia({ url, pie }: { url: string; pie: string }) {
+  const [abierta, setAbierta] = useState(false)
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setAbierta(true)}
+        title={`Ver la foto — ${pie}`}
+        className="block overflow-hidden rounded-md border transition-opacity hover:opacity-80"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt={`Evidencia de ${pie}`}
+          loading="lazy"
+          className="size-12 object-cover"
+        />
+      </button>
+
+      {abierta && (
+        <Dialog open onOpenChange={(o) => !o && setAbierta(false)}>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-sm font-medium">{pie}</DialogTitle>
+            </DialogHeader>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={url}
+              alt={`Evidencia de ${pie}`}
+              className="max-h-[70vh] w-full rounded-md object-contain"
+            />
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            >
+              <ImageIcon className="size-3.5" /> Abrir la original en otra pestaña
+            </a>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   )
 }
 

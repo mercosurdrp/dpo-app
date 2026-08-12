@@ -46,6 +46,28 @@ export interface UnidadCobertura {
   completa: boolean
 }
 
+/** Cuántas unidades cerraron cada letra del ciclo: dice cuál es la que traba. */
+export interface AvanceLetra {
+  tarea: string
+  hechas: number
+  total: number
+}
+
+/**
+ * Cómo viene el mes EN CURSO contra la meta de tareas.
+ *
+ * 🚨 `esperadoHoy` es un reparto parejo de la meta a lo largo del mes
+ * (30 tareas ÷ días del mes × días transcurridos). No es un plan real —nadie
+ * dijo que haya que hacer una tarea por día—, sirve para saber si al día 11 se
+ * va en ritmo o hay que apurar. Por eso se muestra sólo en el mes en curso: en
+ * un mes cerrado el único número que importa es el final.
+ */
+export interface RitmoMes {
+  diaDelMes: number
+  diasDelMes: number
+  esperadoHoy: number
+}
+
 export interface CoberturaCilMes {
   /** Mes calculado, `YYYY-MM`. */
   ym: string
@@ -55,17 +77,24 @@ export interface CoberturaCilMes {
   /** Total de tareas del mes: el mismo número que muestra el KPI. */
   tareasMes: number
   metaMes: number
+  /** Avance de cada letra del ciclo sobre las unidades obligatorias. */
+  porLetra: AvanceLetra[]
+  /** Sólo si el mes pedido es el que está corriendo. */
+  ritmo: RitmoMes | null
 }
 
-function ymActual(): string {
+/** Hoy en hora argentina, `YYYY-MM-DD`: el servidor puede estar en UTC. */
+function hoyArgentina(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Argentina/Buenos_Aires",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  })
-    .format(new Date())
-    .slice(0, 7)
+  }).format(new Date())
+}
+
+function ymActual(): string {
+  return hoyArgentina().slice(0, 7)
 }
 
 /** Primer día del mes siguiente, para acotar el rango sin depender de los 31. */
@@ -155,6 +184,29 @@ export async function getCoberturaCilMes(
 
     const oblig = unidades.filter((u) => u.obligatoria)
 
+    // Cuál de las tres letras es la que arrastra. Se cuenta sobre las unidades
+    // obligatorias, igual que la cobertura, para que los dos números se lean
+    // contra el mismo denominador.
+    const porLetra: AvanceLetra[] = ciclo.map((t) => ({
+      tarea: t,
+      hechas: oblig.filter((u) => u.hechas[t]).length,
+      total: oblig.length,
+    }))
+
+    // El ritmo sólo tiene sentido mientras el mes corre.
+    const hoy = hoyArgentina()
+    let ritmo: RitmoMes | null = null
+    if (mes === hoy.slice(0, 7)) {
+      const diaDelMes = Number(hoy.slice(8, 10))
+      const [a, m] = mes.split("-").map(Number)
+      const diasDelMes = new Date(Date.UTC(a, m, 0)).getUTCDate()
+      ritmo = {
+        diaDelMes,
+        diasDelMes,
+        esperadoHoy: Math.round((META_CIL_MENSUAL * diaDelMes) / diasDelMes),
+      }
+    }
+
     return {
       data: {
         ym: mes,
@@ -163,6 +215,8 @@ export async function getCoberturaCilMes(
         completasObligatorias: oblig.filter((u) => u.completa).length,
         tareasMes: tareas.length,
         metaMes: META_CIL_MENSUAL,
+        porLetra,
+        ritmo,
       },
     }
   } catch (e) {

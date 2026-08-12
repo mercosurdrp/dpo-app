@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { CheckCircle2, CircleAlert, Loader2, Truck } from "lucide-react"
+import { Loader2, Truck } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -41,6 +41,16 @@ function fmtMes(ym: string): string {
 
 function fmtDia(f: string): string {
   return f.slice(0, 10).split("-").reverse().slice(0, 2).join("/")
+}
+
+/**
+ * El nombre corto de la tarea, para los encabezados de la grilla: sin el
+ * paréntesis aclaratorio no se llevan puesto el ancho en el celular
+ * («Inspección (control de fluidos)» ocupaba tres renglones y empujaba la
+ * columna de Lubricación fuera de la pantalla).
+ */
+function labelCorto(id: string): string {
+  return labelTareaCil(id).split(" (")[0]
 }
 
 /** Los últimos 6 meses hasta el actual, para mirar hacia atrás sin recargar. */
@@ -90,6 +100,17 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
       ? Math.round((data.completasObligatorias / data.totalObligatorias) * 100)
       : null
 
+  // La letra que traba: la de menor avance, y sólo si hay alguna adelante. Con
+  // las tres iguales no se señala ninguna — marcar un "peor" que empata sería
+  // mandar a corregir algo que no está peor que el resto.
+  const letraQueTraba = (() => {
+    if (!data || data.porLetra.length === 0) return null
+    const min = Math.min(...data.porLetra.map((l) => l.hechas))
+    const max = Math.max(...data.porLetra.map((l) => l.hechas))
+    if (min === max) return null
+    return data.porLetra.find((l) => l.hechas === min)?.tarea ?? null
+  })()
+
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-3">
@@ -127,43 +148,51 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
           <p className="py-4 text-sm text-destructive">{error}</p>
         ) : !data ? null : (
           <>
-            {/* Resumen */}
-            <div className="flex flex-wrap items-end gap-6 rounded-lg border bg-muted/40 p-4">
-              <div>
-                <p className="text-xs text-muted-foreground">Unidades al día</p>
-                <p
-                  className={`text-3xl font-bold ${
-                    pct === 100
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-red-600 dark:text-red-400"
-                  }`}
-                >
-                  {data.completasObligatorias}
-                  <span className="text-lg font-medium text-muted-foreground">
-                    {" "}
-                    de {data.totalObligatorias}
-                  </span>
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Cobertura</p>
-                <p className="text-2xl font-semibold">{pct != null ? `${pct}%` : "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Tareas del mes (KPI)</p>
-                <p className="text-2xl font-semibold">
-                  {data.tareasMes}
-                  <span className="text-base font-medium text-muted-foreground">
-                    {" "}
-                    / {data.metaMes}
-                  </span>
-                </p>
-              </div>
-              <p className="max-w-md text-xs text-muted-foreground">
-                Son dos lecturas distintas: el KPI cuenta tareas sueltas, la cobertura
-                cuenta unidades con el ciclo completo.
-              </p>
+            {/* Los cuatro números de arriba, cada uno en su recuadro. */}
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Indicador
+                titulo="Unidades al día"
+                valor={String(data.completasObligatorias)}
+                deTotal={`de ${data.totalObligatorias}`}
+                tono={pct === 100 ? "bien" : pct != null && pct >= 70 ? "medio" : "mal"}
+                nota="cerraron las tres tareas"
+              />
+              <Indicador
+                titulo="Cobertura"
+                valor={pct != null ? `${pct}%` : "—"}
+                tono={pct === 100 ? "bien" : pct != null && pct >= 70 ? "medio" : "mal"}
+                nota="es lo que mira el auditor"
+              />
+              <Indicador
+                titulo="Tareas del mes"
+                valor={String(data.tareasMes)}
+                deTotal={`de ${data.metaMes}`}
+                tono={data.tareasMes >= data.metaMes ? "bien" : "neutro"}
+                nota="el KPI de actividad"
+              />
+              {data.ritmo ? (
+                <Indicador
+                  titulo="Ritmo"
+                  valor={
+                    data.tareasMes >= data.ritmo.esperadoHoy ? "En ritmo" : "Atrasado"
+                  }
+                  tono={data.tareasMes >= data.ritmo.esperadoHoy ? "bien" : "mal"}
+                  nota={`al día ${data.ritmo.diaDelMes} irían ${data.ritmo.esperadoHoy}`}
+                />
+              ) : (
+                <Indicador
+                  titulo="Mes cerrado"
+                  valor={data.tareasMes >= data.metaMes ? "Meta ok" : "Bajo meta"}
+                  tono={data.tareasMes >= data.metaMes ? "bien" : "mal"}
+                  nota="ya no se puede cargar hacia atrás"
+                />
+              )}
             </div>
+
+            <AvancePorLetra
+              porLetra={data.porLetra}
+              letraQueTraba={letraQueTraba}
+            />
 
             {serie && serie.length > 0 && (
               <SerieCobertura serie={serie} mesElegido={ym} onElegir={setYm} />
@@ -195,6 +224,110 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+const TONOS = {
+  bien: "text-emerald-600 dark:text-emerald-400",
+  medio: "text-amber-600 dark:text-amber-400",
+  mal: "text-red-600 dark:text-red-400",
+  neutro: "text-foreground",
+} as const
+
+/** Un número grande con su rótulo y una línea que dice qué significa. */
+function Indicador({
+  titulo,
+  valor,
+  deTotal,
+  tono,
+  nota,
+}: {
+  titulo: string
+  valor: string
+  deTotal?: string
+  tono: keyof typeof TONOS
+  nota: string
+}) {
+  return (
+    <div className="rounded-lg border bg-muted/40 p-3">
+      <p className="text-xs text-muted-foreground">{titulo}</p>
+      <p className={`mt-0.5 text-2xl leading-tight font-bold ${TONOS[tono]}`}>
+        {valor}
+        {deTotal && (
+          <span className="text-sm font-medium text-muted-foreground"> {deTotal}</span>
+        )}
+      </p>
+      <p className="mt-1 text-[11px] leading-tight text-muted-foreground">{nota}</p>
+    </div>
+  )
+}
+
+/**
+ * Cuánto avanzó cada letra del ciclo.
+ *
+ * 🚨 Es la lectura que faltaba: la cobertura dice "5 de 12 al día" pero no cuál
+ * de las tres tareas es la que las deja afuera. Con esto se ve de una que —por
+ * ejemplo— la limpieza está casi cerrada y lo que falta es la lubricación, que
+ * es una instrucción distinta para el supervisor.
+ */
+function AvancePorLetra({
+  porLetra,
+  letraQueTraba,
+}: {
+  porLetra: { tarea: string; hechas: number; total: number }[]
+  letraQueTraba: string | null
+}) {
+  return (
+    <div className="rounded-lg border p-4">
+      <p className="text-sm font-medium text-foreground">Avance por tarea del ciclo</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Sobre cuántas unidades quedó cerrada cada una de las tres.
+      </p>
+      <div className="mt-3 space-y-2.5">
+        {porLetra.map((l) => {
+          const pct = l.total > 0 ? Math.round((l.hechas / l.total) * 100) : 0
+          const traba = l.tarea === letraQueTraba
+          return (
+            <div key={l.tarea}>
+              {/* El nombre y el número, siempre en la misma línea; el cartel de
+                  "la que más falta" abajo, porque metido al lado del nombre
+                  partía el renglón en el celular. */}
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="min-w-0 truncate text-sm text-foreground">
+                  {labelTareaCil(l.tarea)}
+                </span>
+                <span className="shrink-0 text-sm font-semibold text-foreground">
+                  {l.hechas}
+                  <span className="font-medium text-muted-foreground">/{l.total}</span>
+                  <span className="ml-1 text-xs font-normal text-muted-foreground">
+                    ({pct}%)
+                  </span>
+                </span>
+              </div>
+              <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    pct === 100
+                      ? "bg-emerald-500"
+                      : traba
+                        ? "bg-amber-500"
+                        : "bg-sky-500"
+                  }`}
+                  // El 0 % deja un hilo visible: una barra en blanco se lee como
+                  // "no hay dato", y acá el cero es un dato.
+                  style={{ width: `${Math.max(pct, 2)}%` }}
+                />
+              </div>
+              {traba && (
+                <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                  Es la que más falta: por acá se destraba la cobertura.
+                </p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -287,46 +420,79 @@ function TablaCobertura({
           <tr className="border-b text-left text-xs uppercase text-muted-foreground">
             <th className="py-2 pr-3 font-medium">Unidad</th>
             {ciclo.map((t) => (
-              <th key={t} className="py-2 pr-3 font-medium">
-                {labelTareaCil(t)}
+              <th
+                key={t}
+                title={labelTareaCil(t)}
+                className="px-1 py-2 text-center font-medium whitespace-nowrap sm:pr-3"
+              >
+                {/* En el celular sólo la primera palabra: con las tres columnas
+                    completas la de Lubricación se iba de la pantalla. */}
+                <span className="sm:hidden">{labelCorto(t).split(" ")[0]}</span>
+                <span className="hidden sm:inline">{labelCorto(t)}</span>
               </th>
             ))}
-            <th className="py-2 font-medium">Estado</th>
+            {/* El estado es el resumen de los tres puntos de la fila: en pantalla
+                chica se lee igual mirándolos, y sacarlo es lo que hace entrar la
+                grilla sin desplazar. */}
+            <th className="hidden py-2 font-medium sm:table-cell">Estado</th>
           </tr>
         </thead>
         <tbody>
           {unidades.map((u) => (
             <tr key={u.dominio} className="border-b last:border-0">
-              <td className="py-2 pr-3 whitespace-nowrap font-medium">
+              <td className="py-2 pr-2 whitespace-nowrap font-medium sm:pr-3">
                 {u.dominio}
                 {u.numero && (
-                  <span className="ml-1 text-xs text-muted-foreground">
-                    (N° {u.numero})
+                  // En el celular el número de flota baja de renglón: en la misma
+                  // línea empujaba la última columna fuera de la pantalla.
+                  <span className="block text-xs font-normal text-muted-foreground sm:ml-1 sm:inline">
+                    N° {u.numero}
                   </span>
                 )}
               </td>
               {ciclo.map((t) => {
                 const hecha = u.hechas[t]
                 return (
-                  <td key={t} className="py-2 pr-3">
-                    {hecha ? (
-                      <span className="inline-flex flex-col">
-                        <span className="inline-flex items-center gap-1 font-medium text-emerald-700 dark:text-emerald-400">
-                          <CheckCircle2 className="size-3.5" /> {fmtDia(hecha.fecha)}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {hecha.operario}
-                        </span>
+                  <td key={t} className="px-1 py-2 text-center sm:pr-3">
+                    {/*
+                      Círculo lleno = hecha, vacío = falta. El punto se lee de un
+                      vistazo en toda la grilla; la fecha y el operario siguen
+                      abajo y en el `title`, porque son la prueba de la tarea y
+                      sin ellos esto sería más lindo pero menos útil.
+                    */}
+                    <span
+                      className="inline-flex flex-col items-center gap-0.5"
+                      title={
+                        hecha
+                          ? `${labelTareaCil(t)} · ${fmtDia(hecha.fecha)} · ${hecha.operario}`
+                          : `${labelTareaCil(t)}: falta este mes`
+                      }
+                    >
+                      <span
+                        aria-hidden
+                        className={`size-3.5 rounded-full ${
+                          hecha
+                            ? "bg-emerald-500"
+                            : "border-2 border-red-400 dark:border-red-500"
+                        }`}
+                      />
+                      <span className="sr-only">
+                        {hecha ? "hecha" : "falta"}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
-                        <CircleAlert className="size-3.5" /> Falta
-                      </span>
-                    )}
+                      {hecha ? (
+                        <span className="text-[11px] leading-tight text-muted-foreground">
+                          {fmtDia(hecha.fecha)}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] leading-tight text-red-600 dark:text-red-400">
+                          falta
+                        </span>
+                      )}
+                    </span>
                   </td>
                 )
               })}
-              <td className="py-2">
+              <td className="hidden py-2 sm:table-cell">
                 {u.completa ? (
                   <Badge
                     variant="outline"
@@ -347,6 +513,20 @@ function TablaCobertura({
           ))}
         </tbody>
       </table>
+      <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="size-3 rounded-full bg-emerald-500" /> hecha —
+          con la fecha debajo
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="size-3 rounded-full border-2 border-red-400 dark:border-red-500"
+          />{" "}
+          falta este mes
+        </span>
+        <span>Pasá el mouse por el punto para ver quién la hizo.</span>
+      </p>
     </div>
   )
 }
