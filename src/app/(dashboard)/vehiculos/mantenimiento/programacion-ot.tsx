@@ -1,8 +1,12 @@
 "use client"
 
-// Programación semanal de órdenes de trabajo (DPO 2.2/2.4): el Supervisor de
-// Flota planifica qué se le hace a cada unidad día a día, queda el registro
-// histórico por semana y cada orden se descarga en PDF para el mecánico.
+// Programación de órdenes de trabajo (DPO 2.2/2.4): el Supervisor de Flota
+// planifica qué se le hace a cada unidad día a día, queda el registro histórico
+// y cada orden se descarga en PDF para el mecánico.
+//
+// Dos vistas del mismo dato: la SEMANA (lo que hay que hacer ahora) y el
+// CALENDARIO del mes, que además proyecta el plan preventivo — es la vista que
+// pide el R2.2.3 (plan preventivo en herramienta digital).
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -28,9 +32,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CalendarDays, ChevronLeft, ChevronRight, FileDown, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
+import { CalendarioPreventivo } from "./_components/calendario-preventivo"
+import type { LecturaDia } from "@/lib/flota/calendario-preventivo"
 import {
   createOtProgramada,
   deleteOtProgramada,
@@ -88,12 +95,15 @@ interface Sugerencia {
 export function ProgramacionOt({
   estados,
   tareas,
+  historialLecturas,
   proveedores,
   onProveedorCreado,
   puedeEditar,
 }: {
   estados: EstadoPlanVehiculo[]
   tareas: MantenimientoPlanTarea[]
+  /** Lecturas por dominio: el calendario estima con ellas las tareas por km/horas. */
+  historialLecturas: Record<string, LecturaDia[]>
   proveedores: MantenimientoProveedor[]
   onProveedorCreado: (p: MantenimientoProveedor) => void
   puedeEditar: boolean
@@ -101,7 +111,14 @@ export function ProgramacionOt({
   const hoy = iso(new Date())
   const [lunes, setLunes] = useState(() => lunesDe(hoy))
   const [otas, setOtas] = useState<OtProgramada[] | null>(null)
-  const [dialog, setDialog] = useState<{ ot: OtProgramada | null; fecha: string } | null>(null)
+  const [dialog, setDialog] = useState<{
+    ot: OtProgramada | null
+    fecha: string
+    dominio?: string
+    tareasIniciales?: string[]
+  } | null>(null)
+  /** Cambia al guardar: el calendario vuelve a pedir las OT de su mes. */
+  const [refreshToken, setRefreshToken] = useState(0)
 
   const domingo = addDias(lunes, 6)
 
@@ -158,6 +175,26 @@ export function ProgramacionOt({
     <div className="space-y-4">
       <DpoSeccionCinta seccionId="programacion" />
 
+      <Tabs defaultValue="semana" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="semana">Semana</TabsTrigger>
+          <TabsTrigger value="calendario">Calendario del mes</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="calendario">
+          <CalendarioPreventivo
+            estados={estados}
+            tareas={tareas}
+            historialLecturas={historialLecturas}
+            puedeEditar={puedeEditar}
+            refreshToken={refreshToken}
+            onProgramar={(fecha, dominio, tareasSugeridas) =>
+              setDialog({ ot: null, fecha, dominio, tareasIniciales: tareasSugeridas })
+            }
+          />
+        </TabsContent>
+
+        <TabsContent value="semana" className="space-y-4">
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -263,11 +300,15 @@ export function ProgramacionOt({
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
 
       {dialog && (
         <OtDialog
           ot={dialog.ot}
           fechaInicial={dialog.fecha}
+          dominioInicial={dialog.dominio}
+          tareasIniciales={dialog.tareasIniciales}
           dominios={dominios}
           sugerenciasPorDominio={sugerenciasPorDominio}
           proveedores={proveedores}
@@ -275,6 +316,7 @@ export function ProgramacionOt({
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null)
+            setRefreshToken((t) => t + 1)
             void cargar()
           }}
         />
@@ -286,6 +328,8 @@ export function ProgramacionOt({
 function OtDialog({
   ot,
   fechaInicial,
+  dominioInicial,
+  tareasIniciales,
   dominios,
   sugerenciasPorDominio,
   proveedores,
@@ -295,6 +339,10 @@ function OtDialog({
 }: {
   ot: OtProgramada | null
   fechaInicial: string
+  /** Unidad preseleccionada al abrir desde el calendario. */
+  dominioInicial?: string
+  /** Trabajos ya escritos: los vencimientos del día que se está programando. */
+  tareasIniciales?: string[]
   dominios: string[]
   sugerenciasPorDominio: Map<string, Sugerencia[]>
   proveedores: MantenimientoProveedor[]
@@ -302,9 +350,11 @@ function OtDialog({
   onClose: () => void
   onSaved: () => void
 }) {
-  const [dominio, setDominio] = useState(ot?.dominio ?? "")
+  const [dominio, setDominio] = useState(ot?.dominio ?? dominioInicial ?? "")
   const [fecha, setFecha] = useState(ot?.fecha_programada ?? fechaInicial)
-  const [tareasTxt, setTareasTxt] = useState((ot?.tareas ?? []).join("\n"))
+  const [tareasTxt, setTareasTxt] = useState(
+    (ot?.tareas ?? tareasIniciales ?? []).join("\n")
+  )
   const [taller, setTaller] = useState(ot?.taller ?? "")
   const [notas, setNotas] = useState(ot?.notas ?? "")
   const [estado, setEstado] = useState<OtProgramadaEstado>(ot?.estado ?? "planificada")

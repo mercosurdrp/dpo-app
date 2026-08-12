@@ -789,11 +789,12 @@ export function MantenimientoClient({
           <HerramientasTab herramientas={herramientas} puedeEditar={puedeEditar} />
         </TabsContent>
 
-        {/* ============ TAB: Programación de OT (semana) ============ */}
+        {/* ============ TAB: Programación de OT (semana + calendario) ============ */}
         <TabsContent value="programacion" className="space-y-6">
           <ProgramacionOt
             estados={estados}
             tareas={tareas}
+            historialLecturas={historialLecturas}
             proveedores={provList}
             onProveedorCreado={agregarProveedor}
             puedeEditar={puedeEditar}
