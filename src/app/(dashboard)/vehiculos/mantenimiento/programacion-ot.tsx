@@ -50,12 +50,14 @@ import {
 } from "@/actions/ot-programadas"
 import {
   GASTO_TIPO_MANTENIMIENTO_LABELS,
+  type EstadoPlanCelda,
   type EstadoPlanVehiculo,
   type MantenimientoPlanTarea,
   type MantenimientoProveedor,
   type MantenimientoTipo,
 } from "@/types/database"
 import type { ServiceGeneralUnidad } from "@/lib/vehiculos/service-general"
+import type { LecturaSugerida } from "@/lib/vehiculos/lecturas"
 
 const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
@@ -97,11 +99,30 @@ interface Sugerencia {
   estado: "vencido" | "proximo"
 }
 
+/** Una tarea del plan con cómo viene esa unidad (null = nunca se le hizo). */
+export interface TareaConEstado {
+  tarea: MantenimientoPlanTarea
+  celda: EstadoPlanCelda | null
+}
+
+export interface DatosPlanUnidad {
+  esAutoelevador: boolean
+  tareas: TareaConEstado[]
+  kmActual: number | null
+  horasActuales: number | null
+  lecturas: LecturaSugerida[]
+}
+
+/** Vencidas primero, después las próximas: es el orden en que se tildan. */
+const pesoEstado = (e: EstadoPlanCelda["estado"] | undefined) =>
+  e === "vencido" ? 3 : e === "proximo" ? 2 : e === "ok" ? 1 : 0
+
 export function ProgramacionOt({
   estados,
   tareas,
   historialLecturas,
   programacion,
+  ultimasLecturas,
   proveedores,
   onProveedorCreado,
   puedeEditar,
@@ -112,6 +133,8 @@ export function ProgramacionOt({
   historialLecturas: Record<string, LecturaDia[]>
   /** Service general por unidad (Tablero operativo): fuente única de su fecha. */
   programacion: ServiceGeneralUnidad[]
+  /** Últimas lecturas de odómetro/horómetro por unidad, para sugerir al cargar. */
+  ultimasLecturas: Record<string, LecturaSugerida[]>
   proveedores: MantenimientoProveedor[]
   onProveedorCreado: (p: MantenimientoProveedor) => void
   puedeEditar: boolean
@@ -157,14 +180,26 @@ export function ProgramacionOt({
     [estados],
   )
 
-  /** Tareas del plan que le corresponden a una unidad, por su tipo (camión,
-   *  autoelevador, camioneta): son las que se pueden marcar como hechas. */
-  const tareasDelPlanDe = useCallback(
-    (dom: string) => {
-      const tipo = estados.find((e) => e.vehiculo.dominio === dom)?.vehiculo.tipo ?? "camion"
-      return tareas.filter((t) => t.activo && t.tipo_vehiculo === tipo)
+  /** Todo lo que el panel del taller necesita de una unidad: las tareas que le
+   *  corresponden por tipo, cómo viene cada una en el plan (vencida, próxima) y
+   *  las últimas lecturas para sugerir el kilometraje. */
+  const datosPlanDe = useCallback(
+    (dom: string): DatosPlanUnidad => {
+      const est = estados.find((e) => e.vehiculo.dominio === dom)
+      const tipo = est?.vehiculo.tipo ?? "camion"
+      const celdas = new Map((est?.celdas ?? []).map((c) => [c.tareaId, c]))
+      return {
+        esAutoelevador: tipo === "autoelevador",
+        tareas: tareas
+          .filter((t) => t.activo && t.tipo_vehiculo === tipo)
+          .map((t) => ({ tarea: t, celda: celdas.get(t.id) ?? null }))
+          .sort((a, b) => pesoEstado(b.celda?.estado) - pesoEstado(a.celda?.estado)),
+        kmActual: est?.kmActual ?? null,
+        horasActuales: est?.horasActuales ?? null,
+        lecturas: (ultimasLecturas[dom] ?? []).slice(0, 4),
+      }
     },
-    [estados, tareas],
+    [estados, tareas, ultimasLecturas],
   )
 
   // Sugerencias por dominio: tareas del plan vencidas o próximas.
@@ -338,7 +373,7 @@ export function ProgramacionOt({
           tareasIniciales={dialog.tareasIniciales}
           dominios={dominios}
           sugerenciasPorDominio={sugerenciasPorDominio}
-          tareasDelPlanDe={tareasDelPlanDe}
+          datosPlanDe={datosPlanDe}
           proveedores={proveedores}
           onProveedorCreado={onProveedorCreado}
           onClose={() => setDialog(null)}
@@ -359,7 +394,7 @@ function OtDialog({
   tareasIniciales,
   dominios,
   sugerenciasPorDominio,
-  tareasDelPlanDe,
+  datosPlanDe,
   proveedores,
   onProveedorCreado,
   onClose,
@@ -373,7 +408,7 @@ function OtDialog({
   tareasIniciales?: string[]
   dominios: string[]
   sugerenciasPorDominio: Map<string, Sugerencia[]>
-  tareasDelPlanDe: (dominio: string) => MantenimientoPlanTarea[]
+  datosPlanDe: (dominio: string) => DatosPlanUnidad
   proveedores: MantenimientoProveedor[]
   onProveedorCreado: (p: MantenimientoProveedor) => void
   onClose: () => void
@@ -554,11 +589,7 @@ function OtDialog({
           </div>
 
           {ot && (
-            <TallerPanel
-              ot={ot}
-              tareasPlan={tareasDelPlanDe(ot.dominio)}
-              onHecho={onSaved}
-            />
+            <TallerPanel ot={ot} datos={datosPlanDe(ot.dominio)} onHecho={onSaved} />
           )}
         </div>
 
@@ -583,6 +614,32 @@ function OtDialog({
     </Dialog>
   )
 }
+/** Últimas lecturas reales de la unidad: evita tipear el kilometraje de memoria. */
+function ChipsLectura({
+  lecturas,
+  unidad,
+  onElegir,
+}: {
+  lecturas: LecturaSugerida[]
+  unidad: string
+  onElegir: (valor: string) => void
+}) {
+  if (lecturas.length === 0) return null
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {lecturas.map((l) => (
+        <button
+          key={`${l.fecha}-${l.odometro}`}
+          type="button"
+          onClick={() => onElegir(String(l.odometro))}
+          className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-foreground"
+        >
+          {l.odometro.toLocaleString("es-AR")} {unidad} · {fmtCorta(l.fecha)}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 /**
  * El circuito del taller dentro de la orden programada, para no cargar la misma
@@ -592,20 +649,26 @@ function OtDialog({
  *   unidad fuera de servicio desde ese día)
  *   volvió            → se cierra con el kilometraje, el costo y la factura
  *
- * Las tareas del PLAN que se tildan son las que descuentan del preventivo: sin
- * eso el service queda como pendiente aunque la OT esté hecha.
+ * Acá está todo lo que antes había que volver a tipear en "Registrar
+ * mantenimiento": tipo, kilometraje con las últimas lecturas, service general y
+ * la tabla del plan preventivo. En Órdenes de Trabajo queda la plata: la
+ * factura, los repuestos y su proveedor.
+ *
+ * 🚨 Tildar las tareas del PLAN es lo único que las descuenta del preventivo: si
+ * el service se hace y no queda tildado, sigue figurando pendiente.
  */
 function TallerPanel({
   ot,
-  tareasPlan,
+  datos,
   onHecho,
 }: {
   ot: OtProgramada
-  tareasPlan: MantenimientoPlanTarea[]
+  datos: DatosPlanUnidad
   onHecho: () => void
 }) {
   const hoy = iso(new Date())
   const [saving, setSaving] = useState(false)
+  const { esAutoelevador, lecturas } = datos
 
   // Preselección: los trabajos escritos que coinciden con una tarea del plan.
   const lineas = useMemo(
@@ -613,12 +676,22 @@ function TallerPanel({
     [ot.tareas],
   )
   const [tildadas, setTildadas] = useState<Set<string>>(
-    () => new Set(tareasPlan.filter((t) => lineas.has(t.nombre.trim().toLowerCase())).map((t) => t.id)),
+    () =>
+      new Set(
+        datos.tareas
+          .filter(({ tarea }) => lineas.has(tarea.nombre.trim().toLowerCase()))
+          .map(({ tarea }) => tarea.id),
+      ),
   )
 
   // Preventivo si lo que se va a hacer sale del plan; si no, correctivo.
   const [tipo, setTipo] = useState<MantenimientoTipo>(() =>
-    tareasPlan.some((t) => lineas.has(t.nombre.trim().toLowerCase())) ? "preventivo" : "correctivo",
+    datos.tareas.some(({ tarea }) => lineas.has(tarea.nombre.trim().toLowerCase()))
+      ? "preventivo"
+      : "correctivo",
+  )
+  const [esServiceGeneral, setEsServiceGeneral] = useState(() =>
+    ot.tareas.some((t) => t.trim().toLowerCase().includes("service")),
   )
   const [fechaTaller, setFechaTaller] = useState(
     ot.fecha_programada > hoy ? ot.fecha_programada : hoy,
@@ -629,8 +702,8 @@ function TallerPanel({
   const [factura, setFactura] = useState("")
   const [obsCierre, setObsCierre] = useState("")
 
-  const esAutoelevador = tareasPlan.some((t) => t.tipo_vehiculo === "autoelevador")
-  const unidadMedicion = esAutoelevador ? "Horómetro (hs)" : "Odómetro (km)"
+  const unidad = esAutoelevador ? "hs" : "km"
+  const labelMedicion = esAutoelevador ? "Horómetro (hs)" : "Odómetro (km)"
   const numero = (v: string) => {
     const n = Number(v.replace(",", "."))
     return v.trim() && isFinite(n) ? n : null
@@ -642,13 +715,16 @@ function TallerPanel({
 
   const llevar = async () => {
     setSaving(true)
-    const nombres = tareasPlan.filter((t) => tildadas.has(t.id)).map((t) => t.nombre)
+    const nombres = datos.tareas
+      .filter(({ tarea }) => tildadas.has(tarea.id))
+      .map(({ tarea }) => tarea.nombre)
     const res = await llevarOtAlTaller({
       id: ot.id,
       fecha: fechaTaller,
       tipo,
       tareaIds: [...tildadas],
       nombresDelPlan: nombres,
+      esServiceGeneral,
       ...medicionParaEnviar(),
     })
     setSaving(false)
@@ -676,11 +752,10 @@ function TallerPanel({
   if (ot.estado === "realizada") {
     return (
       <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm">
-        <p className="font-medium text-emerald-700 dark:text-emerald-400">
-          Orden cerrada
-        </p>
+        <p className="font-medium text-emerald-700 dark:text-emerald-400">Orden cerrada</p>
         <p className="text-xs text-muted-foreground">
-          Quedó registrada en Órdenes de Trabajo. Si falta la factura, se agrega ahí.
+          Quedó registrada en Órdenes de Trabajo. La factura, los repuestos y su proveedor se
+          cargan ahí.
         </p>
       </div>
     )
@@ -694,8 +769,8 @@ function TallerPanel({
             La unidad está en el taller
           </p>
           <p className="text-xs text-muted-foreground">
-            Cuando vuelva, cerrala acá: se completa la orden de trabajo y {ot.dominio} vuelve
-            a servicio.
+            Cuando vuelva, cerrala acá: se completa la orden de trabajo y {ot.dominio} vuelve a
+            servicio.
           </p>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -708,13 +783,14 @@ function TallerPanel({
             />
           </div>
           <div className="space-y-1">
-            <Label>{unidadMedicion}</Label>
+            <Label>{labelMedicion}</Label>
             <Input
               inputMode="decimal"
               value={medicion}
               onChange={(e) => setMedicion(e.target.value)}
               placeholder="Al volver"
             />
+            <ChipsLectura lecturas={lecturas} unidad={unidad} onElegir={setMedicion} />
           </div>
           <div className="space-y-1">
             <Label>Costo</Label>
@@ -743,6 +819,10 @@ function TallerPanel({
             />
           </div>
         </div>
+        <p className="text-[11px] text-muted-foreground">
+          El adjunto de la factura y los repuestos con su proveedor se cargan después en Órdenes
+          de Trabajo, sobre esta misma orden.
+        </p>
         <Button onClick={cerrar} disabled={saving} className="w-full">
           {saving ? "Cerrando…" : "Cerrar OT — volvió la unidad"}
         </Button>
@@ -755,8 +835,8 @@ function TallerPanel({
       <div>
         <p className="text-sm font-medium">¿Se llevó la unidad al taller?</p>
         <p className="text-xs text-muted-foreground">
-          Al confirmarlo se crea la orden de trabajo con estos mismos datos —no hay que
-          cargarla de nuevo— y {ot.dominio} queda fuera de servicio hasta que vuelva.
+          Al confirmarlo se crea la orden de trabajo con estos mismos datos —no hay que cargarla
+          de nuevo— y {ot.dominio} queda fuera de servicio hasta que vuelva.
         </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -784,51 +864,95 @@ function TallerPanel({
           </Select>
         </div>
         <div className="col-span-2 space-y-1">
-          <Label>{unidadMedicion} al entrar (opcional)</Label>
+          <Label>{labelMedicion} al entrar</Label>
           <Input
             inputMode="decimal"
             value={medicion}
             onChange={(e) => setMedicion(e.target.value)}
             placeholder="Se puede cargar al cerrar"
           />
+          <ChipsLectura lecturas={lecturas} unidad={unidad} onElegir={setMedicion} />
         </div>
       </div>
 
-      {tareasPlan.length > 0 && (
+      <label className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2.5 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={esServiceGeneral}
+          onChange={(e) => setEsServiceGeneral(e.target.checked)}
+        />
+        <span>
+          <span className="font-medium text-emerald-700 dark:text-emerald-400">
+            Es service general (rodado)
+          </span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            Reinicia el contador del próximo service: el tablero y el calendario pasan a contar
+            desde esta fecha y este {unidad === "hs" ? "horómetro" : "kilometraje"}.
+          </span>
+        </span>
+      </label>
+
+      {datos.tareas.length > 0 && (
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">
-            Tareas del plan preventivo que se van a hacer (tildarlas es lo que descuenta del plan)
+            Tareas del plan preventivo que se van a hacer — tildarlas es lo que las descuenta del
+            plan
           </Label>
-          <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border p-2">
-            {tareasPlan.map((t) => (
-              <label key={t.id} className="flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={tildadas.has(t.id)}
-                  onChange={(e) => {
-                    setTildadas((prev) => {
-                      const next = new Set(prev)
-                      if (e.target.checked) next.add(t.id)
-                      else next.delete(t.id)
-                      return next
-                    })
-                  }}
-                />
-                <span>
-                  {t.nombre}
-                  <span className="ml-1 text-muted-foreground">
-                    {t.frecuencia_km
-                      ? `· cada ${t.frecuencia_km.toLocaleString("es-AR")} km`
-                      : t.frecuencia_horas
-                        ? `· cada ${t.frecuencia_horas} hs`
-                        : t.frecuencia_meses
-                          ? `· cada ${t.frecuencia_meses} meses`
-                          : ""}
+          <div className="max-h-52 space-y-0.5 overflow-y-auto rounded-md border border-border p-2">
+            {datos.tareas.map(({ tarea, celda }) => {
+              const falta =
+                celda?.proximoKm != null && datos.kmActual != null
+                  ? celda.proximoKm - datos.kmActual
+                  : celda?.proximasHoras != null && datos.horasActuales != null
+                    ? celda.proximasHoras - datos.horasActuales
+                    : null
+              return (
+                <label
+                  key={tarea.id}
+                  className="flex items-start gap-2 rounded px-1 py-0.5 text-xs hover:bg-muted/50"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={tildadas.has(tarea.id)}
+                    onChange={(e) => {
+                      setTildadas((prev) => {
+                        const next = new Set(prev)
+                        if (e.target.checked) next.add(tarea.id)
+                        else next.delete(tarea.id)
+                        return next
+                      })
+                    }}
+                  />
+                  <span className="flex-1">
+                    <span className="text-foreground">{tarea.nombre}</span>
+                    <span className="ml-1 text-muted-foreground">
+                      {tarea.frecuencia_km
+                        ? `· cada ${tarea.frecuencia_km.toLocaleString("es-AR")} km`
+                        : tarea.frecuencia_horas
+                          ? `· cada ${tarea.frecuencia_horas} hs`
+                          : tarea.frecuencia_meses
+                            ? `· cada ${tarea.frecuencia_meses} meses`
+                            : ""}
+                    </span>
                   </span>
-                </span>
-              </label>
-            ))}
+                  {celda?.estado === "vencido" && (
+                    <Badge className="px-1.5 py-0 text-[10px] bg-destructive/10 text-destructive">
+                      Vencida
+                    </Badge>
+                  )}
+                  {celda?.estado === "proximo" && (
+                    <Badge className="px-1.5 py-0 text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                      {falta != null ? `faltan ${Math.round(falta).toLocaleString("es-AR")} ${unidad}` : "Próxima"}
+                    </Badge>
+                  )}
+                  {!celda && (
+                    <span className="text-[10px] text-muted-foreground/70">nunca registrada</span>
+                  )}
+                </label>
+              )
+            })}
           </div>
         </div>
       )}

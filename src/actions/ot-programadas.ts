@@ -149,6 +149,8 @@ export async function llevarOtAlTaller(input: {
   nombresDelPlan?: string[]
   odometro?: number | null
   horometro?: number | null
+  /** Service general (rodado): reinicia el contador del próximo service. */
+  esServiceGeneral?: boolean
 }): Promise<Result<OtProgramada>> {
   try {
     await requireRole(["admin", "supervisor"])
@@ -169,6 +171,7 @@ export async function llevarOtAlTaller(input: {
       ...normalizarTareas(ot.tareas)
         .filter((t) => !delPlan.has(t))
         .map((descripcion) => ({ descripcion })),
+      ...(input.esServiceGeneral ? [{ descripcion: "Service general (rodado)" }] : []),
     ]
     if (tareas.length === 0) return { error: "La orden no tiene trabajos cargados" }
 
@@ -182,6 +185,7 @@ export async function llevarOtAlTaller(input: {
       horometro: input.horometro ?? null,
       taller: ot.taller || undefined,
       observaciones: ot.notas || undefined,
+      es_service_general: input.esServiceGeneral ?? false,
       tareas,
     })
     if ("error" in res) return { error: res.error }
