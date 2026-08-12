@@ -66,10 +66,38 @@ const addMesesIso = (iso: string, n: number) => {
 }
 
 const CLS_EVENTO: Record<EventoPreventivo["estado"], string> = {
-  vencido: "border-destructive/40 bg-destructive/10 text-destructive",
-  proximo:
-    "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  ok: "border-border bg-muted/60 text-muted-foreground",
+  vencido: "border-destructive bg-destructive/10 text-destructive",
+  proximo: "border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  ok: "border-border bg-muted/70 text-muted-foreground",
+}
+
+const TONOS_PILDORA = {
+  sky: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  amber: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  rose: "border-destructive/30 bg-destructive/10 text-destructive",
+} as const
+
+/** Contador del encabezado: número grande y etiqueta chica, en su color. */
+function Pildora({
+  tono,
+  n,
+  texto,
+}: {
+  tono: keyof typeof TONOS_PILDORA
+  n: number
+  texto: string
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium",
+        TONOS_PILDORA[tono]
+      )}
+    >
+      <span className="text-sm font-bold tabular-nums leading-none">{n}</span>
+      {texto}
+    </span>
+  )
 }
 
 export function CalendarioPreventivo({
@@ -199,16 +227,18 @@ export function CalendarioPreventivo({
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">
+      <Card className="overflow-hidden border-border/70 shadow-sm">
+        <CardHeader className="gap-3 border-b border-border/70 bg-muted/30 pb-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <CalendarDays className="size-4 text-muted-foreground" />
+            <CardTitle className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <CalendarDays className="size-4" />
+              </span>
               {mesLargo(ancla)}
             </CardTitle>
             <div className="flex flex-wrap items-center gap-1.5">
               <Select value={fUnidad} onValueChange={(v) => setFUnidad(v ?? "todas")}>
-                <SelectTrigger className="h-8 w-36">
+                <SelectTrigger className="h-8 w-40 bg-card">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -220,98 +250,135 @@ export function CalendarioPreventivo({
                   ))}
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="sm" onClick={() => setAncla(addMesesIso(ancla, -1))}>
-                <ChevronLeft className="size-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setAncla(`${hoy.slice(0, 7)}-01`)}
-              >
-                Hoy
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setAncla(addMesesIso(ancla, 1))}>
-                <ChevronRight className="size-4" />
-              </Button>
+              <div className="flex items-center rounded-lg border border-border bg-card p-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  title="Mes anterior"
+                  onClick={() => setAncla(addMesesIso(ancla, -1))}
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2.5 text-xs font-medium"
+                  onClick={() => setAncla(`${hoy.slice(0, 7)}-01`)}
+                >
+                  Hoy
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  title="Mes siguiente"
+                  onClick={() => setAncla(addMesesIso(ancla, 1))}
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <span className="size-2.5 rounded-sm bg-sky-500/70" /> OT programada ({otsDelMes.length})
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="size-2.5 rounded-sm bg-amber-500/70" /> Vence este mes (
-              {delMes.filter((e) => e.estado !== "vencido").length})
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="size-2.5 rounded-sm bg-destructive/70" /> Vencido (
-              {delMes.filter((e) => e.estado === "vencido").length + arrastre.length})
-            </span>
-            <span>
-              · «~» = fecha estimada por el uso (km/horas) · el Service general cae el mismo
-              día que dice el Tablero operativo
+          <div className="flex flex-wrap items-center gap-2">
+            <Pildora tono="sky" n={otsDelMes.length} texto="OT programada" />
+            <Pildora
+              tono="amber"
+              n={delMes.filter((e) => e.estado !== "vencido").length}
+              texto="vence este mes"
+            />
+            <Pildora
+              tono="rose"
+              n={delMes.filter((e) => e.estado === "vencido").length + arrastre.length}
+              texto="vencido"
+            />
+            <span className="text-[11px] leading-tight text-muted-foreground">
+              «~» = fecha estimada por el uso · el Service general cae el mismo día que dice el
+              Tablero operativo
             </span>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="mb-1 grid grid-cols-7 gap-1">
-            {DIAS_CORTOS.map((d) => (
+        <CardContent className="p-3 sm:p-4">
+          <div className="mb-1.5 grid grid-cols-7 gap-1.5">
+            {DIAS_CORTOS.map((d, i) => (
               <div
                 key={d}
-                className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                className={cn(
+                  "rounded-md py-1 text-center text-[11px] font-semibold uppercase tracking-wider",
+                  i >= 5 ? "text-muted-foreground/60" : "text-muted-foreground"
+                )}
               >
                 {d}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-7 gap-1">
-            {dias.map((fecha) => {
+          <div className="grid grid-cols-7 gap-1.5">
+            {dias.map((fecha, i) => {
               const delDia = porFecha.get(fecha) ?? []
               const otsDia = otsPorFecha.get(fecha) ?? []
               const esDelMes = fecha >= primeroDelMes && fecha <= ultimoDelMes
               const esHoy = fecha === hoy
+              const finde = i % 7 >= 5
               const total = delDia.length + otsDia.length
+              const visiblesOt = otsDia.slice(0, 2)
+              const visiblesEv = delDia.slice(0, Math.max(0, 3 - visiblesOt.length))
               return (
                 <button
                   key={fecha}
                   type="button"
                   onClick={() => setDiaAbierto(fecha)}
                   className={cn(
-                    "flex min-h-24 flex-col gap-1 rounded-md border border-border p-1.5 text-left transition-colors hover:border-primary/40",
-                    !esDelMes && "bg-muted/30 opacity-60",
-                    esHoy && "border-primary/50 bg-primary/5"
+                    "group flex min-h-[7rem] flex-col gap-1 rounded-xl border p-2 text-left transition-all",
+                    "border-border/70 bg-card hover:border-primary/40 hover:shadow-md",
+                    finde && esDelMes && "bg-muted/30",
+                    !esDelMes && "border-transparent bg-muted/20 text-muted-foreground/60",
+                    esHoy && "border-primary/60 bg-primary/5 shadow-sm"
                   )}
                 >
-                  <span
-                    className={cn(
-                      "text-[11px] font-semibold",
-                      esHoy ? "text-primary" : "text-muted-foreground"
+                  <span className="flex items-center justify-between">
+                    <span
+                      className={cn(
+                        "flex size-6 items-center justify-center rounded-full text-[11px] font-semibold",
+                        esHoy
+                          ? "bg-primary text-primary-foreground"
+                          : esDelMes
+                            ? "text-foreground/70"
+                            : "text-muted-foreground/50"
+                      )}
+                    >
+                      {Number(fecha.slice(8, 10))}
+                    </span>
+                    {total > 0 && (
+                      <span className="text-[10px] font-medium text-muted-foreground/70 opacity-0 transition-opacity group-hover:opacity-100">
+                        ver
+                      </span>
                     )}
-                  >
-                    {Number(fecha.slice(8, 10))}
                   </span>
-                  {otsDia.slice(0, 2).map((o) => (
+                  {visiblesOt.map((o) => (
                     <span
                       key={o.id}
-                      className="truncate rounded border border-sky-500/40 bg-sky-500/10 px-1 py-0.5 text-[10px] font-medium text-sky-700 dark:text-sky-400"
+                      className="truncate rounded-md border-l-[3px] border-sky-500 bg-sky-500/10 px-1.5 py-1 text-[10px] font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"
                     >
                       {o.dominio} · OT
                     </span>
                   ))}
-                  {delDia.slice(0, Math.max(0, 3 - Math.min(otsDia.length, 2))).map((e) => (
+                  {visiblesEv.map((e) => (
                     <span
                       key={`${e.dominio}-${e.tareaId}`}
                       className={cn(
-                        "truncate rounded border px-1 py-0.5 text-[10px] font-medium",
+                        "truncate rounded-md border-l-[3px] px-1.5 py-1 text-[10px] font-medium",
                         CLS_EVENTO[e.estado]
                       )}
                     >
-                      {e.estimada ? "~" : ""}
-                      {e.dominio} · {e.tarea}
+                      <span className="font-semibold">
+                        {e.estimada ? "~" : ""}
+                        {e.dominio}
+                      </span>{" "}
+                      {e.tarea}
                     </span>
                   ))}
-                  {total > 3 && (
-                    <span className="text-[10px] text-muted-foreground">+{total - 3} más</span>
+                  {total > visiblesOt.length + visiblesEv.length && (
+                    <span className="pl-1 text-[10px] font-medium text-muted-foreground">
+                      +{total - visiblesOt.length - visiblesEv.length} más
+                    </span>
                   )}
                 </button>
               )
@@ -321,25 +388,30 @@ export function CalendarioPreventivo({
       </Card>
 
       {arrastre.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base text-destructive">
-              Vencidas de antes de {mesLargo(ancla)} ({arrastre.length})
+        <Card className="overflow-hidden border-destructive/30 shadow-sm">
+          <CardHeader className="gap-1 border-b border-destructive/20 bg-destructive/5 pb-3">
+            <CardTitle className="text-base font-semibold text-destructive">
+              Vencidas de antes de {mesLargo(ancla)}
+              <span className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-bold tabular-nums">
+                {arrastre.length}
+              </span>
             </CardTitle>
             <p className="text-xs text-muted-foreground">
               Su fecha de vencimiento quedó fuera del mes que estás mirando: siguen abiertas.
+              Click en una para programarle la OT.
             </p>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-1.5">
+          <CardContent className="flex flex-wrap gap-1.5 pt-4">
             {arrastre.map((e) => (
               <button
                 key={`${e.dominio}-${e.tareaId}`}
                 type="button"
                 onClick={() => puedeEditar && onProgramar(hoy, e.dominio, [e.tarea])}
-                className="rounded-full border border-destructive/40 px-2 py-0.5 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/10"
+                className="group inline-flex items-center gap-1.5 rounded-lg border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 text-[11px] font-medium text-destructive transition-colors hover:border-destructive/60 hover:bg-destructive/10"
               >
-                {e.dominio} · {e.tarea}
-                <span className="ml-1 opacity-70">
+                <span className="font-bold">{e.dominio}</span>
+                <span className="font-normal">{e.tarea}</span>
+                <span className="rounded bg-destructive/10 px-1 py-0.5 text-[10px] tabular-nums">
                   {e.fecha.slice(8, 10)}/{e.fecha.slice(5, 7)}
                 </span>
               </button>

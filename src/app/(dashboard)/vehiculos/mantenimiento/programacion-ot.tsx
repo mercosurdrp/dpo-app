@@ -236,10 +236,10 @@ export function ProgramacionOt({
     <div className="space-y-4">
       <DpoSeccionCinta seccionId="programacion" />
 
-      <Tabs defaultValue="semana" className="space-y-4">
+      <Tabs defaultValue="calendario" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="semana">Semana</TabsTrigger>
           <TabsTrigger value="calendario">Calendario del mes</TabsTrigger>
+          <TabsTrigger value="semana">Semana</TabsTrigger>
         </TabsList>
 
         <TabsContent value="calendario">
