@@ -1804,13 +1804,16 @@ function NuevoMantenimientoDialog({
             </span>
           </label>
 
-          {/* Detalle de tareas: qué se hizo en el service y qué quedó pendiente. */}
-          <details
-            className="rounded-md border border-border p-3"
-            open={tareasSel.size > 0 || reprogramadas.size > 0}
-          >
-            <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
-              Detalle de tareas del plan (opcional)
+          {/* Detalle de tareas: qué se hizo en el service y qué quedó pendiente.
+              🚨 Va ABIERTO. Estuvo plegado y rotulado "(opcional)" hasta el
+              13/08/2026, y el que cargaba no lo veía: de las 122 tareas del plan
+              sólo 13 tenían registro, todas de Service, porque nadie llegaba a
+              esta sección. Sin la tarea tildada el sistema no sabe cuándo se hizo
+              por última vez y NUNCA avisa que vence — que es justamente para lo
+              que existe el plan preventivo. */}
+          <details className="rounded-md border border-border p-3" open>
+            <summary className="cursor-pointer text-sm font-medium text-foreground">
+              Qué se le hizo — tareas del plan
               {reprogramadas.size > 0 && (
                 <span className="ml-2 text-xs font-normal text-amber-700">
                   · {reprogramadas.size} reprogramada{reprogramadas.size === 1 ? "" : "s"}
