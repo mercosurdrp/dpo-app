@@ -91,11 +91,12 @@ const COLORES_UNIDAD = [
   "bg-rose-500", "bg-cyan-500", "bg-lime-500", "bg-fuchsia-500",
 ]
 
-type Tono = "ot" | "vencido" | "proximo" | "ok" | "arrastre"
+type Tono = "ot" | "hecha" | "vencido" | "proximo" | "ok" | "arrastre"
 
 /** Barras llenas: el Gantt se lee por el color del bloque, no por el borde. */
 const CLS_BARRA: Record<Tono, string> = {
   ot: "bg-sky-600 text-white hover:bg-sky-500",
+  hecha: "bg-emerald-600/85 text-white hover:bg-emerald-600",
   vencido: "bg-rose-600 text-white hover:bg-rose-500",
   arrastre: "bg-rose-700 text-white hover:bg-rose-600",
   proximo: "bg-amber-400 text-amber-950 hover:bg-amber-300",
@@ -243,15 +244,22 @@ export function CalendarioPreventivo({
     [eventos, primeroDelMes]
   )
 
+  // La orden cancelada no se muestra: no es trabajo que quede por hacer.
   const otsDelMes = useMemo(
     () =>
       (ots ?? []).filter(
         (o) =>
           o.fecha_programada >= primeroDelMes &&
           o.fecha_programada <= ultimoDelMes &&
+          o.estado !== "cancelada" &&
           (fUnidad === "todas" || o.dominio === fUnidad)
       ),
     [ots, primeroDelMes, ultimoDelMes, fUnidad]
+  )
+  /** Sólo las que siguen esperando: es lo que cuenta el encabezado. */
+  const otsPendientes = useMemo(
+    () => otsDelMes.filter((o) => o.estado !== "realizada"),
+    [otsDelMes]
   )
 
   const dominios = useMemo(() => estados.map((e) => e.vehiculo.dominio).sort(), [estados])
@@ -295,14 +303,17 @@ export function CalendarioPreventivo({
           })
         }
         for (const o of otsU) {
-          const texto = `OT · ${o.taller || o.tareas[0] || "programada"}`
+          // La orden resuelta se muestra hecha, no pendiente: si el trabajo ya
+          // está, verla en azul como "OT programada" hace pensar que falta.
+          const hecha = o.estado === "realizada"
+          const texto = `${hecha ? "✓ " : "OT · "}${o.taller || o.tareas[0] || "programada"}`
           items.push({
             key: `ot-${o.id}`,
             dia: diaDe.get(o.fecha_programada) ?? 1,
             span: spanDe(texto),
-            tono: "ot",
+            tono: hecha ? "hecha" : "ot",
             texto,
-            titulo: `OT programada el ${fmtDia(o.fecha_programada)}: ${
+            titulo: `${hecha ? "Resuelta" : "OT programada"} el ${fmtDia(o.fecha_programada)}: ${
               o.tareas.join(" · ") || "sin trabajos cargados"
             }`,
             fecha: o.fecha_programada,
@@ -431,7 +442,7 @@ export function CalendarioPreventivo({
             </div>
           </div>
           <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[11px]">
-            <Contador color="bg-sky-400" n={otsDelMes.length} texto="OT programada" />
+            <Contador color="bg-sky-400" n={otsPendientes.length} texto="OT por hacer" />
             <Contador
               color="bg-amber-400"
               n={delMes.filter((e) => e.estado !== "vencido").length}
@@ -573,7 +584,8 @@ export function CalendarioPreventivo({
 
         {/* Leyenda */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border/70 bg-muted/40 px-4 py-2 text-[11px] text-muted-foreground">
-          <Ref cls="bg-sky-600" texto="OT programada" />
+          <Ref cls="bg-sky-600" texto="OT por hacer" />
+          <Ref cls="bg-emerald-600/85" texto="Resuelta" />
           <Ref cls="bg-rose-600" texto="Vencido" />
           <Ref cls="bg-amber-400" texto="Por vencer" />
           <Ref cls="bg-slate-300 dark:bg-slate-600" texto="En plazo" />

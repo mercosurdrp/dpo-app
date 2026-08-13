@@ -1104,6 +1104,19 @@ export async function updateMantenimiento(
       .single()
     if (error) return { error: error.message }
 
+    // La orden PROGRAMADA que dio origen a esta OT tiene que seguir su estado.
+    // Sin esto, cerrar la OT desde Órdenes de Trabajo dejaba la programada en
+    // "en taller" para siempre y el calendario la seguía mostrando pendiente:
+    // es lo que dejó 13 órdenes colgadas en "planificada" hasta el 13/08/2026.
+    if (input.estado === "completado" || input.estado === "en_taller") {
+      const { error: sincErr } = await supabase
+        .from("mantenimiento_ot_programadas")
+        .update({ estado: input.estado === "completado" ? "realizada" : "en_taller" })
+        .eq("realizado_id", input.id)
+      // Un problema acá no puede tumbar el guardado de la OT.
+      if (sincErr) console.error("No se pudo sincronizar la OT programada:", sincErr.message)
+    }
+
     if (input.tareas) {
       if (input.tareas.length === 0) {
         return { error: "El mantenimiento debe conservar al menos una tarea" }
