@@ -260,6 +260,7 @@ export function ProgramacionOt({
             onProgramar={(fecha, dominio, tareasSugeridas) =>
               setDialog({ ot: null, fecha, dominio, tareasIniciales: tareasSugeridas })
             }
+            onAbrirOt={(o) => setDialog({ ot: o, fecha: o.fecha_programada })}
           />
         </TabsContent>
 

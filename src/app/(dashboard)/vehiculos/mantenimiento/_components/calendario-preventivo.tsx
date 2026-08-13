@@ -162,6 +162,7 @@ export function CalendarioPreventivo({
   programacion,
   puedeEditar,
   onProgramar,
+  onAbrirOt,
   refreshToken,
 }: {
   estados: EstadoPlanVehiculo[]
@@ -173,6 +174,8 @@ export function CalendarioPreventivo({
   puedeEditar: boolean
   /** Abre el diálogo de programación del padre con la fecha (y unidad) elegida. */
   onProgramar: (fecha: string, dominio?: string, tareasSugeridas?: string[]) => void
+  /** Abre una orden ya programada, que es desde donde se la finaliza. */
+  onAbrirOt: (ot: OtProgramada) => void
   /** Cambia cuando el padre guarda una OT: fuerza recargar el mes. */
   refreshToken: number
 }) {
@@ -651,6 +654,10 @@ export function CalendarioPreventivo({
           detalle={detalle}
           puedeEditar={puedeEditar}
           onProgramar={onProgramar}
+          onAbrirOt={(o) => {
+            setDetalle(null)
+            onAbrirOt(o)
+          }}
           onClose={() => setDetalle(null)}
         />
       )}
@@ -690,11 +697,13 @@ function DetalleDialog({
   detalle,
   puedeEditar,
   onProgramar,
+  onAbrirOt,
   onClose,
 }: {
   detalle: Detalle
   puedeEditar: boolean
   onProgramar: (fecha: string, dominio?: string, tareasSugeridas?: string[]) => void
+  onAbrirOt: (ot: OtProgramada) => void
   onClose: () => void
 }) {
   const { titulo, subtitulo, eventos, ots, fecha } = detalle
@@ -739,15 +748,22 @@ function DetalleDialog({
                       {o.taller ? ` · ${o.taller}` : ""}
                     </p>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      window.open(`/api/vehiculos/ot-programada/pdf?id=${o.id}`, "_blank")
-                    }
-                  >
-                    <FileDown className="mr-1 size-4" /> PDF
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        window.open(`/api/vehiculos/ot-programada/pdf?id=${o.id}`, "_blank")
+                      }
+                    >
+                      <FileDown className="mr-1 size-4" /> PDF
+                    </Button>
+                    {puedeEditar && o.estado !== "realizada" && (
+                      <Button size="sm" onClick={() => onAbrirOt(o)}>
+                        Finalizar OT
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
