@@ -27,6 +27,8 @@ export const dynamic = "force-dynamic"
 
 interface OtPdfData {
   dominio: string
+  /** N° de la orden de trabajo, cuando ya está creada. */
+  numero_ot: string | null
   fecha_programada: string
   tareas: string[]
   taller: string
@@ -61,11 +63,22 @@ export async function GET(req: NextRequest) {
   const supabase = await createClient()
   const { data: ot, error } = await supabase
     .from("mantenimiento_ot_programadas")
-    .select("dominio, fecha_programada, tareas, taller, notas, estado, created_by")
+    .select("dominio, fecha_programada, tareas, taller, notas, estado, created_by, realizado_id")
     .eq("id", id)
     .maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!ot) return NextResponse.json({ error: "Orden no encontrada" }, { status: 404 })
+
+  // El N° de OT es como se habla de la orden en el taller: va en el PDF.
+  const numeroOt = ot.realizado_id
+    ? (
+        await supabase
+          .from("mantenimiento_realizados")
+          .select("numero_ot")
+          .eq("id", ot.realizado_id)
+          .maybeSingle()
+      ).data?.numero_ot ?? null
+    : null
 
   const [fichaRes, perfilRes] = await Promise.all([
     supabase
@@ -80,6 +93,7 @@ export async function GET(req: NextRequest) {
 
   const data: OtPdfData = {
     dominio: ot.dominio,
+    numero_ot: numeroOt,
     fecha_programada: ot.fecha_programada,
     tareas: Array.isArray(ot.tareas) ? (ot.tareas as string[]) : [],
     taller: ot.taller ?? "",
@@ -155,7 +169,7 @@ function buildPDF(doc: Doc, data: OtPdfData) {
 
   drawHeader(
     doc,
-    "Orden de Trabajo Programada",
+    data.numero_ot ? `Orden de Trabajo N° ${data.numero_ot}` : "Orden de Trabajo Programada",
     data.dominio,
     formatFechaLarga(data.fecha_programada),
   )

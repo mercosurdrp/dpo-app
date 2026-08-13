@@ -18,7 +18,7 @@
 // dónde se lo mire. Por eso el ritmo del tablero (`kmDia`) manda también sobre el
 // resto de las tareas.
 
-import { useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { CalendarDays, ChevronLeft, ChevronRight, FileDown, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -113,7 +113,15 @@ interface Barra {
   key: string
   /** Columna donde arranca: 1..cantidad de días del mes. */
   dia: number
+  /**
+   * Días que ocupa DE VERDAD: una OT va desde que se programa hasta que se
+   * cierra, y un vencimiento es un día solo. La barra no se estira para que
+   * entre el texto — si no, una orden abierta y cerrada el mismo día parecía
+   * durar una semana.
+   */
   span: number
+  /** Columnas que ocupa la etiqueta cuando el texto no entra en la barra. */
+  spanLabel: number
   carril: number
   tono: Tono
   texto: string
@@ -121,14 +129,13 @@ interface Barra {
   fecha: string
 }
 
-/**
- * Ancho de la barra en columnas. Un vencimiento es un día puntual, pero una
- * barra de un día no deja lugar para el nombre de la tarea: se estira para que
- * el texto se lea y el reparto en carriles evita que se pisen.
- */
-const spanDe = (texto: string) => Math.min(10, Math.max(3, Math.ceil(texto.length / 4.5) + 1))
+/** Columnas que necesita un texto para leerse. */
+const anchoTexto = (texto: string) => Math.min(12, Math.max(3, Math.ceil(texto.length / 4.5) + 1))
 
-/** Reparte las barras en carriles para que ninguna se superponga con otra. */
+/**
+ * Reparte las barras en carriles para que ninguna se superponga con otra.
+ * El lugar reservado incluye la etiqueta que se dibuja al costado.
+ */
 function repartirEnCarriles(items: Omit<Barra, "carril">[]): { barras: Barra[]; ocultas: number } {
   const finDeCarril: number[] = []
   const barras: Barra[] = []
@@ -142,7 +149,7 @@ function repartirEnCarriles(items: Omit<Barra, "carril">[]): { barras: Barra[]; 
       }
       carril = finDeCarril.length
     }
-    finDeCarril[carril] = it.dia + it.span - 1
+    finDeCarril[carril] = it.dia + it.span + it.spanLabel - 1
     barras.push({ ...it, carril })
   }
   return { barras, ocultas }
@@ -293,7 +300,8 @@ export function CalendarioPreventivo({
           items.push({
             key: `atras-${dominio}`,
             dia: 1,
-            span: spanDe(texto),
+            span: 1,
+            spanLabel: anchoTexto(texto),
             tono: "arrastre",
             texto,
             titulo: `Vencidas antes de ${mesLargo(ancla)}: ${atras
@@ -304,27 +312,40 @@ export function CalendarioPreventivo({
         }
         for (const o of otsU) {
           // La orden resuelta se muestra hecha, no pendiente: si el trabajo ya
-          // está, verla en azul como "OT programada" hace pensar que falta.
+          // está, verla en azul como "OT por hacer" hace pensar que falta.
           const hecha = o.estado === "realizada"
-          const texto = `${hecha ? "✓ " : "OT · "}${o.taller || o.tareas[0] || "programada"}`
+          // La barra dura lo que duró la orden: de la fecha programada al
+          // cierre. Si sigue abierta, hasta hoy — es lo que lleva esperando.
+          const finReal = o.ot_cierre ?? (hecha ? o.fecha_programada : hoy)
+          const fin = finReal < o.fecha_programada ? o.fecha_programada : finReal
+          const ini = diaDe.get(o.fecha_programada) ?? 1
+          const finDia = diaDe.get(fin) ?? (fin > ultimoDelMes ? nDias : ini)
+          const nro = o.ot_numero ? `OT ${o.ot_numero}` : "OT"
+          const texto = `${hecha ? "✓ " : ""}${nro} · ${o.taller || o.tareas[0] || "sin taller"}`
+          const span = Math.max(1, finDia - ini + 1)
           items.push({
             key: `ot-${o.id}`,
-            dia: diaDe.get(o.fecha_programada) ?? 1,
-            span: spanDe(texto),
+            dia: ini,
+            span,
+            spanLabel: span >= anchoTexto(texto) ? 0 : anchoTexto(texto),
             tono: hecha ? "hecha" : "ot",
             texto,
-            titulo: `${hecha ? "Resuelta" : "OT programada"} el ${fmtDia(o.fecha_programada)}: ${
+            titulo: `${nro}${hecha ? " · resuelta" : " · abierta"} · programada el ${fmtDia(
+              o.fecha_programada
+            )}${o.ot_cierre ? `, cerrada el ${fmtDia(o.ot_cierre)}` : ""}: ${
               o.tareas.join(" · ") || "sin trabajos cargados"
             }`,
             fecha: o.fecha_programada,
           })
         }
         for (const e of evs) {
+          // Un vencimiento cae un día: ocupa una columna y el nombre va al lado.
           const texto = `${e.estimada ? "~" : ""}${e.tarea}`
           items.push({
             key: `ev-${dominio}-${e.tareaId}`,
             dia: diaDe.get(e.fecha) ?? 1,
-            span: spanDe(texto),
+            span: 1,
+            spanLabel: anchoTexto(texto),
             tono: e.estado,
             texto,
             titulo: `${e.tarea} · ${fmtDia(e.fecha)}${e.detalle ? ` · ${e.detalle}` : ""}${
@@ -345,7 +366,7 @@ export function CalendarioPreventivo({
         return { dominio, barras, ocultas, severidad, evs, otsU, atras }
       })
       .sort((a, b) => a.severidad - b.severidad || a.dominio.localeCompare(b.dominio))
-  }, [dominios, fUnidad, delMes, otsDelMes, arrastre, diaDe, ancla])
+  }, [dominios, fUnidad, delMes, otsDelMes, arrastre, diaDe, ancla, hoy, nDias, ultimoDelMes])
 
   const conAlgo = franjas.filter((f) => f.barras.length > 0 || f.ocultas > 0)
   const sinNada = franjas.filter((f) => f.barras.length === 0 && f.ocultas === 0)
@@ -542,24 +563,44 @@ export function CalendarioPreventivo({
                       />
                     ))}
 
-                    {f.barras.map((b) => (
-                      <button
-                        key={b.key}
-                        type="button"
-                        title={b.titulo}
-                        onClick={() => abrirBarra(f.dominio, b)}
-                        style={{
-                          gridColumn: `${b.dia} / span ${Math.min(b.span, nDias - b.dia + 1)}`,
-                          gridRow: b.carril + 1,
-                        }}
-                        className={cn(
-                          "z-10 mx-px flex items-center overflow-hidden rounded px-1.5 text-[10px] font-semibold leading-none shadow-sm transition-colors",
-                          CLS_BARRA[b.tono]
-                        )}
-                      >
-                        <span className="truncate">{b.texto}</span>
-                      </button>
-                    ))}
+                    {f.barras.map((b) => {
+                      const span = Math.min(b.span, nDias - b.dia + 1)
+                      const libre = nDias - (b.dia + span) + 1
+                      const spanLabel = Math.min(b.spanLabel, Math.max(0, libre))
+                      return (
+                        <Fragment key={b.key}>
+                          <button
+                            type="button"
+                            title={b.titulo}
+                            onClick={() => abrirBarra(f.dominio, b)}
+                            style={{ gridColumn: `${b.dia} / span ${span}`, gridRow: b.carril + 1 }}
+                            className={cn(
+                              "z-10 mx-px flex items-center overflow-hidden rounded px-1.5 text-[10px] font-semibold leading-none shadow-sm transition-colors",
+                              CLS_BARRA[b.tono]
+                            )}
+                          >
+                            {b.spanLabel === 0 && <span className="truncate">{b.texto}</span>}
+                          </button>
+                          {/* Barra de un día o dos: el texto no entra adentro y
+                              va al costado, sobre el lugar que el carril ya le
+                              reservó. */}
+                          {b.spanLabel > 0 && spanLabel > 0 && (
+                            <button
+                              type="button"
+                              title={b.titulo}
+                              onClick={() => abrirBarra(f.dominio, b)}
+                              style={{
+                                gridColumn: `${b.dia + span} / span ${spanLabel}`,
+                                gridRow: b.carril + 1,
+                              }}
+                              className="z-10 flex items-center overflow-hidden pl-1 text-left text-[10px] font-semibold leading-none text-foreground/85 hover:text-foreground"
+                            >
+                              <span className="truncate">{b.texto}</span>
+                            </button>
+                          )}
+                        </Fragment>
+                      )
+                    })}
 
                     {f.ocultas > 0 && (
                       <span
@@ -685,7 +726,14 @@ function DetalleDialog({
                   className="flex items-center justify-between gap-2 rounded-md border border-sky-500/30 bg-sky-500/5 p-2"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold">{o.dominio}</p>
+                    <p className="text-sm font-semibold">
+                      {o.dominio}
+                      {o.ot_numero && (
+                        <span className="ml-1.5 font-mono text-xs text-muted-foreground">
+                          OT {o.ot_numero}
+                        </span>
+                      )}
+                    </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {o.tareas.join(" · ") || "Sin trabajos cargados"}
                       {o.taller ? ` · ${o.taller}` : ""}

@@ -27,6 +27,10 @@ export interface OtProgramada {
   realizado_id: string | null
   created_at: string
   updated_at: string
+  /** N° de la orden de trabajo, una vez creada. */
+  ot_numero?: string | null
+  /** Día en que se cerró (salida del taller): hasta dónde llega en el calendario. */
+  ot_cierre?: string | null
 }
 
 type Result<T> = { data: T } | { error: string }
@@ -50,6 +54,44 @@ function conHora(fecha: string, hora?: string | null): string {
   return `${fecha}T${hhmm}:00-03:00`
 }
 
+/**
+ * Le suma a cada orden programada el N° de su orden de trabajo y el día en que
+ * se cerró.
+ *
+ * El número es lo que la gente usa para hablar de una orden ("la 1756"), así que
+ * tiene que verse en todas las pantallas, no sólo en Órdenes de Trabajo. El
+ * cierre es hasta dónde llega la barra del calendario: una orden abierta el 10 y
+ * cerrada el 10 ocupa un día, no una semana.
+ *
+ * Va en una segunda consulta y no en un embed: `realizado_id` no tiene FK
+ * declarada, así que PostgREST no lo puede embeber.
+ */
+async function conDatosDeLaOt(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ots: OtProgramada[]
+): Promise<OtProgramada[]> {
+  const ids = ots.map((o) => o.realizado_id).filter((id): id is string => !!id)
+  if (ids.length === 0) return ots
+  const { data, error } = await supabase
+    .from("mantenimiento_realizados")
+    .select("id,numero_ot,fecha,salida_taller")
+    .in("id", ids)
+  if (error || !data) return ots
+  const porId = new Map(data.map((r) => [r.id as string, r]))
+  return ots.map((o) => {
+    const r = o.realizado_id ? porId.get(o.realizado_id) : null
+    if (!r) return o
+    return {
+      ...o,
+      ot_numero: (r.numero_ot as string | null) ?? null,
+      // Sin salida cargada, el cierre es el día de la OT: mejor eso que dejar la
+      // barra abierta hasta hoy en una orden que ya está resuelta.
+      ot_cierre:
+        ((r.salida_taller as string | null) ?? (r.fecha as string | null))?.slice(0, 10) ?? null,
+    }
+  })
+}
+
 export async function getOtProgramadas(rango: {
   desde: string
   hasta: string
@@ -65,7 +107,7 @@ export async function getOtProgramadas(rango: {
       .order("fecha_programada")
       .order("dominio")
     if (error) return { error: error.message }
-    return { data: (data || []) as OtProgramada[] }
+    return { data: await conDatosDeLaOt(supabase, (data || []) as OtProgramada[]) }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

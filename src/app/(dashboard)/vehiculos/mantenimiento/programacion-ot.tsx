@@ -336,6 +336,9 @@ export function ProgramacionOt({
                             {ESTADO_LABEL[o.estado]}
                           </Badge>
                         </div>
+                        {o.ot_numero && (
+                          <p className="font-mono text-[11px] font-semibold">OT {o.ot_numero}</p>
+                        )}
                         <p className="truncate text-[11px] text-muted-foreground">
                           {o.tareas.length} {o.tareas.length === 1 ? "trabajo" : "trabajos"}
                           {o.taller ? ` · ${o.taller}` : ""}
@@ -486,7 +489,9 @@ function OtDialog({
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>
-            {ot ? `Orden programada · ${ot.dominio}` : "Programar orden de trabajo"}
+            {ot
+              ? `Orden programada · ${ot.dominio}${ot.ot_numero ? ` · OT ${ot.ot_numero}` : ""}`
+              : "Programar orden de trabajo"}
           </DialogTitle>
           <DialogDescription>
             Los trabajos van uno por línea: son el checklist que le llega al mecánico en el PDF.
