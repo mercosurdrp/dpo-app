@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Info, TriangleAlert } from "lucide-react"
+import { Info, TriangleAlert, X } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
 import {
@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select"
 import type { MantenimientoRealizado } from "@/types/database"
 import type { ChecklistItemNoOk } from "@/actions/mantenimiento-vehiculos"
+import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard } from "./_components/kpi-card"
 
@@ -143,6 +144,19 @@ interface PorcionTorta {
   esOtras: boolean
 }
 
+/** Un ítem del checklist que falló, con todas sus repeticiones juntas. */
+interface ItemFallado {
+  categoria: string
+  item: string
+  critico: boolean
+  veces: number
+  primera: string
+  ultima: string
+  comentarios: string[]
+}
+
+const fmtFecha = (iso: string) => iso.split("-").reverse().join("/")
+
 export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
   const [granularidad, setGranularidad] = useState<Granularidad>("anio")
   const [dia, setDia] = useState(hoyISO)
@@ -226,8 +240,52 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       else u.leves++
       porUnidad.set(i.dominio, u)
     }
+
+    // Qué falló en cada unidad: mismo ítem repetido = una sola fila con sus
+    // veces, el período en que viene apareciendo y lo que escribió el chofer.
+    const detalle = new Map<string, ItemFallado[]>()
+    const porItem = new Map<string, Map<string, ItemFallado>>()
+    for (const i of items) {
+      const items_ = porItem.get(i.dominio) ?? new Map<string, ItemFallado>()
+      const clave = `${i.categoria}|${i.item}`
+      const agg = items_.get(clave) ?? {
+        categoria: i.categoria,
+        item: i.item,
+        critico: i.critico,
+        veces: 0,
+        primera: i.fecha,
+        ultima: i.fecha,
+        comentarios: [],
+      }
+      agg.veces++
+      agg.critico = agg.critico || i.critico
+      if (i.fecha < agg.primera) agg.primera = i.fecha
+      if (i.fecha > agg.ultima) agg.ultima = i.fecha
+      const com = i.comentario?.trim()
+      if (com && !agg.comentarios.includes(com)) agg.comentarios.push(com)
+      items_.set(clave, agg)
+      porItem.set(i.dominio, items_)
+    }
+    for (const [dominio, m] of porItem) {
+      detalle.set(
+        dominio,
+        Array.from(m.values()).sort(
+          (a, b) =>
+            b.veces - a.veces ||
+            Number(b.critico) - Number(a.critico) ||
+            a.item.localeCompare(b.item)
+        )
+      )
+    }
+
     const ranking = Array.from(porUnidad.entries())
-      .map(([dominio, v]) => ({ dominio, ...v, total: v.leves + v.criticos }))
+      .map(([dominio, v]) => ({
+        dominio,
+        ...v,
+        total: v.leves + v.criticos,
+        principal: detalle.get(dominio)?.[0] ?? null,
+        distintos: detalle.get(dominio)?.length ?? 0,
+      }))
       .sort((a, b) => b.total - a.total || a.dominio.localeCompare(b.dominio))
 
     const totalDefectos = conteo.leve + conteo.critico
@@ -237,7 +295,14 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
     const pct = (n: number) => (totalDefectos > 0 ? (n * 100) / totalDefectos : 0)
     const torta: PorcionTorta[] = ranking
       .slice(0, MAX_PORCIONES)
-      .map((u) => ({ ...u, pct: pct(u.total), esOtras: false }))
+      .map(({ dominio, leves, criticos, total }) => ({
+        dominio,
+        leves,
+        criticos,
+        total,
+        pct: pct(total),
+        esOtras: false,
+      }))
     const resto = ranking.slice(MAX_PORCIONES)
     if (resto.length > 0) {
       const leves = resto.reduce((s, u) => s + u.leves, 0)
@@ -258,11 +323,20 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
         ? Math.round(totalDefectos / conteo.correctivo)
         : null
 
-    return { conteo, ranking, torta, totalDefectos, ratioFalla }
+    return { conteo, ranking, torta, detalle, totalDefectos, ratioFalla }
   }, [itemsNoOk, mantenimientos, rango])
 
   const colorPorcion = (p: PorcionTorta, i: number) =>
     p.esOtras ? colorOtras : seriesColores[i % seriesColores.length]
+
+  // Unidad abierta en el panel de detalle (click en la torta o en la tabla).
+  const [unidadSel, setUnidadSel] = useState<string | null>(null)
+  const detalleSel = unidadSel ? (datos.detalle.get(unidadSel) ?? null) : null
+  const resumenSel = unidadSel
+    ? (datos.ranking.find((u) => u.dominio === unidadSel) ?? null)
+    : null
+  const verUnidad = (dominio: string) =>
+    setUnidadSel((actual) => (actual === dominio ? null : dominio))
 
   // ===== Geometría de la pirámide (SVG compacto) =====
   const NIV = NIVELES.length // 4
@@ -484,7 +558,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
           <p className="text-xs text-muted-foreground">
             {fmtNum(datos.totalDefectos)}{" "}
             {datos.totalDefectos === 1 ? "defecto" : "defectos"} de checklist ·{" "}
-            {etiquetaRango}
+            {etiquetaRango} · tocá una porción para ver qué falló
           </p>
         </CardHeader>
         <CardContent>
@@ -507,6 +581,11 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
                     outerRadius={100}
                     paddingAngle={1.5}
                     isAnimationActive={false}
+                    cursor="pointer"
+                    onClick={(_, i) => {
+                      const p = datos.torta[i]
+                      if (p && !p.esOtras) verUnidad(p.dominio)
+                    }}
                   >
                     {datos.torta.map((p, i) => (
                       <Cell
@@ -557,25 +636,127 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
 
               {/* Leyenda: la identidad nunca queda librada sólo al color */}
               <ul className="space-y-1.5 text-xs">
-                {datos.torta.map((p, i) => (
-                  <li key={p.dominio} className="flex items-center gap-2">
-                    <span
-                      className="size-2.5 flex-none rounded-sm"
-                      style={{ backgroundColor: colorPorcion(p, i) }}
-                      aria-hidden
-                    />
-                    <span className="flex-1 truncate text-foreground">
-                      {p.dominio}
-                      {p.criticos > 0 && (
-                        <TriangleAlert className="ml-1 inline size-3 text-amber-600 dark:text-amber-400" />
+                {datos.torta.map((p, i) => {
+                  const Fila = p.esOtras ? "div" : "button"
+                  return (
+                    <li key={p.dominio}>
+                      <Fila
+                        type={p.esOtras ? undefined : "button"}
+                        onClick={
+                          p.esOtras ? undefined : () => verUnidad(p.dominio)
+                        }
+                        aria-pressed={p.esOtras ? undefined : unidadSel === p.dominio}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded px-1 py-0.5 text-left",
+                          !p.esOtras && "hover:bg-muted",
+                          unidadSel === p.dominio && "bg-muted"
+                        )}
+                      >
+                        <span
+                          className="size-2.5 flex-none rounded-sm"
+                          style={{ backgroundColor: colorPorcion(p, i) }}
+                          aria-hidden
+                        />
+                        <span className="flex-1 truncate text-foreground">
+                          {p.dominio}
+                          {p.criticos > 0 && (
+                            <TriangleAlert className="ml-1 inline size-3 text-amber-600 dark:text-amber-400" />
+                          )}
+                        </span>
+                        <span className="tabular-nums font-medium text-foreground">
+                          {fmtNum(p.total)}
+                        </span>
+                        <span className="w-12 text-right tabular-nums text-muted-foreground">
+                          {fmtPct(p.pct)}
+                        </span>
+                      </Fila>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+
+          {/* Detalle de la unidad elegida: qué falló, cuántas veces y desde cuándo */}
+          {detalleSel && resumenSel && (
+            <div className="mt-3 rounded-lg border bg-muted/40 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    {resumenSel.dominio}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {fmtNum(resumenSel.total)}{" "}
+                    {resumenSel.total === 1 ? "defecto" : "defectos"} ·{" "}
+                    {fmtNum(resumenSel.distintos)}{" "}
+                    {resumenSel.distintos === 1
+                      ? "ítem distinto"
+                      : "ítems distintos"}
+                    {resumenSel.principal && resumenSel.total > 1 && (
+                      <>
+                        {" · "}
+                        {fmtNum(resumenSel.principal.veces)} de{" "}
+                        {fmtNum(resumenSel.total)} son{" "}
+                        <span className="font-medium text-foreground">
+                          {resumenSel.principal.item}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUnidadSel(null)}
+                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label="Cerrar el detalle"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              <ul className="mt-2 space-y-2">
+                {detalleSel.map((d) => (
+                  <li
+                    key={`${d.categoria}|${d.item}`}
+                    className="rounded-md border bg-card p-2"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-medium text-foreground">
+                        {d.item}
+                      </span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {d.categoria}
+                      </Badge>
+                      {d.critico && (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400"
+                        >
+                          crítico
+                        </Badge>
                       )}
-                    </span>
-                    <span className="tabular-nums font-medium text-foreground">
-                      {fmtNum(p.total)}
-                    </span>
-                    <span className="w-12 text-right tabular-nums text-muted-foreground">
-                      {fmtPct(p.pct)}
-                    </span>
+                      <span className="ml-auto text-xs font-semibold tabular-nums text-foreground">
+                        {fmtNum(d.veces)}{" "}
+                        <span className="font-normal text-muted-foreground">
+                          {d.veces === 1 ? "vez" : "veces"}
+                        </span>
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {d.primera === d.ultima
+                        ? fmtFecha(d.primera)
+                        : `${fmtFecha(d.primera)} al ${fmtFecha(d.ultima)}`}
+                      {d.comentarios.length > 0 && (
+                        <>
+                          {" · "}
+                          <span className="italic">
+                            «{d.comentarios.slice(0, 3).join("» · «")}»
+                          </span>
+                          {d.comentarios.length > 3 &&
+                            ` +${d.comentarios.length - 3}`}
+                        </>
+                      )}
+                    </p>
                   </li>
                 ))}
               </ul>
@@ -602,6 +783,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Unidad</TableHead>
+                  <TableHead>Defecto principal</TableHead>
                   <TableHead className="text-right">Leves</TableHead>
                   <TableHead className="text-right">Críticos</TableHead>
                   <TableHead className="text-right">Total</TableHead>
@@ -610,11 +792,30 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
               </TableHeader>
               <TableBody>
                 {datos.ranking.map((u) => (
-                  <TableRow key={u.dominio}>
+                  <TableRow
+                    key={u.dominio}
+                    onClick={() => verUnidad(u.dominio)}
+                    className={cn(
+                      "cursor-pointer",
+                      unidadSel === u.dominio && "bg-muted"
+                    )}
+                  >
                     <TableCell className="font-medium">
                       {u.dominio}
                       {u.criticos > 0 && (
                         <TriangleAlert className="ml-1 inline size-3.5 text-amber-600 dark:text-amber-400" />
+                      )}
+                    </TableCell>
+                    <TableCell className="max-w-[22rem] text-xs text-muted-foreground">
+                      {u.principal ? (
+                        <span className="line-clamp-2">
+                          {u.principal.item}
+                          <span className="ml-1 tabular-nums">
+                            ({fmtNum(u.principal.veces)} de {fmtNum(u.total)})
+                          </span>
+                        </span>
+                      ) : (
+                        "—"
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
