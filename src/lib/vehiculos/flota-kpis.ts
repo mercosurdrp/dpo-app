@@ -1,11 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { conformidadDocumental } from "@/lib/vehiculos/documentos-conformidad"
+import { cumplimientoPlanDesdeEstados } from "@/lib/vehiculos/plan-cumplimiento"
 import { loadEstadoPlan } from "@/lib/vehiculos/plan-mantenimiento"
 import {
   loadServiceGeneral,
   type ServiceGeneralUnidad,
 } from "@/lib/vehiculos/service-general"
-import type { EstadoPlanVehiculo } from "@/types/database"
 
 // KPIs de flota "foto": no tienen histórico reconstruible desde los datos, así
 // que un cron diario pisa el valor del mes ARG en curso en
@@ -30,20 +30,12 @@ export function ymArgentina(): { year: number; mes: number } {
   return { year: Number(s.slice(0, 4)), mes: Number(s.slice(5, 7)) }
 }
 
-/** Mismo cálculo que la card del tablero: tareas al día ÷ tareas con datos. */
-export function cumplimientoPlanDesdeEstados(
-  estados: EstadoPlanVehiculo[]
-): number | null {
-  let ok = 0
-  let noOk = 0
-  for (const e of estados) {
-    for (const c of e.celdas) {
-      if (c.estado === "ok") ok++
-      else if (c.estado === "proximo" || c.estado === "vencido") noOk++
-    }
-  }
-  return ok + noOk > 0 ? (ok / (ok + noOk)) * 100 : null
-}
+// El cumplimiento del plan vive en `plan-cumplimiento` (módulo puro) porque lo
+// comparten el cron y la tarjeta del tablero, que es un componente cliente.
+export {
+  cumplimientoPlanDesdeEstados,
+  PLAN_COBERTURA_MINIMA,
+} from "@/lib/vehiculos/plan-cumplimiento"
 
 export function servicesVencidosDesdeProgramacion(
   programacion: ServiceGeneralUnidad[]
@@ -180,8 +172,15 @@ export async function capturarFlotaKpiSnapshots(client: SupabaseClient): Promise
     ])
 
   const { year, mes } = ymArgentina()
+  const plan = cumplimientoPlanDesdeEstados(estados)
   const valores: Record<string, number | null> = {
-    cumplimiento_plan: cumplimientoPlanDesdeEstados(estados),
+    cumplimiento_plan: plan.pct,
+    // La cobertura viaja con el KPI para que los meses YA CERRADOS también
+    // puedan mostrar sobre cuántas tareas se calculó ese porcentaje: el estado
+    // del plan no se puede reconstruir hacia atrás, así que si no se fotografía
+    // hoy, mañana no existe.
+    plan_tareas_con_dato: plan.conDato,
+    plan_tareas_total: plan.total,
     services_vencidos: servicesVencidosDesdeProgramacion(programacion),
     docs_conformidad: docsConformidad,
     estandares_conformidad: estandaresConformidad.total,

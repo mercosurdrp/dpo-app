@@ -6,6 +6,12 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
+import {
+  cubiertaConforme,
+  medicionCompleta,
+  TIPOS_NEUMATICOS_OBLIGATORIOS,
+} from "@/lib/flota/neumaticos-control"
+import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 
 export type FlotaKpi =
@@ -28,6 +34,7 @@ export type FlotaKpi =
   | "cil_defectos_anticipables"
   | "correctivo_dias_parado"
   | "neumaticos_conformidad"
+  | "neumaticos_medicion"
 
 export type PlanFlotaEstado = "abierto" | "en_progreso" | "cerrado"
 export type PlanFlotaItemEstado = "pendiente" | "en_progreso" | "completado"
@@ -127,6 +134,21 @@ export interface PuntoSerieKpi {
    * porcentaje, igual que en NPS.
    */
   n?: number | null
+  /**
+   * Universo del que salió `n`, cuando el PI mide una rutina que debería
+   * cubrirlo entero: "7 cubiertas medidas DE 85".
+   *
+   * 🚨 Sin esto, un PI de cobertura y uno de conformidad se leen igual. La
+   * conformidad de neumáticos de julio de 2026 daba 62 % con `n=53`, y esos 53
+   * estaban TODOS conformes: el 38 % que faltaba eran cubiertas sin medir.
+   */
+  nTotal?: number | null
+  /**
+   * Casos que el PI dejó afuera del promedio por ser dato inválido, no por
+   * quedar fuera del período. Se muestra al lado del `n` para que nadie tenga
+   * que preguntarse por qué el denominador es más chico de lo que espera.
+   */
+  excluidos?: number | null
 }
 
 /** Ventana de matcheo defecto de checklist → OT correctiva (días). */
@@ -291,22 +313,25 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .neq("estado", "cancelado")
         .not("fuera_servicio_desde", "is", null)
         .or(`fuera_servicio_hasta.gte.${inicioVentana},fuera_servicio_hasta.is.null`),
-      // Conformidad de neumáticos (DPO 3.4): mediciones del período sobre
-      // cubiertas instaladas.
+      // Neumáticos (DPO 3.4): mediciones del período y padrón de cubiertas
+      // instaladas. El dominio viaja con la cubierta porque el control mensual
+      // sólo alcanza a camiones y autoelevadores (ver `alcanceNeumaticos`).
       supabase
         .from("mantenimiento_neumatico_mediciones")
         .select(
-          "neumatico_id, fecha, profundidad_mm, presion_psi, neumatico:mantenimiento_neumaticos!inner(estado)"
+          "neumatico_id, fecha, profundidad_mm, presion_psi, neumatico:mantenimiento_neumaticos!inner(estado, dominio)"
         )
         .eq("neumatico.estado", "instalado")
         .gte("fecha", inicioVentana),
       supabase
         .from("mantenimiento_neumaticos")
-        .select("id", { count: "exact", head: true })
+        .select("id, dominio")
         .eq("estado", "instalado"),
+      // Resolución de defectos (DPO 1.3). El reloj arranca en la carga del
+      // checklist, así que hace falta la respuesta que originó el plan.
       supabase
         .from("checklist_planes_accion")
-        .select("created_at, updated_at")
+        .select("respuesta_id, created_at, updated_at, resuelto_at")
         .eq("estado", "resuelto")
         .gte("updated_at", `${inicioVentana}T00:00:00`),
       supabase
@@ -405,19 +430,64 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       anticipadas.set(ym, acc)
     }
 
-    const resolucion = new Map<string, { dias: number; n: number }>()
-    for (const p of (planesRes.data || []) as Array<{
+    /**
+     * Resolución de defectos (DPO 1.3): días entre que el chofer OBSERVA el
+     * defecto y que mantenimiento cierra el plan.
+     *
+     * 🚨 Antes se medía `updated_at − created_at`, o sea el tiempo que el PLAN
+     * estuvo abierto, y eso no es el tiempo de respuesta: mide desde que
+     * alguien se sentó a cargarlo. En agosto de 2026, 21 de 22 planes se
+     * cargaron ya resueltos en la misma sesión (11/08 15:10) y aportaban 0 días
+     * cada uno, dejando el PI en 1,0 d contra una meta de ≤7 mientras el único
+     * defecto con seguimiento real llevaba semanas abierto.
+     *
+     * Ahora el reloj es el mismo que usa la pantalla de focos: T0 = hora del
+     * checklist, T1 = `resuelto_at` (lo sella un trigger, la app no lo puede
+     * escribir). Una carga retroactiva ya no vale 0 días: vale lo que
+     * efectivamente tardó desde que el defecto se vio. Con eso los tres meses
+     * pasaron de "0,0 · — · 1,0 d" a "31,0 · 1,0 · 13,4 d".
+     */
+    const planes = (planesRes.data || []) as Array<{
+      respuesta_id: string | null
       created_at: string
       updated_at: string
-    }>) {
-      const ym = p.updated_at.slice(0, 7)
+      resuelto_at: string | null
+    }>
+    // Hora del checklist que originó cada plan (T0 del tiempo de respuesta).
+    const horaPorRespuesta = new Map<string, string | null>()
+    const respuestaIds = [...new Set(planes.map((p) => p.respuesta_id).filter(Boolean))] as string[]
+    for (let i = 0; i < respuestaIds.length; i += 200) {
+      const { data, error } = await supabase
+        .from("checklist_respuestas")
+        .select("id, cv:checklist_vehiculos!inner(fecha, hora)")
+        .in("id", respuestaIds.slice(i, i + 200))
+      if (error) return { error: error.message }
+      for (const r of (data || []) as unknown as Array<{
+        id: string
+        cv: { fecha: string; hora: string | null } | null
+      }>) {
+        if (r.cv) horaPorRespuesta.set(r.id, r.cv.hora)
+      }
+    }
+
+    const resolucion = new Map<string, { dias: number; n: number; excluidos: number }>()
+    for (const p of planes) {
+      // El mes es el del CIERRE real, no el de la última edición del plan.
+      const fin = p.resuelto_at ?? p.updated_at
+      const ym = fin.slice(0, 7)
       if (!meses.includes(ym)) continue
-      const dias =
-        (new Date(p.updated_at).getTime() - new Date(p.created_at).getTime()) / MS_DIA
-      if (dias < 0) continue
-      const acc = resolucion.get(ym) ?? { dias: 0, n: 0 }
-      acc.dias += dias
-      acc.n++
+      const acc = resolucion.get(ym) ?? { dias: 0, n: 0, excluidos: 0 }
+      // Sin la hora del checklist no hay T0 medible: se cuenta como excluido en
+      // vez de caer al viejo `created_at`, que es justo lo que se está sacando.
+      const horas = horasEntre(
+        p.respuesta_id ? horaPorRespuesta.get(p.respuesta_id) : null,
+        fin,
+      )
+      if (horas == null) acc.excluidos++
+      else {
+        acc.dias += horas / 24
+        acc.n++
+      }
       resolucion.set(ym, acc)
     }
 
@@ -481,11 +551,19 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     // mismos defectos de checklist ya traídos, quedándose con los ítems de las
     // tres familias. El mes sin defectos vale 0 y no null: un cero es el mejor
     // resultado posible de este KPI, no un mes sin dato.
+    //
+    // 🚨 Sólo flota de reparto, igual que combustible y días parado. Sin el
+    // filtro el KPI contaba los autoelevadores del depósito y julio de 2026
+    // marcaba 20 defectos, de los cuales 16 eran la MISMA pérdida de fluidos
+    // del HELI1 re-marcada día a día hasta que se cambió la tapa: el indicador
+    // de la flota de reparto lo fijaba un equipo que ni siquiera sale a la
+    // calle. Con el filtro julio son 4.
     const defectosCilPorMes = new Map<string, number>()
     for (const ym of meses) defectosCilPorMes.set(ym, 0)
     for (const d of defectos) {
       const ym = d.fecha.slice(0, 7)
       if (!defectosCilPorMes.has(ym)) continue
+      if (!esFlotaDeRuta.has(d.dominio)) continue
       if (d.itemId && itemsCil.has(d.itemId)) {
         defectosCilPorMes.set(ym, (defectosCilPorMes.get(ym) ?? 0) + 1)
       }
@@ -541,14 +619,46 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     const diasParado = new Map<string, number>()
     for (const [ym, set] of paradoPorMes) diasParado.set(ym, set.size)
 
-    // Conformidad de neumáticos: última medición DEL MES por cubierta, OK si
-    // profundidad ≥3mm y presión 90–120 psi (cuando están medidas), sobre el
-    // total de cubiertas instaladas. Mes sin mediciones = 0% (la rutina
-    // mensual de medición es justamente lo que exige DPO 3.4).
-    const PROF_MIN_MM = 3
-    const PRESION_MIN_PSI = 90
-    const PRESION_MAX_PSI = 120
-    const instaladas = instaladasRes.count ?? 0
+    /**
+     * Neumáticos (DPO 3.4), en DOS indicadores que antes eran uno solo.
+     *
+     * 🚨 "Conformidad" dividía las cubiertas conformes por las 108 INSTALADAS,
+     * así que una cubierta sin medir pesaba igual que una gastada. En agosto de
+     * 2026 el tablero mostraba 6 % en rojo —parecía una flota con las cubiertas
+     * destruidas— cuando las 98 mediciones de los tres meses habían dado TODAS
+     * dentro de estándar: lo que faltaba era la medición, no la cubierta.
+     *
+     * Partido en dos, cada número dice una cosa sola y accionable:
+     *  - `neumaticos_medicion`: cuántas cubiertas se midieron (¿se hace la
+     *    rutina?) — le corresponde al que mide.
+     *  - `neumaticos_conformidad`: de las medidas, cuántas están dentro de
+     *    estándar (¿cómo está la flota?) — le corresponde a mantenimiento.
+     *
+     * 🚨 El universo es el del control mensual (`TIPOS_NEUMATICOS_OBLIGATORIOS`:
+     * camión y autoelevador activos), no todas las cubiertas cargadas: el
+     * acoplado y las camionetas se ven en el módulo de Neumáticos pero la
+     * rutina mensual no las exige, y meterlas en el denominador es el mismo
+     * error que se está corrigiendo. Son 85 cubiertas, no 108.
+     */
+    const dominiosNeumaticos = new Set(
+      ((vehRes.data || []) as Array<{
+        dominio: string
+        tipo: string | null
+        active: boolean | null
+      }>)
+        .filter(
+          (v) =>
+            v.active !== false &&
+            (TIPOS_NEUMATICOS_OBLIGATORIOS as readonly string[]).includes(v.tipo ?? "camion"),
+        )
+        .map((v) => v.dominio),
+    )
+    const enAlcance = new Set(
+      ((instaladasRes.data || []) as Array<{ id: string; dominio: string }>)
+        .filter((n) => dominiosNeumaticos.has(n.dominio))
+        .map((n) => n.id),
+    )
+    const instaladas = enAlcance.size
     const medPorMes = new Map<string, Map<string, { prof: number | null; psi: number | null; fecha: string }>>()
     for (const m of (medicionesRes.data || []) as unknown as Array<{
       neumatico_id: string
@@ -558,6 +668,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     }>) {
       const ym = String(m.fecha).slice(0, 7)
       if (!meses.includes(ym)) continue
+      if (!enAlcance.has(m.neumatico_id)) continue
       if (!medPorMes.has(ym)) medPorMes.set(ym, new Map())
       const porNeu = medPorMes.get(ym)!
       const prev = porNeu.get(m.neumatico_id)
@@ -569,21 +680,19 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         })
       }
     }
-    const neumaticosConf = new Map<string, number | null>()
+    // Por mes: cuántas cubiertas del alcance se midieron y cuántas de ésas están
+    // dentro de norma. Los umbrales salen de `neumaticos-control`, el mismo
+    // módulo que usa la pantalla del chofer.
+    const neumaticosMes = new Map<string, { medidas: number; conformes: number }>()
     for (const ym of meses) {
-      if (instaladas === 0) {
-        neumaticosConf.set(ym, null)
-        continue
+      let medidas = 0
+      let conformes = 0
+      for (const v of medPorMes.get(ym)?.values() ?? []) {
+        if (!medicionCompleta(v.prof, v.psi)) continue
+        medidas++
+        if (cubiertaConforme(v.prof, v.psi)) conformes++
       }
-      const porNeu = medPorMes.get(ym)
-      let ok = 0
-      for (const v of porNeu?.values() ?? []) {
-        if (v.prof == null && v.psi == null) continue
-        const profOk = v.prof == null || v.prof >= PROF_MIN_MM
-        const psiOk = v.psi == null || (v.psi >= PRESION_MIN_PSI && v.psi <= PRESION_MAX_PSI)
-        if (profOk && psiOk) ok++
-      }
-      neumaticosConf.set(ym, (ok / instaladas) * 100)
+      neumaticosMes.set(ym, { medidas, conformes })
     }
 
     return {
@@ -612,7 +721,12 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         }),
         checklist_resolucion: meses.map((ym) => {
           const r = resolucion.get(ym)
-          return { ym, valor: r && r.n > 0 ? r.dias / r.n : null, n: r?.n ?? 0 }
+          return {
+            ym,
+            valor: r && r.n > 0 ? r.dias / r.n : null,
+            n: r?.n ?? 0,
+            excluidos: r?.excluidos ?? 0,
+          }
         }),
         inventario_exactitud: meses.map((ym) => ({
           ym,
@@ -623,20 +737,27 @@ export async function getFlotaKpiSeriesExtra(): Promise<
           ym,
           valor: diasParado.get(ym) ?? 0,
         })),
-        neumaticos_conformidad: meses.map((ym) => ({
-          ym,
-          valor: neumaticosConf.get(ym) ?? null,
-          /**
-           * 🚨 El `n` acá es CUÁNTAS CUBIERTAS SE MIDIERON, y es imprescindible
-           * para leer el número: el denominador del KPI son las 108 instaladas,
-           * así que **una cubierta sin medir pesa igual que una en mal estado**.
-           * En julio de 2026 el indicador daba 73,1 %, pero de las 79 medidas
-           * **las 79 estaban conformes**: el 27 % que faltaba no eran cubiertas
-           * gastadas, eran cubiertas sin medir. Sin el `n`, el tablero acusa a la
-           * flota de un problema que en realidad es de relevamiento.
-           */
-          n: medPorMes.get(ym)?.size ?? 0,
-        })),
+        // Cuántas de las cubiertas medidas están dentro de norma. Mes sin
+        // ninguna medición = null (sin dato), no 0 %: no medir no es lo mismo
+        // que estar fuera de norma — eso lo dice `neumaticos_medicion`.
+        neumaticos_conformidad: meses.map((ym) => {
+          const c = neumaticosMes.get(ym)
+          return {
+            ym,
+            valor: c && c.medidas > 0 ? (c.conformes / c.medidas) * 100 : null,
+            n: c?.medidas ?? 0,
+          }
+        }),
+        // Cuánto de la rutina mensual se cumplió.
+        neumaticos_medicion: meses.map((ym) => {
+          const c = neumaticosMes.get(ym)
+          return {
+            ym,
+            valor: instaladas > 0 ? ((c?.medidas ?? 0) / instaladas) * 100 : null,
+            n: c?.medidas ?? 0,
+            nTotal: instaladas,
+          }
+        }),
       },
     }
   } catch (e) {

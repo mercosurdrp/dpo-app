@@ -46,6 +46,10 @@ import {
   ruteoSetDe,
   type UnidadFlota,
 } from "@/lib/vehiculos/disponibilidad-flota"
+import {
+  cumplimientoPlanDesdeEstados,
+  PLAN_COBERTURA_MINIMA,
+} from "@/lib/vehiculos/plan-cumplimiento"
 import type {
   CostosMantenimiento,
   DiaRuteo,
@@ -117,6 +121,12 @@ interface KpiDef {
    * lector vea el tamaño de la muestra sin tener que ir a buscarlo.
    */
   nLabel?: { sing: string; plural: string }
+  /**
+   * Cobertura mínima (n ÷ nTotal, en %) para juzgar el KPI contra la meta.
+   * Por debajo el valor se muestra igual pero sin semáforo: no alcanza para
+   * afirmar nada. Ver `PLAN_COBERTURA_MINIMA`.
+   */
+  coberturaMinima?: number
 }
 
 const KPI_DEFS: KpiDef[] = [
@@ -157,10 +167,12 @@ const KPI_DEFS: KpiDef[] = [
     kpi: "cumplimiento_plan",
     label: "Cumplimiento del plan preventivo",
     descripcion:
-      "Tareas del plan al día ÷ tareas con datos. Meses cerrados: última foto diaria del mes",
+      "Tareas del plan al día ÷ tareas con datos. El n dice sobre cuántas de las tareas plan×unidad se calculó: una tarea que nunca se registró no entra en el denominador, así que con poca cobertura el porcentaje no representa al plan y queda sin semáforo",
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
     dpo: "2.2",
+    nLabel: { sing: "tarea con dato", plural: "tareas con dato" },
+    coberturaMinima: PLAN_COBERTURA_MINIMA,
   },
   {
     kpi: "services_vencidos",
@@ -226,11 +238,11 @@ const KPI_DEFS: KpiDef[] = [
     kpi: "checklist_resolucion",
     label: "Resolución de defectos de checklist",
     descripcion:
-      "Días promedio entre el defecto observado y su plan de acción resuelto (por mes de resolución)",
+      "Días promedio entre que el chofer carga el defecto en el checklist y que mantenimiento cierra el plan (por mes de cierre). El reloj arranca en la observación, no en el alta del plan: cargar un plan ya resuelto no cuenta 0 días",
     fmt: (v) => `${v.toFixed(1)} d`,
     conSerie: true,
     dpo: "1.3",
-    nLabel: { sing: "plan", plural: "planes" },
+    nLabel: { sing: "plan resuelto", plural: "planes resueltos" },
   },
   {
     kpi: "inventario_exactitud",
@@ -275,7 +287,7 @@ const KPI_DEFS: KpiDef[] = [
     kpi: "cil_defectos_anticipables",
     label: "Defectos que el CIL anticipa",
     descripcion:
-      "Defectos de checklist de las familias que la limpieza e inspección autónoma previene: pérdida de fluidos, luces (focos y destelladores) y soldaduras de carrocería. Menos es mejor: es el resultado del CIL, no la actividad",
+      "Defectos de checklist de las familias que la limpieza e inspección autónoma previene: pérdida de fluidos, luces (focos y destelladores) y soldaduras de carrocería, sólo en la flota de reparto. Menos es mejor: es el resultado del CIL, no la actividad",
     fmt: (v) => String(Math.round(v)),
     conSerie: true,
     dpo: "4.1",
@@ -291,11 +303,28 @@ const KPI_DEFS: KpiDef[] = [
     dpo: "2.4",
     acumulativo: true,
   },
+  // 🚨 Neumáticos son DOS indicadores y no uno: antes "conformidad" dividía por
+  // las cubiertas instaladas, así que la que no se medía contaba como si
+  // estuviera fuera de norma. El 6 % rojo de agosto de 2026 no era una flota con
+  // las cubiertas destruidas —las 98 mediciones de tres meses dieron todas
+  // dentro de estándar—, era la rutina de medición sin hacer. Separados, cada
+  // número tiene un dueño distinto: medir es del que mide, la conformidad es de
+  // mantenimiento.
+  {
+    kpi: "neumaticos_medicion",
+    label: "Medición de neumáticos",
+    descripcion:
+      "Cubiertas medidas en el mes ÷ cubiertas instaladas en camiones y autoelevadores activos. Es la rutina mensual de DPO 3.4: sin medición, la conformidad no se puede afirmar",
+    fmt: (v) => `${v.toFixed(0)}%`,
+    conSerie: true,
+    dpo: "3.4",
+    nLabel: { sing: "cubierta medida", plural: "cubiertas medidas" },
+  },
   {
     kpi: "neumaticos_conformidad",
     label: "Conformidad de neumáticos",
     descripcion:
-      "Cubiertas medidas en el mes dentro de estándar (≥3 mm de profundidad y 90–120 psi) ÷ cubiertas instaladas",
+      "De las cubiertas MEDIDAS en el mes, las que están dentro de estándar (≥3 mm de profundidad y 90–120 psi). Se lee junto con la medición: 100 % sobre 7 cubiertas de 85 no dice nada de la flota",
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
     dpo: "3.4",
@@ -320,6 +349,10 @@ interface PuntoSerie {
   parcial: boolean
   /** Denominador detrás del valor, cuando el PI lo informa. */
   n?: number | null
+  /** Universo que ese denominador debería cubrir ("7 de 85"). */
+  nTotal?: number | null
+  /** Casos descartados por dato inválido. */
+  excluidos?: number | null
 }
 
 interface Props {
@@ -395,28 +428,26 @@ export function IndicadoresFlota({
   // Foto en vivo de los KPIs sin histórico: cumplimiento del plan y services
   // vencidos (valor del mes en curso; los meses cerrados salen de snapshots).
   const fotoActual = useMemo(() => {
-    let ok = 0
-    let noOk = 0
-    for (const e of estados) {
-      for (const c of e.celdas) {
-        if (c.estado === "ok") ok++
-        else if (c.estado === "proximo" || c.estado === "vencido") noOk++
-      }
-    }
-    const cumplimiento = ok + noOk > 0 ? (ok / (ok + noOk)) * 100 : null
+    const plan = cumplimientoPlanDesdeEstados(estados)
+    const cumplimiento = plan.pct
     const vencidos = programacion.filter((p) => p.estado === "vencido").length
     const docsConf = conformidadDocumental(
       unidades.map((u) => u.dominio),
       documentos
     ).pct
-    return new Map<FlotaKpi, number | null>([
-      ["cumplimiento_plan", cumplimiento],
-      ["services_vencidos", vencidos],
-      ["docs_conformidad", docsConf],
-      ["estandares_conformidad", estandaresPct],
-      ["estandares_mandatorios", estandaresPctMandatorio],
-      ["estandares_excelencia", estandaresPctExcelencia],
-    ])
+    return {
+      valores: new Map<FlotaKpi, number | null>([
+        ["cumplimiento_plan", cumplimiento],
+        ["services_vencidos", vencidos],
+        ["docs_conformidad", docsConf],
+        ["estandares_conformidad", estandaresPct],
+        ["estandares_mandatorios", estandaresPctMandatorio],
+        ["estandares_excelencia", estandaresPctExcelencia],
+      ]),
+      // Sobre cuántas tareas del plan se calculó ese porcentaje (ver
+      // `cumplimientoPlanDesdeEstados`).
+      planN: { conDato: plan.conDato, total: plan.total },
+    }
   }, [
     estados,
     programacion,
@@ -479,11 +510,30 @@ export function IndicadoresFlota({
       out.set(
         kpi,
         meses3.map((ym) => {
-          const valor =
-            ym === mesActual
-              ? (fotoActual.get(kpi) ?? null)
-              : (snapBy.get(`${kpi}|${ym}`) ?? null)
-          return { ym, valor: valor != null ? Number(valor) : null, parcial: ym === mesActual }
+          const esActual = ym === mesActual
+          const valor = esActual
+            ? (fotoActual.valores.get(kpi) ?? null)
+            : (snapBy.get(`${kpi}|${ym}`) ?? null)
+          const punto: PuntoSerie = {
+            ym,
+            valor: valor != null ? Number(valor) : null,
+            parcial: esActual,
+          }
+          // El cumplimiento del plan viaja con su cobertura: en vivo sale del
+          // estado del plan y en los meses cerrados, de los snapshots que el
+          // cron viene guardando (los meses previos a esa foto quedan sin n, y
+          // ahí el semáforo se comporta como antes).
+          if (kpi === "cumplimiento_plan") {
+            const conDato = esActual
+              ? fotoActual.planN.conDato
+              : snapBy.get(`plan_tareas_con_dato|${ym}`)
+            const total = esActual
+              ? fotoActual.planN.total
+              : snapBy.get(`plan_tareas_total|${ym}`)
+            punto.n = conDato != null ? Number(conDato) : null
+            punto.nTotal = total != null ? Number(total) : null
+          }
+          return punto
         })
       )
     }
@@ -503,6 +553,8 @@ export function IndicadoresFlota({
             valor: p?.valor != null ? Number(p.valor) : null,
             parcial: ym === mesActual,
             n: p?.n ?? null,
+            nTotal: p?.nTotal ?? null,
+            excluidos: p?.excluidos ?? null,
           }
         })
       )
@@ -685,12 +737,29 @@ const MARGEN_ALERTA = 0.1
 function estadoDeKpi(
   valor: number | null,
   meta: FlotaMeta | null,
-  opts: { acumulativo?: boolean; parcial?: boolean } = {},
+  opts: {
+    acumulativo?: boolean
+    parcial?: boolean
+    /** Cobertura del PI, en % (n ÷ nTotal), cuando el PI la informa. */
+    cobertura?: number | null
+    coberturaMinima?: number
+  } = {},
 ): EstadoKpi {
   if (valor == null) return "neutro"
   const cumple = cumpleMeta(valor, meta)
   if (cumple == null) return "neutro"
   if (opts.acumulativo && opts.parcial) return "neutro"
+  // 🚨 Sin cobertura suficiente el KPI no se juzga: el cumplimiento del plan
+  // preventivo mostraba 100 % en verde calculado sobre 13 de 122 tareas. Un
+  // verde así no dice "el plan se cumple", dice "casi nadie cargó nada", y es
+  // exactamente lo que hay que ver.
+  if (
+    opts.coberturaMinima != null &&
+    opts.cobertura != null &&
+    opts.cobertura < opts.coberturaMinima
+  ) {
+    return "neutro"
+  }
   if (cumple) return "ok"
 
   const m = Number(meta!.meta)
@@ -731,12 +800,23 @@ function KpiIndicadorCard({
 }) {
   const [editMeta, setEditMeta] = useState(false)
 
-  const parcialMes = serie.find((p) => p.parcial)?.parcial ?? false
-  const nActual = serie.find((p) => p.parcial)?.n ?? null
+  const puntoActual = serie.find((p) => p.parcial)
+  const parcialMes = puntoActual?.parcial ?? false
+  const nActual = puntoActual?.n ?? null
+  const nTotalActual = puntoActual?.nTotal ?? null
+  const excluidosActual = puntoActual?.excluidos ?? null
+  const coberturaDe = (p: PuntoSerie | undefined) =>
+    p?.n != null && p.nTotal != null && p.nTotal > 0 ? (p.n / p.nTotal) * 100 : null
   const estado: EstadoKpi = estadoDeKpi(valor, meta, {
     acumulativo: def.acumulativo,
     parcial: parcialMes,
+    cobertura: coberturaDe(puntoActual),
+    coberturaMinima: def.coberturaMinima,
   })
+  const sinCobertura =
+    def.coberturaMinima != null &&
+    coberturaDe(puntoActual) != null &&
+    coberturaDe(puntoActual)! < def.coberturaMinima
 
   // Tendencia: compara los dos últimos puntos con dato.
   const conDato = serie.filter((p) => p.valor != null)
@@ -762,7 +842,9 @@ function KpiIndicadorCard({
               dos cosas se leen igual. */}
           {nActual != null && def.nLabel && (
             <span className="ml-1 align-middle text-xs font-normal text-muted-foreground">
-              (n={nActual} {nActual === 1 ? def.nLabel.sing : def.nLabel.plural})
+              (n={nActual}
+              {nTotalActual != null && ` de ${nTotalActual}`}{" "}
+              {nActual === 1 ? def.nLabel.sing : def.nLabel.plural})
             </span>
           )}
           {def.conSerie && (
@@ -774,6 +856,25 @@ function KpiIndicadorCard({
       }
     >
       <div className="space-y-3">
+        {/* 🚨 Por qué este KPI no tiene semáforo: sin decirlo, un indicador gris
+            se lee como "no hay dato" y acá el dato está — lo que falta es la
+            carga que lo haría representativo. */}
+        {sinCobertura && (
+          <p className="rounded-md bg-amber-50 px-2 py-1.5 text-[11px] leading-tight text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+            Sin semáforo: se calculó sobre el{" "}
+            {Math.round(coberturaDe(puntoActual)!)} % de las tareas del plan
+            (mínimo {def.coberturaMinima} %). El valor no representa al plan
+            completo hasta que se registren las tareas que faltan.
+          </p>
+        )}
+        {excluidosActual != null && excluidosActual > 0 && (
+          <p className="text-[11px] leading-tight text-muted-foreground">
+            {excluidosActual}{" "}
+            {excluidosActual === 1 ? "caso quedó" : "casos quedaron"} fuera del
+            promedio por no tener medible el momento de la observación.
+          </p>
+        )}
+
         {/* Meta */}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {editMeta ? (
@@ -821,6 +922,8 @@ function KpiIndicadorCard({
               const estMes = estadoDeKpi(p.valor, meta, {
                 acumulativo: def.acumulativo,
                 parcial: p.parcial,
+                cobertura: coberturaDe(p),
+                coberturaMinima: def.coberturaMinima,
               })
               const okMes = p.valor == null ? null : cumpleMeta(p.valor, meta)
               const plan = planBy.get(`${def.kpi}|${p.ym}`)
@@ -847,6 +950,7 @@ function KpiIndicadorCard({
                   {p.n != null && def.nLabel && (
                     <p className="text-[10px] leading-tight text-muted-foreground">
                       n={p.n}
+                      {p.nTotal != null && `/${p.nTotal}`}
                     </p>
                   )}
                   {plan ? (
