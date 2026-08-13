@@ -31,6 +31,10 @@ export interface OtProgramada {
   ot_numero?: string | null
   /** Día en que se cerró (salida del taller): hasta dónde llega en el calendario. */
   ot_cierre?: string | null
+  /** Kilometraje ya cargado en la OT, para no volver a tipearlo al cerrarla. */
+  ot_odometro?: number | null
+  /** Horómetro ya cargado en la OT (autoelevadores). */
+  ot_horometro?: number | null
 }
 
 type Result<T> = { data: T } | { error: string }
@@ -74,7 +78,7 @@ async function conDatosDeLaOt(
   if (ids.length === 0) return ots
   const { data, error } = await supabase
     .from("mantenimiento_realizados")
-    .select("id,numero_ot,fecha,salida_taller")
+    .select("id,numero_ot,fecha,salida_taller,odometro,horometro")
     .in("id", ids)
   if (error || !data) return ots
   const porId = new Map(data.map((r) => [r.id as string, r]))
@@ -88,6 +92,8 @@ async function conDatosDeLaOt(
       // barra abierta hasta hoy en una orden que ya está resuelta.
       ot_cierre:
         ((r.salida_taller as string | null) ?? (r.fecha as string | null))?.slice(0, 10) ?? null,
+      ot_odometro: (r.odometro as number | null) ?? null,
+      ot_horometro: (r.horometro as number | null) ?? null,
     }
   })
 }

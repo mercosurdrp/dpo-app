@@ -929,7 +929,10 @@ function TallerPanel({
     ot.fecha_programada > hoy ? ot.fecha_programada : hoy,
   )
   const [fechaSalida, setFechaSalida] = useState(hoy)
-  const [medicion, setMedicion] = useState("")
+  // El kilometraje ya se cargó al llevarla al taller: viene puesto y sólo se
+  // toca si la unidad volvió con otro. Volver a tipearlo era trabajo al pedo.
+  const yaCargado = esAutoelevador ? ot.ot_horometro : ot.ot_odometro
+  const [medicion, setMedicion] = useState(yaCargado != null ? String(yaCargado) : "")
   const [costo, setCosto] = useState("")
   const [factura, setFactura] = useState("")
   const [obsCierre, setObsCierre] = useState("")
@@ -1072,6 +1075,11 @@ function TallerPanel({
               onChange={(e) => setMedicion(e.target.value)}
               placeholder="Al volver"
             />
+            <p className="text-[11px] text-muted-foreground">
+              {yaCargado != null
+                ? `Ya cargado al llevarla al taller. Cambialo sólo si volvió con otro ${unidad}.`
+                : "No se cargó al llevarla: conviene ponerlo ahora."}
+            </p>
             <ChipsLectura lecturas={lecturas} unidad={unidad} onElegir={setMedicion} />
           </div>
           <div className="space-y-1">
