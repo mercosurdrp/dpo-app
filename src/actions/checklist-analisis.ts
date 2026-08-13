@@ -99,8 +99,15 @@ export interface DefectoCronico {
 export interface AnalisisChecklist {
   items: AnalisisItem[]
   cronicos: DefectoCronico[]
-  /** Desvíos por mes en toda la flota. */
-  porMes: Array<{ ym: string; veces: number }>
+  /** Desvíos por mes en toda la flota, separados por severidad. */
+  porMes: Array<{ ym: string; veces: number; noOk: number; regular: number }>
+  /** Hallazgos por categoría del checklist, de mayor a menor. */
+  porCategoria: Array<{
+    categoria: string
+    veces: number
+    noOk: number
+    regular: number
+  }>
   totales: {
     evaluado: number
     noOk: number
@@ -128,12 +135,35 @@ interface RespuestaNoOk {
   cv: { fecha: string; dominio: string } | null
 }
 
-export async function getAnalisisChecklist(): Promise<
-  { data: AnalisisChecklist } | { error: string }
-> {
+/**
+ * Análisis por ítem. El período es opcional: sin él se mira toda la historia,
+ * que es como nació la pantalla. Cuando viene, se recorta TODO —los defectos y
+ * también el denominador de evaluaciones—: si sólo se filtraran los hallazgos,
+ * la tasa saldría dividida por las evaluaciones de todos los tiempos y daría
+ * ridículamente baja.
+ */
+export async function getAnalisisChecklist(periodo?: {
+  desde?: string | null
+  hasta?: string | null
+}): Promise<{ data: AnalisisChecklist } | { error: string }> {
   try {
     await requireAuth()
     const supabase = await createClient()
+
+    const desde = periodo?.desde ?? null
+    const hasta = periodo?.hasta ?? null
+    const acotarPorFecha = <T extends { gte: unknown; lte: unknown }>(
+      q: T,
+      columna: string
+    ): T => {
+      let r = q as unknown as {
+        gte: (c: string, v: string) => typeof r
+        lte: (c: string, v: string) => typeof r
+      }
+      if (desde) r = r.gte(columna, desde)
+      if (hasta) r = r.lte(columna, hasta)
+      return r as unknown as T
+    }
 
     const [itemsRes, noOkRes, checksRes, obsRes] = await Promise.all([
       supabase
@@ -142,18 +172,24 @@ export async function getAnalisisChecklist(): Promise<
         .eq("active", true)
         .order("categoria")
         .order("orden"),
-      supabase
-        .from("checklist_respuestas")
-        .select(
-          "valor, item_id, item:checklist_items(nombre, categoria, critico), cv:checklist_vehiculos(fecha, dominio)"
-        )
-        .not("valor", "in", `(${VALORES_OK.map((v) => `"${v}"`).join(",")})`)
-        .limit(5000),
-      supabase
-        .from("checklist_vehiculos")
-        .select("fecha", { count: "exact" })
-        .order("fecha", { ascending: true })
-        .limit(1),
+      acotarPorFecha(
+        supabase
+          .from("checklist_respuestas")
+          .select(
+            "valor, item_id, item:checklist_items(nombre, categoria, critico), cv:checklist_vehiculos!inner(fecha, dominio)"
+          )
+          .not("valor", "in", `(${VALORES_OK.map((v) => `"${v}"`).join(",")})`)
+          .limit(5000),
+        "cv.fecha"
+      ),
+      acotarPorFecha(
+        supabase
+          .from("checklist_vehiculos")
+          .select("fecha", { count: "exact" })
+          .order("fecha", { ascending: true })
+          .limit(1),
+        "fecha"
+      ),
       supabase.from("checklist_item_analisis").select("item_id, observacion, updated_at"),
     ])
     if (itemsRes.error) return { error: itemsRes.error.message }
@@ -184,13 +220,21 @@ export async function getAnalisisChecklist(): Promise<
     )
 
     // Denominador por ítem: 45 conteos `head` en paralelo, sin traer las filas.
+    // Con período, el conteo entra por `checklist_vehiculos` para poder cortar
+    // por la fecha del checklist, que es la que manda.
     const evaluadoPorItem = new Map<string, number>()
     await Promise.all(
       items.map(async (i) => {
-        const { count } = await supabase
-          .from("checklist_respuestas")
-          .select("id", { count: "exact", head: true })
-          .eq("item_id", i.id)
+        const { count } = await acotarPorFecha(
+          supabase
+            .from("checklist_respuestas")
+            .select("id, cv:checklist_vehiculos!inner(fecha)", {
+              count: "exact",
+              head: true,
+            })
+            .eq("item_id", i.id),
+          "cv.fecha"
+        )
         evaluadoPorItem.set(i.id, count ?? 0)
       })
     )
@@ -285,10 +329,26 @@ export async function getAnalisisChecklist(): Promise<
     }
     cronicos.sort((a, b) => b.veces - a.veces)
 
-    const mesesFlota = new Map<string, number>()
+    const esRegular = (r: RespuestaNoOk) => VALORES_REGULAR.includes(r.valor)
+
+    const mesesFlota = new Map<string, { noOk: number; regular: number }>()
     for (const r of noOk) {
       const ym = r.cv!.fecha.slice(0, 7)
-      mesesFlota.set(ym, (mesesFlota.get(ym) ?? 0) + 1)
+      const m = mesesFlota.get(ym) ?? { noOk: 0, regular: 0 }
+      if (esRegular(r)) m.regular++
+      else m.noOk++
+      mesesFlota.set(ym, m)
+    }
+
+    // Por categoría del checklist (MOTOR, LUCES, SEGURIDAD...): es el corte que
+    // dice en qué parte del vehículo se concentra lo que se detecta.
+    const categorias = new Map<string, { noOk: number; regular: number }>()
+    for (const r of noOk) {
+      const cat = r.item!.categoria
+      const c = categorias.get(cat) ?? { noOk: 0, regular: 0 }
+      if (esRegular(r)) c.regular++
+      else c.noOk++
+      categorias.set(cat, c)
     }
 
     const evaluadoTotal = [...evaluadoPorItem.values()].reduce((a, b) => a + b, 0)
@@ -299,8 +359,15 @@ export async function getAnalisisChecklist(): Promise<
         items: analisis,
         cronicos,
         porMes: [...mesesFlota.entries()]
-          .map(([ym, veces]) => ({ ym, veces }))
+          .map(([ym, v]) => ({ ym, veces: v.noOk + v.regular, ...v }))
           .sort((a, b) => a.ym.localeCompare(b.ym)),
+        porCategoria: [...categorias.entries()]
+          .map(([categoria, v]) => ({
+            categoria,
+            veces: v.noOk + v.regular,
+            ...v,
+          }))
+          .sort((a, b) => b.veces - a.veces || a.categoria.localeCompare(b.categoria)),
         totales: {
           evaluado: evaluadoTotal,
           noOk: noOk.filter((r) => !VALORES_REGULAR.includes(r.valor)).length,

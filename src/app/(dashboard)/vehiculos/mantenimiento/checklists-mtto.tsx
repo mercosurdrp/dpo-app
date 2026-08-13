@@ -47,7 +47,28 @@ import {
   Upload,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip as RTooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
 import { DpoPuntoBadge, DpoSeccionCinta } from "./_components/dpo-badge"
+import {
+  FiltroPeriodo,
+  dentroDe,
+  etiquetaDe,
+  hoyISO,
+  periodoInicial,
+  rangoDe,
+  type PeriodoState,
+} from "./_components/filtro-periodo"
+import { usePaletaViz } from "./_components/paleta-viz"
+import { TooltipBarras } from "./_components/tooltip-barras"
 import { CoberturaCil } from "./cobertura-cil"
 import { ConsumoUrea } from "./consumo-urea"
 import { AdherenciaChecklistCard } from "./adherencia-checklist"
@@ -76,22 +97,6 @@ import { toast } from "sonner"
 
 function fmtFecha(f: string): string {
   return f.slice(0, 10).split("-").reverse().join("/")
-}
-
-/** Valor del selector que desactiva el corte por mes y muestra todo el histórico. */
-const MES_HISTORICO = "historico"
-
-/** Mes (YYYY-MM) de una fecha ISO. */
-function mesDe(f: string): string {
-  return f.slice(0, 7)
-}
-
-/** "agosto 2026" a partir de YYYY-MM. */
-function fmtMes(ym: string): string {
-  const [y, m] = ym.split("-").map(Number)
-  return new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(
-    new Date(y, m - 1, 1)
-  )
 }
 
 /** El mes en curso en hora argentina: el servidor puede estar en UTC. */
@@ -518,9 +523,14 @@ export function ChecklistsMtto({
   const [fDominio, setFDominio] = useState("todos")
   const [fTipo, setFTipo] = useState("todos")
   // La vista arranca en el mes en curso: sin esto la lista acumulaba TODO el
-  // histórico y los focos ya cerrados de meses viejos tapaban lo del mes.
-  // MES_HISTORICO muestra el acumulado completo, como antes.
-  const [fMes, setFMes] = useState<string>(() => mesActualArgentina())
+  // histórico y los focos ya cerrados de meses viejos tapaban lo del mes. El
+  // período ahora se elige con la granularidad que haga falta (día, mes, año o
+  // un rango libre); "Histórico completo" es el acumulado de siempre.
+  const [periodo, setPeriodo] = useState<PeriodoState>(() =>
+    periodoInicial("mes")
+  )
+  const rango = useMemo(() => rangoDe(periodo), [periodo])
+  const paleta = usePaletaViz()
   // El plan se edita sobre un ítem, pero puede cerrar toda una serie: `ids`
   // lleva las respuestas del grupo cuando viene del arrastre agrupado.
   const [planTarget, setPlanTarget] = useState<{
@@ -562,12 +572,12 @@ export function ChecklistsMtto({
     return Array.from(s).sort()
   }, [itemsNoOk, comentarios])
 
-  // Meses con actividad, del más nuevo al más viejo. El mes en curso entra
-  // siempre aunque todavía no tenga focos: es el que se muestra por defecto.
-  const meses = useMemo(() => {
-    const s = new Set<string>([mesActualArgentina()])
-    itemsNoOk.forEach((i) => s.add(mesDe(i.fecha)))
-    comentarios.forEach((c) => s.add(mesDe(c.fecha)))
+  // Años con actividad, del más nuevo al más viejo. El año en curso entra
+  // siempre aunque todavía no tenga focos.
+  const anios = useMemo(() => {
+    const s = new Set<string>([hoyISO().slice(0, 4)])
+    itemsNoOk.forEach((i) => s.add(i.fecha.slice(0, 4)))
+    comentarios.forEach((c) => s.add(c.fecha.slice(0, 4)))
     return Array.from(s).sort((a, b) => b.localeCompare(a))
   }, [itemsNoOk, comentarios])
 
@@ -575,30 +585,30 @@ export function ChecklistsMtto({
     (fDominio === "todos" || i.dominio === fDominio) &&
     (fTipo === "todos" || i.tipo === fTipo)
 
-  const historico = fMes === MES_HISTORICO
+  const historico = !rango.desde && !rango.hasta
+  const etiquetaPeriodo = etiquetaDe(rango)
 
-  /** Focos del mes elegido (en histórico, todos). */
+  /** Focos del período elegido (en histórico, todos). */
   const items = useMemo(
-    () =>
-      itemsNoOk.filter((i) => coincide(i) && (historico || mesDe(i.fecha) === fMes)),
+    () => itemsNoOk.filter((i) => coincide(i) && dentroDe(i.fecha, rango)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [itemsNoOk, fDominio, fTipo, fMes, historico]
+    [itemsNoOk, fDominio, fTipo, rango]
   )
 
   // Arrastre: focos de meses ANTERIORES que siguen sin resolverse. No se
   // esconden nunca — son deuda abierta, no ruido histórico.
   const arrastre = useMemo(
     () =>
-      historico
+      historico || !rango.desde
         ? []
         : itemsNoOk.filter(
             (i) =>
               coincide(i) &&
-              mesDe(i.fecha) < fMes &&
+              i.fecha.slice(0, 10) < rango.desde! &&
               i.plan?.estado !== "resuelto"
           ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [itemsNoOk, fDominio, fTipo, fMes, historico]
+    [itemsNoOk, fDominio, fTipo, rango, historico]
   )
 
   // Los KPI miden lo que se está viendo: mes elegido + arrastre abierto.
@@ -609,11 +619,26 @@ export function ChecklistsMtto({
   const grupos = useMemo(() => agruparArrastre(arrastre), [arrastre])
 
   const coments = useMemo(
-    () =>
-      comentarios.filter((c) => coincide(c) && (historico || mesDe(c.fecha) === fMes)),
+    () => comentarios.filter((c) => coincide(c) && dentroDe(c.fecha, rango)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [comentarios, fDominio, fTipo, fMes, historico]
+    [comentarios, fDominio, fTipo, rango]
   )
+
+  // Por unidad: lo que sigue abierto contra lo que ya se cerró. Es la lectura
+  // de gestión de esta pantalla —quién arrastra deuda— y no repite el corte
+  // leve/crítico que ya muestra la pirámide.
+  const porUnidad = useMemo(() => {
+    const m = new Map<string, { abiertos: number; resueltos: number }>()
+    for (const i of visibles) {
+      const u = m.get(i.dominio) ?? { abiertos: 0, resueltos: 0 }
+      if (i.plan?.estado === "resuelto") u.resueltos++
+      else u.abiertos++
+      m.set(i.dominio, u)
+    }
+    return Array.from(m.entries())
+      .map(([dominio, v]) => ({ dominio, ...v, total: v.abiertos + v.resueltos }))
+      .sort((a, b) => b.abiertos - a.abiertos || b.total - a.total)
+  }, [visibles])
 
   const criticos = visibles.filter((i) => i.critico).length
   const conPlan = visibles.filter((i) => i.plan).length
@@ -693,20 +718,8 @@ export function ChecklistsMtto({
       {/* Filtros */}
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <Label className="text-xs text-muted-foreground">Mes</Label>
-          <Select value={fMes} onValueChange={(v: string | null) => setFMes(v ?? MES_HISTORICO)}>
-            <SelectTrigger className="w-44 capitalize">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {meses.map((m) => (
-                <SelectItem key={m} value={m} className="capitalize">
-                  {fmtMes(m)}
-                </SelectItem>
-              ))}
-              <SelectItem value={MES_HISTORICO}>Ver histórico</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label className="text-xs text-muted-foreground">Período</Label>
+          <FiltroPeriodo value={periodo} onChange={setPeriodo} anios={anios} />
         </div>
         <div>
           <Label className="text-xs text-muted-foreground">Unidad</Label>
@@ -739,13 +752,78 @@ export function ChecklistsMtto({
         </div>
       </div>
 
+      {/* Foco por unidad: qué camión arrastra y cuál está al día */}
+      {porUnidad.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              Focos por unidad
+              <span className="text-sm font-normal text-muted-foreground">
+                · {etiquetaPeriodo}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div style={{ height: Math.max(180, porUnidad.length * 34 + 60) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={porUnidad}
+                  layout="vertical"
+                  margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
+                  barCategoryGap="28%"
+                >
+                  <CartesianGrid
+                    horizontal={false}
+                    className="stroke-border"
+                    strokeOpacity={0.5}
+                  />
+                  <XAxis
+                    type="number"
+                    allowDecimals={false}
+                    tick={{ fontSize: 11 }}
+                    className="fill-muted-foreground"
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="dominio"
+                    width={84}
+                    tick={{ fontSize: 11 }}
+                    className="fill-muted-foreground"
+                  />
+                  <RTooltip
+                    cursor={{ className: "fill-muted", opacity: 0.4 }}
+                    content={<TooltipBarras totalLabel="Focos" />}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar
+                    dataKey="abiertos"
+                    stackId="focos"
+                    name="Sin resolver"
+                    fill={paleta.critico}
+                    isAnimationActive={false}
+                  />
+                  <Bar
+                    dataKey="resueltos"
+                    stackId="focos"
+                    name="Resueltos"
+                    fill={paleta.leve}
+                    radius={[0, 4, 4, 0]}
+                    isAnimationActive={false}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Ítems observados (no OK) del mes elegido */}
       <Card>
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2 text-base">
             <AlertTriangle className="size-4 text-muted-foreground" /> Ítems observados (no OK)
             <span className="text-sm font-normal capitalize text-muted-foreground">
-              · {historico ? "histórico completo" : fmtMes(fMes)}
+              · {etiquetaPeriodo}
             </span>
           </CardTitle>
         </CardHeader>
@@ -756,7 +834,7 @@ export function ChecklistsMtto({
               <p className="mt-3 text-sm text-muted-foreground">
                 {historico
                   ? "Sin ítems observados en los checklists. Todo OK."
-                  : `Sin ítems observados en ${fmtMes(fMes)}.`}
+                  : `Sin ítems observados en ${etiquetaPeriodo}.`}
               </p>
             </div>
           ) : (
@@ -787,7 +865,7 @@ export function ChecklistsMtto({
               </Badge>
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Focos anteriores a {fmtMes(fMes)} que todavía no tienen el plan de acción cerrado.
+              Focos anteriores al período elegido que todavía no tienen el plan de acción cerrado.
               Siguen acá hasta que se resuelvan. Un mismo defecto se cuenta{" "}
               <strong>una vez</strong>: la columna «Se repitió» dice en cuántos checklists volvió
               a aparecer{arrastre.length !== grupos.length && <> ({arrastre.length} en total)</>}, y

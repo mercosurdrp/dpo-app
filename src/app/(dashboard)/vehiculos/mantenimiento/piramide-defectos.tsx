@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react"
 import { Info, TriangleAlert, X } from "lucide-react"
-import { useTheme } from "next-themes"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
 import {
   Card,
@@ -11,7 +10,6 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -20,18 +18,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import type { MantenimientoRealizado } from "@/types/database"
 import type { ChecklistItemNoOk } from "@/actions/mantenimiento-vehiculos"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard } from "./_components/kpi-card"
+import {
+  FiltroPeriodo,
+  dentroDe,
+  etiquetaDe,
+  hoyISO,
+  periodoInicial,
+  rangoDe,
+  type PeriodoState,
+} from "./_components/filtro-periodo"
+import { MAX_SERIES, usePaletaViz } from "./_components/paleta-viz"
 
 interface Props {
   itemsNoOk: ChecklistItemNoOk[]
@@ -41,28 +42,6 @@ interface Props {
 const fmtNum = (v: number) => new Intl.NumberFormat("es-AR").format(v)
 const fmtPct = (v: number) =>
   `${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 1 }).format(v)}%`
-
-/** El día "de hoy" se calcula en la zona del negocio para que el servidor y el
- *  navegador escriban lo mismo (si no, entre las 21 y las 24 difieren). */
-const TZ = "America/Argentina/Buenos_Aires"
-const fmtISO = new Intl.DateTimeFormat("en-CA", {
-  timeZone: TZ,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-})
-const hoyISO = () => fmtISO.format(new Date())
-
-type Granularidad = "dia" | "mes" | "anio" | "12m" | "rango" | "todo"
-
-const GRANULARIDADES: { value: Granularidad; label: string }[] = [
-  { value: "dia", label: "Día" },
-  { value: "mes", label: "Mes" },
-  { value: "anio", label: "Año" },
-  { value: "12m", label: "Últimos 12 meses" },
-  { value: "rango", label: "Rango de fechas" },
-  { value: "todo", label: "Histórico completo" },
-]
 
 // Niveles de la pirámide, de la PUNTA (grave) hacia la BASE (leve).
 const NIVELES = [
@@ -92,49 +71,6 @@ const NIVELES = [
   },
 ] as const
 
-/** Paleta categórica de la torta: 7 tonos + gris para "Otras unidades".
- *  Validada para daltonismo y para cada superficie (clara y oscura). */
-const SERIES_LIGHT = [
-  "#2a78d6",
-  "#eb6834",
-  "#1baf7a",
-  "#eda100",
-  "#e87ba4",
-  "#008300",
-  "#4a3aa7",
-]
-const SERIES_DARK = [
-  "#3987e5",
-  "#d95926",
-  "#199e70",
-  "#c98500",
-  "#d55181",
-  "#008300",
-  "#9085e9",
-]
-const OTRAS_LIGHT = "#8f8f88"
-const OTRAS_DARK = "#a3a39a"
-const MAX_PORCIONES = SERIES_LIGHT.length
-
-/** Resta meses a una fecha ISO sin caer en el 31 de un mes que no lo tiene. */
-function restarMeses(iso: string, meses: number): string {
-  const [a, m, d] = iso.split("-").map(Number)
-  const base = new Date(Date.UTC(a, m - 1 - meses, 1))
-  const ultimoDia = new Date(
-    Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0)
-  ).getUTCDate()
-  const dia = String(Math.min(d, ultimoDia)).padStart(2, "0")
-  const mes = String(base.getUTCMonth() + 1).padStart(2, "0")
-  return `${base.getUTCFullYear()}-${mes}-${dia}`
-}
-
-/** Último día del mes de un `YYYY-MM`. */
-function finDeMes(ym: string): string {
-  const [a, m] = ym.split("-").map(Number)
-  const dia = new Date(Date.UTC(a, m, 0)).getUTCDate()
-  return `${ym}-${String(dia).padStart(2, "0")}`
-}
-
 interface PorcionTorta {
   dominio: string
   leves: number
@@ -158,20 +94,8 @@ interface ItemFallado {
 const fmtFecha = (iso: string) => iso.split("-").reverse().join("/")
 
 export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
-  const [granularidad, setGranularidad] = useState<Granularidad>("anio")
-  const [dia, setDia] = useState(hoyISO)
-  const [mes, setMes] = useState(() => hoyISO().slice(0, 7))
-  const [anio, setAnio] = useState(() => hoyISO().slice(0, 4))
-  const [desde, setDesde] = useState(() => restarMeses(hoyISO(), 1))
-  const [hasta, setHasta] = useState(hoyISO)
-
-  // Los colores dependen del tema. `resolvedTheme` recién tiene valor después
-  // de montar, así que el primer pintado coincide con el del servidor (paleta
-  // clara) y no hay desajuste de hidratación.
-  const { resolvedTheme } = useTheme()
-  const oscuro = resolvedTheme === "dark"
-  const seriesColores = oscuro ? SERIES_DARK : SERIES_LIGHT
-  const colorOtras = oscuro ? OTRAS_DARK : OTRAS_LIGHT
+  const [periodo, setPeriodo] = useState<PeriodoState>(() => periodoInicial())
+  const paleta = usePaletaViz()
 
   // Años con datos, para no ofrecer años vacíos en el selector.
   const aniosDisponibles = useMemo(() => {
@@ -182,48 +106,12 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
     return Array.from(set).sort((a, b) => b.localeCompare(a))
   }, [itemsNoOk, mantenimientos])
 
-  // Rango efectivo [desde, hasta] en ISO; null = sin límite.
-  const rango = useMemo<{ desde: string | null; hasta: string | null }>(() => {
-    switch (granularidad) {
-      case "dia":
-        return { desde: dia, hasta: dia }
-      case "mes":
-        return { desde: `${mes}-01`, hasta: finDeMes(mes) }
-      case "anio":
-        return { desde: `${anio}-01-01`, hasta: `${anio}-12-31` }
-      case "12m":
-        return { desde: restarMeses(hoyISO(), 12), hasta: hoyISO() }
-      case "rango":
-        return {
-          desde: desde || null,
-          hasta: hasta || null,
-        }
-      default:
-        return { desde: null, hasta: null }
-    }
-  }, [granularidad, dia, mes, anio, desde, hasta])
-
-  const etiquetaRango = useMemo(() => {
-    if (!rango.desde && !rango.hasta) return "Histórico completo"
-    const f = (iso: string) => iso.split("-").reverse().join("/")
-    if (rango.desde && rango.hasta) {
-      if (rango.desde === rango.hasta) return f(rango.desde)
-      return `${f(rango.desde)} al ${f(rango.hasta)}`
-    }
-    return rango.desde ? `desde ${f(rango.desde)}` : `hasta ${f(rango.hasta!)}`
-  }, [rango])
+  const rango = useMemo(() => rangoDe(periodo), [periodo])
+  const etiquetaRango = useMemo(() => etiquetaDe(rango), [rango])
 
   const datos = useMemo(() => {
-    const dentro = (fechaISO: string | null | undefined) => {
-      const f = (fechaISO || "").slice(0, 10)
-      if (!f) return false
-      if (rango.desde && f < rango.desde) return false
-      if (rango.hasta && f > rango.hasta) return false
-      return true
-    }
-
-    const items = itemsNoOk.filter((i) => dentro(i.fecha))
-    const mantes = mantenimientos.filter((m) => dentro(m.fecha))
+    const items = itemsNoOk.filter((i) => dentroDe(i.fecha, rango))
+    const mantes = mantenimientos.filter((m) => dentroDe(m.fecha, rango))
     const correctivos = mantes.filter((m) => m.tipo === "correctivo")
 
     const conteo: Record<string, number> = {
@@ -294,7 +182,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
     // el gráfico siga siendo legible (el detalle completo está en la tabla).
     const pct = (n: number) => (totalDefectos > 0 ? (n * 100) / totalDefectos : 0)
     const torta: PorcionTorta[] = ranking
-      .slice(0, MAX_PORCIONES)
+      .slice(0, MAX_SERIES)
       .map(({ dominio, leves, criticos, total }) => ({
         dominio,
         leves,
@@ -303,7 +191,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
         pct: pct(total),
         esOtras: false,
       }))
-    const resto = ranking.slice(MAX_PORCIONES)
+    const resto = ranking.slice(MAX_SERIES)
     if (resto.length > 0) {
       const leves = resto.reduce((s, u) => s + u.leves, 0)
       const criticos = resto.reduce((s, u) => s + u.criticos, 0)
@@ -327,7 +215,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
   }, [itemsNoOk, mantenimientos, rango])
 
   const colorPorcion = (p: PorcionTorta, i: number) =>
-    p.esOtras ? colorOtras : seriesColores[i % seriesColores.length]
+    p.esOtras ? paleta.otras : paleta.serie(i)
 
   // Unidad abierta en el panel de detalle (click en la torta o en la tabla).
   const [unidadSel, setUnidadSel] = useState<string | null>(null)
@@ -365,95 +253,11 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
           </h2>
           <DpoSeccionCinta seccionId="piramide" />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="w-44 shrink-0">
-            <Select
-              value={granularidad}
-              onValueChange={(v: string | null) =>
-                setGranularidad((v as Granularidad) ?? "anio")
-              }
-            >
-              <SelectTrigger aria-label="Granularidad del período">
-                <SelectValue>
-                  {(v: string | null) =>
-                    GRANULARIDADES.find((g) => g.value === v)?.label ?? "Año"
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {GRANULARIDADES.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {granularidad === "dia" && (
-            <Input
-              type="date"
-              value={dia}
-              onChange={(e) => setDia(e.target.value)}
-              className="w-40"
-              aria-label="Día"
-            />
-          )}
-
-          {granularidad === "mes" && (
-            <Input
-              type="month"
-              value={mes}
-              onChange={(e) => setMes(e.target.value)}
-              className="w-40"
-              aria-label="Mes"
-            />
-          )}
-
-          {granularidad === "anio" && (
-            <div className="w-28 shrink-0">
-              <Select
-                value={anio}
-                onValueChange={(v: string | null) =>
-                  setAnio(v ?? hoyISO().slice(0, 4))
-                }
-              >
-                <SelectTrigger aria-label="Año">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {aniosDisponibles.map((a) => (
-                    <SelectItem key={a} value={a}>
-                      {a}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {granularidad === "rango" && (
-            <div className="flex items-center gap-1.5">
-              <Input
-                type="date"
-                value={desde}
-                max={hasta || undefined}
-                onChange={(e) => setDesde(e.target.value)}
-                className="w-36"
-                aria-label="Desde"
-              />
-              <span className="text-xs text-muted-foreground">a</span>
-              <Input
-                type="date"
-                value={hasta}
-                min={desde || undefined}
-                onChange={(e) => setHasta(e.target.value)}
-                className="w-36"
-                aria-label="Hasta"
-              />
-            </div>
-          )}
-        </div>
+        <FiltroPeriodo
+          value={periodo}
+          onChange={setPeriodo}
+          anios={aniosDisponibles}
+        />
       </div>
 
       {/* Pirámide */}

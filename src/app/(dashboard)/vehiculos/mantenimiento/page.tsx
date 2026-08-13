@@ -185,6 +185,7 @@ export default async function MantenimientoPage() {
           items: [],
           cronicos: [],
           porMes: [],
+          porCategoria: [],
           totales: {
             evaluado: 0,
             noOk: 0,

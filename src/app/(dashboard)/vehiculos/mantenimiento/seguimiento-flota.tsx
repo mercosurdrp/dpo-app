@@ -18,7 +18,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import { CalendarDays, Gauge, Plus, Trash2 } from "lucide-react"
 import { KpiCard, type EstadoKpi } from "./_components/kpi-card"
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip as RTooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
+import { usePaletaViz } from "./_components/paleta-viz"
+import { TooltipBarras } from "./_components/tooltip-barras"
 import {
   registrarIndisponibilidad,
   eliminarIndisponibilidad,
@@ -87,6 +99,7 @@ export function SeguimientoFlota({
   }, [mantenimientos, indisponibilidades])
 
   const [mesSel, setMesSel] = useState<string>(meses[0] ?? hoyISO().slice(0, 7))
+  const paleta = usePaletaViz()
 
   // Set de días ruteados: "DOMINIO|YYYY-MM-DD"
   const ruteoSet = useMemo(() => ruteoSetDe(diasRuteo), [diasRuteo])
@@ -149,6 +162,23 @@ export function SeguimientoFlota({
               : est === "DSP"
                 ? "bg-sky-300"
                 : "border border-dashed border-border bg-card" // LIB (no laboral)
+
+  // Sólo las unidades que estuvieron paradas: una barra en cero por camión sano
+  // llena el gráfico de filas vacías y esconde a los tres que importan.
+  const paradasPorUnidad = useMemo(
+    () =>
+      calc.filas
+        .filter((f) => f.pmc + f.pmp + f.ind > 0)
+        .map((f) => ({
+          dominio: f.dominio,
+          pmc: f.pmc,
+          pmp: f.pmp,
+          ind: f.ind,
+          parado: f.parado,
+        }))
+        .sort((a, b) => b.parado - a.parado || a.dominio.localeCompare(b.dominio)),
+    [calc.filas]
+  )
 
   const indDelMes = useMemo(
     () =>
@@ -220,7 +250,87 @@ export function SeguimientoFlota({
         />
       </div>
 
-      <TabsContent value="mes">
+      <TabsContent value="mes" className="space-y-6">
+        {paradasPorUnidad.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+                Días fuera de servicio por unidad
+                <span className="text-sm font-normal capitalize text-muted-foreground">
+                  · {fmtMesLargo(mesSel)}
+                </span>
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                El largo de la barra es el total de días parado y cada tramo
+                dice por qué: el preventivo es parada planificada y no se lee
+                igual que la rotura.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div
+                style={{
+                  height: Math.max(200, paradasPorUnidad.length * 38 + 60),
+                }}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={paradasPorUnidad}
+                    layout="vertical"
+                    margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
+                    barCategoryGap="28%"
+                  >
+                    <CartesianGrid
+                      horizontal={false}
+                      className="stroke-border"
+                      strokeOpacity={0.5}
+                    />
+                    <XAxis
+                      type="number"
+                      allowDecimals={false}
+                      tick={{ fontSize: 11 }}
+                      className="fill-muted-foreground"
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="dominio"
+                      width={84}
+                      tick={{ fontSize: 11 }}
+                      className="fill-muted-foreground"
+                    />
+                    <RTooltip
+                      cursor={{ className: "fill-muted", opacity: 0.4 }}
+                      content={<TooltipBarras totalLabel="Días parado" sufijo=" d" />}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar
+                      dataKey="pmc"
+                      stackId="dias"
+                      name="Correctivo"
+                      fill={paleta.paradas.correctivo}
+                      isAnimationActive={false}
+                    />
+                    <Bar
+                      dataKey="pmp"
+                      stackId="dias"
+                      name="Preventivo"
+                      fill={paleta.paradas.preventivo}
+                      isAnimationActive={false}
+                    />
+                    <Bar
+                      dataKey="ind"
+                      stackId="dias"
+                      name="Indisponible"
+                      fill={paleta.paradas.indisponible}
+                      radius={[0, 4, 4, 0]}
+                      isAnimationActive={false}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Disponibilidad y utilización por unidad</CardTitle>

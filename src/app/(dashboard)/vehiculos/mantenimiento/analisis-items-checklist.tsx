@@ -25,6 +25,16 @@
 //    respuesta a ese número.
 
 import { useMemo, useState, useTransition } from "react"
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip as RTooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -51,8 +61,21 @@ import { MessageSquarePlus, Repeat, SearchX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard } from "./_components/kpi-card"
-import { setObservacionItem } from "@/actions/checklist-analisis"
+import {
+  getAnalisisChecklist,
+  setObservacionItem,
+} from "@/actions/checklist-analisis"
 import type { AnalisisChecklist, AnalisisItem } from "@/actions/checklist-analisis"
+import {
+  FiltroPeriodo,
+  etiquetaDe,
+  hoyISO,
+  periodoInicial,
+  rangoDe,
+  type PeriodoState,
+} from "./_components/filtro-periodo"
+import { usePaletaViz } from "./_components/paleta-viz"
+import { TooltipBarras } from "./_components/tooltip-barras"
 import { DIAS_CRONICO_ACTIVO } from "@/lib/flota/checklist-cronicos"
 
 interface Props {
@@ -83,7 +106,38 @@ const mesCorto = (ym: string) => {
 }
 
 export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
-  const { items, cronicos, porMes, totales } = analisis
+  // El período arranca en "Histórico completo": es la lectura con la que nació
+  // el análisis (una tasa por ítem necesita volumen para significar algo) y
+  // recién ahí se acota.
+  const [periodo, setPeriodo] = useState<PeriodoState>(() =>
+    periodoInicial("todo")
+  )
+  const [datos, setDatos] = useState<AnalisisChecklist>(analisis)
+  const [recalculando, setRecalculando] = useState(false)
+  const paleta = usePaletaViz()
+
+  const cambiarPeriodo = async (p: PeriodoState) => {
+    setPeriodo(p)
+    setRecalculando(true)
+    const res = await getAnalisisChecklist(rangoDe(p))
+    setRecalculando(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    setDatos(res.data)
+  }
+
+  const etiquetaPeriodo = etiquetaDe(rangoDe(periodo))
+  // Años a ofrecer: los que tienen hallazgos, más el año en curso.
+  const anios = useMemo(() => {
+    const set = new Set<string>(
+      analisis.porMes.map((m) => m.ym.slice(0, 4))
+    )
+    set.add(hoyISO().slice(0, 4))
+    return Array.from(set).sort((a, b) => b.localeCompare(a))
+  }, [analisis.porMes])
+  const { items, cronicos, porMes, porCategoria, totales } = datos
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [verSinDeteccion, setVerSinDeteccion] = useState(false)
@@ -127,7 +181,6 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
     [items]
   )
   const maxHallazgos = Math.max(1, ...conDefectos.map((i) => i.hallazgos))
-  const maxMes = Math.max(1, ...porMes.map((p) => p.veces))
 
   // % acumulado en columna, no en un segundo eje: la lectura de Pareto sin
   // inventar la correlación que provoca un gráfico de dos escalas.
@@ -277,7 +330,15 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
 
   return (
     <div className="space-y-4">
-      <DpoSeccionCinta seccionId="analisis-items" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <DpoSeccionCinta seccionId="analisis-items" />
+        <div className="flex items-center gap-2">
+          {recalculando && (
+            <span className="text-xs text-muted-foreground">Recalculando…</span>
+          )}
+          <FiltroPeriodo value={periodo} onChange={cambiarPeriodo} anios={anios} />
+        </div>
+      </div>
 
       <p className="text-sm text-muted-foreground">
         El checklist tiene tres respuestas y acá van separadas:{" "}
@@ -485,29 +546,130 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
         </CardContent>
       </Card>
 
-      {porMes.length > 0 && (
-        <Card id="defectos-por-mes" className="scroll-mt-4">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Defectos por mes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-end gap-3">
-              {porMes.map((m) => (
-                <div key={m.ym} className="flex flex-1 flex-col items-center gap-1">
-                  <span className="text-xs font-semibold tabular-nums text-foreground">
-                    {m.veces}
-                  </span>
-                  <div
-                    className="w-full rounded-sm bg-foreground/60"
-                    style={{ height: Math.max(4, (m.veces / maxMes) * 90) }}
-                    aria-hidden
-                  />
-                  <span className="text-xs text-muted-foreground">{mesCorto(m.ym)}</span>
+      {(porCategoria.length > 0 || porMes.length > 0) && (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {porCategoria.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  Hallazgos por parte del vehículo
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  NO OK y observaciones nunca se suman: van una barra al lado de
+                  la otra · {etiquetaPeriodo}
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={porCategoria}
+                      layout="vertical"
+                      margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
+                      barGap={2}
+                    >
+                      <CartesianGrid
+                        horizontal={false}
+                        className="stroke-border"
+                        strokeOpacity={0.5}
+                      />
+                      <XAxis
+                        type="number"
+                        allowDecimals={false}
+                        tick={{ fontSize: 11 }}
+                        className="fill-muted-foreground"
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="categoria"
+                        width={104}
+                        tick={{ fontSize: 11 }}
+                        className="fill-muted-foreground"
+                      />
+                      <RTooltip
+                        cursor={{ className: "fill-muted", opacity: 0.4 }}
+                        content={<TooltipBarras />}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar
+                        dataKey="noOk"
+                        name="NO OK"
+                        fill={paleta.critico}
+                        radius={[0, 4, 4, 0]}
+                        isAnimationActive={false}
+                      />
+                      <Bar
+                        dataKey="regular"
+                        name="Observación"
+                        fill={paleta.leve}
+                        radius={[0, 4, 4, 0]}
+                        isAnimationActive={false}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          )}
+
+          {porMes.length > 0 && (
+            <Card id="defectos-por-mes" className="scroll-mt-4">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Hallazgos por mes</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Si sube la barra roja hay más unidades comprometidas; si sube
+                  sólo la azul, se está observando más · {etiquetaPeriodo}
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={porMes.map((m) => ({ ...m, mes: mesCorto(m.ym) }))}
+                      margin={{ top: 4, right: 8, bottom: 4, left: 0 }}
+                      barGap={2}
+                    >
+                      <CartesianGrid
+                        vertical={false}
+                        className="stroke-border"
+                        strokeOpacity={0.5}
+                      />
+                      <XAxis
+                        dataKey="mes"
+                        tick={{ fontSize: 11 }}
+                        className="fill-muted-foreground"
+                      />
+                      <YAxis
+                        allowDecimals={false}
+                        tick={{ fontSize: 11 }}
+                        className="fill-muted-foreground"
+                      />
+                      <RTooltip
+                        cursor={{ className: "fill-muted", opacity: 0.4 }}
+                        content={<TooltipBarras />}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar
+                        dataKey="noOk"
+                        name="NO OK"
+                        fill={paleta.critico}
+                        radius={[4, 4, 0, 0]}
+                        isAnimationActive={false}
+                      />
+                      <Bar
+                        dataKey="regular"
+                        name="Observación"
+                        fill={paleta.leve}
+                        radius={[4, 4, 0, 0]}
+                        isAnimationActive={false}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
       <Card id="items-sin-deteccion" className="scroll-mt-4">
