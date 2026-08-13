@@ -39,7 +39,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
@@ -57,7 +57,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { MessageSquarePlus, Repeat, SearchX } from "lucide-react"
+import { Download, MessageSquarePlus, Repeat, SearchX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard } from "./_components/kpi-card"
@@ -97,6 +97,18 @@ const fmtFecha = (f: string | null) => {
   if (!f) return "—"
   const [y, m, d] = f.split("-")
   return `${d}/${m}/${y.slice(2)}`
+}
+
+/** Excel del período: mismas cuatro hojas que descarga la pirámide. */
+function urlExportChecklist(r: {
+  desde: string | null
+  hasta: string | null
+}): string {
+  const p = new URLSearchParams()
+  if (r.desde) p.set("desde", r.desde)
+  if (r.hasta) p.set("hasta", r.hasta)
+  const qs = p.toString()
+  return `/api/vehiculos/checklist/export${qs ? `?${qs}` : ""}`
 }
 
 const mesCorto = (ym: string) => {
@@ -214,6 +226,15 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
   const cronicosActivos = useMemo(
     () => cronicos.filter((c) => c.diasSinRepetirse <= DIAS_CRONICO_ACTIVO),
     [cronicos]
+  )
+
+  // El crónico que se repite y nadie llevó al taller: ni plan de acción sobre
+  // sus marcas, ni un mantenimiento de esa unidad desde la primera detección.
+  const cronicosSinRespuesta = useMemo(
+    () =>
+      cronicosActivos.filter((c) => !c.conPlan && c.mantenimientosDesde === 0)
+        .length,
+    [cronicosActivos]
   )
 
   const criticosNoOk = conDefectos.filter((i) => i.critico).reduce((a, i) => a + i.noOk, 0)
@@ -337,6 +358,13 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
             <span className="text-xs text-muted-foreground">Recalculando…</span>
           )}
           <FiltroPeriodo value={periodo} onChange={cambiarPeriodo} anios={anios} />
+          <a
+            href={urlExportChecklist(rangoDe(periodo))}
+            download
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <Download className="size-4" aria-hidden /> Excel
+          </a>
         </div>
       </div>
 
@@ -384,7 +412,12 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
               : "mismo ítem repetido en la misma unidad"
           }
           footer={
-            cronicosActivos.some((c) => c.noOk === 0) ? (
+            cronicosSinRespuesta > 0 ? (
+              <span className="text-xs font-medium text-destructive">
+                {cronicosSinRespuesta} sin OT ni plan de acción: se repiten y
+                nadie los llevó al taller.
+              </span>
+            ) : cronicosActivos.some((c) => c.noOk === 0) ? (
               <span className="text-xs text-muted-foreground">
                 Ojo: hay crónicos que son sólo observación, no NO OK.
               </span>
@@ -421,6 +454,7 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
                     <TableHead>Evolución</TableHead>
                     <TableHead className="text-right">Desde</TableHead>
                     <TableHead className="text-right">Última</TableHead>
+                    <TableHead>¿Se llevó al taller?</TableHead>
                     <TableHead>Estado</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -488,6 +522,22 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
                       </TableCell>
                       <TableCell className="py-2 text-right text-xs tabular-nums text-muted-foreground">
                         {fmtFecha(c.ultima)}
+                      </TableCell>
+                      <TableCell className="py-2">
+                        {!c.conPlan && c.mantenimientosDesde === 0 ? (
+                          <Badge className="border-destructive/30 bg-destructive/10 text-destructive">
+                            Sin OT ni plan
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {c.conPlan && "con plan"}
+                            {c.conPlan && c.mantenimientosDesde > 0 && " · "}
+                            {c.mantenimientosDesde > 0 &&
+                              `${c.mantenimientosDesde} mantenimiento${
+                                c.mantenimientosDesde === 1 ? "" : "s"
+                              }`}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="py-2">
                         {c.diasSinRepetirse <= DIAS_CRONICO_ACTIVO ? (

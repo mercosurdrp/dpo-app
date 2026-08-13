@@ -1,7 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { Info, TriangleAlert, X } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Download, Info, TriangleAlert, X } from "lucide-react"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
 import {
   Card,
@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { buttonVariants } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -33,6 +34,10 @@ import {
   type PeriodoState,
 } from "./_components/filtro-periodo"
 import { MAX_SERIES, usePaletaViz } from "./_components/paleta-viz"
+import {
+  getCalidadDeteccion,
+  type ExposicionUnidad,
+} from "@/actions/checklist-deteccion"
 
 interface Props {
   itemsNoOk: ChecklistItemNoOk[]
@@ -93,9 +98,23 @@ interface ItemFallado {
 
 const fmtFecha = (iso: string) => iso.split("-").reverse().join("/")
 
+/** Excel del período: las cuatro hojas que pide la auditoría del punto 1.3. */
+function urlExport(r: { desde: string | null; hasta: string | null }): string {
+  const p = new URLSearchParams()
+  if (r.desde) p.set("desde", r.desde)
+  if (r.hasta) p.set("hasta", r.hasta)
+  const qs = p.toString()
+  return `/api/vehiculos/checklist/export${qs ? `?${qs}` : ""}`
+}
+
 export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
   const [periodo, setPeriodo] = useState<PeriodoState>(() => periodoInicial())
   const paleta = usePaletaViz()
+  // Cuántos checklists tuvo cada unidad en el período: sin ese denominador, la
+  // unidad que más se controla parece la peor.
+  const [exposicion, setExposicion] = useState<Map<string, ExposicionUnidad>>(
+    new Map()
+  )
 
   // Años con datos, para no ofrecer años vacíos en el selector.
   const aniosDisponibles = useMemo(() => {
@@ -108,6 +127,17 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
 
   const rango = useMemo(() => rangoDe(periodo), [periodo])
   const etiquetaRango = useMemo(() => etiquetaDe(rango), [rango])
+
+  useEffect(() => {
+    let vigente = true
+    getCalidadDeteccion(rango).then((res) => {
+      if (!vigente || "error" in res) return
+      setExposicion(new Map(res.data.porUnidad.map((u) => [u.dominio, u])))
+    })
+    return () => {
+      vigente = false
+    }
+  }, [rango])
 
   const datos = useMemo(() => {
     const items = itemsNoOk.filter((i) => dentroDe(i.fecha, rango))
@@ -167,13 +197,21 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
     }
 
     const ranking = Array.from(porUnidad.entries())
-      .map(([dominio, v]) => ({
-        dominio,
-        ...v,
-        total: v.leves + v.criticos,
-        principal: detalle.get(dominio)?.[0] ?? null,
-        distintos: detalle.get(dominio)?.length ?? 0,
-      }))
+      .map(([dominio, v]) => {
+        const total = v.leves + v.criticos
+        const checks = exposicion.get(dominio)?.checklists ?? null
+        return {
+          dominio,
+          ...v,
+          total,
+          principal: detalle.get(dominio)?.[0] ?? null,
+          distintos: detalle.get(dominio)?.length ?? 0,
+          checklists: checks,
+          // Cada 10 revisiones, para poder comparar un autoelevador que se
+          // chequea 40 veces contra un camión que se chequea 120.
+          cada10: checks && checks > 0 ? (total / checks) * 10 : null,
+        }
+      })
       .sort((a, b) => b.total - a.total || a.dominio.localeCompare(b.dominio))
 
     const totalDefectos = conteo.leve + conteo.critico
@@ -212,7 +250,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
         : null
 
     return { conteo, ranking, torta, detalle, totalDefectos, ratioFalla }
-  }, [itemsNoOk, mantenimientos, rango])
+  }, [itemsNoOk, mantenimientos, rango, exposicion])
 
   const colorPorcion = (p: PorcionTorta, i: number) =>
     p.esOtras ? paleta.otras : paleta.serie(i)
@@ -253,11 +291,20 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
           </h2>
           <DpoSeccionCinta seccionId="piramide" />
         </div>
-        <FiltroPeriodo
-          value={periodo}
-          onChange={setPeriodo}
-          anios={aniosDisponibles}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <FiltroPeriodo
+            value={periodo}
+            onChange={setPeriodo}
+            anios={aniosDisponibles}
+          />
+          <a
+            href={urlExport(rango)}
+            download
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <Download className="size-4" aria-hidden /> Excel
+          </a>
+        </div>
       </div>
 
       {/* Pirámide */}
@@ -496,6 +543,15 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
                     {resumenSel.distintos === 1
                       ? "ítem distinto"
                       : "ítems distintos"}
+                    {resumenSel.checklists != null && (
+                      <>
+                        {" · "}
+                        {new Intl.NumberFormat("es-AR", {
+                          maximumFractionDigits: 1,
+                        }).format(resumenSel.cada10 ?? 0)}{" "}
+                        cada 10 checklists
+                      </>
+                    )}
                     {resumenSel.principal && resumenSel.total > 1 && (
                       <>
                         {" · "}
@@ -592,6 +648,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
                   <TableHead className="text-right">Críticos</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead className="text-right">% del total</TableHead>
+                  <TableHead className="text-right">Cada 10 checks</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -644,6 +701,22 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
                       {datos.totalDefectos > 0
                         ? fmtPct((u.total * 100) / datos.totalDefectos)
                         : "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {u.cada10 == null ? (
+                        "—"
+                      ) : (
+                        <>
+                          <span className="font-semibold text-foreground">
+                            {new Intl.NumberFormat("es-AR", {
+                              maximumFractionDigits: 1,
+                            }).format(u.cada10)}
+                          </span>
+                          <span className="ml-1 text-[11px] text-muted-foreground">
+                            ({fmtNum(u.checklists ?? 0)} checks)
+                          </span>
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

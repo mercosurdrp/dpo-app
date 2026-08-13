@@ -92,6 +92,11 @@ export interface DefectoCronico {
   ultima: string
   /** Días desde la última detección: un crónico resuelto deja de sumar. */
   diasSinRepetirse: number
+  /** ¿Alguna de sus marcas tiene plan de acción cargado? */
+  conPlan: boolean
+  /** Mantenimientos de esa unidad desde la primera detección. Cero + sin plan
+   *  = el defecto se viene reportando y nadie lo llevó al taller. */
+  mantenimientosDesde: number
   /** Desvíos por mes "YYYY-MM", cronológico: muestra si escala o se apagó. */
   porMes: Array<{ ym: string; veces: number }>
 }
@@ -129,6 +134,7 @@ export interface AnalisisChecklist {
 }
 
 interface RespuestaNoOk {
+  id: string
   valor: string
   item_id: string
   item: { nombre: string; categoria: string; critico: boolean } | null
@@ -176,7 +182,7 @@ export async function getAnalisisChecklist(periodo?: {
         supabase
           .from("checklist_respuestas")
           .select(
-            "valor, item_id, item:checklist_items(nombre, categoria, critico), cv:checklist_vehiculos!inner(fecha, dominio)"
+            "id, valor, item_id, item:checklist_items(nombre, categoria, critico), cv:checklist_vehiculos!inner(fecha, dominio)"
           )
           .not("valor", "in", `(${VALORES_OK.map((v) => `"${v}"`).join(",")})`)
           .limit(5000),
@@ -299,6 +305,35 @@ export async function getAnalisisChecklist(periodo?: {
       if (lista) lista.push(r)
       else porItemUnidad.set(k, [r])
     }
+    // Para saber si el crónico derivó en algo: los planes de acción cargados
+    // sobre esas respuestas y los mantenimientos de la unidad. Un defecto que
+    // se repite 21 veces y no tiene ninguno de los dos es la cadena cortada
+    // entre detectar y reparar.
+    const idsRespuesta = noOk.map((r) => r.id).filter(Boolean)
+    const [planesRes, mantRes] = await Promise.all([
+      idsRespuesta.length > 0
+        ? supabase
+            .from("checklist_planes_accion")
+            .select("respuesta_id")
+            .in("respuesta_id", idsRespuesta.slice(0, 1000))
+        : Promise.resolve({ data: [], error: null }),
+      supabase.from("mantenimiento_realizados").select("dominio, fecha"),
+    ])
+    const conPlanIds = new Set(
+      ((planesRes.data || []) as Array<{ respuesta_id: string }>).map(
+        (p) => p.respuesta_id
+      )
+    )
+    const mantPorDominio = new Map<string, string[]>()
+    for (const m of (mantRes.data || []) as Array<{
+      dominio: string
+      fecha: string
+    }>) {
+      const l = mantPorDominio.get(m.dominio) ?? []
+      l.push(m.fecha)
+      mantPorDominio.set(m.dominio, l)
+    }
+
     const cronicos: DefectoCronico[] = []
     for (const [k, lista] of porItemUnidad) {
       if (lista.length < UMBRAL_CRONICO) continue
@@ -310,6 +345,10 @@ export async function getAnalisisChecklist(periodo?: {
         meses.set(ym, (meses.get(ym) ?? 0) + 1)
       }
       cronicos.push({
+        conPlan: lista.some((r) => conPlanIds.has(r.id)),
+        mantenimientosDesde: (mantPorDominio.get(dominio) ?? []).filter(
+          (f) => f >= fechas[0]
+        ).length,
         itemId,
         item: lista[0].item!.nombre,
         categoria: lista[0].item!.categoria,
