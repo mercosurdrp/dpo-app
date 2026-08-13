@@ -36,7 +36,9 @@ const DEFAULT_CONFIG: S5AyudantesConfig = {
   peso_errores: 0.6,
   peso_5s: 0.4,
   peso_productividad: 0,
-  tope_errores: 200,
+  // Errores POR MES que dejan el componente en 0 pts. Se escala por los meses
+  // de la ventana (20/mes = 40 en un bimestre).
+  tope_errores: 20,
   prod_target: 300,
   prod_target_maq: 18,
   meses_ventana: 2,
@@ -180,6 +182,11 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n))
 }
 
+// Guarda de migración: valores de tope anteriores al cambio a "por mes".
+function legacyTope(n: number): number {
+  return Number.isFinite(n) && n > 0 && n <= 100 ? n : DEFAULT_CONFIG.tope_errores
+}
+
 // ── Errores por operario: CANTIDAD de errores HUMANOS (filas) en la ventana ──
 async function fetchErroresPorOperario(
   prefijosMes: string[],
@@ -304,7 +311,10 @@ async function readConfig(supabase: any): Promise<S5AyudantesConfig> {
     peso_productividad: Number(
       data.peso_productividad ?? DEFAULT_CONFIG.peso_productividad,
     ),
-    tope_errores: Number(data.tope_errores ?? DEFAULT_CONFIG.tope_errores),
+    // El campo pasó a ser "errores por mes" (antes era el total de la ventana,
+    // con un default de 200 que aplanaba el componente). Cualquier valor
+    // heredado de esa época se descarta: >100 errores/mes no es un umbral real.
+    tope_errores: legacyTope(Number(data.tope_errores ?? DEFAULT_CONFIG.tope_errores)),
     prod_target: Number(data.prod_target ?? DEFAULT_CONFIG.prod_target),
     prod_target_maq: Number(
       data.prod_target_maq ?? DEFAULT_CONFIG.prod_target_maq,
@@ -470,10 +480,15 @@ export async function getRankingDeposito(
     }
 
     // Pickers (productividad bul/HH promedio de la ventana).
+    // Haber pickeado sin figurar en la planilla de errores significa CERO
+    // errores, no "sin dato": si quedaba en null el componente desaparecía y
+    // el score se reponderaba sobre el 5S solo, así que no tener errores
+    // puntuaba PEOR que tenerlos.
     for (const [operario, bulhh] of prodMap.entries()) {
       const c = matchOCrear(operario)
       c.es_picker = true
       c.productividad = bulhh
+      if (c.errores_cant == null) c.errores_cant = 0
     }
 
     // Maquinistas (productividad Pal/HH promedio de la ventana).
@@ -484,7 +499,9 @@ export async function getRankingDeposito(
     }
 
     // Scoring
-    const tope = config.tope_errores > 0 ? config.tope_errores : 1
+    // El tope se configura por mes y se escala a la ventana (20/mes = 40 en un
+    // bimestre), para que el puntaje no dependa del largo del período.
+    const tope = Math.max(1, config.tope_errores * ventana)
     function scoreOf(c: Cand): {
       nota_5s: number | null
       errores_score: number | null

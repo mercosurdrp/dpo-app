@@ -561,6 +561,9 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                 Cada componente muestra su valor, entre paréntesis su puntaje
                 0–100, y abajo en <span className="text-emerald-600">verde</span> lo
                 que <strong>aporta al Score</strong>. Los tres aportes suman el Score.
+                {" "}Errores: <strong>0 errores = 100 pts</strong> y baja lineal hasta{" "}
+                <strong>{data.config.tope_errores} por mes = 0 pts</strong>. Quien
+                pickeó y no tiene errores cargados cuenta como cero.
               </p>
               <Table>
                 <TableHeader>
@@ -681,7 +684,7 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                   ["peso_errores", "Peso errores"],
                   ["peso_5s", "Peso 5S"],
                   ["peso_productividad", "Peso productividad"],
-                  ["tope_errores", "Tope errores (cant. = 0 pts)"],
+                  ["tope_errores", "Tope errores POR MES (= 0 pts)"],
                   ["prod_target", "Target picking (bul/HH = 100)"],
                   ["prod_target_maq", "Target maquinista (Pal/HH = 100)"],
                   ["meses_ventana", "Meses de ventana"],

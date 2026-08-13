@@ -413,45 +413,58 @@ export async function getDqiPpmMes(
   return ppm
 }
 
-/** Cache in-process de la serie diaria, por el mismo motivo que el PPM mensual. */
-const dqiDiarioCache = new Map<
-  string,
-  { t: number; v: Record<string, number | null> }
->()
+/** Serie diaria del DQI: valor del día + acumulado MTD, ambos en PPM. */
+export interface DqiSerieDiaria {
+  /** {fecha: PPM del día} — HL rotos en la calle del día ÷ HL entregado del día. */
+  dia: Record<string, number | null>
+  /** {fecha: PPM acumulado del mes HASTA esa fecha}. */
+  mtd: Record<string, number | null>
+}
 
-/** DQI día por día del mes, en PPM.
+/** Cache in-process de la serie diaria, por el mismo motivo que el PPM mensual. */
+const dqiDiarioCache = new Map<string, { t: number; v: DqiSerieDiaria }>()
+
+/** DQI día por día del mes + su acumulado, en PPM.
  *
- * Sale de `dqi_dia` de la serie diaria de deposito-esteban: HL rotos EN LA CALLE
- * del día ÷ HL entregado del día × 1M. Misma fuente y MISMO denominador que el
+ * Sale de `dqi_dia` / `dqi` de la serie diaria de deposito-esteban: HL rotos EN
+ * LA CALLE ÷ HL entregado × 1M. Misma fuente y MISMO denominador que el
  * `wqi_dia` de la matinal ⇒ las dos filas son comparables entre sí, y una
  * rotura de distribución que el WQI deja afuera aparece acá el mismo día.
  *
- * 🚨 El MTD de la fila sigue viniendo de `getDqiPpmMes` (`/api/dqi`, el número
- * publicado). Los dos pueden diferir ~1-2%: aquél lee el blob de pérdidas (el
- * Excel "actual" ya procesado) y éste el acumulado diario de movimientos.
+ * 🚨 No coincide con `getDqiPpmMes` (`/api/dqi`) mientras el mes está en curso,
+ * y la diferencia no es de redondeo: aquél divide las roturas del mes por el HL
+ * entregado del MES ENTERO (dato mensual), esto acumula día a día hasta la
+ * fecha. Ago'26 al día 12: 99 PPM acá contra 88,9 allá. Encima leen storages
+ * distintos (blob de pérdidas procesado vs acumulado diario de movimientos).
+ * La fila de la matinal usa ESTE para las dos cosas —celdas y MTD— porque una
+ * fila cuyo acumulado no cierra con sus propios días no se puede discutir en
+ * una reunión; la tarjeta mensual de /indicadores/dqi sigue con el otro.
  *
- * Devuelve {} si el tablero no responde: las celdas caen a "—" y la fila sigue
- * mostrando el MTD. Nunca tira. */
+ * Devuelve series vacías si el tablero no responde: las celdas caen a "—" y el
+ * MTD se resuelve con el fallback mensual. Nunca tira. */
 export async function getDqiDiarioMes(
   year: number,
   month: number,
-): Promise<Record<string, number | null>> {
+): Promise<DqiSerieDiaria> {
   await requireAuth()
   const key = `${year}-${month}`
   const hit = dqiDiarioCache.get(key)
   if (hit && Date.now() - hit.t < HL_TTL_MS) return hit.v
-  let serie: Record<string, number | null> = {}
+  let serie: DqiSerieDiaria = { dia: {}, mtd: {} }
   try {
     const res = await fetch(
       `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
       { cache: "no-store", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     )
     if (res.ok) {
-      const j = (await res.json()) as { dqi_dia?: Record<string, number | null> }
-      serie = j?.dqi_dia ?? {}
+      const j = (await res.json()) as {
+        dqi_dia?: Record<string, number | null>
+        dqi?: Record<string, number | null>
+      }
+      serie = { dia: j?.dqi_dia ?? {}, mtd: j?.dqi ?? {} }
     }
   } catch {
-    serie = {}
+    serie = { dia: {}, mtd: {} }
   }
   dqiDiarioCache.set(key, { t: Date.now(), v: serie })
   return serie

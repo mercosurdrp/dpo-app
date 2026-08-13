@@ -4134,30 +4134,41 @@ async function getIndicadoresMesCore(
     }
 
     // 7c-bis. Fila "DQI · roturas en ruta" (PPM) — punto DPO Entrega 1.4.
-    //   MTD: el PPM ya calculado del tablero de pérdidas (`/api/dqi`), sin
-    //   recalcular. El detalle por camión del mes se abre desde ahí (celda
+    //   Día y MTD salen los dos de la serie diaria (`dqi_dia` / `dqi`): HL rotos
+    //   en la calle ÷ HL entregado × 1M, el MISMO denominador que el WQI de esta
+    //   misma grilla. El detalle por camión del mes se abre desde el MTD (celda
     //   clickeable → DqiPatentesDialog).
-    //   Día: `dqi_dia` de la serie diaria (HL rotos en la calle del día ÷ HL
-    //   entregado del día × 1M). Hasta 2026-08-13 las celdas iban todas en null
-    //   —"el denominador del DQI es mensual"— y la fila quedaba muerta en la
-    //   grilla: una rotura de distribución no aparecía en NINGUNA fila de la
-    //   matinal, porque el WQI la manda acá desde el 2026-07-14 y acá no había
-    //   dónde verla. El denominador diario existe (es el mismo del WQI).
+    //
+    //   Hasta 2026-08-13 las celdas del día iban todas en null —"el denominador
+    //   del DQI es mensual"— y la fila quedaba muerta en la grilla: una rotura
+    //   de distribución no aparecía en NINGUNA fila de la matinal, porque el WQI
+    //   la manda acá desde el 2026-07-14 y acá no había dónde verla. El
+    //   denominador diario existe: es el del WQI.
+    //
+    //   🚨 El MTD dejó de salir de `/api/dqi` (fallback si la serie no responde):
+    //   aquel divide por el HL entregado del MES ENTERO, así que con el mes en
+    //   curso no cierra con los días de su propia fila (ago'26 al 12: 99 vs
+    //   88,9 PPM). La tarjeta de /indicadores/dqi sigue usando el mensual.
+    //
     //   Se enmascara el día de la reunión, igual que WQI/Roturas/Faltantes: a la
     //   hora del matinal el cierre de hoy todavía no está confirmado.
     //   Tolerante a fallos: si el tablero no responde, mtd queda null (la fila se
     //   ve con "—") y la matinal sigue funcionando.
     if ((tipo === "logistica" || tipo === "matinal-distribucion") && !IS_MISIONES) {
-      const [dqiPpm, dqiDiario] = await Promise.all([
+      const [dqiPpmMensual, dqiSerie] = await Promise.all([
         pDqi ? resolver(pDqi) : getDqiPpmMes(anio, mes),
         getDqiDiarioMes(anio, mes),
       ])
       const dqiValores: ReunionIndicadoresMes["indicadores"][number]["valores"] = {}
+      let dqiMtd: number | null = null
       for (const f of fechas) {
-        const v = f < fecha ? (dqiDiario[f] ?? null) : null
+        const v = f < fecha ? (dqiSerie.dia[f] ?? null) : null
         dqiValores[f] =
           v == null ? null : { reunion_id: "auto", valor: v, observacion: null }
+        // MTD = el acumulado del último día CERRADO, mismo corte que las celdas.
+        if (f < fecha && dqiSerie.mtd[f] != null) dqiMtd = dqiSerie.mtd[f]
       }
+      const dqiPpm = dqiMtd ?? dqiPpmMensual
       indicadoresAuto.push({
         id: "auto_dqi",
         nombre: "DQI · roturas en ruta",
