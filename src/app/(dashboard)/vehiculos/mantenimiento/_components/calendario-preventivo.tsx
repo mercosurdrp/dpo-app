@@ -4,6 +4,11 @@
 // vence cada día y las OT ya programadas, para planificar el taller y para
 // mostrarle al auditor el plan en una herramienta digital.
 //
+// La vista es una FRANJA POR UNIDAD (estilo Gantt): una fila por camión con su
+// color fijo y los días del mes como columnas. La grilla de siete columnas que
+// había antes obligaba a leer celda por celda para saber qué unidad tenía qué;
+// acá cada camión se sigue en horizontal y el mes se lee de un vistazo.
+//
 // Las tareas que vencen por km u horas no tienen fecha propia: se estiman con el
 // ritmo de uso de cada unidad y se marcan con "~". Ver `lib/flota/calendario-preventivo`.
 //
@@ -18,7 +23,7 @@ import { toast } from "sonner"
 import { CalendarDays, ChevronLeft, ChevronRight, FileDown, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import {
   Dialog,
@@ -37,9 +42,7 @@ import {
 import { cn } from "@/lib/utils"
 import { getOtProgramadas, type OtProgramada } from "@/actions/ot-programadas"
 import {
-  eventosPorFecha,
   eventosPreventivos,
-  grillaMes,
   isoDe,
   ritmoDiarioPorDominio,
   type EventoPreventivo,
@@ -49,11 +52,16 @@ import {
 import type { EstadoPlanVehiculo, MantenimientoPlanTarea } from "@/types/database"
 import type { ServiceGeneralUnidad } from "@/lib/vehiculos/service-general"
 
-const DIAS_CORTOS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+const DIAS_LETRA = ["L", "M", "M", "J", "V", "S", "D"]
 const MESES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ]
+
+/** Alto de cada carril dentro de la franja de una unidad. */
+const ALTO_CARRIL = "1.5rem"
+/** Carriles como máximo por unidad: lo que no entra se cuenta en "+N". */
+const MAX_CARRILES = 3
 
 const mesLargo = (iso: string) => {
   const [y, m] = iso.split("-").map(Number)
@@ -61,43 +69,82 @@ const mesLargo = (iso: string) => {
 }
 const addMesesIso = (iso: string, n: number) => {
   const [y, m] = iso.split("-").map(Number)
-  const d = new Date(y, m - 1 + n, 1)
-  return isoDe(d)
+  return isoDe(new Date(y, m - 1 + n, 1))
+}
+const fmtDia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
+
+/** Días 1..N del mes de `ancla`, con su día de semana (0 = lunes). */
+function diasDelMes(ancla: string) {
+  const [y, m] = ancla.split("-").map(Number)
+  const ultimo = new Date(y, m, 0).getDate()
+  const dias: { iso: string; n: number; dow: number }[] = []
+  for (let d = 1; d <= ultimo; d++) {
+    const fecha = new Date(y, m - 1, d)
+    dias.push({ iso: isoDe(fecha), n: d, dow: (fecha.getDay() + 6) % 7 })
+  }
+  return dias
 }
 
-const CLS_EVENTO: Record<EventoPreventivo["estado"], string> = {
-  vencido: "border-destructive bg-destructive/10 text-destructive",
-  proximo: "border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  ok: "border-border bg-muted/70 text-muted-foreground",
+/** Color fijo de cada unidad: identifica la franja sin depender del texto. */
+const COLORES_UNIDAD = [
+  "bg-sky-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500",
+  "bg-rose-500", "bg-cyan-500", "bg-lime-500", "bg-fuchsia-500",
+]
+
+type Tono = "ot" | "vencido" | "proximo" | "ok" | "arrastre"
+
+/** Barras llenas: el Gantt se lee por el color del bloque, no por el borde. */
+const CLS_BARRA: Record<Tono, string> = {
+  ot: "bg-sky-600 text-white hover:bg-sky-500",
+  vencido: "bg-rose-600 text-white hover:bg-rose-500",
+  arrastre: "bg-rose-700 text-white hover:bg-rose-600",
+  proximo: "bg-amber-400 text-amber-950 hover:bg-amber-300",
+  ok: "bg-slate-300 text-slate-800 hover:bg-slate-200 dark:bg-slate-600 dark:text-slate-100 dark:hover:bg-slate-500",
 }
 
-const TONOS_PILDORA = {
-  sky: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  amber: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  rose: "border-destructive/30 bg-destructive/10 text-destructive",
-} as const
+const CLS_ESTADO_BADGE: Record<EventoPreventivo["estado"], string> = {
+  vencido: "border-destructive/40 bg-destructive/10 text-destructive",
+  proximo: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  ok: "border-border bg-muted text-muted-foreground",
+}
 
-/** Contador del encabezado: número grande y etiqueta chica, en su color. */
-function Pildora({
-  tono,
-  n,
-  texto,
-}: {
-  tono: keyof typeof TONOS_PILDORA
-  n: number
+interface Barra {
+  key: string
+  /** Columna donde arranca: 1..cantidad de días del mes. */
+  dia: number
+  span: number
+  carril: number
+  tono: Tono
   texto: string
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium",
-        TONOS_PILDORA[tono]
-      )}
-    >
-      <span className="text-sm font-bold tabular-nums leading-none">{n}</span>
-      {texto}
-    </span>
-  )
+  titulo: string
+  fecha: string
+}
+
+/**
+ * Ancho de la barra en columnas. Un vencimiento es un día puntual, pero una
+ * barra de un día no deja lugar para el nombre de la tarea: se estira para que
+ * el texto se lea y el reparto en carriles evita que se pisen.
+ */
+const spanDe = (texto: string) => Math.min(10, Math.max(3, Math.ceil(texto.length / 4.5) + 1))
+
+/** Reparte las barras en carriles para que ninguna se superponga con otra. */
+function repartirEnCarriles(items: Omit<Barra, "carril">[]): { barras: Barra[]; ocultas: number } {
+  const finDeCarril: number[] = []
+  const barras: Barra[] = []
+  let ocultas = 0
+  for (const it of [...items].sort((a, b) => a.dia - b.dia)) {
+    let carril = finDeCarril.findIndex((fin) => fin < it.dia)
+    if (carril === -1) {
+      if (finDeCarril.length >= MAX_CARRILES) {
+        ocultas++
+        continue
+      }
+      carril = finDeCarril.length
+    }
+    finDeCarril[carril] = it.dia + it.span - 1
+    barras.push({ ...it, carril })
+  }
+  return { barras, ocultas }
 }
 
 export function CalendarioPreventivo({
@@ -125,19 +172,21 @@ export function CalendarioPreventivo({
   const [ancla, setAncla] = useState(() => `${hoy.slice(0, 7)}-01`)
   const [fUnidad, setFUnidad] = useState("todas")
   const [cacheOts, setCacheOts] = useState<{ clave: string; data: OtProgramada[] } | null>(null)
-  const [diaAbierto, setDiaAbierto] = useState<string | null>(null)
+  const [detalle, setDetalle] = useState<Detalle | null>(null)
+  const [verVacias, setVerVacias] = useState(false)
 
-  const { dias, primeroDelMes, ultimoDelMes } = useMemo(() => grillaMes(ancla), [ancla])
-  const desde = dias[0]
-  const hasta = dias[dias.length - 1]
+  const dias = useMemo(() => diasDelMes(ancla), [ancla])
+  const primeroDelMes = dias[0].iso
+  const ultimoDelMes = dias[dias.length - 1].iso
+  const nDias = dias.length
 
   // Las OT del mes se piden al servidor. Se guardan junto con la clave del rango
   // para que un mes recién elegido no muestre las órdenes del anterior mientras
   // llega la respuesta (y sin resetear estado dentro del efecto).
-  const clave = `${desde}|${hasta}|${refreshToken}`
+  const clave = `${primeroDelMes}|${ultimoDelMes}|${refreshToken}`
   useEffect(() => {
     let cancelado = false
-    void getOtProgramadas({ desde, hasta }).then((res) => {
+    void getOtProgramadas({ desde: primeroDelMes, hasta: ultimoDelMes }).then((res) => {
       if (cancelado) return
       if ("error" in res) {
         toast.error(res.error)
@@ -148,7 +197,7 @@ export function CalendarioPreventivo({
     return () => {
       cancelado = true
     }
-  }, [clave, desde, hasta])
+  }, [clave, primeroDelMes, ultimoDelMes])
 
   const ots = cacheOts?.clave === clave ? cacheOts.data : null
 
@@ -184,34 +233,14 @@ export function CalendarioPreventivo({
     return fUnidad === "todas" ? todos : todos.filter((e) => e.dominio === fUnidad)
   }, [estados, tareasById, historialLecturas, servicePorDominio, fUnidad, hoy])
 
-  /** Vencidas con fecha anterior a la grilla: si no se muestran aparte, desaparecen. */
-  const arrastre = useMemo(
-    () => eventos.filter((e) => e.estado === "vencido" && e.fecha < desde),
-    [eventos, desde]
-  )
   const delMes = useMemo(
     () => eventos.filter((e) => e.fecha >= primeroDelMes && e.fecha <= ultimoDelMes),
     [eventos, primeroDelMes, ultimoDelMes]
   )
-  const porFecha = useMemo(
-    () => eventosPorFecha(eventos.filter((e) => e.fecha >= desde && e.fecha <= hasta)),
-    [eventos, desde, hasta]
-  )
-
-  const otsPorFecha = useMemo(() => {
-    const map = new Map<string, OtProgramada[]>()
-    for (const o of ots ?? []) {
-      if (fUnidad !== "todas" && o.dominio !== fUnidad) continue
-      const arr = map.get(o.fecha_programada)
-      if (arr) arr.push(o)
-      else map.set(o.fecha_programada, [o])
-    }
-    return map
-  }, [ots, fUnidad])
-
-  const dominios = useMemo(
-    () => estados.map((e) => e.vehiculo.dominio).sort(),
-    [estados]
+  /** Vencidas con fecha anterior al mes: entran pegadas al día 1, con "◀". */
+  const arrastre = useMemo(
+    () => eventos.filter((e) => e.estado === "vencido" && e.fecha < primeroDelMes),
+    [eventos, primeroDelMes]
   )
 
   const otsDelMes = useMemo(
@@ -225,20 +254,141 @@ export function CalendarioPreventivo({
     [ots, primeroDelMes, ultimoDelMes, fUnidad]
   )
 
+  const dominios = useMemo(() => estados.map((e) => e.vehiculo.dominio).sort(), [estados])
+
+  const colorDeUnidad = useMemo(() => {
+    const map = new Map<string, string>()
+    dominios.forEach((d, i) => map.set(d, COLORES_UNIDAD[i % COLORES_UNIDAD.length]))
+    return map
+  }, [dominios])
+
+  const diaDe = useMemo(() => {
+    const map = new Map<string, number>()
+    dias.forEach((d) => map.set(d.iso, d.n))
+    return map
+  }, [dias])
+
+  /** Una franja por unidad, ya repartida en carriles y ordenada por severidad. */
+  const franjas = useMemo(() => {
+    const visibles = fUnidad === "todas" ? dominios : dominios.filter((d) => d === fUnidad)
+    return visibles
+      .map((dominio) => {
+        const evs = delMes.filter((e) => e.dominio === dominio)
+        const otsU = otsDelMes.filter((o) => o.dominio === dominio)
+        const atras = arrastre.filter((e) => e.dominio === dominio)
+
+        const items: Omit<Barra, "carril">[] = []
+
+        if (atras.length > 0) {
+          const texto =
+            atras.length === 1 ? `◀ ${atras[0].tarea}` : `◀ ${atras.length} vencidas de antes`
+          items.push({
+            key: `atras-${dominio}`,
+            dia: 1,
+            span: spanDe(texto),
+            tono: "arrastre",
+            texto,
+            titulo: `Vencidas antes de ${mesLargo(ancla)}: ${atras
+              .map((e) => `${e.tarea} (${fmtDia(e.fecha)})`)
+              .join(" · ")}`,
+            fecha: atras[0].fecha,
+          })
+        }
+        for (const o of otsU) {
+          const texto = `OT · ${o.taller || o.tareas[0] || "programada"}`
+          items.push({
+            key: `ot-${o.id}`,
+            dia: diaDe.get(o.fecha_programada) ?? 1,
+            span: spanDe(texto),
+            tono: "ot",
+            texto,
+            titulo: `OT programada el ${fmtDia(o.fecha_programada)}: ${
+              o.tareas.join(" · ") || "sin trabajos cargados"
+            }`,
+            fecha: o.fecha_programada,
+          })
+        }
+        for (const e of evs) {
+          const texto = `${e.estimada ? "~" : ""}${e.tarea}`
+          items.push({
+            key: `ev-${dominio}-${e.tareaId}`,
+            dia: diaDe.get(e.fecha) ?? 1,
+            span: spanDe(texto),
+            tono: e.estado,
+            texto,
+            titulo: `${e.tarea} · ${fmtDia(e.fecha)}${e.detalle ? ` · ${e.detalle}` : ""}${
+              e.estimada ? " (fecha estimada por el uso)" : ""
+            }`,
+            fecha: e.fecha,
+          })
+        }
+
+        const { barras, ocultas } = repartirEnCarriles(items)
+        const severidad = atras.length > 0 || evs.some((e) => e.estado === "vencido")
+          ? 0
+          : evs.some((e) => e.estado === "proximo")
+            ? 1
+            : items.length > 0
+              ? 2
+              : 3
+        return { dominio, barras, ocultas, severidad, evs, otsU, atras }
+      })
+      .sort((a, b) => a.severidad - b.severidad || a.dominio.localeCompare(b.dominio))
+  }, [dominios, fUnidad, delMes, otsDelMes, arrastre, diaDe, ancla])
+
+  const conAlgo = franjas.filter((f) => f.barras.length > 0 || f.ocultas > 0)
+  const sinNada = franjas.filter((f) => f.barras.length === 0 && f.ocultas === 0)
+  const mostradas = verVacias ? [...conAlgo, ...sinNada] : conAlgo
+
+  /** Abre el detalle de un día completo (todas las unidades). */
+  const abrirDia = (fecha: string) =>
+    setDetalle({
+      titulo: `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}/${fecha.slice(0, 4)}`,
+      subtitulo: "Lo que vence ese día y las órdenes ya programadas.",
+      eventos: eventos.filter((e) => e.fecha === fecha),
+      ots: (ots ?? []).filter(
+        (o) => o.fecha_programada === fecha && (fUnidad === "todas" || o.dominio === fUnidad)
+      ),
+      fecha,
+    })
+
+  /** Abre el detalle de una unidad en un día (o el arrastre de esa unidad). */
+  const abrirBarra = (dominio: string, b: Barra) =>
+    setDetalle(
+      b.tono === "arrastre"
+        ? {
+            titulo: `${dominio} · vencidas de antes`,
+            subtitulo: `Su fecha quedó fuera de ${mesLargo(ancla)}: siguen abiertas.`,
+            eventos: arrastre.filter((e) => e.dominio === dominio),
+            ots: [],
+            fecha: hoy,
+          }
+        : {
+            titulo: `${dominio} · ${fmtDia(b.fecha)}`,
+            subtitulo: "Lo que vence ese día y las órdenes ya programadas.",
+            eventos: delMes.filter((e) => e.dominio === dominio && e.fecha === b.fecha),
+            ots: otsDelMes.filter((o) => o.dominio === dominio && o.fecha_programada === b.fecha),
+            fecha: b.fecha,
+          }
+    )
+
+  const colsMes = { gridTemplateColumns: `repeat(${nDias}, minmax(0, 1fr))` }
+
   return (
     <div className="space-y-4">
-      <Card className="overflow-hidden border-border/70 shadow-sm">
-        <CardHeader className="gap-3 border-b border-border/70 bg-muted/30 pb-4">
+      <Card className="gap-0 overflow-hidden border-border/70 py-0 shadow-sm">
+        {/* Encabezado con color pleno: el mes tiene que pesar más que la grilla. */}
+        <div className="bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 text-white dark:from-slate-950 dark:to-slate-900">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle className="flex items-center gap-2 text-lg font-semibold tracking-tight">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <h3 className="flex items-center gap-2.5 text-xl font-semibold tracking-tight">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-white/10">
                 <CalendarDays className="size-4" />
               </span>
               {mesLargo(ancla)}
-            </CardTitle>
+            </h3>
             <div className="flex flex-wrap items-center gap-1.5">
               <Select value={fUnidad} onValueChange={(v) => setFUnidad(v ?? "todas")}>
-                <SelectTrigger className="h-8 w-40 bg-card">
+                <SelectTrigger className="h-8 w-40 border-white/20 bg-white/10 text-white hover:bg-white/15 [&_svg]:text-white/70">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -250,11 +400,12 @@ export function CalendarioPreventivo({
                   ))}
                 </SelectContent>
               </Select>
-              <div className="flex items-center rounded-lg border border-border bg-card p-0.5">
+              <div className="flex items-center rounded-lg border border-white/20 bg-white/10 p-0.5">
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   title="Mes anterior"
+                  className="text-white hover:bg-white/20 hover:text-white"
                   onClick={() => setAncla(addMesesIso(ancla, -1))}
                 >
                   <ChevronLeft className="size-4" />
@@ -262,7 +413,7 @@ export function CalendarioPreventivo({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-2.5 text-xs font-medium"
+                  className="h-7 px-2.5 text-xs font-medium text-white hover:bg-white/20 hover:text-white"
                   onClick={() => setAncla(`${hoy.slice(0, 7)}-01`)}
                 >
                   Hoy
@@ -271,6 +422,7 @@ export function CalendarioPreventivo({
                   variant="ghost"
                   size="icon-sm"
                   title="Mes siguiente"
+                  className="text-white hover:bg-white/20 hover:text-white"
                   onClick={() => setAncla(addMesesIso(ancla, 1))}
                 >
                   <ChevronRight className="size-4" />
@@ -278,177 +430,221 @@ export function CalendarioPreventivo({
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Pildora tono="sky" n={otsDelMes.length} texto="OT programada" />
-            <Pildora
-              tono="amber"
+          <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[11px]">
+            <Contador color="bg-sky-400" n={otsDelMes.length} texto="OT programada" />
+            <Contador
+              color="bg-amber-400"
               n={delMes.filter((e) => e.estado !== "vencido").length}
               texto="vence este mes"
             />
-            <Pildora
-              tono="rose"
+            <Contador
+              color="bg-rose-500"
               n={delMes.filter((e) => e.estado === "vencido").length + arrastre.length}
               texto="vencido"
             />
-            <span className="text-[11px] leading-tight text-muted-foreground">
+            <span className="text-white/60">
               «~» = fecha estimada por el uso · el Service general cae el mismo día que dice el
               Tablero operativo
             </span>
           </div>
-        </CardHeader>
-        <CardContent className="p-3 sm:p-4">
-          <div className="mb-1.5 grid grid-cols-7 gap-1.5">
-            {DIAS_CORTOS.map((d, i) => (
-              <div
-                key={d}
-                className={cn(
-                  "rounded-md py-1 text-center text-[11px] font-semibold uppercase tracking-wider",
-                  i >= 5 ? "text-muted-foreground/60" : "text-muted-foreground"
-                )}
-              >
-                {d}
+        </div>
+
+        {/* Cuerpo gris: las franjas de color son lo que resalta. */}
+        <div className="overflow-x-auto bg-slate-100 dark:bg-slate-900/50">
+          <div className="min-w-[52rem]">
+            {/* Regla de días */}
+            <div className="flex items-end border-b border-slate-300/70 bg-slate-200/60 dark:border-slate-700 dark:bg-slate-800/60">
+              <div className="sticky left-0 z-20 w-28 shrink-0 bg-slate-200/60 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur dark:bg-slate-800/60">
+                Unidad
               </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-1.5">
-            {dias.map((fecha, i) => {
-              const delDia = porFecha.get(fecha) ?? []
-              const otsDia = otsPorFecha.get(fecha) ?? []
-              const esDelMes = fecha >= primeroDelMes && fecha <= ultimoDelMes
-              const esHoy = fecha === hoy
-              const finde = i % 7 >= 5
-              const total = delDia.length + otsDia.length
-              const visiblesOt = otsDia.slice(0, 2)
-              const visiblesEv = delDia.slice(0, Math.max(0, 3 - visiblesOt.length))
-              return (
-                <button
-                  key={fecha}
-                  type="button"
-                  onClick={() => setDiaAbierto(fecha)}
-                  className={cn(
-                    "group flex min-h-[7rem] flex-col gap-1 rounded-xl border p-2 text-left transition-all",
-                    "border-border/70 bg-card hover:border-primary/40 hover:shadow-md",
-                    finde && esDelMes && "bg-muted/30",
-                    !esDelMes && "border-transparent bg-muted/20 text-muted-foreground/60",
-                    esHoy && "border-primary/60 bg-primary/5 shadow-sm"
-                  )}
-                >
-                  <span className="flex items-center justify-between">
-                    <span
+              <div className="grid flex-1 pr-2" style={colsMes}>
+                {dias.map((d) => {
+                  const esHoy = d.iso === hoy
+                  return (
+                    <button
+                      key={d.iso}
+                      type="button"
+                      onClick={() => abrirDia(d.iso)}
+                      title={`Ver el ${fmtDia(d.iso)}`}
                       className={cn(
-                        "flex size-6 items-center justify-center rounded-full text-[11px] font-semibold",
-                        esHoy
-                          ? "bg-primary text-primary-foreground"
-                          : esDelMes
-                            ? "text-foreground/70"
-                            : "text-muted-foreground/50"
+                        "flex flex-col items-center py-1 text-[10px] leading-tight transition-colors hover:bg-white/60 dark:hover:bg-white/10",
+                        d.dow >= 5 ? "text-muted-foreground/60" : "text-muted-foreground"
                       )}
                     >
-                      {Number(fecha.slice(8, 10))}
-                    </span>
-                    {total > 0 && (
-                      <span className="text-[10px] font-medium text-muted-foreground/70 opacity-0 transition-opacity group-hover:opacity-100">
-                        ver
+                      <span>{DIAS_LETRA[d.dow]}</span>
+                      <span
+                        className={cn(
+                          "flex size-5 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums",
+                          esHoy ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "text-foreground/80"
+                        )}
+                      >
+                        {d.n}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Una franja por unidad */}
+            {mostradas.map((f) => {
+              const carriles = Math.max(1, ...f.barras.map((b) => b.carril + 1))
+              return (
+                <div
+                  key={f.dominio}
+                  className="flex items-stretch border-b border-slate-200 last:border-0 odd:bg-white/70 hover:bg-white dark:border-slate-800 dark:odd:bg-white/[0.03] dark:hover:bg-white/[0.06]"
+                >
+                  <button
+                    type="button"
+                    disabled={!puedeEditar}
+                    onClick={() => onProgramar(hoy, f.dominio)}
+                    title={puedeEditar ? `Programar una OT para ${f.dominio}` : f.dominio}
+                    className="group sticky left-0 z-10 flex w-28 shrink-0 items-center gap-1.5 bg-slate-50 px-2 py-1.5 text-left backdrop-blur enabled:hover:bg-white disabled:cursor-default dark:bg-slate-900 dark:enabled:hover:bg-slate-800"
+                  >
+                    <span
+                      className={cn("size-2 shrink-0 rounded-sm", colorDeUnidad.get(f.dominio))}
+                    />
+                    <span className="truncate text-xs font-bold tracking-tight">{f.dominio}</span>
+                    {puedeEditar && (
+                      <Plus className="ml-auto size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                    )}
+                  </button>
+
+                  <div
+                    className="relative grid flex-1 gap-y-0.5 py-1 pr-2"
+                    style={{
+                      ...colsMes,
+                      gridTemplateRows: `repeat(${carriles}, ${ALTO_CARRIL})`,
+                    }}
+                  >
+                    {/* Fondo de las columnas: findes apagados y el día de hoy marcado. */}
+                    {dias.map((d, i) => (
+                      <span
+                        key={d.iso}
+                        aria-hidden
+                        style={{ gridColumn: i + 1, gridRow: "1 / -1" }}
+                        className={cn(
+                          "border-l border-slate-200/70 dark:border-slate-800/70",
+                          d.dow >= 5 && "bg-slate-200/50 dark:bg-slate-800/40",
+                          d.iso === hoy && "bg-sky-500/10 ring-1 ring-inset ring-sky-500/30"
+                        )}
+                      />
+                    ))}
+
+                    {f.barras.map((b) => (
+                      <button
+                        key={b.key}
+                        type="button"
+                        title={b.titulo}
+                        onClick={() => abrirBarra(f.dominio, b)}
+                        style={{
+                          gridColumn: `${b.dia} / span ${Math.min(b.span, nDias - b.dia + 1)}`,
+                          gridRow: b.carril + 1,
+                        }}
+                        className={cn(
+                          "z-10 mx-px flex items-center overflow-hidden rounded px-1.5 text-[10px] font-semibold leading-none shadow-sm transition-colors",
+                          CLS_BARRA[b.tono]
+                        )}
+                      >
+                        <span className="truncate">{b.texto}</span>
+                      </button>
+                    ))}
+
+                    {f.ocultas > 0 && (
+                      <span
+                        style={{ gridColumn: nDias, gridRow: carriles }}
+                        className="z-10 self-center justify-self-end text-[10px] font-medium text-muted-foreground"
+                      >
+                        +{f.ocultas}
                       </span>
                     )}
-                  </span>
-                  {visiblesOt.map((o) => (
-                    <span
-                      key={o.id}
-                      className="truncate rounded-md border-l-[3px] border-sky-500 bg-sky-500/10 px-1.5 py-1 text-[10px] font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"
-                    >
-                      {o.dominio} · OT
-                    </span>
-                  ))}
-                  {visiblesEv.map((e) => (
-                    <span
-                      key={`${e.dominio}-${e.tareaId}`}
-                      className={cn(
-                        "truncate rounded-md border-l-[3px] px-1.5 py-1 text-[10px] font-medium",
-                        CLS_EVENTO[e.estado]
-                      )}
-                    >
-                      <span className="font-semibold">
-                        {e.estimada ? "~" : ""}
-                        {e.dominio}
-                      </span>{" "}
-                      {e.tarea}
-                    </span>
-                  ))}
-                  {total > visiblesOt.length + visiblesEv.length && (
-                    <span className="pl-1 text-[10px] font-medium text-muted-foreground">
-                      +{total - visiblesOt.length - visiblesEv.length} más
-                    </span>
-                  )}
-                </button>
+                  </div>
+                </div>
               )
             })}
+
+            {mostradas.length === 0 && (
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                Ninguna unidad tiene vencimientos ni OT en {mesLargo(ancla)}.
+              </p>
+            )}
           </div>
-        </CardContent>
+        </div>
+
+        {/* Leyenda */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border/70 bg-muted/40 px-4 py-2 text-[11px] text-muted-foreground">
+          <Ref cls="bg-sky-600" texto="OT programada" />
+          <Ref cls="bg-rose-600" texto="Vencido" />
+          <Ref cls="bg-amber-400" texto="Por vencer" />
+          <Ref cls="bg-slate-300 dark:bg-slate-600" texto="En plazo" />
+          {sinNada.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setVerVacias((v) => !v)}
+              className="ml-auto font-medium underline-offset-2 hover:underline"
+            >
+              {verVacias
+                ? "Ocultar las unidades sin nada este mes"
+                : `Ver ${sinNada.length} ${
+                    sinNada.length === 1 ? "unidad sin nada" : "unidades sin nada"
+                  } este mes`}
+            </button>
+          )}
+        </div>
       </Card>
 
-      {arrastre.length > 0 && (
-        <Card className="overflow-hidden border-destructive/30 shadow-sm">
-          <CardHeader className="gap-1 border-b border-destructive/20 bg-destructive/5 pb-3">
-            <CardTitle className="text-base font-semibold text-destructive">
-              Vencidas de antes de {mesLargo(ancla)}
-              <span className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-bold tabular-nums">
-                {arrastre.length}
-              </span>
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Su fecha de vencimiento quedó fuera del mes que estás mirando: siguen abiertas.
-              Click en una para programarle la OT.
-            </p>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-1.5 pt-4">
-            {arrastre.map((e) => (
-              <button
-                key={`${e.dominio}-${e.tareaId}`}
-                type="button"
-                onClick={() => puedeEditar && onProgramar(hoy, e.dominio, [e.tarea])}
-                className="group inline-flex items-center gap-1.5 rounded-lg border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 text-[11px] font-medium text-destructive transition-colors hover:border-destructive/60 hover:bg-destructive/10"
-              >
-                <span className="font-bold">{e.dominio}</span>
-                <span className="font-normal">{e.tarea}</span>
-                <span className="rounded bg-destructive/10 px-1 py-0.5 text-[10px] tabular-nums">
-                  {e.fecha.slice(8, 10)}/{e.fecha.slice(5, 7)}
-                </span>
-              </button>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {diaAbierto && (
-        <DiaDialog
-          fecha={diaAbierto}
-          eventos={porFecha.get(diaAbierto) ?? []}
-          ots={otsPorFecha.get(diaAbierto) ?? []}
+      {detalle && (
+        <DetalleDialog
+          detalle={detalle}
           puedeEditar={puedeEditar}
           onProgramar={onProgramar}
-          onClose={() => setDiaAbierto(null)}
+          onClose={() => setDetalle(null)}
         />
       )}
     </div>
   )
 }
 
-function DiaDialog({
-  fecha,
-  eventos,
-  ots,
+function Contador({ color, n, texto }: { color: string; n: number; texto: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-white/80">
+      <span className={cn("size-2 rounded-full", color)} />
+      <span className="text-sm font-bold tabular-nums leading-none text-white">{n}</span>
+      {texto}
+    </span>
+  )
+}
+
+function Ref({ cls, texto }: { cls: string; texto: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={cn("h-2.5 w-4 rounded-sm", cls)} />
+      {texto}
+    </span>
+  )
+}
+
+interface Detalle {
+  titulo: string
+  subtitulo: string
+  eventos: EventoPreventivo[]
+  ots: OtProgramada[]
+  /** Fecha con la que se abre el diálogo de programación desde acá. */
+  fecha: string
+}
+
+function DetalleDialog({
+  detalle,
   puedeEditar,
   onProgramar,
   onClose,
 }: {
-  fecha: string
-  eventos: EventoPreventivo[]
-  ots: OtProgramada[]
+  detalle: Detalle
   puedeEditar: boolean
   onProgramar: (fecha: string, dominio?: string, tareasSugeridas?: string[]) => void
   onClose: () => void
 }) {
+  const { titulo, subtitulo, eventos, ots, fecha } = detalle
   const porUnidad = useMemo(() => {
     const map = new Map<string, EventoPreventivo[]>()
     for (const e of eventos) {
@@ -463,12 +659,8 @@ function DiaDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>
-            {fecha.slice(8, 10)}/{fecha.slice(5, 7)}/{fecha.slice(0, 4)}
-          </DialogTitle>
-          <DialogDescription>
-            Lo que vence ese día y las órdenes ya programadas.
-          </DialogDescription>
+          <DialogTitle>{titulo}</DialogTitle>
+          <DialogDescription>{subtitulo}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -534,13 +726,13 @@ function DiaDialog({
                 >
                   <Badge
                     variant="outline"
-                    className={cn("px-1.5 py-0 text-[10px]", CLS_EVENTO[e.estado])}
+                    className={cn("px-1.5 py-0 text-[10px]", CLS_ESTADO_BADGE[e.estado])}
                   >
                     {e.estado === "vencido" ? "Vencido" : e.estado === "proximo" ? "Próximo" : "En plazo"}
                   </Badge>
                   <span className="text-foreground">{e.tarea}</span>
                   <span>
-                    · {e.estimada ? "estimado por " : "por "}
+                    · {fmtDia(e.fecha)} · {e.estimada ? "estimado por " : "por "}
                     {e.eje === "tiempo" ? "plazo" : e.eje === "km" ? "kilómetros" : "horas"}
                     {e.detalle ? ` · ${e.detalle}` : ""}
                   </span>
