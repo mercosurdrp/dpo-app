@@ -224,12 +224,31 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                     Ocupación de Bodega
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    CEq por viaje · Target 600 — Pilar Entrega 1.2
+                    CEq por viaje · Target 525 — Pilar Entrega 1.2
                   </p>
                 </div>
               </CardContent>
             </Card>
           </Link>
+          {!IS_MISIONES && (
+            <Link href="/indicadores/target-rutas">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-indigo-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-indigo-100 text-indigo-600 group-hover:bg-indigo-200 transition-colors">
+                    <RouteIcon className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      Target por ruta
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      CEq esperado por camión según la ruta del día
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
           <Link href="/indicadores/foxtrot-tracking">
             <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-pink-300">
               <CardContent className="flex items-center gap-4 pt-6">

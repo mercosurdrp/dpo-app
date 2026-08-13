@@ -145,7 +145,10 @@ export function VentasDetalleDiaDialog({
 
         {!loading && !error && data && (
           <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            <div className={cn(
+              "grid grid-cols-2 gap-3",
+              data.ruteado_noche_anterior ? "md:grid-cols-4" : "md:grid-cols-3",
+            )}>
               <KpiCard
                 label="Bultos del día"
                 value={`${fmtBultos(data.total_bultos)} bultos`}
@@ -175,7 +178,28 @@ export function VentasDetalleDiaDialog({
                 value={formatInt(data.patentes_con_venta)}
                 sub="vehículos"
               />
+              {data.ruteado_noche_anterior && (
+                <KpiCard
+                  label="Ruteado noche anterior"
+                  value={`${fmtBultos(data.ruteado_noche_anterior.bultos)} bultos`}
+                  sub={`cierre de ruteo del ${formatFechaCorta(data.ruteado_noche_anterior.fecha)}`}
+                />
+              )}
             </div>
+
+            {data.ruteado_noche_anterior &&
+              data.total_bultos - data.ruteado_noche_anterior.bultos > 0 && (
+                <div className="rounded-md border border-sky-200 bg-sky-50 p-2 text-xs text-sky-900">
+                  El día suma{" "}
+                  <strong>
+                    {fmtBultos(data.total_bultos - data.ruteado_noche_anterior.bultos)}{" "}
+                    bultos
+                  </strong>{" "}
+                  más que lo ruteado la noche anterior: es carga que no pasa por
+                  el ruteo nocturno (carga directa y segundas vueltas), no
+                  mercadería faltante en el picking.
+                </div>
+              )}
 
             {superaPromedio != null && (
               <div
@@ -765,6 +789,11 @@ function KpiCard({
 
 function formatInt(n: number): string {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(n)
+}
+
+function formatFechaCorta(iso: string): string {
+  const [, m, d] = iso.split("-").map((s) => parseInt(s, 10))
+  return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`
 }
 
 function formatFechaLarga(iso: string): string {
