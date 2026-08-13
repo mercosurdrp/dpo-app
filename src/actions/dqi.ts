@@ -413,6 +413,50 @@ export async function getDqiPpmMes(
   return ppm
 }
 
+/** Cache in-process de la serie diaria, por el mismo motivo que el PPM mensual. */
+const dqiDiarioCache = new Map<
+  string,
+  { t: number; v: Record<string, number | null> }
+>()
+
+/** DQI día por día del mes, en PPM.
+ *
+ * Sale de `dqi_dia` de la serie diaria de deposito-esteban: HL rotos EN LA CALLE
+ * del día ÷ HL entregado del día × 1M. Misma fuente y MISMO denominador que el
+ * `wqi_dia` de la matinal ⇒ las dos filas son comparables entre sí, y una
+ * rotura de distribución que el WQI deja afuera aparece acá el mismo día.
+ *
+ * 🚨 El MTD de la fila sigue viniendo de `getDqiPpmMes` (`/api/dqi`, el número
+ * publicado). Los dos pueden diferir ~1-2%: aquél lee el blob de pérdidas (el
+ * Excel "actual" ya procesado) y éste el acumulado diario de movimientos.
+ *
+ * Devuelve {} si el tablero no responde: las celdas caen a "—" y la fila sigue
+ * mostrando el MTD. Nunca tira. */
+export async function getDqiDiarioMes(
+  year: number,
+  month: number,
+): Promise<Record<string, number | null>> {
+  await requireAuth()
+  const key = `${year}-${month}`
+  const hit = dqiDiarioCache.get(key)
+  if (hit && Date.now() - hit.t < HL_TTL_MS) return hit.v
+  let serie: Record<string, number | null> = {}
+  try {
+    const res = await fetch(
+      `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
+      { cache: "no-store", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+    )
+    if (res.ok) {
+      const j = (await res.json()) as { dqi_dia?: Record<string, number | null> }
+      serie = j?.dqi_dia ?? {}
+    }
+  } catch {
+    serie = {}
+  }
+  dqiDiarioCache.set(key, { t: Date.now(), v: serie })
+  return serie
+}
+
 export interface DqiPatenteRanking extends DqiPatente {
   /** HL que despachó ese camión en el período (ocupacion_bodega_diaria). */
   hl_despachados: number | null

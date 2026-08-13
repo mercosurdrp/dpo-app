@@ -38,7 +38,7 @@ import { buildPampeanaFoxtrotSerie } from "@/lib/foxtrot/auto-indicadores-pampea
 import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getMetaSueno } from "@/lib/sueno/meta"
-import { getDqiPpmMes } from "@/actions/dqi"
+import { getDqiDiarioMes, getDqiPpmMes } from "@/actions/dqi"
 import { getAusentismoSerieEventos } from "@/actions/ausentismo"
 import type {
   Profile,
@@ -4134,16 +4134,30 @@ async function getIndicadoresMesCore(
     }
 
     // 7c-bis. Fila "DQI · roturas en ruta" (PPM) — punto DPO Entrega 1.4.
-    //   Va SOLO en el MTD: el denominador del DQI (HL entregados) es mensual, así
-    //   que no hay valor por día que poner en las celdas. El detalle por camión
-    //   del mes se abre desde el MTD (celda clickeable → DqiPatentesDialog).
-    //   El PPM viene ya calculado del tablero de pérdidas: acá no se recalcula.
+    //   MTD: el PPM ya calculado del tablero de pérdidas (`/api/dqi`), sin
+    //   recalcular. El detalle por camión del mes se abre desde ahí (celda
+    //   clickeable → DqiPatentesDialog).
+    //   Día: `dqi_dia` de la serie diaria (HL rotos en la calle del día ÷ HL
+    //   entregado del día × 1M). Hasta 2026-08-13 las celdas iban todas en null
+    //   —"el denominador del DQI es mensual"— y la fila quedaba muerta en la
+    //   grilla: una rotura de distribución no aparecía en NINGUNA fila de la
+    //   matinal, porque el WQI la manda acá desde el 2026-07-14 y acá no había
+    //   dónde verla. El denominador diario existe (es el mismo del WQI).
+    //   Se enmascara el día de la reunión, igual que WQI/Roturas/Faltantes: a la
+    //   hora del matinal el cierre de hoy todavía no está confirmado.
     //   Tolerante a fallos: si el tablero no responde, mtd queda null (la fila se
     //   ve con "—") y la matinal sigue funcionando.
     if ((tipo === "logistica" || tipo === "matinal-distribucion") && !IS_MISIONES) {
-      const dqiPpm = pDqi ? await resolver(pDqi) : await getDqiPpmMes(anio, mes)
+      const [dqiPpm, dqiDiario] = await Promise.all([
+        pDqi ? resolver(pDqi) : getDqiPpmMes(anio, mes),
+        getDqiDiarioMes(anio, mes),
+      ])
       const dqiValores: ReunionIndicadoresMes["indicadores"][number]["valores"] = {}
-      for (const f of fechas) dqiValores[f] = null
+      for (const f of fechas) {
+        const v = f < fecha ? (dqiDiario[f] ?? null) : null
+        dqiValores[f] =
+          v == null ? null : { reunion_id: "auto", valor: v, observacion: null }
+      }
       indicadoresAuto.push({
         id: "auto_dqi",
         nombre: "DQI · roturas en ruta",
@@ -4154,6 +4168,9 @@ async function getIndicadoresMesCore(
         valores: dqiValores,
         mtd: dqiPpm,
         auto: true,
+        // Un día operativo sin roturas en la calle es 0, no "—": el 0 es la
+        // buena noticia y hay que poder distinguirlo del día sin datos.
+        mostrar_cero: true,
       })
     }
 

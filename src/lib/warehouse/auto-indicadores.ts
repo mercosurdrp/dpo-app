@@ -833,8 +833,13 @@ interface DepositoIndicadoresSerieDiaria {
 }
 
 /** Dónde ocurrió la pérdida: en el almacén o arriba del camión (en la calle).
- *  Sale de la categoría del Excel de pérdidas ("ROTURA DISTRIBUCIÓN"). */
-export type OrigenPerdida = "almacen" | "distribucion"
+ *  Sale de la categoría del Excel de pérdidas:
+ *   - "distribucion" → ROTURA/FALTANTE DISTRIBUCIÓN: pasó en la calle, va al DQI.
+ *   - "acarreo"      → *ACARREO*: transporte primario entre plantas. Es el
+ *     grueso de los faltantes y NO pasó dentro del almacén. Hoy es sólo un
+ *     rótulo: a efectos de cálculo el backend lo sigue contando como almacén.
+ *   - "almacen"      → el resto (rotura de depósito, pinchados y rotos…). */
+export type OrigenPerdida = "almacen" | "distribucion" | "acarreo"
 
 /** Una pérdida del día agregada por SKU y origen (popover de FGLI/WQI en la
  *  reunión). Vale para roturas, faltantes y vencidos. `valor` = $ sin IVA. */
@@ -843,8 +848,8 @@ export interface RoturaDetalleSku {
   descripcion: string
   /** Un mismo SKU puede venir dos veces el mismo día, una por origen. */
   origen?: OrigenPerdida
-  /** Patentes de los camiones involucrados (sólo en las de distribución, y
-   *  únicamente cuando el Excel las informa). */
+  /** Patentes de los camiones involucrados (sólo en las de distribución y
+   *  acarreo, y únicamente cuando el Excel las informa). */
   patentes?: string[]
   bultos: number
   unidades: number

@@ -22,6 +22,7 @@ import {
   getWarehousePerdidasDia,
   type WarehousePerdidasDia,
 } from "@/actions/warehouse-perdidas-dia"
+import type { OrigenPerdida, RoturaDetalleSku } from "@/lib/warehouse/auto-indicadores"
 
 /** Qué indicador se clickeó. Cambia el contenido entero del diálogo: "wqi"
  *  abre las dos lecturas del WQI + las roturas por SKU; "faltantes" abre los
@@ -56,6 +57,58 @@ function fmt(n: number | null, dec = 0): string {
     minimumFractionDigits: dec,
     maximumFractionDigits: dec,
   })
+}
+
+/** Dónde ocurrió la pérdida. Las tres son "pérdida del día", pero sólo la de
+ *  Almacén es responsabilidad del depósito: Distribución se rompió en la calle
+ *  (va al DQI) y Acarreo en el transporte primario entre plantas. Sin la
+ *  chapita, un faltante de acarreo se lee como faltante de almacén. */
+const ORIGEN_CHAPITA: Record<
+  OrigenPerdida,
+  { texto: string; clase: string; icono: "camion" | "deposito" }
+> = {
+  distribucion: {
+    texto: "Distribución",
+    clase: "border-amber-200 bg-amber-50 text-amber-800",
+    icono: "camion",
+  },
+  acarreo: {
+    texto: "Acarreo",
+    clase: "border-sky-200 bg-sky-50 text-sky-800",
+    icono: "camion",
+  },
+  almacen: {
+    texto: "Almacén",
+    clase: "border-slate-200 bg-slate-50 text-slate-700",
+    icono: "deposito",
+  },
+}
+
+/** Chapita de origen + patente del camión cuando el Excel la informó. */
+function OrigenBadge({ fila }: { fila: RoturaDetalleSku }) {
+  const origen: OrigenPerdida = fila.origen ?? "almacen"
+  const cfg = ORIGEN_CHAPITA[origen] ?? ORIGEN_CHAPITA.almacen
+  const patentes = fila.patentes ?? []
+  return (
+    <>
+      <span
+        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${cfg.clase}`}
+        title={patentes.length > 0 ? `Camión ${patentes.join(", ")}` : undefined}
+      >
+        {cfg.icono === "camion" ? (
+          <Truck className="size-3" />
+        ) : (
+          <Warehouse className="size-3" />
+        )}
+        {cfg.texto}
+      </span>
+      {patentes.length > 0 && (
+        <span className="ml-1 font-mono text-xs text-muted-foreground">
+          {patentes.join(", ")}
+        </span>
+      )}
+    </>
+  )
 }
 
 export function WarehousePerdidasDetalleDiaDialog({
@@ -103,6 +156,14 @@ export function WarehousePerdidasDetalleDiaDialog({
       : null
   const hayDistribucion = (data?.roturas_detalle ?? []).some(
     (r) => r.origen === "distribucion",
+  )
+  const hayAcarreo = (data?.roturas_detalle ?? []).some(
+    (r) => r.origen === "acarreo",
+  )
+  // Faltantes: mismo aviso, pero acá la mezcla es la regla y no la excepción —
+  // el grueso de los faltantes es de acarreo, y hasta ahora la tabla no lo decía.
+  const faltantesFueraDeAlmacen = (data?.faltantes_detalle ?? []).filter(
+    (r) => r.origen === "distribucion" || r.origen === "acarreo",
   )
 
   return (
@@ -230,55 +291,28 @@ export function WarehousePerdidasDetalleDiaDialog({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {data.roturas_detalle.map((r) => {
-                        const esDistribucion = r.origen === "distribucion"
-                        const patentes = r.patentes ?? []
-                        return (
-                          <TableRow key={`${r.sku}-${r.origen ?? "almacen"}`}>
-                            <TableCell className="font-mono font-medium">
-                              {r.sku}
-                            </TableCell>
-                            <TableCell
-                              className="max-w-[240px] truncate"
-                              title={r.descripcion}
-                            >
-                              {r.descripcion || "—"}
-                            </TableCell>
-                            <TableCell>
-                              <span
-                                className={
-                                  esDistribucion
-                                    ? "inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
-                                    : "inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700"
-                                }
-                                title={
-                                  esDistribucion && patentes.length > 0
-                                    ? `Camión ${patentes.join(", ")}`
-                                    : undefined
-                                }
-                              >
-                                {esDistribucion ? (
-                                  <Truck className="size-3" />
-                                ) : (
-                                  <Warehouse className="size-3" />
-                                )}
-                                {esDistribucion ? "Distribución" : "Almacén"}
-                              </span>
-                              {esDistribucion && patentes.length > 0 && (
-                                <span className="ml-1 font-mono text-xs text-muted-foreground">
-                                  {patentes.join(", ")}
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {fmt(r.bultos_eq ?? r.bultos, 2)}
-                            </TableCell>
-                            <TableCell className="text-right font-semibold tabular-nums text-red-700">
-                              {fmt(r.hl, 4)}
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })}
+                      {data.roturas_detalle.map((r) => (
+                        <TableRow key={`${r.sku}-${r.origen ?? "almacen"}`}>
+                          <TableCell className="font-mono font-medium">
+                            {r.sku}
+                          </TableCell>
+                          <TableCell
+                            className="max-w-[240px] truncate"
+                            title={r.descripcion}
+                          >
+                            {r.descripcion || "—"}
+                          </TableCell>
+                          <TableCell>
+                            <OrigenBadge fila={r} />
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {fmt(r.bultos_eq ?? r.bultos, 2)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums text-red-700">
+                            {fmt(r.hl, 4)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 </div>
@@ -287,6 +321,13 @@ export function WarehousePerdidasDetalleDiaDialog({
                     Las roturas de <strong>Distribución</strong> se rompieron en
                     la calle: van al DQI y no suman a ninguno de los dos números
                     de arriba.
+                  </p>
+                )}
+                {hayAcarreo && (
+                  <p className="text-xs text-muted-foreground">
+                    Las de <strong>Acarreo</strong> pasaron en el transporte
+                    primario entre plantas. Hoy <strong>sí</strong> suman a los
+                    dos números de arriba, igual que las de almacén.
                   </p>
                 )}
               </div>
@@ -337,21 +378,25 @@ export function WarehousePerdidasDetalleDiaDialog({
                       <TableRow>
                         <TableHead>SKU</TableHead>
                         <TableHead>Descripción</TableHead>
+                        <TableHead>Dónde</TableHead>
                         <TableHead className="text-right">Bultos</TableHead>
                         <TableHead className="text-right">HL</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {data.faltantes_detalle.map((r) => (
-                        <TableRow key={r.sku}>
+                        <TableRow key={`${r.sku}-${r.origen ?? "almacen"}`}>
                           <TableCell className="font-mono font-medium">
                             {r.sku}
                           </TableCell>
                           <TableCell
-                            className="max-w-[280px] truncate"
+                            className="max-w-[240px] truncate"
                             title={r.descripcion}
                           >
                             {r.descripcion || "—"}
+                          </TableCell>
+                          <TableCell>
+                            <OrigenBadge fila={r} />
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {fmt(r.bultos_eq ?? r.bultos, 2)}
@@ -364,6 +409,16 @@ export function WarehousePerdidasDetalleDiaDialog({
                     </TableBody>
                   </Table>
                 </div>
+                {faltantesFueraDeAlmacen.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {faltantesFueraDeAlmacen.length} de{" "}
+                    {data.faltantes_detalle.length} no faltaron dentro del
+                    almacén (<strong>Acarreo</strong> = transporte primario entre
+                    plantas, <strong>Distribución</strong> = reparto a clientes).
+                    Igual suman al número de arriba: la fila Faltantes cuenta
+                    todo.
+                  </p>
+                )}
               </div>
             )}
 

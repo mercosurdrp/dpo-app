@@ -1980,8 +1980,8 @@ export function ReunionDetallePageClient({
                             : undefined
                         }
                       >
-                        {/* El DQI no tiene valor por día (su denominador es mensual):
-                            el detalle por camión se abre desde el MTD. */}
+                        {/* DQI: las celdas del día muestran el PPM diario; el
+                            detalle por camión del mes se abre desde el MTD. */}
                         {ind.id === "auto_dqi" && ind.mtd != null ? (
                           <button
                             type="button"
