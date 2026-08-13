@@ -42,12 +42,19 @@ import {
   cerrarOtProgramada,
   createOtProgramada,
   deleteOtProgramada,
+  getOtCandidatasParaVincular,
   getOtProgramadas,
   llevarOtAlTaller,
+  resolverOtProgramada,
   updateOtProgramada,
+  vincularOtProgramada,
+  type ComprobanteInput,
+  type OtCandidata,
   type OtProgramada,
   type OtProgramadaEstado,
 } from "@/actions/ot-programadas"
+import { subirFacturasMantenimiento } from "@/actions/mantenimiento-vehiculos"
+import { comprimirImagen } from "@/lib/comprimir-imagen"
 import {
   GASTO_TIPO_MANTENIMIENTO_LABELS,
   type EstadoPlanCelda,
@@ -641,6 +648,224 @@ function ChipsLectura({
   )
 }
 
+interface ComprobanteForm {
+  proveedor: string
+  numero: string
+  monto: string
+  archivo: File | null
+}
+
+const nuevoComprobante = (): ComprobanteForm => ({
+  proveedor: "",
+  numero: "",
+  monto: "",
+  archivo: null,
+})
+
+const ACCEPT_COMPROBANTE = "image/*,application/pdf,.pdf"
+
+/**
+ * Sube las fotos y devuelve los comprobantes listos para la action.
+ * null = falló una subida (ya se avisó) y no hay que guardar nada.
+ */
+async function subirComprobantes(
+  dominio: string,
+  filas: ComprobanteForm[],
+): Promise<ComprobanteInput[] | null> {
+  const utiles = filas.filter(
+    (f) => f.archivo || f.proveedor.trim() || f.numero.trim() || f.monto.trim(),
+  )
+  if (utiles.length === 0) return []
+
+  const fd = new FormData()
+  fd.append("dominio", dominio)
+  const conArchivo = utiles.filter((f) => f.archivo)
+  for (const f of conArchivo) {
+    // Si la compresión falla (formato raro, canvas) se sube el original: no
+    // puede cortar el cierre de la OT.
+    let archivo = f.archivo as File
+    try {
+      archivo = await comprimirImagen(archivo)
+    } catch {
+      archivo = f.archivo as File
+    }
+    fd.append("facturas", archivo)
+  }
+
+  let urls: string[] = []
+  if (conArchivo.length > 0) {
+    const res = await subirFacturasMantenimiento(fd)
+    if ("error" in res) {
+      toast.error(res.error)
+      return null
+    }
+    urls = res.data
+  }
+
+  let i = 0
+  return utiles.map((f) => ({
+    proveedor: f.proveedor.trim() || null,
+    numero: f.numero.trim() || null,
+    montoTotal: f.monto.trim() ? Number(f.monto.replace(",", ".")) : null,
+    adjuntoUrl: f.archivo ? (urls[i++] ?? null) : null,
+  }))
+}
+
+/** Comprobantes de la OT: el mecánico y los repuestos facturan por separado. */
+function ComprobantesEditor({
+  filas,
+  setFilas,
+  proveedores,
+}: {
+  filas: ComprobanteForm[]
+  setFilas: (f: ComprobanteForm[]) => void
+  /** Si no viene, el picker toma el catálogo del provider más cercano. */
+  proveedores?: MantenimientoProveedor[]
+}) {
+  const set = (i: number, patch: Partial<ComprobanteForm>) =>
+    setFilas(filas.map((f, j) => (j === i ? { ...f, ...patch } : f)))
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <Label className="text-xs">Foto de la factura</Label>
+          <p className="text-[11px] text-muted-foreground">
+            Una por proveedor: la del mecánico y la de los repuestos suelen venir separadas.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setFilas([...filas, nuevoComprobante()])}
+        >
+          <Plus className="mr-1 size-3.5" /> Agregar
+        </Button>
+      </div>
+
+      {filas.map((f, i) => (
+        <div key={i} className="grid grid-cols-12 items-end gap-1.5">
+          <div className="col-span-5">
+            <ProveedorPicker
+              value={f.proveedor}
+              onChange={(v) => set(i, { proveedor: v })}
+              proveedores={proveedores}
+              placeholder="Proveedor"
+            />
+          </div>
+          <Input
+            className="col-span-3"
+            value={f.numero}
+            onChange={(e) => set(i, { numero: e.target.value })}
+            placeholder="N° factura"
+          />
+          <Input
+            className="col-span-3"
+            inputMode="decimal"
+            value={f.monto}
+            onChange={(e) => set(i, { monto: e.target.value })}
+            placeholder="Monto"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="col-span-1"
+            title="Quitar"
+            onClick={() => setFilas(filas.filter((_, j) => j !== i))}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+          <div className="col-span-12">
+            <Input
+              type="file"
+              accept={ACCEPT_COMPROBANTE}
+              className="h-8 text-xs file:mr-2 file:text-xs"
+              onChange={(e) => set(i, { archivo: e.target.files?.[0] ?? null })}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Órdenes de trabajo ya cargadas que pueden ser esta misma orden programada.
+ *
+ * Hasta que existió el circuito programada → OT las dos cosas se cargaban por
+ * separado, así que hay órdenes que figuran "planificada" con el trabajo hecho y
+ * facturado del otro lado. Vincularlas evita cargar la OT por segunda vez.
+ */
+function VincularExistente({
+  ot,
+  onHecho,
+}: {
+  ot: OtProgramada
+  onHecho: () => void
+}) {
+  const [candidatas, setCandidatas] = useState<OtCandidata[] | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelado = false
+    void getOtCandidatasParaVincular(ot.id).then((res) => {
+      if (cancelado) return
+      setCandidatas("error" in res ? [] : res.data)
+    })
+    return () => {
+      cancelado = true
+    }
+  }, [ot.id])
+
+  if (!candidatas || candidatas.length === 0) return null
+
+  const vincular = async (realizadoId: string) => {
+    setSaving(true)
+    const res = await vincularOtProgramada({ id: ot.id, realizadoId })
+    setSaving(false)
+    if ("error" in res) return toast.error(res.error)
+    toast.success("Quedó vinculada: la orden ya no figura pendiente")
+    onHecho()
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-sky-500/30 bg-sky-500/5 p-3">
+      <div>
+        <p className="text-sm font-medium text-sky-700 dark:text-sky-400">
+          ¿Este trabajo ya está cargado?
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Encontré {candidatas.length === 1 ? "esta orden de trabajo" : "estas órdenes de trabajo"}{" "}
+          de {ot.dominio} por esas fechas. Si es la misma, vinculalas y esta orden queda resuelta
+          sin cargar nada de nuevo.
+        </p>
+      </div>
+      {candidatas.map((c) => (
+        <div
+          key={c.id}
+          className="flex items-center justify-between gap-2 rounded-md border border-border bg-card p-2"
+        >
+          <div className="min-w-0 text-xs">
+            <p className="font-semibold">
+              OT {c.numero_ot ?? "s/n"} · {fmtCorta(c.fecha)}
+            </p>
+            <p className="truncate text-muted-foreground">
+              {c.taller || "Sin taller"}
+              {c.costo != null ? ` · $${c.costo.toLocaleString("es-AR")}` : ""}
+              {c.estado === "en_taller" ? " · en taller" : ""}
+            </p>
+          </div>
+          <Button size="sm" variant="outline" disabled={saving} onClick={() => vincular(c.id)}>
+            Es esta
+          </Button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /**
  * El circuito del taller dentro de la orden programada, para no cargar la misma
  * OT dos veces:
@@ -701,6 +926,17 @@ function TallerPanel({
   const [costo, setCosto] = useState("")
   const [factura, setFactura] = useState("")
   const [obsCierre, setObsCierre] = useState("")
+  /** Horas del taller: entrada y resolución. Vacías = se guarda sólo la fecha. */
+  const [horaEntrada, setHoraEntrada] = useState("")
+  const [horaSalida, setHoraSalida] = useState("")
+  const [comprobantes, setComprobantes] = useState<ComprobanteForm[]>([])
+  /**
+   * Qué pasó con la orden. El caso de todos los días es que el trabajo ya está
+   * hecho —la unidad va a la gomería y vuelve el mismo día—, así que arranca en
+   * "resuelta": pedir primero la entrada al taller para poder cerrarla es
+   * papeleo que termina dejando la orden colgada en "planificada".
+   */
+  const [modo, setModo] = useState<"resuelta" | "en_taller">("resuelta")
 
   const unidad = esAutoelevador ? "hs" : "km"
   const labelMedicion = esAutoelevador ? "Horómetro (hs)" : "Odómetro (km)"
@@ -713,17 +949,18 @@ function TallerPanel({
     return esAutoelevador ? { horometro: n } : { odometro: n }
   }
 
+  const nombresTildados = () =>
+    datos.tareas.filter(({ tarea }) => tildadas.has(tarea.id)).map(({ tarea }) => tarea.nombre)
+
   const llevar = async () => {
     setSaving(true)
-    const nombres = datos.tareas
-      .filter(({ tarea }) => tildadas.has(tarea.id))
-      .map(({ tarea }) => tarea.nombre)
     const res = await llevarOtAlTaller({
       id: ot.id,
       fecha: fechaTaller,
+      hora: horaEntrada,
       tipo,
       tareaIds: [...tildadas],
-      nombresDelPlan: nombres,
+      nombresDelPlan: nombresTildados(),
       esServiceGeneral,
       ...medicionParaEnviar(),
     })
@@ -733,14 +970,44 @@ function TallerPanel({
     onHecho()
   }
 
-  const cerrar = async () => {
+  /** El trabajo ya se hizo: crea la orden de trabajo y la cierra de una. */
+  const resolver = async () => {
     setSaving(true)
-    const res = await cerrarOtProgramada({
+    const comps = await subirComprobantes(ot.dominio, comprobantes)
+    if (comps === null) return setSaving(false)
+    const res = await resolverOtProgramada({
       id: ot.id,
-      fechaSalida,
+      fecha: fechaTaller,
+      hora: horaEntrada,
+      horaSalida,
+      tipo,
+      tareaIds: [...tildadas],
+      nombresDelPlan: nombresTildados(),
+      esServiceGeneral,
       costo: numero(costo),
       numero_factura: factura.trim() || undefined,
       observaciones: obsCierre.trim() || undefined,
+      facturas: comps,
+      ...medicionParaEnviar(),
+    })
+    setSaving(false)
+    if ("error" in res) return toast.error(res.error)
+    toast.success("Orden resuelta: quedó cargada en Órdenes de Trabajo")
+    onHecho()
+  }
+
+  const cerrar = async () => {
+    setSaving(true)
+    const comps = await subirComprobantes(ot.dominio, comprobantes)
+    if (comps === null) return setSaving(false)
+    const res = await cerrarOtProgramada({
+      id: ot.id,
+      fechaSalida,
+      horaSalida,
+      costo: numero(costo),
+      numero_factura: factura.trim() || undefined,
+      observaciones: obsCierre.trim() || undefined,
+      facturas: comps,
       ...medicionParaEnviar(),
     })
     setSaving(false)
@@ -783,6 +1050,14 @@ function TallerPanel({
             />
           </div>
           <div className="space-y-1">
+            <Label>A qué hora</Label>
+            <Input
+              type="time"
+              value={horaSalida}
+              onChange={(e) => setHoraSalida(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
             <Label>{labelMedicion}</Label>
             <Input
               inputMode="decimal"
@@ -819,9 +1094,9 @@ function TallerPanel({
             />
           </div>
         </div>
+        <ComprobantesEditor filas={comprobantes} setFilas={setComprobantes} />
         <p className="text-[11px] text-muted-foreground">
-          El adjunto de la factura y los repuestos con su proveedor se cargan después en Órdenes
-          de Trabajo, sobre esta misma orden.
+          Los repuestos con su proveedor se cargan en Órdenes de Trabajo, sobre esta misma orden.
         </p>
         <Button onClick={cerrar} disabled={saving} className="w-full">
           {saving ? "Cerrando…" : "Cerrar OT — volvió la unidad"}
@@ -833,19 +1108,52 @@ function TallerPanel({
   return (
     <div className="space-y-3 rounded-md border border-border p-3">
       <div>
-        <p className="text-sm font-medium">¿Se llevó la unidad al taller?</p>
+        <p className="text-sm font-medium">¿Qué pasó con esta orden?</p>
         <p className="text-xs text-muted-foreground">
-          Al confirmarlo se crea la orden de trabajo con estos mismos datos —no hay que cargarla
-          de nuevo— y {ot.dominio} queda fuera de servicio hasta que vuelva.
+          Con cualquiera de las dos se crea la orden de trabajo con estos mismos datos: no hay que
+          cargarla de nuevo en otra pantalla.
         </p>
       </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {(
+          [
+            ["resuelta", "Ya se resolvió", "El trabajo está hecho"],
+            ["en_taller", "Está en el taller", `${ot.dominio} todavía no volvió`],
+          ] as const
+        ).map(([valor, titulo, ayuda]) => (
+          <button
+            key={valor}
+            type="button"
+            onClick={() => setModo(valor)}
+            className={cn(
+              "rounded-md border p-2 text-left text-xs transition-colors",
+              modo === valor
+                ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                : "border-border hover:bg-muted/50",
+            )}
+          >
+            <span className="block font-semibold">{titulo}</span>
+            <span className="block text-[11px] text-muted-foreground">{ayuda}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
-          <Label>Se llevó el</Label>
+          <Label>{modo === "resuelta" ? "Se hizo el" : "Se llevó el"}</Label>
           <Input
             type="date"
             value={fechaTaller}
             onChange={(e) => setFechaTaller(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label>{modo === "resuelta" ? "Entró a las" : "A qué hora"}</Label>
+          <Input
+            type="time"
+            value={horaEntrada}
+            onChange={(e) => setHoraEntrada(e.target.value)}
           />
         </div>
         <div className="space-y-1">
@@ -957,9 +1265,64 @@ function TallerPanel({
         </div>
       )}
 
-      <Button onClick={llevar} disabled={saving} className="w-full">
-        {saving ? "Creando la OT…" : "Se llevó al taller — crear la orden de trabajo"}
+      {modo === "resuelta" && (
+        <div className="space-y-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3">
+          <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+            Cómo quedó resuelta
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Resuelto a las</Label>
+              <Input
+                type="time"
+                value={horaSalida}
+                onChange={(e) => setHoraSalida(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Costo</Label>
+              <Input
+                inputMode="decimal"
+                value={costo}
+                onChange={(e) => setCosto(e.target.value)}
+                placeholder="Opcional"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>N° factura</Label>
+              <Input
+                value={factura}
+                onChange={(e) => setFactura(e.target.value)}
+                placeholder="Opcional"
+              />
+            </div>
+            <div className="col-span-2 space-y-1">
+              <Label>Qué se hizo</Label>
+              <Textarea
+                rows={2}
+                value={obsCierre}
+                onChange={(e) => setObsCierre(e.target.value)}
+                placeholder="Opcional"
+              />
+            </div>
+          </div>
+          <ComprobantesEditor filas={comprobantes} setFilas={setComprobantes} />
+        </div>
+      )}
+
+      <Button
+        onClick={modo === "resuelta" ? resolver : llevar}
+        disabled={saving}
+        className="w-full"
+      >
+        {saving
+          ? "Guardando…"
+          : modo === "resuelta"
+            ? "Marcar resuelta — queda en Órdenes de Trabajo"
+            : "Se llevó al taller — crear la orden de trabajo"}
       </Button>
+
+      <VincularExistente ot={ot} onHecho={onHecho} />
     </div>
   )
 }
