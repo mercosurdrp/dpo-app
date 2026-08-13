@@ -48,11 +48,26 @@ export interface VentasClienteRow {
   origenes: VentasClienteOrigenRow[]
 }
 
+export interface RuteadoNocheAnterior {
+  /** Fecha del cierre de ruteo (la noche previa al reparto). */
+  fecha: string
+  /** Pergamino + Ramallo + no ruteados del cierre. */
+  bultos: number
+}
+
 export interface VentasResumenDia {
   fecha: string
   total_bultos: number
   total_hl: number
   patentes_con_venta: number
+  /**
+   * Bultos del último cierre de ruteo ANTERIOR al día (ruteo_cierres): es lo
+   * que el depósito piqueó la noche previa. La diferencia contra total_bultos
+   * es la carga que no pasa por el ruteo nocturno (carga directa y segundas
+   * vueltas), NO mercadería faltante. null si no hay cierre cercano (o en
+   * Misiones, que no tiene módulo de ruteo).
+   */
+  ruteado_noche_anterior: RuteadoNocheAnterior | null
   /** Promedio diario de bultos del mes anterior (Σ bultos / días con datos). */
   promedio_bultos_mes_anterior: number | null
   /** Promedio diario de HL del mes anterior. */
@@ -81,7 +96,15 @@ export async function getVentasResumenDia(
   const ultimoDia = new Date(Date.UTC(prevAnio, prevMes, 0)).getUTCDate()
   const prevHasta = `${prevAnio}-${String(prevMes).padStart(2, "0")}-${String(ultimoDia).padStart(2, "0")}`
 
-  const [ventasRaw, ventasMesAntRaw, mapeoRaw, skusRaw, mapeoGescomRaw, clientesRaw] = await Promise.all([
+  // Cierre de ruteo previo al reparto: hasta 4 días atrás para cubrir fines
+  // de semana (el reparto del lunes se rutea el sábado).
+  const ruteoDesde = (() => {
+    const d = new Date(`${fecha}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() - 4)
+    return d.toISOString().slice(0, 10)
+  })()
+
+  const [ventasRaw, ventasMesAntRaw, mapeoRaw, skusRaw, mapeoGescomRaw, clientesRaw, ruteoRaw] = await Promise.all([
     supa
       .from("ventas_diarias")
       .select("ds_fletero_carga, total_bultos, total_hl, origen")
@@ -106,6 +129,15 @@ export async function getVentasResumenDia(
       .from("ventas_diarias_cliente")
       .select("origen, ds_fletero_carga, patente, id_cliente, nombre_cliente, comprobantes, bultos, hl")
       .eq("fecha", fecha),
+    supa
+      .from("ruteo_cierres")
+      .select("fecha, pergamino_bultos, ramallo_bultos, bultos_no_ruteados")
+      .eq("estado", "cerrado")
+      .lt("fecha", fecha)
+      .gte("fecha", ruteoDesde)
+      .order("fecha", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   if (ventasRaw.error) {
@@ -292,11 +324,29 @@ export async function getVentasResumenDia(
   }
   const por_cliente = [...porClienteAgg.values()].sort((a, b) => b.bultos - a.bultos)
 
+  // Ruteado la noche anterior (si la tabla no existe —Misiones— o no hubo
+  // cierre cercano, queda null y el dialog no muestra la comparación).
+  let ruteadoNocheAnterior: RuteadoNocheAnterior | null = null
+  if (!ruteoRaw.error && ruteoRaw.data) {
+    const r = ruteoRaw.data as {
+      fecha: string
+      pergamino_bultos: number | null
+      ramallo_bultos: number | null
+      bultos_no_ruteados: number | null
+    }
+    const bultos =
+      Number(r.pergamino_bultos ?? 0) +
+      Number(r.ramallo_bultos ?? 0) +
+      Number(r.bultos_no_ruteados ?? 0)
+    if (bultos > 0) ruteadoNocheAnterior = { fecha: r.fecha, bultos }
+  }
+
   return {
     fecha,
     total_bultos: totalBultos,
     total_hl: Math.round(totalHl * 100) / 100,
     patentes_con_venta: porPatenteAgg.size,
+    ruteado_noche_anterior: ruteadoNocheAnterior,
     promedio_bultos_mes_anterior: promedioBultos,
     promedio_hl_mes_anterior: promedioHl,
     por_patente,
