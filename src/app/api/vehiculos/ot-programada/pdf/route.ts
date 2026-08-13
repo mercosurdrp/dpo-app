@@ -151,16 +151,47 @@ async function renderPDF(data: OtPdfData): Promise<Buffer> {
   })
 }
 
+/**
+ * Achica el cuerpo hasta que el texto entre en el ancho de su columna, y si ni
+ * en el tamaño más chico entra, lo corta con "…".
+ *
+ * 🚨 `lineBreak: false` NO recorta: pdfkit dibuja la línea completa y el texto
+ * se sale del recuadro y pisa la columna de al lado. Un taller como "GOMERIA
+ * POZZI ARNALDO JOSE" se comía el campo siguiente.
+ */
+function textoQueEntra(
+  doc: Doc,
+  valor: string,
+  w: number,
+  fuente: string,
+  max: number,
+  min: number,
+): { texto: string; size: number } {
+  for (let size = max; size >= min; size -= 0.5) {
+    doc.font(fuente).fontSize(size)
+    if (doc.widthOfString(valor) <= w) return { texto: valor, size }
+  }
+  doc.font(fuente).fontSize(min)
+  let texto = valor
+  while (texto.length > 1 && doc.widthOfString(`${texto}…`) > w) {
+    texto = texto.slice(0, -1)
+  }
+  return { texto: `${texto.trimEnd()}…`, size: min }
+}
+
 function campo(doc: Doc, x: number, y: number, w: number, label: string, valor: string) {
-  doc.font("Helvetica").fontSize(7.5).fillColor(COLOR_MUTED).text(label.toUpperCase(), x, y, {
-    width: w,
-    lineBreak: false,
-  })
+  const lab = textoQueEntra(doc, label.toUpperCase(), w, "Helvetica", 7.5, 5.5)
+  doc
+    .font("Helvetica")
+    .fontSize(lab.size)
+    .fillColor(COLOR_MUTED)
+    .text(lab.texto, x, y, { width: w, lineBreak: false })
+  const val = textoQueEntra(doc, valor || "—", w, "Helvetica-Bold", 11, 6.5)
   doc
     .font("Helvetica-Bold")
-    .fontSize(11)
+    .fontSize(val.size)
     .fillColor(COLOR_TEXT)
-    .text(valor || "—", x, y + 10, { width: w, lineBreak: false })
+    .text(val.texto, x, y + 10, { width: w, lineBreak: false })
 }
 
 function buildPDF(doc: Doc, data: OtPdfData) {

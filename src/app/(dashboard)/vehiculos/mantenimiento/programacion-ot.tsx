@@ -499,6 +499,10 @@ function OtDialog({
         </DialogHeader>
 
         <div className="space-y-3">
+          {/* Lo primero es cerrar la orden: cuando alguien la abre es para eso,
+              no para corregirle el taller. Estaba abajo de todo y no se veía. */}
+          {ot && <TallerPanel ot={ot} datos={datosPlanDe(ot.dominio)} onHecho={onSaved} />}
+
           <div className="grid grid-cols-2 gap-3">
             {!ot && (
               <div className="space-y-1">
@@ -600,9 +604,6 @@ function OtDialog({
             </div>
           </div>
 
-          {ot && (
-            <TallerPanel ot={ot} datos={datosPlanDe(ot.dominio)} onHecho={onSaved} />
-          )}
         </div>
 
         <DialogFooter className="flex items-center justify-between sm:justify-between">
@@ -1104,7 +1105,7 @@ function TallerPanel({
           Los repuestos con su proveedor se cargan en Órdenes de Trabajo, sobre esta misma orden.
         </p>
         <Button onClick={cerrar} disabled={saving} className="w-full">
-          {saving ? "Cerrando…" : "Cerrar OT — volvió la unidad"}
+          {saving ? "Cerrando…" : "Finalizar OT — volvió la unidad"}
         </Button>
       </div>
     )
@@ -1113,7 +1114,7 @@ function TallerPanel({
   return (
     <div className="space-y-3 rounded-md border border-border p-3">
       <div>
-        <p className="text-sm font-medium">¿Qué pasó con esta orden?</p>
+        <p className="text-sm font-medium">Finalizar esta orden</p>
         <p className="text-xs text-muted-foreground">
           Con cualquiera de las dos se crea la orden de trabajo con estos mismos datos: no hay que
           cargarla de nuevo en otra pantalla.
@@ -1323,7 +1324,7 @@ function TallerPanel({
         {saving
           ? "Guardando…"
           : modo === "resuelta"
-            ? "Marcar resuelta — queda en Órdenes de Trabajo"
+            ? "Finalizar OT — queda en Órdenes de Trabajo"
             : "Se llevó al taller — crear la orden de trabajo"}
       </Button>
 
