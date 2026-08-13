@@ -319,7 +319,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       supabase
         .from("mantenimiento_neumatico_mediciones")
         .select(
-          "neumatico_id, fecha, profundidad_mm, presion_psi, neumatico:mantenimiento_neumaticos!inner(estado, dominio)"
+          "neumatico_id, fecha, profundidad_mm, presion_psi, created_at, neumatico:mantenimiento_neumaticos!inner(estado, dominio)"
         )
         .eq("neumatico.estado", "instalado")
         .gte("fecha", inicioVentana),
@@ -659,12 +659,16 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .map((n) => n.id),
     )
     const instaladas = enAlcance.size
-    const medPorMes = new Map<string, Map<string, { prof: number | null; psi: number | null; fecha: string }>>()
+    const medPorMes = new Map<
+      string,
+      Map<string, { prof: number | null; psi: number | null; fecha: string; createdAt: string | null }>
+    >()
     for (const m of (medicionesRes.data || []) as unknown as Array<{
       neumatico_id: string
       fecha: string
       profundidad_mm: number | null
       presion_psi: number | null
+      created_at: string | null
     }>) {
       const ym = String(m.fecha).slice(0, 7)
       if (!meses.includes(ym)) continue
@@ -672,11 +676,22 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       if (!medPorMes.has(ym)) medPorMes.set(ym, new Map())
       const porNeu = medPorMes.get(ym)!
       const prev = porNeu.get(m.neumatico_id)
-      if (!prev || m.fecha > prev.fecha) {
+      // 🚨 Con la misma FECHA hay que desempatar por `created_at`, porque una
+      // cubierta se mide y se vuelve a cargar el mismo día. El 13/08/2026 la
+      // posición 2DE del AE908DH quedó con dos valores distintos —5,7 y 9,4 mm—
+      // cargados con 16 minutos de diferencia: sin desempate el KPI se quedaba
+      // con el que devolviera la base primero, que es orden arbitrario. Vale la
+      // ÚLTIMA carga, que es la corrección.
+      const masNueva =
+        !prev ||
+        m.fecha > prev.fecha ||
+        (m.fecha === prev.fecha && (m.created_at ?? "") > (prev.createdAt ?? ""))
+      if (masNueva) {
         porNeu.set(m.neumatico_id, {
           prof: m.profundidad_mm != null ? Number(m.profundidad_mm) : null,
           psi: m.presion_psi != null ? Number(m.presion_psi) : null,
           fecha: m.fecha,
+          createdAt: m.created_at,
         })
       }
     }
