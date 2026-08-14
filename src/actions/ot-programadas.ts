@@ -269,9 +269,37 @@ export async function llevarOtAlTaller(input: {
 }
 
 /**
+ * La plata de la OT sale de los comprobantes, no de campos sueltos.
+ *
+ * El costo es la SUMA de los montos cargados y el N° de factura el del primer
+ * comprobante que tenga uno (la grilla de Órdenes de Trabajo, el detalle, el PDF
+ * y el export lo siguen leyendo de `numero_factura`, así que no puede quedar en
+ * null).
+ *
+ * 🚨 Si no hay montos devuelve `costo: undefined` y el cierre NO toca el costo
+ * que la OT ya tenía: `costo` es lo que alimenta el costo de flota (DPO 3.2) y
+ * pisarlo con 0 porque alguien cerró sin cargar la factura rompería el número.
+ */
+function plataDeLosComprobantes(facturas?: ComprobanteInput[]): {
+  costo?: number
+  numero_factura?: string
+} {
+  const filas = facturas ?? []
+  const montos = filas
+    .map((f) => f.montoTotal)
+    .filter((m): m is number => typeof m === "number" && isFinite(m))
+  const total = montos.reduce((a, m) => a + m, 0)
+  const numero = filas.map((f) => f.numero?.trim()).find((n) => !!n)
+  return {
+    ...(total > 0 ? { costo: Math.round(total * 100) / 100 } : {}),
+    ...(numero ? { numero_factura: numero } : {}),
+  }
+}
+
+/**
  * Volvió la unidad: cierra la OT real (pasa a completada y vuelve a servicio) y
  * marca la programada como realizada. Acá recién se cargan el kilometraje de
- * salida, el costo y la factura.
+ * salida y los comprobantes, de donde salen el costo y el N° de factura.
  */
 export async function cerrarOtProgramada(input: {
   id: string
@@ -280,10 +308,11 @@ export async function cerrarOtProgramada(input: {
   horaSalida?: string
   odometro?: number | null
   horometro?: number | null
-  costo?: number | null
-  numero_factura?: string
   observaciones?: string
-  /** Comprobantes con su adjunto: la del mecánico y la de repuestos van separadas. */
+  /**
+   * Comprobantes con su adjunto: la del mecánico y la de repuestos van
+   * separadas. Es la ÚNICA fuente del costo y del N° de factura de la OT.
+   */
   facturas?: ComprobanteInput[]
 }): Promise<Result<OtProgramada>> {
   try {
@@ -304,6 +333,7 @@ export async function cerrarOtProgramada(input: {
     const adjuntos = (input.facturas ?? [])
       .map((f) => f.adjuntoUrl)
       .filter((u): u is string => !!u)
+    const plata = plataDeLosComprobantes(input.facturas)
 
     const res = await updateMantenimiento({
       id: ot.realizado_id,
@@ -318,8 +348,10 @@ export async function cerrarOtProgramada(input: {
       // vencimiento: sin él la tarea queda hecha pero sin kilometraje de corte.
       ...(input.odometro != null ? { odometro: input.odometro } : {}),
       ...(input.horometro != null ? { horometro: input.horometro } : {}),
-      ...(input.costo != null ? { costo: input.costo } : {}),
-      ...(input.numero_factura ? { numero_factura: input.numero_factura } : {}),
+      // Costo y N° de factura salen de los comprobantes; sin montos no se toca
+      // lo que la OT ya tenía (ver `plataDeLosComprobantes`).
+      ...(plata.costo != null ? { costo: plata.costo } : {}),
+      ...(plata.numero_factura ? { numero_factura: plata.numero_factura } : {}),
       ...(input.observaciones ? { observaciones: input.observaciones } : {}),
     })
     if ("error" in res) return { error: res.error }
@@ -388,9 +420,8 @@ export async function resolverOtProgramada(input: {
   odometro?: number | null
   horometro?: number | null
   esServiceGeneral?: boolean
-  costo?: number | null
-  numero_factura?: string
   observaciones?: string
+  /** Única fuente del costo y del N° de factura de la OT. */
   facturas?: ComprobanteInput[]
 }): Promise<Result<OtProgramada>> {
   const abierta = await llevarOtAlTaller({
@@ -414,8 +445,6 @@ export async function resolverOtProgramada(input: {
     horaSalida: input.horaSalida,
     odometro: input.odometro,
     horometro: input.horometro,
-    costo: input.costo,
-    numero_factura: input.numero_factura,
     observaciones: input.observaciones,
     facturas: input.facturas,
   })

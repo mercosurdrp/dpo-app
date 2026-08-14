@@ -36,6 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CalendarDays, ChevronLeft, ChevronRight, FileDown, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
+import { fmtMoneyOt } from "./_components/ot-formato"
 import { CalendarioPreventivo } from "./_components/calendario-preventivo"
 import type { LecturaDia } from "@/lib/flota/calendario-preventivo"
 import {
@@ -662,14 +663,34 @@ interface ComprobanteForm {
   archivo: File | null
 }
 
-const nuevoComprobante = (): ComprobanteForm => ({
-  proveedor: "",
+const nuevoComprobante = (proveedor = ""): ComprobanteForm => ({
+  proveedor,
   numero: "",
   monto: "",
   archivo: null,
 })
 
 const ACCEPT_COMPROBANTE = "image/*,application/pdf,.pdf"
+
+const montoComprobante = (v: string): number | null => {
+  const n = Number(v.replace(",", "."))
+  return v.trim() && isFinite(n) ? n : null
+}
+
+/** Suma de los montos cargados: es el costo que va a quedar en la OT. */
+function totalComprobantes(filas: ComprobanteForm[]): number {
+  return filas.reduce((a, f) => a + (montoComprobante(f.monto) ?? 0), 0)
+}
+
+/**
+ * Una fila cuenta como comprobante si tiene algo del comprobante en sí.
+ *
+ * 🚨 El proveedor NO alcanza: la primera fila viene precargada con el taller de
+ * la orden, así que si contara, cerrar una OT sin factura guardaría un
+ * comprobante vacío.
+ */
+const tieneComprobante = (f: ComprobanteForm) =>
+  !!(f.archivo || f.numero.trim() || f.monto.trim())
 
 /**
  * Sube las fotos y devuelve los comprobantes listos para la action.
@@ -679,9 +700,7 @@ async function subirComprobantes(
   dominio: string,
   filas: ComprobanteForm[],
 ): Promise<ComprobanteInput[] | null> {
-  const utiles = filas.filter(
-    (f) => f.archivo || f.proveedor.trim() || f.numero.trim() || f.monto.trim(),
-  )
+  const utiles = filas.filter(tieneComprobante)
   if (utiles.length === 0) return []
 
   const fd = new FormData()
@@ -713,12 +732,19 @@ async function subirComprobantes(
   return utiles.map((f) => ({
     proveedor: f.proveedor.trim() || null,
     numero: f.numero.trim() || null,
-    montoTotal: f.monto.trim() ? Number(f.monto.replace(",", ".")) : null,
+    montoTotal: montoComprobante(f.monto),
     adjuntoUrl: f.archivo ? (urls[i++] ?? null) : null,
   }))
 }
 
-/** Comprobantes de la OT: el mecánico y los repuestos facturan por separado. */
+/**
+ * Comprobantes de la OT: el mecánico y los repuestos facturan por separado.
+ *
+ * 🚨 Es el ÚNICO lugar donde se carga la plata del cierre. El costo de la OT es
+ * la suma de estos montos y el N° de factura sale del primer comprobante: los
+ * campos sueltos "Costo" y "N° factura" se sacaron el 14/08/2026 porque pedían
+ * dos veces el mismo dato.
+ */
 function ComprobantesEditor({
   filas,
   setFilas,
@@ -732,13 +758,17 @@ function ComprobantesEditor({
   const set = (i: number, patch: Partial<ComprobanteForm>) =>
     setFilas(filas.map((f, j) => (j === i ? { ...f, ...patch } : f)))
 
+  const total = totalComprobantes(filas)
+  const conMonto = filas.filter((f) => montoComprobante(f.monto) != null).length
+
   return (
     <div className="space-y-2 rounded-md border border-border p-2.5">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <Label className="text-xs">Foto de la factura</Label>
+          <Label className="text-xs">Facturas de la orden</Label>
           <p className="text-[11px] text-muted-foreground">
-            Una por proveedor: la del mecánico y la de los repuestos suelen venir separadas.
+            Una por proveedor: la del mecánico y la de los repuestos suelen venir separadas. El
+            costo de la OT es la suma de estos montos.
           </p>
         </div>
         <Button
@@ -794,6 +824,20 @@ function ComprobantesEditor({
           </div>
         </div>
       ))}
+
+      <div className="flex items-baseline justify-between gap-2 border-t border-border pt-2">
+        <span className="text-xs text-muted-foreground">
+          Costo que va a quedar en la OT
+          {conMonto > 0 && ` · ${conMonto} comprobante${conMonto > 1 ? "s" : ""}`}
+        </span>
+        {total > 0 ? (
+          <span className="text-sm font-semibold tabular-nums">{fmtMoneyOt(total)}</span>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">
+            sin monto: la OT queda como estaba
+          </span>
+        )}
+      </div>
     </div>
   )
 }
@@ -933,13 +977,15 @@ function TallerPanel({
   // toca si la unidad volvió con otro. Volver a tipearlo era trabajo al pedo.
   const yaCargado = esAutoelevador ? ot.ot_horometro : ot.ot_odometro
   const [medicion, setMedicion] = useState(yaCargado != null ? String(yaCargado) : "")
-  const [costo, setCosto] = useState("")
-  const [factura, setFactura] = useState("")
   const [obsCierre, setObsCierre] = useState("")
   /** Horas del taller: entrada y resolución. Vacías = se guarda sólo la fecha. */
   const [horaEntrada, setHoraEntrada] = useState("")
   const [horaSalida, setHoraSalida] = useState("")
-  const [comprobantes, setComprobantes] = useState<ComprobanteForm[]>([])
+  // La primera fila viene con el taller de la orden puesto: casi siempre la
+  // factura es de él. Se cambia si la emitió otro (repuestos, gomería).
+  const [comprobantes, setComprobantes] = useState<ComprobanteForm[]>(() => [
+    nuevoComprobante(ot.taller ?? ""),
+  ])
   /**
    * Qué pasó con la orden. El caso de todos los días es que el trabajo ya está
    * hecho —la unidad va a la gomería y vuelve el mismo día—, así que arranca en
@@ -994,8 +1040,6 @@ function TallerPanel({
       tareaIds: [...tildadas],
       nombresDelPlan: nombresTildados(),
       esServiceGeneral,
-      costo: numero(costo),
-      numero_factura: factura.trim() || undefined,
       observaciones: obsCierre.trim() || undefined,
       facturas: comps,
       ...medicionParaEnviar(),
@@ -1014,8 +1058,6 @@ function TallerPanel({
       id: ot.id,
       fechaSalida,
       horaSalida,
-      costo: numero(costo),
-      numero_factura: factura.trim() || undefined,
       observaciones: obsCierre.trim() || undefined,
       facturas: comps,
       ...medicionParaEnviar(),
@@ -1067,7 +1109,7 @@ function TallerPanel({
               onChange={(e) => setHoraSalida(e.target.value)}
             />
           </div>
-          <div className="space-y-1">
+          <div className="col-span-2 space-y-1">
             <Label>{labelMedicion}</Label>
             <Input
               inputMode="decimal"
@@ -1081,23 +1123,6 @@ function TallerPanel({
                 : "No se cargó al llevarla: conviene ponerlo ahora."}
             </p>
             <ChipsLectura lecturas={lecturas} unidad={unidad} onElegir={setMedicion} />
-          </div>
-          <div className="space-y-1">
-            <Label>Costo</Label>
-            <Input
-              inputMode="decimal"
-              value={costo}
-              onChange={(e) => setCosto(e.target.value)}
-              placeholder="Opcional"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label>N° factura</Label>
-            <Input
-              value={factura}
-              onChange={(e) => setFactura(e.target.value)}
-              placeholder="Opcional"
-            />
           </div>
           <div className="col-span-2 space-y-1">
             <Label>Qué se hizo</Label>
@@ -1292,23 +1317,6 @@ function TallerPanel({
                 type="time"
                 value={horaSalida}
                 onChange={(e) => setHoraSalida(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Costo</Label>
-              <Input
-                inputMode="decimal"
-                value={costo}
-                onChange={(e) => setCosto(e.target.value)}
-                placeholder="Opcional"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>N° factura</Label>
-              <Input
-                value={factura}
-                onChange={(e) => setFactura(e.target.value)}
-                placeholder="Opcional"
               />
             </div>
             <div className="col-span-2 space-y-1">
