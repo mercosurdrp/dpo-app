@@ -13,7 +13,7 @@
  * sin perder la fila.
  */
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import Link from "next/link"
 import {
   AlertTriangle,
@@ -47,6 +47,50 @@ const VISTAS: Array<{ id: Vista; label: string }> = [
   { id: "estado", label: "Estado" },
 ]
 
+/**
+ * Los avisos de arriba no eran clickeables: informaban un número y ahí moría el
+ * asunto. Ahora cada uno enfoca la tabla en las unidades que lo provocan y salta
+ * a la vista donde ese dato se ve (de nada sirve filtrar por documentos vencidos
+ * y dejar en pantalla las columnas de identificación).
+ *
+ * 🚨 `docsVencidos` y `docsPorVencer` cuentan DOCUMENTOS y el resto UNIDADES: 3
+ * papeles vencidos pueden vivir en 2 camiones. Por eso el detalle del filtro
+ * aclara las dos cifras en lugar de dar a entender que las filas son el número
+ * del aviso.
+ */
+type Foco = "vencidos" | "por_vencer" | "fuera_servicio" | "sin_papeles" | "ficha"
+
+const FOCOS: Record<
+  Foco,
+  { vista: Vista; titulo: string; aplica: (u: MaestroFlotaUnidad) => boolean }
+> = {
+  vencidos: {
+    vista: "documentacion",
+    titulo: "documentación vencida",
+    aplica: (u) => u.docsVencidos > 0,
+  },
+  por_vencer: {
+    vista: "documentacion",
+    titulo: "documentación por vencer",
+    aplica: (u) => u.docsPorVencer > 0,
+  },
+  fuera_servicio: {
+    vista: "estado",
+    titulo: "unidades fuera de servicio",
+    aplica: (u) => u.fueraServicio != null,
+  },
+  sin_papeles: {
+    vista: "documentacion",
+    titulo: "unidades sin papeles cargados",
+    aplica: (u) => u.papeles.length === 0,
+  },
+  ficha: {
+    vista: "identificacion",
+    titulo: "fichas incompletas",
+    aplica: (u) => !u.ficha || u.camposFaltantes.length > 0,
+  },
+}
+
 const TIPO_LABEL: Record<string, string> = {
   camion: "Camión",
   camioneta: "Camioneta",
@@ -76,12 +120,60 @@ function Dato({ valor, falta }: { valor: string | null | undefined; falta?: bool
   )
 }
 
+/** Aviso clickeable: enfoca la tabla en las unidades que lo generan. */
+function ChipAviso({
+  activo,
+  onClick,
+  clase,
+  children,
+}: {
+  activo: boolean
+  onClick: () => void
+  clase: string
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={activo}
+      title={activo ? "Quitar el filtro" : "Ver las unidades"}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md border px-2 py-1 font-medium transition-colors",
+        "hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        clase,
+        activo && "ring-2 ring-ring ring-offset-1"
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
 export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
   const { unidades, resumen } = maestro
   const [vista, setVista] = useState<Vista>("identificacion")
   const [busqueda, setBusqueda] = useState("")
   const [tipo, setTipo] = useState<string>("todos")
   const [verBajas, setVerBajas] = useState(false)
+  const [foco, setFoco] = useState<Foco | null>(null)
+
+  /**
+   * Al tocar un aviso se limpian los demás filtros: los contadores de arriba se
+   * calculan sobre TODAS las unidades activas, así que con una búsqueda o un
+   * tipo puesto la tabla mostraría menos filas que las que anuncia el aviso.
+   */
+  function enfocar(f: Foco) {
+    if (foco === f) {
+      setFoco(null)
+      return
+    }
+    setFoco(f)
+    setVista(FOCOS[f].vista)
+    setBusqueda("")
+    setTipo("todos")
+    setVerBajas(false)
+  }
 
   const tipos = useMemo(
     () => Array.from(new Set(unidades.map((u) => u.tipo).filter(Boolean))) as string[],
@@ -92,6 +184,8 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
     const q = busqueda.trim().toLowerCase()
     return unidades.filter((u) => {
       if (!verBajas && !u.activo) return false
+      // Los avisos se cuentan sobre las activas: una baja no puede colarse.
+      if (foco && (!u.activo || !FOCOS[foco].aplica(u))) return false
       if (tipo !== "todos" && u.tipo !== tipo) return false
       if (!q) return true
       const f = u.ficha
@@ -109,7 +203,16 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q))
     })
-  }, [unidades, busqueda, tipo, verBajas])
+  }, [unidades, busqueda, tipo, verBajas, foco])
+
+  /** Cuántos papeles hay detrás del filtro documental (el aviso cuenta papeles). */
+  const papelesEnFoco = useMemo(() => {
+    if (foco !== "vencidos" && foco !== "por_vencer") return null
+    return filtradas.reduce(
+      (a, u) => a + (foco === "vencidos" ? u.docsVencidos : u.docsPorVencer),
+      0
+    )
+  }, [filtradas, foco])
 
   return (
     <Card>
@@ -144,39 +247,90 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
           resumen.fichasIncompletas > 0) && (
           <div className="flex flex-wrap gap-2 text-xs">
             {resumen.docsVencidos > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1 font-medium text-destructive">
+              <ChipAviso
+                activo={foco === "vencidos"}
+                onClick={() => enfocar("vencidos")}
+                clase="border-destructive/40 bg-destructive/5 text-destructive"
+              >
                 <FileWarning className="size-3" />
                 {resumen.docsVencidos} documento{resumen.docsVencidos === 1 ? "" : "s"} vencido
                 {resumen.docsVencidos === 1 ? "" : "s"}
-              </span>
+              </ChipAviso>
             )}
             {resumen.docsPorVencer > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+              <ChipAviso
+                activo={foco === "por_vencer"}
+                onClick={() => enfocar("por_vencer")}
+                clase="border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+              >
                 <FileWarning className="size-3" />
                 {resumen.docsPorVencer} vence{resumen.docsPorVencer === 1 ? "" : "n"} en 30 días
-              </span>
+              </ChipAviso>
             )}
             {resumen.fueraServicio > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-orange-300 bg-orange-50 px-2 py-1 font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-400">
+              <ChipAviso
+                activo={foco === "fuera_servicio"}
+                onClick={() => enfocar("fuera_servicio")}
+                clase="border-orange-300 bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400"
+              >
                 <Wrench className="size-3" />
                 {resumen.fueraServicio} fuera de servicio
-              </span>
+              </ChipAviso>
             )}
             {resumen.sinPapeles > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+              <ChipAviso
+                activo={foco === "sin_papeles"}
+                onClick={() => enfocar("sin_papeles")}
+                clase="border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+              >
                 <FileWarning className="size-3" />
                 {resumen.sinPapeles} sin papeles cargados
-              </span>
+              </ChipAviso>
             )}
             {(resumen.sinFicha > 0 || resumen.fichasIncompletas > 0) && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 font-medium text-muted-foreground">
+              <ChipAviso
+                activo={foco === "ficha"}
+                onClick={() => enfocar("ficha")}
+                clase="border-border bg-muted text-muted-foreground"
+              >
                 <AlertTriangle className="size-3" />
                 {resumen.sinFicha > 0 && `${resumen.sinFicha} sin ficha`}
                 {resumen.sinFicha > 0 && resumen.fichasIncompletas > 0 && " · "}
                 {resumen.fichasIncompletas > 0 &&
                   `${resumen.fichasIncompletas} con datos faltantes`}
-              </span>
+              </ChipAviso>
             )}
+          </div>
+        )}
+
+        {foco && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+            <span className="font-medium">
+              {filtradas.length} unidad{filtradas.length === 1 ? "" : "es"} con{" "}
+              {FOCOS[foco].titulo}
+              {papelesEnFoco != null && (
+                <span className="font-normal text-muted-foreground">
+                  {" "}
+                  · {papelesEnFoco} papel{papelesEnFoco === 1 ? "" : "es"} en total
+                </span>
+              )}
+            </span>
+            {(foco === "vencidos" || foco === "por_vencer" || foco === "sin_papeles") && (
+              <Link
+                href="/requisitos-legales"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Cargar o renovar en Control documentario
+              </Link>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-6 px-2 text-xs"
+              onClick={() => setFoco(null)}
+            >
+              Quitar filtro
+            </Button>
           </div>
         )}
 
