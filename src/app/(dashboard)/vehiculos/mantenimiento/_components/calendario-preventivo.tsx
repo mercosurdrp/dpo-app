@@ -20,7 +20,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
-import { CalendarDays, ChevronLeft, ChevronRight, FileDown, Plus } from "lucide-react"
+import { CalendarDays, ChevronLeft, ChevronRight, FileDown, Plus, Warehouse } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -358,11 +358,11 @@ export function CalendarioPreventivo({
             tono: hecha ? "hecha" : "ot",
             texto,
             textoCorto: `${hecha ? "✓" : ""}${o.ot_numero ?? "OT"}`,
-            titulo: `${nro}${hecha ? " · resuelta" : " · abierta"} · programada el ${fmtDia(
-              o.fecha_programada
-            )}${o.ot_cierre ? `, cerrada el ${fmtDia(o.ot_cierre)}` : ""}: ${
-              o.tareas.join(" · ") || "sin trabajos cargados"
-            }`,
+            titulo: `${nro}${hecha ? " · resuelta" : " · abierta"} · ${
+              o.taller ? `taller: ${o.taller}` : "sin taller asignado"
+            } · programada el ${fmtDia(o.fecha_programada)}${
+              o.ot_cierre ? `, cerrada el ${fmtDia(o.ot_cierre)}` : ""
+            }: ${o.tareas.join(" · ") || "sin trabajos cargados"}`,
             fecha: o.fecha_programada,
           })
         }
@@ -781,9 +781,20 @@ function DetalleDialog({
                         </span>
                       )}
                     </p>
+                    {/* El taller iba pegado al final de los trabajos y el
+                        truncado se lo comía. Es lo primero que se pregunta de
+                        un día ("¿a dónde fue?"), así que va en su propia línea
+                        y con nombre: si no está cargado, se dice. */}
+                    <p className="mt-0.5 flex items-center gap-1 text-xs">
+                      <Warehouse className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                      {o.taller ? (
+                        <span className="truncate font-medium text-foreground">{o.taller}</span>
+                      ) : (
+                        <span className="text-muted-foreground/70">Sin taller asignado</span>
+                      )}
+                    </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {o.tareas.join(" · ") || "Sin trabajos cargados"}
-                      {o.taller ? ` · ${o.taller}` : ""}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
