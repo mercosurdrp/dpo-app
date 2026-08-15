@@ -32,7 +32,6 @@ import {
   Gauge,
   Loader2,
   Plus,
-  Wrench,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
@@ -95,24 +94,9 @@ const ORDEN_ESTADO: Record<EstadoServiceGeneral, number> = {
   no_aplica: 6,
 }
 
-export interface OTPendiente {
-  id: string
-  dominio: string
-  fecha: string
-  estado: "programado" | "en_taller"
-  motivo: string
-}
-
-const OT_BADGE: Record<OTPendiente["estado"], { label: string; cls: string }> = {
-  programado: {
-    label: "Programada",
-    cls: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400",
-  },
-  en_taller: {
-    label: "En taller",
-    cls: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  },
-}
+/** El tipo se re-exporta desde acá porque el resto del módulo lo importaba
+ *  de este archivo; su definición vive con la tarjeta que lo usa. */
+export type { OTPendiente } from "./_components/ot-abiertas-card"
 
 const fmtNum = (v: number | null) =>
   v == null ? "—" : new Intl.NumberFormat("es-AR").format(v)
@@ -125,15 +109,6 @@ function diasTexto(dias: number | null): string {
   if (dias < 0) return `hace ${Math.abs(dias)} d`
   if (dias === 0) return "hoy"
   return `en ${dias} d`
-}
-
-function antiguedad(fecha: string): string {
-  const hoy = new Date()
-  const f = new Date(fecha + "T00:00:00")
-  const d = Math.round((hoy.getTime() - f.getTime()) / 86_400_000)
-  if (d <= 0) return "hoy"
-  if (d === 1) return "ayer"
-  return `hace ${d} d`
 }
 
 function Dot({ estado }: { estado: EstadoServiceGeneral }) {
@@ -263,13 +238,12 @@ function CargarLecturaDialog({
 interface Props {
   programacion: ServiceGeneralUnidad[]
   documentos: DocumentoVencimiento[]
-  otPendientes: OTPendiente[]
   unidadesBaja: UnidadBaja[]
   puedeEditar: boolean
   onNavigate: (tab: string, dominio?: string) => void
 }
 
-export function TableroOperativo({ programacion, documentos, otPendientes, unidadesBaja, puedeEditar, onNavigate }: Props) {
+export function TableroOperativo({ programacion, documentos, unidadesBaja, puedeEditar, onNavigate }: Props) {
   const [resaltado, setResaltado] = useState<string | null>(null)
   const [lecturaDe, setLecturaDe] = useState<ServiceGeneralUnidad | null>(null)
   /** Los contadores de arriba de cada tabla ahora la filtran (eran adorno). */
@@ -356,8 +330,10 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
         </Card>
       )}
 
-      {/* ===== Alertas: solo Service pendientes + Órdenes de trabajo ===== */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* ===== Alertas: Service pendientes =====
+          "Órdenes de trabajo" se mudó a Programación OT, debajo del calendario:
+          quien programa la semana necesita verlas ahí, no acá. */}
+      <div className="grid gap-4">
         {/* Service pendientes */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
@@ -445,57 +421,6 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
                       </TableRow>
                     )
                   })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Órdenes de trabajo pendientes */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Wrench className="size-4 text-muted-foreground" /> Órdenes de trabajo
-            </CardTitle>
-            <BadgeFiltro
-              activo={false}
-              onClick={() => onNavigate("historial")}
-              cls="border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400"
-              titulo="Ver el historial completo de órdenes de trabajo"
-            >
-              Abiertas: {otPendientes.length}
-            </BadgeFiltro>
-          </CardHeader>
-          <CardContent className="overflow-x-auto pt-0">
-            {otPendientes.length === 0 ? (
-              <p className="py-3 text-sm text-muted-foreground">No hay órdenes de trabajo abiertas.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Unidad</TableHead>
-                    <TableHead>OT / motivo</TableHead>
-                    <TableHead>Abierta</TableHead>
-                    <TableHead>Estado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {otPendientes.map((ot) => (
-                    <TableRow
-                      key={ot.id}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => onNavigate("historial", ot.dominio)}
-                    >
-                      <TableCell className="font-medium">{ot.dominio}</TableCell>
-                      <TableCell className="max-w-48 truncate text-muted-foreground">{ot.motivo}</TableCell>
-                      <TableCell className="text-muted-foreground">{antiguedad(ot.fecha)}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={OT_BADGE[ot.estado].cls}>
-                          {OT_BADGE[ot.estado].label}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
                 </TableBody>
               </Table>
             )}

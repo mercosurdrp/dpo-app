@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { fmtMoneyOt } from "./_components/ot-formato"
 import { CalendarioPreventivo } from "./_components/calendario-preventivo"
+import { OtAbiertasCard, type OTPendiente } from "./_components/ot-abiertas-card"
 import type { LecturaDia } from "@/lib/flota/calendario-preventivo"
 import {
   cerrarOtProgramada,
@@ -133,6 +134,8 @@ export function ProgramacionOt({
   ultimasLecturas,
   proveedores,
   onProveedorCreado,
+  otPendientes,
+  onVerHistorial,
   puedeEditar,
 }: {
   estados: EstadoPlanVehiculo[]
@@ -145,6 +148,10 @@ export function ProgramacionOt({
   ultimasLecturas: Record<string, LecturaSugerida[]>
   proveedores: MantenimientoProveedor[]
   onProveedorCreado: (p: MantenimientoProveedor) => void
+  /** Órdenes abiertas (programadas o en taller), debajo del calendario. */
+  otPendientes: OTPendiente[]
+  /** Lleva al historial de OT, filtrado por unidad si se pasa el dominio. */
+  onVerHistorial: (dominio?: string) => void
   puedeEditar: boolean
 }) {
   const hoy = iso(new Date())
@@ -250,7 +257,7 @@ export function ProgramacionOt({
           <TabsTrigger value="semana">Semana</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="calendario">
+        <TabsContent value="calendario" className="space-y-4">
           <CalendarioPreventivo
             estados={estados}
             tareas={tareas}
@@ -263,6 +270,10 @@ export function ProgramacionOt({
             }
             onAbrirOt={(o) => setDialog({ ot: o, fecha: o.fecha_programada })}
           />
+
+          {/* Lo abierto, debajo del calendario: se programa la semana mirando
+              lo que todavía está en taller o pendiente. */}
+          <OtAbiertasCard otPendientes={otPendientes} onVerHistorial={onVerHistorial} />
         </TabsContent>
 
         <TabsContent value="semana" className="space-y-4">

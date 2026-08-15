@@ -703,7 +703,6 @@ export function MantenimientoClient({
           <TableroOperativo
             programacion={tablero.programacion}
             documentos={tablero.documentos}
-            otPendientes={otPendientes}
             unidadesBaja={tablero.unidadesBaja}
             puedeEditar={puedeEditar}
             onNavigate={navegar}
@@ -834,6 +833,8 @@ export function MantenimientoClient({
             ultimasLecturas={ultimasLecturas}
             proveedores={provList}
             onProveedorCreado={agregarProveedor}
+            otPendientes={otPendientes}
+            onVerHistorial={(dominio) => navegar("historial", dominio)}
             puedeEditar={puedeEditar}
           />
         </TabsContent>
