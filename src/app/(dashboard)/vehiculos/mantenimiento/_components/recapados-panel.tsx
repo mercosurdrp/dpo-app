@@ -124,16 +124,20 @@ export function RecapadosPanel({
     let recibidasAnio = 0
     let gastoAnio = 0
     let conCosto = 0
+    // Se cuenta POR CUBIERTA y no por remito: con la vuelta en tandas, un envío
+    // abierto puede tener la mitad en el recapador y la otra mitad ya en stock.
     for (const r of recapados) {
-      if (r.estado === "enviado") enRecapador += r.items.length
-      else if (r.fecha_retorno?.slice(0, 4) === anio) {
-        for (const it of r.items) {
-          if (it.resultado !== "recapada") continue
-          recibidasAnio++
-          if (it.costo != null) {
-            gastoAnio += Number(it.costo)
-            conCosto++
-          }
+      for (const it of r.items) {
+        if (it.resultado === "pendiente") {
+          enRecapador++
+          continue
+        }
+        if (it.resultado !== "recapada") continue
+        if (r.fecha_retorno?.slice(0, 4) !== anio) continue
+        recibidasAnio++
+        if (it.costo != null) {
+          gastoAnio += Number(it.costo)
+          conCosto++
         }
       }
     }
@@ -224,6 +228,10 @@ export function RecapadosPanel({
                 {recapados.map((r, i) => {
                   const recapadas = r.items.filter((it) => it.resultado === "recapada")
                   const descartadas = r.items.filter((it) => it.resultado === "descartada")
+                  // La vuelta puede venir por tandas: mientras falte alguna, el
+                  // envío sigue abierto y hay que poder ver cuántas son.
+                  const enElRecapador = r.items.filter((it) => it.resultado === "pendiente").length
+                  const parcial = r.estado === "enviado" && enElRecapador < r.items.length
                   const porCubierta =
                     r.costo_total != null && recapadas.length > 0
                       ? Number(r.costo_total) / recapadas.length
@@ -262,7 +270,11 @@ export function RecapadosPanel({
                               : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
                           )}
                         >
-                          {r.estado === "enviado" ? "En el recapador" : "Recibido"}
+                          {r.estado === "recibido"
+                            ? "Recibido"
+                            : parcial
+                              ? `Faltan ${enElRecapador} de ${r.items.length}`
+                              : "En el recapador"}
                         </Badge>
                       </td>
                       <td className="text-muted-foreground whitespace-nowrap">
@@ -299,13 +311,19 @@ export function RecapadosPanel({
                                 className="h-7 text-xs"
                                 onClick={() => setRecibir(r)}
                               >
-                                <PackageCheck className="mr-1 size-3.5" /> Recibir
+                                <PackageCheck className="mr-1 size-3.5" />{" "}
+                                {parcial ? "Recibir el resto" : "Recibir"}
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 className="size-7 text-muted-foreground hover:text-destructive"
-                                title="Borrar el envío (las cubiertas vuelven a Para recapar)"
+                                disabled={parcial}
+                                title={
+                                  parcial
+                                    ? "No se puede borrar: ya volvió parte del envío"
+                                    : "Borrar el envío (las cubiertas vuelven a Para recapar)"
+                                }
                                 onClick={async () => {
                                   const res = await eliminarEnvioRecapado({ id: r.id })
                                   if ("error" in res) toast.error(res.error)
@@ -547,6 +565,8 @@ interface FilaRecepcion {
   neumatico_id: string
   etiqueta: string
   profundidadEnvio: number | null
+  /** Si esta cubierta llegó en esta tanda. Las que no, siguen en el recapador. */
+  volvio: boolean
   descartada: boolean
   profundidad: string
   /** Con qué dibujo la devolvió el recapador: de eso depende la profundidad. */
@@ -569,8 +589,12 @@ function RecepcionDialog({
   const [costoTotal, setCostoTotal] = useState("")
   const [facturas, setFacturas] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
+  // Sólo lo que sigue en el recapador: si el envío ya tuvo una tanda, esas
+  // cubiertas ya entraron al stock y no se vuelven a tocar.
+  const pendientes = recapado.items.filter((it) => it.resultado === "pendiente")
+  const yaVueltas = recapado.items.length - pendientes.length
   const [filas, setFilas] = useState<FilaRecepcion[]>(() =>
-    recapado.items.map((it) => ({
+    pendientes.map((it) => ({
       neumatico_id: it.neumatico_id,
       etiqueta: etiqueta({
         numero: it.numero_envio,
@@ -578,6 +602,7 @@ function RecepcionDialog({
         medida: it.medida,
       }),
       profundidadEnvio: it.profundidad_envio_mm != null ? Number(it.profundidad_envio_mm) : null,
+      volvio: true,
       descartada: false,
       profundidad: "",
       dibujo: "",
@@ -591,19 +616,25 @@ function RecepcionDialog({
   const set = (id: string, cambio: Partial<FilaRecepcion>) =>
     setFilas((prev) => prev.map((f) => (f.neumatico_id === id ? { ...f, ...cambio } : f)))
 
-  const recapadas = filas.filter((f) => !f.descartada)
+  const llegaron = filas.filter((f) => f.volvio)
+  const recapadas = llegaron.filter((f) => !f.descartada)
+  const quedan = filas.length - llegaron.length
   const total = costoTotal ? Number(costoTotal) : null
   const porCubierta = total != null && recapadas.length > 0 ? total / recapadas.length : null
   const sinProfundidad = recapadas.filter((f) => !f.profundidad).length
 
   const guardar = async () => {
+    if (llegaron.length === 0) {
+      toast.error("Marcá al menos una cubierta como llegada")
+      return
+    }
     setSaving(true)
     const urls = await subirFacturasNeumaticos(facturas)
     if (urls === null) {
       setSaving(false)
       return
     }
-    const items: RecepcionItemInput[] = filas.map((f) => ({
+    const items: RecepcionItemInput[] = llegaron.map((f) => ({
       neumatico_id: f.neumatico_id,
       resultado: f.descartada ? "descartada" : "recapada",
       profundidad_retorno_mm: f.profundidad ? Number(f.profundidad) : null,
@@ -627,6 +658,10 @@ function RecepcionDialog({
     toast.success(
       `${res.recapadas} al stock como recapadas${
         res.descartadas > 0 ? ` · ${res.descartadas} a la bandeja de desecho` : ""
+      }${
+        res.pendientes > 0
+          ? ` · quedan ${res.pendientes} en el recapador`
+          : " · envío completo"
       }`
     )
     onDone()
@@ -642,6 +677,7 @@ function RecepcionDialog({
           <DialogDescription>
             {recapado.proveedor} · enviadas el {fmtFecha(recapado.fecha_envio)} ·{" "}
             {recapado.items.length} cubierta{recapado.items.length > 1 ? "s" : ""}
+            {yaVueltas > 0 && ` · ${yaVueltas} ya volvieron en tandas anteriores`}
           </DialogDescription>
         </DialogHeader>
 
@@ -664,7 +700,7 @@ function RecepcionDialog({
                 type="number"
                 value={costoTotal}
                 onChange={(e) => setCostoTotal(e.target.value)}
-                placeholder="Lo facturado por todo el envío"
+                placeholder="Lo facturado en esta tanda"
               />
             </div>
           </div>
@@ -677,18 +713,22 @@ function RecepcionDialog({
 
           <div className="rounded-md border border-border">
             <div className="border-b bg-muted/50 px-3 py-2">
-              <p className="text-sm font-medium">Qué volvió</p>
+              <p className="text-sm font-medium">Qué volvió en esta tanda</p>
               <p className="text-[11px] text-muted-foreground">
-                Marcá las que el recapador descartó: esas no llevan costo y caen en la
-                bandeja &quot;Para desechar&quot;, hasta que las retire la recicladora. La
-                profundidad con la que vuelve pasa a ser su profundidad de origen.
+                Destildá &quot;Llegó&quot; en las que todavía siguen en el recapador: el
+                envío queda abierto y se registran cuando lleguen, con su fecha y su
+                factura. Marcá las que el recapador descartó: esas no llevan costo y caen
+                en la bandeja &quot;Para desechar&quot;, hasta que las retire la
+                recicladora. La profundidad con la que vuelve pasa a ser su profundidad de
+                origen.
               </p>
             </div>
             <div className="max-h-72 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <th className="py-1.5 pl-3">Cubierta</th>
+                    <th className="w-16 py-1.5 pl-3 text-center">Llegó</th>
+                    <th className="py-1.5">Cubierta</th>
                     <th className="text-right">Salió con</th>
                     <th className="w-28">Volvió (mm)</th>
                     <th className="w-32">Dibujo</th>
@@ -698,8 +738,17 @@ function RecepcionDialog({
                 </thead>
                 <tbody>
                   {filas.map((f) => (
-                    <tr key={f.neumatico_id} className="border-b last:border-0">
-                      <td className="py-1.5 pl-3">
+                    <tr
+                      key={f.neumatico_id}
+                      className={cn("border-b last:border-0", !f.volvio && "opacity-50")}
+                    >
+                      <td className="py-1.5 pl-3 text-center">
+                        <Checkbox
+                          checked={f.volvio}
+                          onCheckedChange={(v) => set(f.neumatico_id, { volvio: v === true })}
+                        />
+                      </td>
+                      <td className="py-1.5">
                         <span
                           className={cn(
                             "font-medium",
@@ -708,6 +757,11 @@ function RecepcionDialog({
                         >
                           {f.etiqueta}
                         </span>
+                        {!f.volvio && (
+                          <span className="ml-1.5 text-[11px] text-muted-foreground">
+                            sigue en el recapador
+                          </span>
+                        )}
                       </td>
                       <td className="text-right tabular-nums text-muted-foreground">
                         {f.profundidadEnvio != null ? `${f.profundidadEnvio} mm` : "—"}
@@ -718,7 +772,7 @@ function RecepcionDialog({
                           step="0.1"
                           className="h-8"
                           value={f.profundidad}
-                          disabled={f.descartada}
+                          disabled={f.descartada || !f.volvio}
                           onChange={(e) =>
                             set(f.neumatico_id, { profundidad: e.target.value })
                           }
@@ -727,7 +781,7 @@ function RecepcionDialog({
                       <td className="pr-2">
                         <Select
                           value={f.dibujo || SIN_DIBUJO}
-                          disabled={f.descartada}
+                          disabled={f.descartada || !f.volvio}
                           onValueChange={(v) =>
                             set(f.neumatico_id, {
                               dibujo: v === SIN_DIBUJO ? "" : (v as NeumaticoDibujo),
@@ -751,7 +805,7 @@ function RecepcionDialog({
                         <Input
                           className="h-8"
                           value={f.numeroRetorno}
-                          disabled={f.descartada}
+                          disabled={f.descartada || !f.volvio}
                           onChange={(e) =>
                             set(f.neumatico_id, { numeroRetorno: e.target.value })
                           }
@@ -760,6 +814,7 @@ function RecepcionDialog({
                       <td className="text-center">
                         <Checkbox
                           checked={f.descartada}
+                          disabled={!f.volvio}
                           onCheckedChange={(v) =>
                             set(f.neumatico_id, { descartada: v === true })
                           }
@@ -776,10 +831,16 @@ function RecepcionDialog({
             <CircleDollarSign className="size-4 text-muted-foreground" />
             <span>
               {recapadas.length} recapada{recapadas.length === 1 ? "" : "s"}
-              {filas.length - recapadas.length > 0 &&
-                ` · ${filas.length - recapadas.length} descartada${
-                  filas.length - recapadas.length === 1 ? "" : "s"
+              {llegaron.length - recapadas.length > 0 &&
+                ` · ${llegaron.length - recapadas.length} descartada${
+                  llegaron.length - recapadas.length === 1 ? "" : "s"
                 }`}
+              {quedan > 0 && (
+                <span className="text-amber-700 dark:text-amber-500">
+                  {" "}
+                  · {quedan} quedan en el recapador
+                </span>
+              )}
             </span>
             <span className="font-medium">
               {porCubierta != null

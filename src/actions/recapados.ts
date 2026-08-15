@@ -262,33 +262,65 @@ export interface RecepcionItemInput {
  * Registra la vuelta del recapador: la factura, el costo prorrateado y qué pasó
  * con cada cubierta. Las recapadas entran al stock como `recapado` con la vida
  * en cero y una vuelta más en el contador; las descartadas van a baja.
+ *
+ * 🚨 **La vuelta puede venir POR TANDAS.** Se manda un remito de 14 cubiertas y
+ * el recapador devuelve 6 con una factura y las otras 8 dos semanas después con
+ * otra. Por eso se recibe el subconjunto que llegó: el remito queda abierto
+ * mientras alguna siga en el recapador, cada tanda suma su factura y su costo, y
+ * recién con la última el envío pasa a "recibido". Antes era todo o nada: al
+ * registrar las 6 el remito se cerraba y las 8 restantes quedaban trabadas en
+ * `en_recapado` sin forma de recibirlas.
  */
 export async function registrarRecepcionRecapado(input: {
   recapado_id: string
   fecha_retorno: string
   factura_numero?: string
   factura_urls?: string[]
+  /** Lo facturado en ESTA tanda; se prorratea entre las que volvieron ahora. */
   costo_total?: number | null
   items: RecepcionItemInput[]
-}): Promise<{ success: true; recapadas: number; descartadas: number } | { error: string }> {
+}): Promise<
+  | { success: true; recapadas: number; descartadas: number; pendientes: number }
+  | { error: string }
+> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
 
     const { data: remito } = await supabase
       .from("mantenimiento_recapados")
-      .select("id, proveedor, estado")
+      .select("id, proveedor, estado, costo_total, factura_numero, factura_urls")
       .eq("id", input.recapado_id)
       .maybeSingle()
     if (!remito) return { error: "El envío ya no existe" }
-    if (remito.estado === "recibido") return { error: "Este envío ya se recibió" }
+    if (remito.estado === "recibido") return { error: "Este envío ya se recibió entero" }
     if (!input.items?.length) return { error: "No hay cubiertas para recibir" }
+
+    // Sólo se puede recibir lo que sigue en el recapador: si una cubierta ya
+    // volvió en una tanda anterior, cargarla de nuevo le sumaría otra vuelta al
+    // contador y volvería a prorratearle costo.
+    const { data: itemsRemito } = await supabase
+      .from("mantenimiento_recapado_items")
+      .select("neumatico_id, resultado, numero_envio")
+      .eq("recapado_id", input.recapado_id)
+    const pendientesPrevios = new Set(
+      (itemsRemito ?? []).filter((i) => i.resultado === "pendiente").map((i) => i.neumatico_id)
+    )
+    const yaRecibida = input.items.find((i) => !pendientesPrevios.has(i.neumatico_id))
+    if (yaRecibida) {
+      const cual = (itemsRemito ?? []).find((i) => i.neumatico_id === yaRecibida.neumatico_id)
+      return {
+        error: cual
+          ? `La cubierta ${cual.numero_envio ?? "sin código"} ya se había recibido en una tanda anterior`
+          : "Esa cubierta no pertenece a este envío",
+      }
+    }
 
     const fecha = input.fecha_retorno || new Date().toISOString().slice(0, 10)
     const recapadas = input.items.filter((i) => i.resultado === "recapada")
     const descartadas = input.items.filter((i) => i.resultado === "descartada")
 
-    // El costo lo pagan solo las que volvieron recapadas.
+    // El costo lo pagan solo las que volvieron recapadas EN ESTA TANDA.
     const costos =
       input.costo_total != null && recapadas.length > 0
         ? prorratear(Number(input.costo_total), recapadas.length)
@@ -397,14 +429,31 @@ export async function registrarRecepcionRecapado(input: {
       })
     }
 
+    // ¿Queda algo en el recapador? El remito se cierra recién con la última.
+    const pendientes = pendientesPrevios.size - input.items.length
+
+    // Cada tanda trae lo suyo: la factura se encadena y el costo se suma, así el
+    // total del remito sigue siendo lo que se pagó por todo el envío.
+    const facturaNueva = input.factura_numero?.trim()
+    const facturas = [remito.factura_numero?.trim(), facturaNueva].filter(Boolean)
+    const urls = [...(remito.factura_urls ?? []), ...(input.factura_urls ?? [])]
+    const costoAcumulado =
+      input.costo_total != null || remito.costo_total != null
+        ? Number(remito.costo_total ?? 0) + Number(input.costo_total ?? 0)
+        : null
+
     const { error: remErr } = await supabase
       .from("mantenimiento_recapados")
       .update({
-        estado: "recibido",
+        // Sin estado "parcial" en la base: mientras falte una, el envío sigue
+        // abierto y la pantalla lo muestra como "faltan N".
+        estado: pendientes === 0 ? "recibido" : "enviado",
+        // La fecha del remito es la de la última tanda que llegó; la de cada
+        // cubierta queda en su movimiento de retorno.
         fecha_retorno: fecha,
-        factura_numero: input.factura_numero?.trim() || null,
-        factura_urls: input.factura_urls?.length ? input.factura_urls : null,
-        costo_total: input.costo_total ?? null,
+        factura_numero: facturas.length ? Array.from(new Set(facturas)).join(" · ") : null,
+        factura_urls: urls.length ? urls : null,
+        costo_total: costoAcumulado,
         updated_at: new Date().toISOString(),
       })
       .eq("id", input.recapado_id)
@@ -414,6 +463,7 @@ export async function registrarRecepcionRecapado(input: {
       success: true,
       recapadas: recapadas.length,
       descartadas: descartadas.length,
+      pendientes,
     }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
