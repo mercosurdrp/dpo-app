@@ -18,7 +18,7 @@
 // dónde se lo mire. Por eso el ritmo del tablero (`kmDia`) manda también sobre el
 // resto de las tareas.
 
-import { Fragment, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { CalendarDays, ChevronLeft, ChevronRight, FileDown, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -120,22 +120,45 @@ interface Barra {
    * durar una semana.
    */
   span: number
-  /** Columnas que ocupa la etiqueta cuando el texto no entra en la barra. */
-  spanLabel: number
   carril: number
   tono: Tono
+  /** Texto completo; se usa cuando la barra tiene ancho para mostrarlo. */
   texto: string
+  /** Versión mínima (el N° de OT, el ◀): lo que entra en un solo día. */
+  textoCorto: string
   titulo: string
   fecha: string
 }
 
-/** Columnas que necesita un texto para leerse. */
-const anchoTexto = (texto: string) => Math.min(12, Math.max(3, Math.ceil(texto.length / 4.5) + 1))
-
 /**
- * Reparte las barras en carriles para que ninguna se superponga con otra.
- * El lugar reservado incluye la etiqueta que se dibuja al costado.
+ * Ancho de cada día, en píxeles. El calendario nació con los 31 días metidos a
+ * la fuerza en 52rem: cada día quedaba en ~23 px, ahí no entra ni "OT 1756" y
+ * por eso el texto terminaba dibujado sobre los días de al lado. Ahora el día
+ * tiene un ancho de verdad y, si el mes no entra en la pantalla, se scrollea.
  */
+const ZOOMS = {
+  compacto: { px: 26, label: "Mes completo" },
+  comodo: { px: 46, label: "Días cómodos" },
+  amplio: { px: 92, label: "Días anchos" },
+} as const
+type Zoom = keyof typeof ZOOMS
+
+/** Ancho de un texto de 10 px, en píxeles (aprox., para elegir qué mostrar). */
+const anchoPx = (texto: string) => texto.length * 5.4
+
+/** "Filtro de aire" → "FA": lo que se puede leer dentro de un solo día. */
+function siglas(tarea: string): string {
+  const palabras = tarea
+    .split(/\s+/)
+    .filter((p) => p.length > 2 && !/^(de|del|la|el|los|las|con|por)$/i.test(p))
+  if (palabras.length === 0) return tarea.slice(0, 3).toUpperCase()
+  return palabras
+    .slice(0, 3)
+    .map((p) => p[0].toUpperCase())
+    .join("")
+}
+
+/** Reparte las barras en carriles para que ninguna se superponga con otra. */
 function repartirEnCarriles(items: Omit<Barra, "carril">[]): { barras: Barra[]; ocultas: number } {
   const finDeCarril: number[] = []
   const barras: Barra[] = []
@@ -149,7 +172,7 @@ function repartirEnCarriles(items: Omit<Barra, "carril">[]): { barras: Barra[]; 
       }
       carril = finDeCarril.length
     }
-    finDeCarril[carril] = it.dia + it.span + it.spanLabel - 1
+    finDeCarril[carril] = it.dia + it.span - 1
     barras.push({ ...it, carril })
   }
   return { barras, ocultas }
@@ -185,6 +208,8 @@ export function CalendarioPreventivo({
   const [cacheOts, setCacheOts] = useState<{ clave: string; data: OtProgramada[] } | null>(null)
   const [detalle, setDetalle] = useState<Detalle | null>(null)
   const [verVacias, setVerVacias] = useState(false)
+  const [zoom, setZoom] = useState<Zoom>("comodo")
+  const anchoDia = ZOOMS[zoom].px
 
   const dias = useMemo(() => diasDelMes(ancla), [ancla])
   const primeroDelMes = dias[0].iso
@@ -304,9 +329,9 @@ export function CalendarioPreventivo({
             key: `atras-${dominio}`,
             dia: 1,
             span: 1,
-            spanLabel: anchoTexto(texto),
             tono: "arrastre",
             texto,
+            textoCorto: atras.length === 1 ? "◀" : `◀${atras.length}`,
             titulo: `Vencidas antes de ${mesLargo(ancla)}: ${atras
               .map((e) => `${e.tarea} (${fmtDia(e.fecha)})`)
               .join(" · ")}`,
@@ -330,9 +355,9 @@ export function CalendarioPreventivo({
             key: `ot-${o.id}`,
             dia: ini,
             span,
-            spanLabel: span >= anchoTexto(texto) ? 0 : anchoTexto(texto),
             tono: hecha ? "hecha" : "ot",
             texto,
+            textoCorto: `${hecha ? "✓" : ""}${o.ot_numero ?? "OT"}`,
             titulo: `${nro}${hecha ? " · resuelta" : " · abierta"} · programada el ${fmtDia(
               o.fecha_programada
             )}${o.ot_cierre ? `, cerrada el ${fmtDia(o.ot_cierre)}` : ""}: ${
@@ -348,9 +373,10 @@ export function CalendarioPreventivo({
             key: `ev-${dominio}-${e.tareaId}`,
             dia: diaDe.get(e.fecha) ?? 1,
             span: 1,
-            spanLabel: anchoTexto(texto),
             tono: e.estado,
             texto,
+            // Iniciales de la tarea: en un solo día no entra "Filtro de aire".
+            textoCorto: `${e.estimada ? "~" : ""}${siglas(e.tarea)}`,
             titulo: `${e.tarea} · ${fmtDia(e.fecha)}${e.detalle ? ` · ${e.detalle}` : ""}${
               e.estimada ? " (fecha estimada por el uso)" : ""
             }`,
@@ -407,7 +433,10 @@ export function CalendarioPreventivo({
           }
     )
 
-  const colsMes = { gridTemplateColumns: `repeat(${nDias}, minmax(0, 1fr))` }
+  // Cada día tiene un ancho mínimo real: si el mes no entra, se scrollea. Antes
+  // los 31 días se apretaban en 52rem y el texto se salía del día.
+  const colsMes = { gridTemplateColumns: `repeat(${nDias}, minmax(${anchoDia}px, 1fr))` }
+  const anchoGrilla = { minWidth: `calc(7rem + ${nDias * anchoDia + 8}px)` }
 
   return (
     <div className="space-y-4">
@@ -431,6 +460,23 @@ export function CalendarioPreventivo({
                   {dominios.map((d) => (
                     <SelectItem key={d} value={d}>
                       {d}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* Ancho de los días: con el mes entero apretado en pantalla no
+                  entra el texto de una OT; acá se le da aire y se scrollea. */}
+              <Select value={zoom} onValueChange={(v) => v && setZoom(v as Zoom)}>
+                <SelectTrigger
+                  className="h-8 w-36 border-white/20 bg-white/10 text-white hover:bg-white/15 [&_svg]:text-white/70"
+                  title="Ancho de cada día"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(ZOOMS) as Zoom[]).map((z) => (
+                    <SelectItem key={z} value={z}>
+                      {ZOOMS[z].label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -486,7 +532,7 @@ export function CalendarioPreventivo({
 
         {/* Cuerpo gris: las franjas de color son lo que resalta. */}
         <div className="overflow-x-auto bg-slate-100 dark:bg-slate-900/50">
-          <div className="min-w-[52rem]">
+          <div style={anchoGrilla}>
             {/* Regla de días */}
             <div className="flex items-end border-b border-slate-300/70 bg-slate-200/60 dark:border-slate-700 dark:bg-slate-800/60">
               <div className="sticky left-0 z-20 w-28 shrink-0 bg-slate-200/60 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur dark:bg-slate-800/60">
@@ -568,40 +614,28 @@ export function CalendarioPreventivo({
 
                     {f.barras.map((b) => {
                       const span = Math.min(b.span, nDias - b.dia + 1)
-                      const libre = nDias - (b.dia + span) + 1
-                      const spanLabel = Math.min(b.spanLabel, Math.max(0, libre))
+                      // 🚨 El texto va SIEMPRE adentro de la barra. Cuando se
+                      // dibujaba al costado, una OT del día 5 se leía encima de
+                      // los días 6 y 7 y parecía que el trabajo caía ahí. Si en
+                      // el ancho de la barra no entra el texto largo, entra el
+                      // corto (el N° de OT, las iniciales de la tarea) y el
+                      // detalle completo queda en el tooltip y en el click.
+                      const disponible = span * anchoDia - 12
+                      const label = anchoPx(b.texto) <= disponible ? b.texto : b.textoCorto
                       return (
-                        <Fragment key={b.key}>
-                          <button
-                            type="button"
-                            title={b.titulo}
-                            onClick={() => abrirBarra(f.dominio, b)}
-                            style={{ gridColumn: `${b.dia} / span ${span}`, gridRow: b.carril + 1 }}
-                            className={cn(
-                              "z-10 mx-px flex items-center overflow-hidden rounded px-1.5 text-[10px] font-semibold leading-none shadow-sm transition-colors",
-                              CLS_BARRA[b.tono]
-                            )}
-                          >
-                            {b.spanLabel === 0 && <span className="truncate">{b.texto}</span>}
-                          </button>
-                          {/* Barra de un día o dos: el texto no entra adentro y
-                              va al costado, sobre el lugar que el carril ya le
-                              reservó. */}
-                          {b.spanLabel > 0 && spanLabel > 0 && (
-                            <button
-                              type="button"
-                              title={b.titulo}
-                              onClick={() => abrirBarra(f.dominio, b)}
-                              style={{
-                                gridColumn: `${b.dia + span} / span ${spanLabel}`,
-                                gridRow: b.carril + 1,
-                              }}
-                              className="z-10 flex items-center overflow-hidden pl-1 text-left text-[10px] font-semibold leading-none text-foreground/85 hover:text-foreground"
-                            >
-                              <span className="truncate">{b.texto}</span>
-                            </button>
+                        <button
+                          key={b.key}
+                          type="button"
+                          title={b.titulo}
+                          onClick={() => abrirBarra(f.dominio, b)}
+                          style={{ gridColumn: `${b.dia} / span ${span}`, gridRow: b.carril + 1 }}
+                          className={cn(
+                            "z-10 mx-px flex items-center justify-center overflow-hidden rounded px-1 text-[10px] font-semibold leading-none shadow-sm transition-colors",
+                            CLS_BARRA[b.tono]
                           )}
-                        </Fragment>
+                        >
+                          <span className="truncate">{label}</span>
+                        </button>
                       )
                     })}
 
@@ -633,6 +667,10 @@ export function CalendarioPreventivo({
           <Ref cls="bg-rose-600" texto="Vencido" />
           <Ref cls="bg-amber-400" texto="Por vencer" />
           <Ref cls="bg-slate-300 dark:bg-slate-600" texto="En plazo" />
+          <span className="basis-full text-muted-foreground/80 sm:basis-auto">
+            Cuando el día es angosto la barra muestra el N° de OT o las iniciales de la tarea:
+            tocala para ver el detalle, o poné «Días anchos» para leer el texto completo.
+          </span>
           {sinNada.length > 0 && (
             <button
               type="button"
