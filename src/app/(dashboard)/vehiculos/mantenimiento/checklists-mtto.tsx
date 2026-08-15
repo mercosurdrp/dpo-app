@@ -69,7 +69,6 @@ import {
 } from "./_components/filtro-periodo"
 import { usePaletaViz } from "./_components/paleta-viz"
 import { TooltipBarras } from "./_components/tooltip-barras"
-import { CalidadDeteccion } from "./calidad-deteccion"
 import { CoberturaCil } from "./cobertura-cil"
 import { ConsumoUrea } from "./consumo-urea"
 import { AdherenciaChecklistCard } from "./adherencia-checklist"
@@ -961,8 +960,6 @@ export function ChecklistsMtto({
           </CardContent>
         </Card>
       )}
-
-      <CalidadDeteccion rango={rango} etiquetaPeriodo={etiquetaPeriodo} />
 
       {/* Ítems observados (no OK) del mes elegido */}
       <Card>
