@@ -198,18 +198,32 @@ export function EstandaresFlota({
       : (estadoBy.get(k)?.observaciones ?? null)
   }
 
-  /** Celdas sin evaluar en toda la matriz (unidades activas × ítems de su ámbito). */
-  const sinEvaluar = useMemo(() => {
-    let n = 0
+  /**
+   * Celdas sin evaluar en toda la matriz (unidades activas × ítems de su
+   * ámbito). Se guarda la LISTA y no sólo el conteo: el aviso de arriba decía
+   * "23 sin evaluar" y había que ir a cazar los "?" a ojo por la matriz.
+   */
+  const sinEvaluarLista = useMemo(() => {
+    const filas: { dominio: string; item: string; criticidad: EstandarCriticidad }[] = []
     for (const u of unidades) {
       for (const it of items) {
         if (it.ambito !== u.tipo) continue
         const k = `${u.dominio}|${it.id}`
-        if (!overrides.has(k) && !estadoBy.has(k)) n++
+        if (!overrides.has(k) && !estadoBy.has(k)) {
+          filas.push({
+            dominio: u.dominio,
+            item: it.nombre,
+            criticidad: critOverrides.get(it.id) ?? it.criticidad,
+          })
+        }
       }
     }
-    return n
-  }, [unidades, items, estadoBy, overrides])
+    return filas.sort(
+      (a, b) => a.dominio.localeCompare(b.dominio) || a.item.localeCompare(b.item)
+    )
+  }, [unidades, items, estadoBy, overrides, critOverrides])
+  const sinEvaluar = sinEvaluarLista.length
+  const [verSinEvaluar, setVerSinEvaluar] = useState(false)
 
   const guardar = async (
     dominio: string,
@@ -521,9 +535,15 @@ export function EstandaresFlota({
           </CardTitle>
           <div className="flex items-center gap-2">
             {sinEvaluar > 0 && (
-              <Badge className="border-amber-500/30 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400">
-                {sinEvaluar} sin evaluar
-              </Badge>
+              <button
+                type="button"
+                onClick={() => setVerSinEvaluar(true)}
+                title="Ver qué unidad tiene sin evaluar cada ítem"
+              >
+                <Badge className="border-amber-500/30 bg-amber-500/10 text-sm text-amber-600 transition-shadow hover:brightness-95 dark:text-amber-400">
+                  {sinEvaluar} sin evaluar
+                </Badge>
+              </button>
             )}
             <Badge
               className={cn(
@@ -599,6 +619,50 @@ export function EstandaresFlota({
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={verSinEvaluar} onOpenChange={(o: boolean) => !o && setVerSinEvaluar(false)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Ítems sin evaluar ({sinEvaluar})</DialogTitle>
+            <DialogDescription>
+              Combinaciones unidad × ítem que nadie miró todavía: en la matriz son los
+              «?» y no entran en el porcentaje.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                  <th className="py-1.5 pr-2">Unidad</th>
+                  <th className="py-1.5 pr-2">Ítem</th>
+                  <th className="py-1.5">Criticidad</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sinEvaluarLista.map((f) => (
+                  <tr key={`${f.dominio}|${f.item}`} className="border-b last:border-0">
+                    <td className="py-1.5 pr-2 font-medium">{f.dominio}</td>
+                    <td className="py-1.5 pr-2 text-muted-foreground">{f.item}</td>
+                    <td className="py-1.5">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs",
+                          f.criticidad === "mandatorio"
+                            ? "border-destructive/30 text-destructive"
+                            : "border-sky-500/30 text-sky-600 dark:text-sky-400"
+                        )}
+                      >
+                        {f.criticidad === "mandatorio" ? "Mandatorio" : "Excelencia"}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogo != null} onOpenChange={(o) => !o && setDialogo(null)}>
         <DialogContent className="sm:max-w-lg">

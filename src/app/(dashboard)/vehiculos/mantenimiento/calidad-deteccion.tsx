@@ -128,6 +128,19 @@ export function PanelDeteccion({
 }) {
   const paleta = usePaletaViz()
   const { porChofer, totales } = datos
+  /**
+   * Las tres tarjetas eran números sueltos: el de choferes que nunca detectaron
+   * obligaba a buscar a mano cuál era cuál en la tabla de abajo. Ahora la
+   * enfocan. El corte del cero es el mismo del total (checklists > 0), no el de
+   * la marca «nunca detectó», que recién aparece a partir de 20.
+   */
+  const [foco, setFoco] = useState<"sin_detectar" | "detectaron" | null>(null)
+  const choferesEnTabla =
+    foco == null
+      ? porChofer
+      : foco === "sin_detectar"
+        ? porChofer.filter((c) => c.conHallazgo === 0 && c.checklists > 0)
+        : porChofer.filter((c) => c.conHallazgo > 0)
   // Sólo choferes con volumen suficiente: con 3 checklists, cero hallazgos no
   // dice nada.
   const conVolumen = porChofer.filter((c) => c.checklists >= 20)
@@ -158,6 +171,7 @@ export function PanelDeteccion({
       <CardContent className="space-y-4">
         <div className="grid gap-2 sm:grid-cols-3">
           <KpiCard
+            onClick={() => setFoco(null)}
             label="Checklists con hallazgo"
             valor={
               <>
@@ -176,21 +190,39 @@ export function PanelDeteccion({
                     ? "alerta"
                     : "ok"
             }
-            sub="De cada 100 revisiones, cuántas marcaron algo"
+            sub="De cada 100 revisiones, cuántas marcaron algo · click para ver a todos"
             dpo="1.3"
           />
           <KpiCard
+            onClick={() => setFoco((f) => (f === "sin_detectar" ? null : "sin_detectar"))}
             label="Choferes que nunca detectaron"
             valor={totales.choferesSinDetectar}
             estado={totales.choferesSinDetectar > 0 ? "critico" : "ok"}
-            sub="Con checklists cargados y cero hallazgos en el período"
+            sub="Cero hallazgos en el período · click para ver quiénes"
           />
           <KpiCard
+            onClick={() => setFoco((f) => (f === "detectaron" ? null : "detectaron"))}
             label="Ítems marcados"
             valor={fmtNum(totales.hallazgos)}
-            sub="Un checklist puede aportar más de uno"
+            sub="Un checklist puede aportar más de uno · click para ver quiénes los marcaron"
           />
         </div>
+
+        {foco && (
+          <p className="text-xs text-muted-foreground">
+            Mostrando {choferesEnTabla.length} de {porChofer.length} choferes:{" "}
+            {foco === "sin_detectar"
+              ? "los que cargaron checklists y no marcaron nada."
+              : "los que sí marcaron algo."}{" "}
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:text-foreground"
+              onClick={() => setFoco(null)}
+            >
+              Ver todos
+            </button>
+          </p>
+        )}
 
         {grafico.length > 0 && (
           <div style={{ height: Math.max(200, grafico.length * 30 + 50) }}>
@@ -267,7 +299,7 @@ export function PanelDeteccion({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {porChofer.map((c) => {
+            {choferesEnTabla.map((c) => {
               const sospechoso = c.conHallazgo === 0 && c.checklists >= 20
               return (
                 <TableRow key={c.chofer}>

@@ -495,6 +495,36 @@ export function MantenimientoClient({
     return { vencidas, proximas }
   }, [estados])
 
+  /**
+   * Las dos tarjetas del plan preventivo daban un número y nada más: para saber
+   * QUÉ tarea de QUÉ unidad estaba vencida había que recorrer el calendario a
+   * ojo. Ahora abren la lista, y desde ahí se puede cargar la OT.
+   */
+  const [detallePlan, setDetallePlan] = useState<"vencido" | "proximo" | null>(null)
+
+  const filasPlan = useMemo(() => {
+    if (!detallePlan) return []
+    const filas: {
+      dominio: string
+      tarea: string
+      celda: EstadoPlanVehiculo["celdas"][number]
+      esHoras: boolean
+    }[] = []
+    for (const e of estados) {
+      for (const c of e.celdas) {
+        if (c.estado !== detallePlan) continue
+        filas.push({
+          dominio: e.vehiculo.dominio,
+          tarea: tareasById.get(c.tareaId)?.nombre ?? "Tarea del plan",
+          celda: c,
+          esHoras: e.vehiculo.tipo === "autoelevador",
+        })
+      }
+    }
+    // Lo más consumido primero: es lo que hay que programar antes.
+    return filas.sort((a, b) => (b.celda.pctConsumido ?? 0) - (a.celda.pctConsumido ?? 0))
+  }, [detallePlan, estados, tareasById])
+
   // Meses con órdenes registradas (para el selector), más reciente primero.
   const mesesDisponibles = useMemo(
     () =>
@@ -568,7 +598,9 @@ export function MantenimientoClient({
   )
 
   const navegar = (destino: string, dominio?: string) => {
-    if (dominio && destino === "historial") setFDominio(dominio)
+    // Sin dominio se va al historial COMPLETO: si quedaba el filtro de la
+    // navegación anterior, la solapa se abría mostrando una sola unidad.
+    if (destino === "historial") setFDominio(dominio ?? "todos")
     setTab(destino)
   }
 
@@ -637,20 +669,23 @@ export function MantenimientoClient({
               valor={kpis.vencidas}
               estado={kpis.vencidas > 0 ? "critico" : "ok"}
               dpo="2.2"
-              sub="Adherencia al plan preventivo"
+              sub="Adherencia al plan preventivo · click para ver cuáles"
+              onClick={() => setDetallePlan("vencido")}
             />
             <KpiCard
               label="Próximas a vencer"
               valor={kpis.proximas}
               estado={kpis.proximas > 0 ? "alerta" : "ok"}
               dpo="2.2"
-              sub="Se programan antes del vencimiento"
+              sub="Se programan antes del vencimiento · click para ver cuáles"
+              onClick={() => setDetallePlan("proximo")}
             />
             <KpiCard
               label="Costo del mes"
               valor={fmtMoney(costos.costoMes)}
               dpo="3.2"
-              sub="Gasto de flota imputado en el mes"
+              sub="Gasto de flota imputado en el mes · click para ver el libro"
+              onClick={() => setTab("gastos")}
             />
           </div>
 
@@ -1245,6 +1280,111 @@ export function MantenimientoClient({
       </Tabs>
 
       {/* ============ Dialogs ============ */}
+      {detallePlan && (
+        <Dialog open onOpenChange={(o: boolean) => !o && setDetallePlan(null)}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>
+                {detallePlan === "vencido" ? "Tareas vencidas" : "Tareas próximas a vencer"} (
+                {filasPlan.length})
+              </DialogTitle>
+              <DialogDescription>
+                Cada fila es una tarea del plan preventivo en una unidad, de la más
+                consumida a la menos.
+                {puedeEditar && " Desde “Cargar OT” se abre la orden con la unidad y la tarea ya puestas."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[60vh] overflow-auto">
+              {filasPlan.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No hay tareas en este estado.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Unidad</TableHead>
+                      <TableHead>Tarea</TableHead>
+                      <TableHead>Último</TableHead>
+                      <TableHead>Próximo</TableHead>
+                      <TableHead className="text-right">Consumido</TableHead>
+                      {puedeEditar && <TableHead className="w-24" />}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filasPlan.map((f) => {
+                      const u = f.esHoras ? "hs" : "km"
+                      const ultimo = [
+                        fmtFecha(f.celda.ultimaFecha),
+                        f.esHoras
+                          ? f.celda.ultimoHorometro != null
+                            ? `${fmtNum(f.celda.ultimoHorometro)} ${u}`
+                            : null
+                          : f.celda.ultimoOdometro != null
+                            ? `${fmtNum(f.celda.ultimoOdometro)} ${u}`
+                            : null,
+                      ]
+                        .filter((v) => v && v !== "—")
+                        .join(" · ")
+                      const proximo = [
+                        fmtFecha(f.celda.proximaFecha),
+                        f.esHoras
+                          ? f.celda.proximasHoras != null
+                            ? `${fmtNum(f.celda.proximasHoras)} ${u}`
+                            : null
+                          : f.celda.proximoKm != null
+                            ? `${fmtNum(f.celda.proximoKm)} ${u}`
+                            : null,
+                      ]
+                        .filter((v) => v && v !== "—")
+                        .join(" · ")
+                      return (
+                        <TableRow key={`${f.dominio}-${f.celda.tareaId}`}>
+                          <TableCell className="font-medium">{f.dominio}</TableCell>
+                          <TableCell>{f.tarea}</TableCell>
+                          <TableCell className="text-muted-foreground">{ultimo || "—"}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {proximo || "—"}
+                            {f.celda.soloPorTiempo && (
+                              <span className="ml-1 text-xs">(por tiempo)</span>
+                            )}
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "text-right font-semibold tabular-nums",
+                              detallePlan === "vencido" ? "text-destructive" : "text-amber-600"
+                            )}
+                          >
+                            {f.celda.pctConsumido == null
+                              ? "—"
+                              : `${Math.round(f.celda.pctConsumido)}%`}
+                          </TableCell>
+                          {puedeEditar && (
+                            <TableCell>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => {
+                                  setDetallePlan(null)
+                                  abrirRegistro(f.dominio, f.celda.tareaId)
+                                }}
+                              >
+                                Cargar OT
+                              </Button>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {nuevoOpen && (
         <NuevoMantenimientoDialog
           estados={estados}

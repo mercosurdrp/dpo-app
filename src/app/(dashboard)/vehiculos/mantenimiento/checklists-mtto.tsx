@@ -385,6 +385,112 @@ function duracionesPorFoco(items: ChecklistItemNoOk[]): number[] {
   return Array.from(focos.values(), (f) => (f.hastaMs - f.desdeMs) / 3_600_000)
 }
 
+/** Lista detrás de cada KPI de arriba: qué observaciones forman el número. */
+const DETALLE_KPI: Record<
+  "abiertos" | "criticos" | "con_plan" | "resueltos",
+  { titulo: string; ayuda: string }
+> = {
+  abiertos: {
+    titulo: "Observaciones sin resolver",
+    ayuda:
+      "Ítems no OK cuyo plan de acción todavía no está cerrado, de la más vieja a la más nueva. Incluye el arrastre de meses anteriores.",
+  },
+  criticos: {
+    titulo: "Defectos críticos",
+    ayuda: "Ítems marcados como críticos en el checklist: son los que sacan la unidad de ruta.",
+  },
+  con_plan: {
+    titulo: "Observaciones con plan de acción",
+    ayuda: "Las que tienen la reparación registrada, esté cerrada o en curso.",
+  },
+  resueltos: {
+    titulo: "Observaciones ya resueltas",
+    ayuda:
+      "Las que cerraron el plan, de la que más tardó a la que menos. El promedio de la tarjeta se mide por foco, así que una serie repetida cuenta una sola vez acá.",
+  },
+}
+
+function DetalleKpiDialog({
+  tipo,
+  items,
+  etiquetaPeriodo,
+  onClose,
+}: {
+  tipo: keyof typeof DETALLE_KPI
+  items: ChecklistItemNoOk[]
+  etiquetaPeriodo: string
+  onClose: () => void
+}) {
+  const cfg = DETALLE_KPI[tipo]
+  return (
+    <Dialog open onOpenChange={(o: boolean) => !o && onClose()}>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>
+            {cfg.titulo} ({items.length})
+          </DialogTitle>
+          <DialogDescription>
+            <span className="capitalize">{etiquetaPeriodo}</span> · {cfg.ayuda}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-auto">
+          {items.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No hay observaciones en este corte.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Unidad</TableHead>
+                  <TableHead>Categoría</TableHead>
+                  <TableHead>Ítem</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Plan</TableHead>
+                  <TableHead className="text-right">Tiempo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((i) => (
+                  <TableRow key={i.id}>
+                    <TableCell className="whitespace-nowrap">{fmtFecha(i.fecha)}</TableCell>
+                    <TableCell className="font-medium">{i.dominio}</TableCell>
+                    <TableCell className="text-muted-foreground">{i.categoria}</TableCell>
+                    <TableCell>
+                      <span className="flex items-center gap-1.5">
+                        {i.item}
+                        {i.critico && (
+                          <span title="Ítem crítico">
+                            <ShieldAlert className="size-3.5 text-destructive" />
+                          </span>
+                        )}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <ValorBadge valor={i.valor} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {i.plan
+                        ? i.plan.estado === "resuelto"
+                          ? "Resuelto"
+                          : "En curso"
+                        : "Sin plan"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-right text-muted-foreground">
+                      {i.horasResolucion != null ? formatDuracion(i.horasResolucion) : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /**
  * Arrastre agrupado: una fila por foco, con desde cuándo viene y en cuántos
  * checklists se repitió.
@@ -644,6 +750,35 @@ export function ChecklistsMtto({
   const criticos = visibles.filter((i) => i.critico).length
   const conPlan = visibles.filter((i) => i.plan).length
   const abiertos = visibles.filter((i) => i.plan?.estado !== "resuelto").length
+
+  /**
+   * Los cinco KPI informaban un número y no había forma de ver QUÉ observación
+   * lo formaba: las tablas de abajo listan sólo el período, sin el arrastre y
+   * sin el corte de cada tarjeta. Cada una abre ahora su propia lista.
+   */
+  const [detalleKpi, setDetalleKpi] = useState<
+    "abiertos" | "criticos" | "con_plan" | "resueltos" | null
+  >(null)
+
+  const detalleItems = useMemo(() => {
+    switch (detalleKpi) {
+      case "abiertos":
+        return visibles
+          .filter((i) => i.plan?.estado !== "resuelto")
+          .sort((a, b) => a.fecha.localeCompare(b.fecha))
+      case "criticos":
+        return visibles.filter((i) => i.critico).sort((a, b) => b.fecha.localeCompare(a.fecha))
+      case "con_plan":
+        return visibles.filter((i) => i.plan).sort((a, b) => b.fecha.localeCompare(a.fecha))
+      case "resueltos":
+        // Los más lentos primero: son los que explican el promedio.
+        return visibles
+          .filter((i) => i.plan?.estado === "resuelto")
+          .sort((a, b) => (b.horasResolucion ?? 0) - (a.horasResolucion ?? 0))
+      default:
+        return []
+    }
+  }, [detalleKpi, visibles])
   // Tiempo de respuesta: promedio de los focos ya cerrados, medido de la
   // primera detección al cierre del plan.
   const duraciones = useMemo(() => duracionesPorFoco(visibles), [visibles])
@@ -656,9 +791,10 @@ export function ChecklistsMtto({
     <div className="space-y-6">
       <DpoSeccionCinta seccionId="checklists" />
 
-      {/* KPIs */}
+      {/* KPIs — cada tarjeta abre la lista que hay detrás del número */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <KpiCard
+          onClick={() => setDetalleKpi("abiertos")}
           label="Ítems no OK"
           valor={
             <>
@@ -672,16 +808,18 @@ export function ChecklistsMtto({
           dpo="1.3"
           sub={`Sin resolver, sobre ${visibles.length} observación${
             visibles.length === 1 ? "" : "es"
-          } ${historico ? "del histórico" : "en vista"}`}
+          } ${historico ? "del histórico" : "en vista"} · click para verlas`}
         />
         <KpiCard
+          onClick={() => setDetalleKpi("criticos")}
           label="Críticos no OK"
           valor={criticos}
           estado={criticos > 0 ? "critico" : "ok"}
           dpo="1.3"
-          sub="Defectos críticos detectados"
+          sub="Defectos críticos detectados · click para verlos"
         />
         <KpiCard
+          onClick={() => setDetalleKpi("con_plan")}
           label="Con plan de acción"
           valor={
             <>
@@ -695,9 +833,10 @@ export function ChecklistsMtto({
             </>
           }
           estado="neutro"
-          sub="Observaciones con reparación registrada"
+          sub="Observaciones con reparación registrada · click para verlas"
         />
         <KpiCard
+          onClick={() => setDetalleKpi("resueltos")}
           label="Tiempo de respuesta"
           valor={
             <span className="text-2xl">{formatDuracion(horasProm)}</span>
@@ -706,13 +845,18 @@ export function ChecklistsMtto({
             horasProm == null ? "neutro" : horasProm <= 72 ? "ok" : "alerta"
           }
           dpo="1.3"
-          sub={`Promedio de ${duraciones.length} foco${duraciones.length === 1 ? "" : "s"} resuelto${duraciones.length === 1 ? "" : "s"} (primera detección → cierre del plan)`}
+          sub={`Promedio de ${duraciones.length} foco${duraciones.length === 1 ? "" : "s"} resuelto${duraciones.length === 1 ? "" : "s"} (primera detección → cierre del plan) · click para verlos`}
         />
         <KpiCard
+          onClick={() =>
+            document
+              .getElementById("comentarios-checklist")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
           label="Con comentarios"
           valor={coments.length}
           estado="neutro"
-          sub="Checklists con observaciones del chofer"
+          sub="Checklists con observaciones del chofer · click para leerlos"
         />
       </div>
 
@@ -896,7 +1040,7 @@ export function ChecklistsMtto({
       )}
 
       {/* Comentarios y observaciones */}
-      <Card>
+      <Card id="comentarios-checklist">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <MessageSquareText className="size-4 text-muted-foreground" /> Comentarios y observaciones
@@ -937,6 +1081,15 @@ export function ChecklistsMtto({
           )}
         </CardContent>
       </Card>
+
+      {detalleKpi && (
+        <DetalleKpiDialog
+          tipo={detalleKpi}
+          items={detalleItems}
+          etiquetaPeriodo={etiquetaPeriodo}
+          onClose={() => setDetalleKpi(null)}
+        />
+      )}
 
       {planTarget && (
         <PlanDialog

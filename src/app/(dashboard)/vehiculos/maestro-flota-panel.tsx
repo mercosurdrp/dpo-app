@@ -175,6 +175,17 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
     setVerBajas(false)
   }
 
+  /**
+   * El contador por tipo se calcula sobre las ACTIVAS y sin ningún otro filtro:
+   * al enfocar uno hay que soltar el foco y las bajas, o la tabla muestra menos
+   * filas que las que anuncia el badge.
+   */
+  function verTipo(t: string) {
+    setTipo((prev) => (prev === t ? "todos" : t))
+    setFoco(null)
+    setVerBajas(false)
+  }
+
   const tipos = useMemo(
     () => Array.from(new Set(unidades.map((u) => u.tipo).filter(Boolean))) as string[],
     [unidades]
@@ -227,15 +238,30 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Composición del parque + lo que hay que mirar */}
+        {/* Composición del parque + lo que hay que mirar. Los tipos también
+            filtran: informaban un número que había que volver a buscar abajo. */}
         <div className="flex flex-wrap gap-2">
           {Object.entries(resumen.porTipo)
             .sort((a, b) => b[1] - a[1])
             .map(([t, n]) => (
-              <Badge key={t} variant="outline" className="gap-1 text-xs">
-                {TIPO_LABEL[t] ?? t}
-                <span className="font-semibold">{n}</span>
-              </Badge>
+              <button
+                key={t}
+                type="button"
+                onClick={() => verTipo(t)}
+                aria-pressed={tipo === t}
+                title={tipo === t ? "Quitar el filtro" : `Ver las ${TIPO_LABEL[t] ?? t}`}
+              >
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "gap-1 text-xs transition-colors hover:bg-muted",
+                    tipo === t && "border-primary bg-primary/10 text-foreground"
+                  )}
+                >
+                  {TIPO_LABEL[t] ?? t}
+                  <span className="font-semibold">{n}</span>
+                </Badge>
+              </button>
             ))}
         </div>
 

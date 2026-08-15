@@ -215,6 +215,25 @@ export function GastosTab({
     [filtrados]
   )
 
+  /**
+   * Las cuatro tarjetas de arriba eran números sin destino. Ahora llevan a lo
+   * suyo: el corte de imputación se aplica sólo a la TABLA —no a los KPI— para
+   * que el total del período no cambie al mirar una parte.
+   */
+  const [subTab, setSubTab] = useState("listado")
+  const [soloImputados, setSoloImputados] = useState(false)
+  const filasTabla = soloImputados
+    ? filtrados.filter((g) => g.estado_imputacion === "imputado")
+    : filtrados
+
+  const irA = (id: string) =>
+    requestAnimationFrame(() =>
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
+    )
+  const irATabla = () => irA("tabla-gastos")
+  // El reparto por motivo sólo se dibuja si hay gastos; si no, se va a la tabla.
+  const irAMotivos = () => irA(porMotivo.length > 0 ? "gastos-por-motivo" : "tabla-gastos")
+
   const refresh = () => startTransition(() => router.refresh())
 
   // URL de descarga (Excel/PDF) respetando los filtros visibles.
@@ -263,7 +282,7 @@ export function GastosTab({
     <div className="space-y-4">
       <DpoSeccionCinta seccionId="gastos" />
 
-      <Tabs defaultValue="listado" className="space-y-4">
+      <Tabs value={subTab} onValueChange={setSubTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="listado">Gastos</TabsTrigger>
           <TabsTrigger value="imputar">
@@ -288,25 +307,37 @@ export function GastosTab({
             <KpiCard
               label={`Total ${fMes === "todos" ? "(todo)" : fmtMesLabel(fMes)}`}
               valor={fmtMoney(total)}
-              sub="Gasto de flota imputado contra presupuesto"
+              sub="Gasto de flota imputado contra presupuesto · click para ver el reparto"
               dpo="3.2"
+              onClick={irAMotivos}
             />
             <KpiCard
               label="Comprobantes"
               valor={filtrados.length}
-              sub={fTipo === "todos" ? "Todos los tipos" : GASTO_TIPO_LABELS[fTipo as GastoTipo]}
+              sub={`${
+                fTipo === "todos" ? "Todos los tipos" : GASTO_TIPO_LABELS[fTipo as GastoTipo]
+              } · click para verlos`}
+              onClick={() => {
+                setSoloImputados(false)
+                irATabla()
+              }}
             />
             <KpiCard
               label="Sin imputar"
               valor={pendientesImputar}
               estado={pendientesImputar > 0 ? "alerta" : "ok"}
-              sub="Pendientes de administración"
+              sub="Pendientes de administración · click para imputarlos"
+              onClick={() => setSubTab("imputar")}
             />
             <KpiCard
               label="Imputados"
               valor={imputados}
               estado={imputados > 0 ? "ok" : "neutro"}
-              sub="Dentro del filtro actual"
+              sub="Dentro del filtro actual · click para verlos en la tabla"
+              onClick={() => {
+                setSoloImputados((v) => !v)
+                irATabla()
+              }}
             />
           </div>
 
@@ -406,7 +437,7 @@ export function GastosTab({
 
           {/* Desglose por motivo — R3.2.2: el gasto de flota abierto por su causa */}
           {porMotivo.length > 0 && (
-            <Card>
+            <Card id="gastos-por-motivo">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">
                   Gasto por motivo
@@ -462,7 +493,19 @@ export function GastosTab({
           )}
 
           {/* Tabla */}
-          <Card>
+          <Card id="tabla-gastos">
+            {soloImputados && (
+              <div className="flex items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground">
+                Mostrando sólo los {filasTabla.length} comprobantes imputados.
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  onClick={() => setSoloImputados(false)}
+                >
+                  Ver todos
+                </button>
+              </div>
+            )}
             <CardContent className="overflow-x-auto p-0">
               <Table>
                 <TableHeader>
@@ -478,7 +521,7 @@ export function GastosTab({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtrados.length === 0 && (
+                  {filasTabla.length === 0 && (
                     <TableRow>
                       <TableCell
                         colSpan={8}
@@ -488,7 +531,7 @@ export function GastosTab({
                       </TableCell>
                     </TableRow>
                   )}
-                  {filtrados.map((g) => {
+                  {filasTabla.map((g) => {
                     const Icon = TIPO_ICON[g.tipo]
                     const busy = busyId === g.id
                     return (

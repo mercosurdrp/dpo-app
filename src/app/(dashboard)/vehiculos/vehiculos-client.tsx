@@ -35,6 +35,7 @@ import type {
   TipoChecklist,
 } from "@/types/database"
 import { MaestroFlotaPanel } from "./maestro-flota-panel"
+import { TarjetaKpi } from "./tarjeta-kpi"
 import {
   Truck,
   MapPin,
@@ -170,6 +171,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
   const [deleteType, setDeleteType] = useState<"checklist" | "combustible">("checklist")
   const [deleting, setDeleting] = useState(false)
   const [alertasExpanded, setAlertasExpanded] = useState(false)
+  const [tab, setTab] = useState(maestro ? "maestro" : "flota")
   const [editChk, setEditChk] = useState<ChecklistVehiculo | null>(null)
   const [editFecha, setEditFecha] = useState("")
   const [editHora, setEditHora] = useState("")
@@ -300,6 +302,22 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
   const enRuta = estadoVehiculos.filter((v) => v.estado === "en_ruta").length
   const retornados = estadoVehiculos.filter((v) => v.estado === "retornado").length
 
+  /**
+   * Las tarjetas de estado enfocan la tabla de Estado Flota Hoy. Se maneja la
+   * solapa desde acá (antes era `defaultValue`) porque si no se toca el filtro
+   * y no se ve nada: quien entra al maestro se queda mirando el maestro.
+   */
+  const [filtroEstado, setFiltroEstado] = useState<EstadoVehiculo["estado"] | null>(null)
+  const flotaFiltrada =
+    filtroEstado == null
+      ? estadoVehiculos
+      : estadoVehiculos.filter((v) => v.estado === filtroEstado)
+
+  function verEstado(e: EstadoVehiculo["estado"] | null) {
+    setFiltroEstado((prev) => (prev === e ? null : e))
+    setTab("flota")
+  }
+
   const kmDelta = kmFlotaResumen && kmFlotaResumen.kmAyer > 0
     ? ((kmFlotaResumen.kmHoy - kmFlotaResumen.kmAyer) / kmFlotaResumen.kmAyer) * 100
     : null
@@ -409,63 +427,45 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
         </Card>
       )}
 
-      {/* KPI Cards */}
+      {/* KPI Cards — todas llevan al detalle que hay detrás del número */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Vehículos</p>
-                <p className="text-3xl font-bold text-slate-900">{estadoVehiculos.length}</p>
-              </div>
-              <div className="rounded-full bg-slate-100 p-3">
-                <Truck className="h-5 w-5 text-slate-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <TarjetaKpi
+          label="Total Vehículos"
+          valor={estadoVehiculos.length}
+          Icon={Truck}
+          iconoClase="bg-slate-100 text-slate-600"
+          pista="Ver toda la flota"
+          onClick={() => verEstado(null)}
+        />
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">En Base</p>
-                <p className="text-3xl font-bold text-slate-600">{enBase}</p>
-              </div>
-              <div className="rounded-full bg-slate-100 p-3">
-                <Home className="h-5 w-5 text-slate-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <TarjetaKpi
+          label="En Base"
+          valor={enBase}
+          valorClase="text-slate-600"
+          Icon={Home}
+          iconoClase="bg-slate-100 text-slate-600"
+          pista="Ver las unidades en base"
+          activo={filtroEstado === "en_base"}
+          onClick={() => verEstado("en_base")}
+        />
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">En Ruta</p>
-                <p className="text-3xl font-bold text-blue-600">{enRuta}</p>
-              </div>
-              <div className="rounded-full bg-blue-100 p-3">
-                <MapPin className="h-5 w-5 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <TarjetaKpi
+          label="En Ruta"
+          valor={enRuta}
+          valorClase="text-blue-600"
+          Icon={MapPin}
+          iconoClase="bg-blue-100 text-blue-600"
+          pista="Ver las unidades en ruta"
+          activo={filtroEstado === "en_ruta"}
+          onClick={() => verEstado("en_ruta")}
+        />
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Km Hoy</p>
-                <p className="text-3xl font-bold text-slate-900">
-                  {kmFlotaResumen ? kmFlotaResumen.kmHoy.toLocaleString("es-AR") : "—"}
-                </p>
-              </div>
-              <div className="rounded-full bg-indigo-100 p-3">
-                <Gauge className="h-5 w-5 text-indigo-600" />
-              </div>
-            </div>
+        <TarjetaKpi
+          label="Km Hoy"
+          valor={kmFlotaResumen ? kmFlotaResumen.kmHoy.toLocaleString("es-AR") : "—"}
+          Icon={Gauge}
+          iconoClase="bg-indigo-100 text-indigo-600"
+          detalle={
             <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
               {kmDelta != null ? (
                 <>
@@ -483,48 +483,42 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                 "Sin comparación"
               )}
             </p>
-          </CardContent>
-        </Card>
+          }
+          pista="Ver los km día por día"
+          onClick={() => setTab("km")}
+        />
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Km Mes</p>
-                <p className="text-3xl font-bold text-slate-900">
-                  {kmFlotaResumen ? kmFlotaResumen.kmMesActual.toLocaleString("es-AR") : "—"}
-                </p>
-              </div>
-              <div className="rounded-full bg-cyan-100 p-3">
-                <MapPin className="h-5 w-5 text-cyan-600" />
-              </div>
-            </div>
+        <TarjetaKpi
+          label="Km Mes"
+          valor={kmFlotaResumen ? kmFlotaResumen.kmMesActual.toLocaleString("es-AR") : "—"}
+          Icon={MapPin}
+          iconoClase="bg-cyan-100 text-cyan-600"
+          detalle={
             <p className="mt-2 text-xs text-muted-foreground">
               {kmFlotaResumen
                 ? `Promedio: ${kmFlotaResumen.promedioDiarioMes.toLocaleString("es-AR")} km/día`
                 : "Sin datos"}
             </p>
-          </CardContent>
-        </Card>
+          }
+          pista="Ver el ranking de km del mes"
+          onClick={() => setTab("km")}
+        />
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Retornados</p>
-                <p className="text-3xl font-bold text-green-600">{retornados}</p>
-              </div>
-              <div className="rounded-full bg-green-100 p-3">
-                <RotateCcw className="h-5 w-5 text-green-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <TarjetaKpi
+          label="Retornados"
+          valor={retornados}
+          valorClase="text-green-600"
+          Icon={RotateCcw}
+          iconoClase="bg-green-100 text-green-600"
+          pista="Ver las unidades que ya retornaron"
+          activo={filtroEstado === "retornado"}
+          onClick={() => verEstado("retornado")}
+        />
       </div>
 
       {/* El maestro abre por defecto: es lo primero que tiene que ver quien
           entra a Vehículos (punto 1 de la auditoría del gestor de flota). */}
-      <Tabs defaultValue={maestro ? "maestro" : "flota"}>
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           {maestro && <TabsTrigger value="maestro">Maestro de flota</TabsTrigger>}
           <TabsTrigger value="flota">Estado Flota Hoy</TabsTrigger>
@@ -542,13 +536,32 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
         {/* Tab: Estado Flota */}
         <TabsContent value="flota">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
               <CardTitle className="text-base">Estado de Vehículos — Hoy</CardTitle>
+              {filtroEstado && (
+                <div className="flex items-center gap-2 text-xs">
+                  <Badge className={`${estadoConfig[filtroEstado].color} hover:${estadoConfig[filtroEstado].color}`}>
+                    {flotaFiltrada.length} {estadoConfig[filtroEstado].label}
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setFiltroEstado(null)}
+                  >
+                    Quitar filtro
+                  </Button>
+                </div>
+              )}
             </CardHeader>
             <CardContent>
               {estadoVehiculos.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">
                   No hay vehículos registrados en el catálogo.
+                </p>
+              ) : filtroEstado && flotaFiltrada.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  Ninguna unidad está {estadoConfig[filtroEstado].label.toLowerCase()} en este momento.
                 </p>
               ) : (
                 <div className="overflow-x-auto">
@@ -564,7 +577,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {estadoVehiculos.map((v) => {
+                      {flotaFiltrada.map((v) => {
                         const cfg = estadoConfig[v.estado]
                         const Icon = cfg.icon
                         return (

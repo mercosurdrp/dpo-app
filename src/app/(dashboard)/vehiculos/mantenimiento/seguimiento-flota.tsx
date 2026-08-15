@@ -180,6 +180,18 @@ export function SeguimientoFlota({
     [calc.filas]
   )
 
+  /**
+   * Los cuatro KPI de arriba eran tarjetas mudas. Ahora cada una abre la vista
+   * donde ese número se ve unidad por unidad y baja hasta el cuadro: el detalle
+   * puede estar en la otra solapa, por eso el scroll espera al render.
+   */
+  const irA = (v: "mes" | "dia", anclaId: string) => {
+    setVista(v)
+    requestAnimationFrame(() => {
+      document.getElementById(anclaId)?.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+  }
+
   const indDelMes = useMemo(
     () =>
       indisponibilidades
@@ -223,36 +235,42 @@ export function SeguimientoFlota({
         </TabsList>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs — cada uno lleva al cuadro donde ese número se abre por unidad */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
           label="Disponibilidad de flota"
           valor={calc.flotaDisp == null ? null : `${calc.flotaDisp.toFixed(1)}%`}
-          sub={`Objetivo ${TARGET_DISP}%`}
+          sub={`Objetivo ${TARGET_DISP}% · click para verla por unidad`}
           estado={estadoDisp}
           dpo="2.1"
+          onClick={() => irA("mes", "tabla-disp-unidad")}
         />
         <KpiCard
           label="Utilización de flota"
           valor={calc.flotaUtil == null ? null : `${calc.flotaUtil.toFixed(1)}%`}
-          sub="Ruteados ÷ días laborales disp. (unidades en servicio)"
+          sub="Ruteados ÷ días laborales disp. · click para verla por unidad"
           dpo="2.1"
+          onClick={() => irA("mes", "tabla-disp-unidad")}
         />
         <KpiCard
           label="Camiones con paradas"
           valor={calc.camionesConParada}
-          sub={`de ${calc.filas.length} unidades`}
+          sub={`de ${calc.filas.length} unidades · click para ver cuáles`}
+          onClick={() =>
+            irA("mes", paradasPorUnidad.length > 0 ? "paradas-por-unidad" : "tabla-disp-unidad")
+          }
         />
         <KpiCard
           label="Días laborales"
           valor={calc.diasLaborales}
-          sub={`de ${calc.diasPeriodo} del período`}
+          sub={`de ${calc.diasPeriodo} del período · click para ver el calendario`}
+          onClick={() => irA("dia", "calendario-disp")}
         />
       </div>
 
       <TabsContent value="mes" className="space-y-6">
         {paradasPorUnidad.length > 0 && (
-          <Card>
+          <Card id="paradas-por-unidad">
             <CardHeader className="pb-3">
               <CardTitle className="flex flex-wrap items-center gap-2 text-base">
                 Días fuera de servicio por unidad
@@ -331,7 +349,7 @@ export function SeguimientoFlota({
           </Card>
         )}
 
-        <Card>
+        <Card id="tabla-disp-unidad">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Disponibilidad y utilización por unidad</CardTitle>
           </CardHeader>
@@ -388,7 +406,7 @@ export function SeguimientoFlota({
       </TabsContent>
 
       <TabsContent value="dia">
-        <Card>
+        <Card id="calendario-disp">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Calendario de disponibilidad</CardTitle>
           </CardHeader>

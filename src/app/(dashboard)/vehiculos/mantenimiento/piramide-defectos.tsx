@@ -12,6 +12,13 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   Table,
   TableBody,
   TableCell,
@@ -249,8 +256,28 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
         ? Math.round(totalDefectos / conteo.correctivo)
         : null
 
-    return { conteo, ranking, torta, detalle, totalDefectos, ratioFalla }
+    return {
+      conteo,
+      ranking,
+      torta,
+      detalle,
+      totalDefectos,
+      ratioFalla,
+      // Listas que abren las tarjetas de indicadores (antes eran sólo números).
+      criticos: items
+        .filter((i) => i.critico)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+      correctivos: [...correctivos].sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    }
   }, [itemsNoOk, mantenimientos, rango, exposicion])
+
+  /** Qué tarjeta de indicadores se abrió: cada una lista lo que la forma. */
+  const [detalleKpi, setDetalleKpi] = useState<"criticos" | "correctivos" | "ratio" | null>(null)
+
+  const verTablaUnidades = () =>
+    document
+      .getElementById("defectos-por-unidad")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" })
 
   const colorPorcion = (p: PorcionTorta, i: number) =>
     p.esOtras ? paleta.otras : paleta.serie(i)
@@ -378,25 +405,29 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
         <KpiCard
           label="Defectos"
           valor={fmtNum(datos.totalDefectos)}
-          sub="Ítems no conformes de checklist"
+          sub="Ítems no conformes de checklist · click para verlos por unidad"
+          onClick={verTablaUnidades}
         />
         <KpiCard
           label="Críticos"
           valor={fmtNum(datos.conteo.critico)}
           estado={datos.conteo.critico > 0 ? "alerta" : "ok"}
-          sub="Defectos críticos detectados"
+          sub="Defectos críticos detectados · click para verlos"
+          onClick={() => setDetalleKpi("criticos")}
         />
         <KpiCard
           label="Correctivos"
           valor={fmtNum(datos.conteo.correctivo)}
           estado={datos.conteo.correctivo > 0 ? "alerta" : "ok"}
-          sub="Fallas que llegaron al taller"
+          sub="Fallas que llegaron al taller · click para verlas"
+          onClick={() => setDetalleKpi("correctivos")}
         />
         <KpiCard
           label="Defectos / correctivo"
           valor={datos.ratioFalla !== null ? `${datos.ratioFalla} : 1` : "—"}
           dpo="4.2"
-          sub="Base detectada por cada falla en taller"
+          sub="Base detectada por cada falla en taller · click para ver la cuenta"
+          onClick={() => setDetalleKpi("ratio")}
         />
       </div>
 
@@ -626,7 +657,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       </Card>
 
       {/* Ranking por unidad */}
-      <Card>
+      <Card id="defectos-por-unidad">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold text-foreground">
             Defectos por unidad
@@ -725,6 +756,102 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {detalleKpi && (
+        <Dialog open onOpenChange={(o: boolean) => !o && setDetalleKpi(null)}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>
+                {detalleKpi === "criticos"
+                  ? `Defectos críticos (${datos.criticos.length})`
+                  : detalleKpi === "correctivos"
+                    ? `Correctivos en taller (${datos.correctivos.length})`
+                    : "Defectos por cada correctivo"}
+              </DialogTitle>
+              <DialogDescription>
+                {detalleKpi === "criticos"
+                  ? `Ítems marcados como críticos en los checklists · ${etiquetaRango}`
+                  : detalleKpi === "correctivos"
+                    ? `Órdenes de trabajo correctivas del período · ${etiquetaRango}`
+                    : `${fmtNum(datos.totalDefectos)} defectos de checklist ÷ ${fmtNum(
+                        datos.conteo.correctivo
+                      )} correctivos = ${
+                        datos.ratioFalla !== null ? `${datos.ratioFalla} : 1` : "sin correctivos"
+                      }. Cuanto más alto, más se detecta abajo antes de que llegue al taller. Abajo, los correctivos que forman el divisor.`}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[60vh] overflow-auto">
+              {detalleKpi === "criticos" ? (
+                datos.criticos.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    Sin defectos críticos en el período.
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Unidad</TableHead>
+                        <TableHead>Categoría</TableHead>
+                        <TableHead>Ítem</TableHead>
+                        <TableHead>Comentario</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {datos.criticos.map((i) => (
+                        <TableRow key={i.id}>
+                          <TableCell className="whitespace-nowrap">{fmtFecha(i.fecha)}</TableCell>
+                          <TableCell className="font-medium">{i.dominio}</TableCell>
+                          <TableCell className="text-muted-foreground">{i.categoria}</TableCell>
+                          <TableCell>{i.item}</TableCell>
+                          <TableCell className="max-w-72 text-muted-foreground">
+                            {i.comentario || "—"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )
+              ) : datos.correctivos.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  Sin correctivos en el período.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Unidad</TableHead>
+                      <TableHead>OT</TableHead>
+                      <TableHead>Qué se hizo</TableHead>
+                      <TableHead>Estado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {datos.correctivos.map((m) => (
+                      <TableRow key={m.id}>
+                        <TableCell className="whitespace-nowrap">{fmtFecha(m.fecha)}</TableCell>
+                        <TableCell className="font-medium">{m.dominio}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {m.numero_ot || "—"}
+                        </TableCell>
+                        <TableCell className="max-w-80 text-muted-foreground">
+                          {m.tareas?.map((t) => t.descripcion).filter(Boolean).join(", ") ||
+                            m.observaciones ||
+                            "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {m.estado === "en_taller" ? "En taller" : m.estado}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

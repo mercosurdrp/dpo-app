@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -139,6 +140,38 @@ function Dot({ estado }: { estado: EstadoServiceGeneral }) {
   return <span className={cn("inline-block size-2.5 rounded-full", ESTADO_SG[estado].dot)} />
 }
 
+/**
+ * Contador del encabezado de una tarjeta. Antes era un `<Badge>` suelto: decía
+ * cuántos había y para verlos había que buscarlos a ojo en la tabla de abajo.
+ */
+function BadgeFiltro({
+  activo,
+  onClick,
+  cls,
+  children,
+  titulo,
+}: {
+  activo: boolean
+  onClick: () => void
+  cls: string
+  children: React.ReactNode
+  titulo?: string
+}) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={activo} title={titulo ?? (activo ? "Quitar el filtro" : "Ver sólo estos")}>
+      <Badge
+        className={cn(
+          cls,
+          "transition-shadow hover:brightness-95",
+          activo && "ring-2 ring-ring ring-offset-1"
+        )}
+      >
+        {children}
+      </Badge>
+    </button>
+  )
+}
+
 // Diálogo de carga rápida de lectura de odómetro/horómetro, para unidades sin
 // fuente automática (autoelevadores sin checklist diario, camionetas del
 // depósito). La lectura alimenta el "km/hs actual" y la proyección del service.
@@ -239,6 +272,9 @@ interface Props {
 export function TableroOperativo({ programacion, documentos, otPendientes, unidadesBaja, puedeEditar, onNavigate }: Props) {
   const [resaltado, setResaltado] = useState<string | null>(null)
   const [lecturaDe, setLecturaDe] = useState<ServiceGeneralUnidad | null>(null)
+  /** Los contadores de arriba de cada tabla ahora la filtran (eran adorno). */
+  const [filtroService, setFiltroService] = useState<"vencidos" | "por_vencer" | null>(null)
+  const [verDocs, setVerDocs] = useState(true)
 
   const esAlerta = (e: EstadoServiceGeneral) =>
     e === "vencido" || e === "rojo" || e === "naranja" || e === "amarillo"
@@ -252,6 +288,12 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
   const servicePendientes = progOrdenada.filter((p) => esAlerta(p.estado))
   const serviceVencidos = servicePendientes.filter((p) => p.estado === "vencido").length
   const servicePorVencer = servicePendientes.length - serviceVencidos
+  const serviceEnPantalla =
+    filtroService == null
+      ? servicePendientes
+      : filtroService === "vencidos"
+        ? servicePendientes.filter((p) => p.estado === "vencido")
+        : servicePendientes.filter((p) => p.estado !== "vencido")
 
   const irAProgramacion = (dominio: string) => {
     setResaltado(dominio)
@@ -264,6 +306,8 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
   const docsVencidos = documentos
     .filter((d) => d.diasRestantes < 0)
     .sort((a, b) => a.diasRestantes - b.diasRestantes)
+  // El aviso cuenta UNIDADES y la lista son PAPELES: una unidad puede tener dos.
+  const unidadesSinPapeles = new Set(docsVencidos.map((d) => d.dominio)).size
 
   return (
     <div className="space-y-6">
@@ -275,34 +319,40 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base text-destructive">
               <FileWarning className="size-4" /> Fuera de servicio por documentación
-              <Badge className="border-destructive/30 bg-destructive/10 text-destructive">
-                {new Set(docsVencidos.map((d) => d.dominio)).size}{" "}
-                {new Set(docsVencidos.map((d) => d.dominio)).size === 1
-                  ? "unidad"
-                  : "unidades"}
-              </Badge>
+              <BadgeFiltro
+                activo={verDocs}
+                onClick={() => setVerDocs((v) => !v)}
+                cls="border-destructive/30 bg-destructive/10 text-destructive"
+                titulo={verDocs ? "Ocultar el detalle" : "Ver qué papel le falta a cada unidad"}
+              >
+                {unidadesSinPapeles}{" "}
+                {unidadesSinPapeles === 1 ? "unidad" : "unidades"}
+              </BadgeFiltro>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="mb-2 text-xs text-destructive">
-              Estas unidades tienen documentación vencida y no deben salir a ruta hasta
-              regularizarla.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {docsVencidos.map((d) => (
-                <span
-                  key={d.id}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-destructive/30 bg-card px-2 py-1 text-xs"
-                >
-                  <span className="font-semibold text-foreground">{d.dominio}</span>
-                  <span className="text-muted-foreground">{d.categoria}</span>
-                  <span className="font-medium text-destructive">
-                    venció hace {Math.abs(d.diasRestantes)} d
-                  </span>
-                </span>
-              ))}
-            </div>
-          </CardContent>
+          {verDocs && (
+            <CardContent>
+              <p className="mb-2 text-xs text-destructive">
+                Estas unidades tienen documentación vencida y no deben salir a ruta hasta
+                regularizarla. Tocá una para abrir su ficha.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {docsVencidos.map((d) => (
+                  <Link
+                    key={d.id}
+                    href={`/vehiculos/${encodeURIComponent(d.dominio)}`}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-destructive/30 bg-card px-2 py-1 text-xs transition-colors hover:bg-destructive/10"
+                  >
+                    <span className="font-semibold text-foreground">{d.dominio}</span>
+                    <span className="text-muted-foreground">{d.categoria}</span>
+                    <span className="font-medium text-destructive">
+                      venció hace {Math.abs(d.diasRestantes)} d
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          )}
         </Card>
       )}
 
@@ -315,16 +365,40 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
               <Gauge className="size-4 text-muted-foreground" /> Service pendientes
             </CardTitle>
             <div className="flex gap-1.5">
-              <Badge className="border-destructive/30 bg-destructive/10 text-destructive">
+              <BadgeFiltro
+                activo={filtroService === "vencidos"}
+                onClick={() =>
+                  setFiltroService((f) => (f === "vencidos" ? null : "vencidos"))
+                }
+                cls="border-destructive/30 bg-destructive/10 text-destructive"
+              >
                 Vencidos: {serviceVencidos}
-              </Badge>
-              <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+              </BadgeFiltro>
+              <BadgeFiltro
+                activo={filtroService === "por_vencer"}
+                onClick={() =>
+                  setFiltroService((f) => (f === "por_vencer" ? null : "por_vencer"))
+                }
+                cls="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+              >
                 Por vencer: {servicePorVencer}
-              </Badge>
+              </BadgeFiltro>
             </div>
           </CardHeader>
           <CardContent className="overflow-x-auto pt-0">
-            {servicePendientes.length === 0 ? (
+            {filtroService && (
+              <p className="pb-2 text-xs text-muted-foreground">
+                Mostrando {serviceEnPantalla.length} de {servicePendientes.length}.{" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  onClick={() => setFiltroService(null)}
+                >
+                  Ver todos
+                </button>
+              </p>
+            )}
+            {serviceEnPantalla.length === 0 ? (
               <p className="py-3 text-sm text-muted-foreground">No hay services vencidos ni próximos.</p>
             ) : (
               <Table>
@@ -337,7 +411,7 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {servicePendientes.map((p) => {
+                  {serviceEnPantalla.map((p) => {
                     const u = p.mide === "horas" ? "hs" : "km"
                     const prox =
                       p.proximaFecha == null
@@ -383,9 +457,14 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
             <CardTitle className="flex items-center gap-2 text-base">
               <Wrench className="size-4 text-muted-foreground" /> Órdenes de trabajo
             </CardTitle>
-            <Badge className="border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400">
+            <BadgeFiltro
+              activo={false}
+              onClick={() => onNavigate("historial")}
+              cls="border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400"
+              titulo="Ver el historial completo de órdenes de trabajo"
+            >
               Abiertas: {otPendientes.length}
-            </Badge>
+            </BadgeFiltro>
           </CardHeader>
           <CardContent className="overflow-x-auto pt-0">
             {otPendientes.length === 0 ? (

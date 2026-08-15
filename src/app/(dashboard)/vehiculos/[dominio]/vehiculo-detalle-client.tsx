@@ -5,6 +5,7 @@ import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { TarjetaKpi } from "../tarjeta-kpi"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -171,6 +172,14 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
         km: d.km,
       }))
 
+  /**
+   * Las tarjetas de arriba eran números sin salida. Cada una baja ahora al
+   * cuadro que abre ese número: km/horas por día, rendimiento de las cargas o
+   * el timeline de actividad.
+   */
+  const irA = (id: string) =>
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
+
   const rendChart = rendimientoUltimas10Cargas.map((c) => ({
     fecha: formatFechaCorta(c.fecha),
     rendimiento: Number(c.rendimiento.toFixed(2)),
@@ -209,140 +218,97 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
         </div>
       )}
 
-      {/* KPI cards */}
+      {/* KPI cards — cada una baja al cuadro donde ese número se abre */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  {esAutoelevador ? `Horas — ${formatMes(mesSel)}` : "Km del mes"}
-                </p>
-                <p className="text-3xl font-bold text-slate-900">
-                  {(esAutoelevador ? horasMesSel : kpis.kmMes).toLocaleString("es-AR")}
-                  {esAutoelevador && (
-                    <span className="ml-1 text-base font-normal text-muted-foreground">hs</span>
-                  )}
-                </p>
-              </div>
-              <div className="rounded-full bg-indigo-100 p-3">
-                <Gauge className="h-5 w-5 text-indigo-600" />
-              </div>
-            </div>
+        <TarjetaKpi
+          label={esAutoelevador ? `Horas — ${formatMes(mesSel)}` : "Km del mes"}
+          valor={`${(esAutoelevador ? horasMesSel : kpis.kmMes).toLocaleString("es-AR")}${
+            esAutoelevador ? " hs" : ""
+          }`}
+          Icon={Gauge}
+          iconoClase="bg-indigo-100 text-indigo-600"
+          detalle={
             <p className="mt-2 text-xs text-muted-foreground">
               YTD: {kpis.kmYTD.toLocaleString("es-AR")} {unidad} · Histórico:{" "}
               {kpis.kmHistorico.toLocaleString("es-AR")} {unidad}
             </p>
-          </CardContent>
-        </Card>
+          }
+          pista={esAutoelevador ? "Ver las horas día por día" : "Ver los km día por día"}
+          onClick={() => irA("grafico-km")}
+        />
 
         {!esAutoelevador && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Rendimiento</p>
-                  <p className="text-3xl font-bold text-slate-900">
-                    {kpis.rendimientoPromedio.toFixed(2)}
-                    <span className="ml-1 text-base font-normal text-muted-foreground">km/l</span>
-                  </p>
-                </div>
-                <div className="rounded-full bg-amber-100 p-3">
-                  <Fuel className="h-5 w-5 text-amber-600" />
-                </div>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">Promedio histórico</p>
-            </CardContent>
-          </Card>
+          <TarjetaKpi
+            label="Rendimiento"
+            valor={`${kpis.rendimientoPromedio.toFixed(2)} km/l`}
+            Icon={Fuel}
+            iconoClase="bg-amber-100 text-amber-600"
+            detalle={<p className="mt-2 text-xs text-muted-foreground">Promedio histórico</p>}
+            pista="Ver las últimas cargas de combustible"
+            onClick={() => irA("grafico-rendimiento")}
+          />
         )}
 
         {(!esAutoelevador || kpis.costoMes > 0) && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Costo combustible mes</p>
-                  <p className="text-3xl font-bold text-slate-900">
-                    $ {kpis.costoMes.toLocaleString("es-AR")}
-                  </p>
-                </div>
-                <div className="rounded-full bg-green-100 p-3">
-                  <DollarSign className="h-5 w-5 text-green-600" />
-                </div>
-              </div>
+          <TarjetaKpi
+            label="Costo combustible mes"
+            valor={`$ ${kpis.costoMes.toLocaleString("es-AR")}`}
+            Icon={DollarSign}
+            iconoClase="bg-green-100 text-green-600"
+            detalle={
               <p className="mt-2 text-xs text-muted-foreground">
                 Histórico: $ {kpis.costoTotalHistorico.toLocaleString("es-AR")}
               </p>
-            </CardContent>
-          </Card>
+            }
+            pista="Ver las cargas que lo forman"
+            onClick={() => irA(esAutoelevador ? "timeline-actividad" : "grafico-rendimiento")}
+          />
         )}
 
         {!esAutoelevador && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">TML promedio</p>
-                  <p className="text-3xl font-bold text-slate-900">
-                    {kpis.tmlPromedio} <span className="text-base font-normal">min</span>
-                  </p>
-                </div>
-                <div className="rounded-full bg-cyan-100 p-3">
-                  <Clock className="h-5 w-5 text-cyan-600" />
-                </div>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">Tiempo medio liberación</p>
-            </CardContent>
-          </Card>
+          <TarjetaKpi
+            label="TML promedio"
+            valor={`${kpis.tmlPromedio} min`}
+            Icon={Clock}
+            iconoClase="bg-cyan-100 text-cyan-600"
+            detalle={<p className="mt-2 text-xs text-muted-foreground">Tiempo medio liberación</p>}
+            pista="Ver las salidas en el timeline"
+            onClick={() => irA("timeline-actividad")}
+          />
         )}
 
         {!esAutoelevador && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Egresos del mes</p>
-                  <p className="text-3xl font-bold text-slate-900">{kpis.totalEgresosMes}</p>
-                </div>
-                <div className="rounded-full bg-blue-100 p-3">
-                  <Truck className="h-5 w-5 text-blue-600" />
-                </div>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">Salidas a ruta</p>
-            </CardContent>
-          </Card>
+          <TarjetaKpi
+            label="Egresos del mes"
+            valor={kpis.totalEgresosMes}
+            Icon={Truck}
+            iconoClase="bg-blue-100 text-blue-600"
+            detalle={<p className="mt-2 text-xs text-muted-foreground">Salidas a ruta</p>}
+            pista="Ver las salidas en el timeline"
+            onClick={() => irA("timeline-actividad")}
+          />
         )}
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  {esAutoelevador ? "Último horómetro" : "Último odómetro"}
-                </p>
-                <p className="text-3xl font-bold text-slate-900">
-                  {kpis.ultimoOdometro != null
-                    ? kpis.ultimoOdometro.toLocaleString("es-AR")
-                    : "—"}
-                  {esAutoelevador && kpis.ultimoOdometro != null && (
-                    <span className="ml-1 text-base font-normal text-muted-foreground">hs</span>
-                  )}
-                </p>
-              </div>
-              <div className="rounded-full bg-slate-100 p-3">
-                <MapPin className="h-5 w-5 text-slate-600" />
-              </div>
-            </div>
+        <TarjetaKpi
+          label={esAutoelevador ? "Último horómetro" : "Último odómetro"}
+          valor={`${
+            kpis.ultimoOdometro != null ? kpis.ultimoOdometro.toLocaleString("es-AR") : "—"
+          }${esAutoelevador && kpis.ultimoOdometro != null ? " hs" : ""}`}
+          Icon={MapPin}
+          iconoClase="bg-slate-100 text-slate-600"
+          detalle={
             <p className="mt-2 text-xs text-muted-foreground">
               Última actividad: {kpis.ultimaActividad || "Sin registros"}
             </p>
-          </CardContent>
-        </Card>
+          }
+          pista="Ver de dónde sale la última lectura"
+          onClick={() => irA("timeline-actividad")}
+        />
       </div>
 
       {/* Charts */}
       <div className={`grid gap-4 ${esAutoelevador ? "" : "lg:grid-cols-2"}`}>
-        <Card>
+        <Card id="grafico-km">
           <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
             <CardTitle className="text-base">
               {esAutoelevador
@@ -391,7 +357,7 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
         </Card>
 
         {!esAutoelevador && (
-        <Card>
+        <Card id="grafico-rendimiento">
           <CardHeader>
             <CardTitle className="text-base">Rendimiento últimas 10 cargas</CardTitle>
           </CardHeader>
@@ -427,7 +393,7 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
       </div>
 
       {/* Timeline */}
-      <Card>
+      <Card id="timeline-actividad">
         <CardHeader>
           <CardTitle className="text-base">Timeline de actividad</CardTitle>
         </CardHeader>
