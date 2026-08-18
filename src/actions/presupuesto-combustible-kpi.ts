@@ -42,8 +42,16 @@ const DOMINIOS_POR_KPI: Record<string, string[]> = {
  * vacía (o es igual al grupo), la tarjeta dibuja una sola serie.
  */
 const DOMINIOS_INTERVENIDOS_POR_KPI: Record<string, string[]> = {
-  // Limitadores colocados el 06-jul-2026 sólo en estos dos (ver seguimiento Q3).
-  "RENDIMIENTO COMBUSTIBLE LARGA DISTANCIA": ["OJA403", "AE591EI"],
+  // Limitadores colocados el 06-jul-2026 en TODO el grupo de larga distancia.
+  // Arrancaron sólo en OJA403 y AE591EI (así se cargó el seguimiento Q2), pero
+  // el mismo día se completaron los cuatro: ya no queda grupo de control, así
+  // que la comparación válida es contra la línea base Q2 (3,60 km/l).
+  "RENDIMIENTO COMBUSTIBLE LARGA DISTANCIA": [
+    "AE908DH",
+    "AE591EI",
+    "OJA403",
+    "AF664NY",
+  ],
 }
 
 /** Rango de rendimiento plausible para un camión de reparto/larga distancia. */

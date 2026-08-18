@@ -131,6 +131,36 @@ export interface EjecucionRubro {
  * Lee la hoja DESVIOS (la que tiene real, no sólo presupuesto): sólo trae los
  * meses cerrados, y eso es justamente lo que se quiere acumular.
  */
+/**
+ * Último mes CERRADO del EERR, leído del volumen vendido.
+ *
+ * 🚨 Los meses que todavía no cerraron NO vienen vacíos: vienen en CERO, con el
+ * presupuesto ya cargado al lado. Sin este corte, un rubro suma el presupuesto
+ * de todo el año contra el gasto de los meses transcurridos y publica un ahorro
+ * que no existe: con el EERR de julio, "Reducción de Roturas" mostraba $3,86M
+ * (505% del ritmo) cuando lo realmente ahorrado eran $357.339.
+ *
+ * El volumen es el mejor testigo del cierre: un mes cerrado siempre vendió algo,
+ * y un gasto en cero puede ser real (hay rubros que no gastan todos los meses).
+ * Es el mismo criterio que ya usa el KPI de pérdidas para descartar meses.
+ */
+function ultimoMesCerrado(aoa: unknown[][]): number {
+  for (let i = 3; i < aoa.length; i++) {
+    const row = aoa[i]
+    if (!row || typeof row[1] !== "string") continue
+    if (normalizar(row[1]) !== FILA_TOTAL_HL) continue
+    let ultimo = 0
+    for (let mes = 1; mes <= 12; mes++) {
+      const r = row[3 + 4 * (mes - 1)]
+      if (typeof r === "number" && Number.isFinite(r) && r > 0) ultimo = mes
+    }
+    return ultimo
+  }
+  // Sin la fila de volumen no hay con qué decidir: no se corta nada, que es el
+  // comportamiento que había antes de este control.
+  return 12
+}
+
 function parseEjecucion(buffer: ArrayBuffer): Map<string, EjecucionRubro> {
   const wb = XLSX.read(buffer, { type: "array" })
   const ws = wb.Sheets[SHEET_DESVIOS]
@@ -140,6 +170,8 @@ function parseEjecucion(buffer: ArrayBuffer): Map<string, EjecucionRubro> {
     defval: null,
     blankrows: false,
   })
+
+  const mesTope = ultimoMesCerrado(aoa)
 
   const out = new Map<string, EjecucionRubro>()
   for (let i = 3; i < aoa.length; i++) {
@@ -151,7 +183,7 @@ function parseEjecucion(buffer: ArrayBuffer): Map<string, EjecucionRubro> {
     if (!subNorm || subNorm === "TOTAL" || subNorm === "RUBRO") continue
 
     const porMes: EjecucionMes[] = []
-    for (let mes = 1; mes <= 12; mes++) {
+    for (let mes = 1; mes <= mesTope; mes++) {
       const p = row[2 + 4 * (mes - 1)]
       const r = row[3 + 4 * (mes - 1)]
       const hayP = typeof p === "number" && Number.isFinite(p)
