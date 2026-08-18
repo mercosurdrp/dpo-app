@@ -71,6 +71,7 @@ import { usePaletaViz } from "./_components/paleta-viz"
 import { TooltipBarras } from "./_components/tooltip-barras"
 import { CoberturaCil } from "./cobertura-cil"
 import { ConsumoUrea } from "./consumo-urea"
+import { ArticulosLimpiezaSection } from "./articulos-limpieza"
 import { AdherenciaChecklistCard } from "./adherencia-checklist"
 import { KpiCard } from "./_components/kpi-card"
 import {
@@ -1155,6 +1156,9 @@ export function ChecklistsMtto({
         dominios={dominiosFlota}
         puedeEditar={puedeEditar}
       />
+
+      {/* ===== Artículos de limpieza: qué se le entregó a cada unidad ===== */}
+      <ArticulosLimpiezaSection dominios={dominiosFlota} puedeEditar={puedeEditar} />
 
       {/* ===== Consumo de urea: cada cuántos km la pide cada camión ===== */}
       <ConsumoUrea />
