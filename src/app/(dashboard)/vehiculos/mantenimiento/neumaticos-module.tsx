@@ -3424,11 +3424,13 @@ function PosicionDialog({
     setSaving(true)
     const res = await fn()
     setSaving(false)
-    if ("error" in res) toast.error(res.error)
-    else {
-      toast.success(ok)
-      onDone()
+    if ("error" in res) {
+      toast.error(res.error)
+      return false
     }
+    toast.success(ok)
+    onDone()
+    return true
   }
 
   // Igual que wrap, pero sube primero la factura adjunta (si hay) y le pasa las
@@ -3736,7 +3738,10 @@ function PosicionDialog({
                   Últimas mediciones:{" "}
                   {actual.mediciones
                     .slice(0, 4)
-                    .map((m) => `${m.profundidad_mm ?? "?"}mm (${fmtFecha(m.fecha)})`)
+                    .map(
+                      (m) =>
+                        `${m.profundidad_mm ?? "?"}mm${m.presion_psi != null ? ` / ${m.presion_psi}psi` : " / sin psi"} (${fmtFecha(m.fecha)})`
+                    )
                     .join(" · ")}
                 </p>
               )}
@@ -3785,8 +3790,8 @@ function PosicionDialog({
               <Button
                 size="sm"
                 disabled={saving || (!profMed && !kmMed && !presion)}
-                onClick={() =>
-                  wrap(
+                onClick={async () => {
+                  const ok = await wrap(
                     () =>
                       registrarMedicionNeumatico({
                         neumatico_id: actual.id,
@@ -3796,7 +3801,15 @@ function PosicionDialog({
                       }),
                     "Medición registrada"
                   )
-                }
+                  // Los casilleros quedaban escritos con lo recién guardado y
+                  // parecía que no había entrado: así se cargó tres veces la
+                  // misma ronda de 21 cubiertas.
+                  if (ok) {
+                    setProfMed("")
+                    setKmMed("")
+                    setPresion("")
+                  }
+                }}
               >
                 Guardar medición
               </Button>

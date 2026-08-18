@@ -676,18 +676,50 @@ export async function registrarMedicionNeumatico(input: {
   try {
     const profile = await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
-    const { error: insErr } = await supabase
+    const fecha = input.fecha ?? hoyArgentina()
+
+    // Una cubierta tiene UNA medición por día: si ya hay una de hoy, se corrige
+    // esa en vez de agregar otra fila. El 13/08 se cargaron 49 filas para 21
+    // cubiertas —la misma ronda tres veces, a las 16:28, 16:46 y 16:49— porque
+    // la pantalla no dejaba ver que la carga ya había entrado.
+    const { data: existente, error: selErr } = await supabase
       .from("mantenimiento_neumatico_mediciones")
-      .insert({
-        neumatico_id: input.neumatico_id,
-        fecha: input.fecha ?? hoyArgentina(),
-        profundidad_mm: input.profundidad_mm ?? null,
-        km: input.km ?? null,
-        presion_psi: input.presion_psi ?? null,
-        nota: input.nota?.trim() || null,
-        created_by: profile.id,
-      })
-    if (insErr) return { error: insErr.message }
+      .select("id, profundidad_mm, km, presion_psi, nota")
+      .eq("neumatico_id", input.neumatico_id)
+      .eq("fecha", fecha)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (selErr) return { error: selErr.message }
+
+    if (existente) {
+      // Pisa sólo lo que viene cargado: quien vuelve para agregar la presión no
+      // tiene que volver a escribir la profundidad y el km.
+      const { error: updMedErr } = await supabase
+        .from("mantenimiento_neumatico_mediciones")
+        .update({
+          profundidad_mm: input.profundidad_mm ?? existente.profundidad_mm,
+          km: input.km ?? existente.km,
+          presion_psi: input.presion_psi ?? existente.presion_psi,
+          nota: input.nota?.trim() || existente.nota,
+          created_by: profile.id,
+        })
+        .eq("id", existente.id)
+      if (updMedErr) return { error: updMedErr.message }
+    } else {
+      const { error: insErr } = await supabase
+        .from("mantenimiento_neumatico_mediciones")
+        .insert({
+          neumatico_id: input.neumatico_id,
+          fecha,
+          profundidad_mm: input.profundidad_mm ?? null,
+          km: input.km ?? null,
+          presion_psi: input.presion_psi ?? null,
+          nota: input.nota?.trim() || null,
+          created_by: profile.id,
+        })
+      if (insErr) return { error: insErr.message }
+    }
 
     if (input.profundidad_mm != null) {
       // Antes este update no miraba el error: con la sesión de un usuario sin
