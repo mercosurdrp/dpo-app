@@ -26,13 +26,29 @@ import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 
 type Result<T> = { data: T } | { error: string }
 
-/** Dominios que mide cada iniciativa, por nombre de su KPI (en mayúsculas). */
+/**
+ * Dominios que mide cada iniciativa, por nombre de su KPI (en mayúsculas).
+ *
+ * 🚨 Los limitadores terminaron colocándose en LOS 11 CAMIONES de distribución,
+ * no sólo en los 4 de larga distancia con los que arrancó la iniciativa, así que
+ * el KPI mide la flota entera: dejar afuera 7 camiones intervenidos sería medir
+ * la mitad del efecto. Son los `catalogo_vehiculos` con tipo `camion` y sector
+ * `distribucion` activos; si entra o sale un camión, esta lista se actualiza a
+ * mano (no se lee de la tabla para que el KPI histórico no cambie solo).
+ */
 const DOMINIOS_POR_KPI: Record<string, string[]> = {
   "RENDIMIENTO COMBUSTIBLE LARGA DISTANCIA": [
-    "AE908DH",
+    "AC165AJ",
     "AE591EI",
-    "OJA403",
+    "AE908DF",
+    "AE908DG",
+    "AE908DH",
+    "AF028YB",
+    "AF399KY",
+    "AF469UR",
+    "AF588SU",
     "AF664NY",
+    "OJA403",
   ],
 }
 
@@ -42,16 +58,10 @@ const DOMINIOS_POR_KPI: Record<string, string[]> = {
  * vacía (o es igual al grupo), la tarjeta dibuja una sola serie.
  */
 const DOMINIOS_INTERVENIDOS_POR_KPI: Record<string, string[]> = {
-  // Limitadores colocados el 06-jul-2026 en TODO el grupo de larga distancia.
-  // Arrancaron sólo en OJA403 y AE591EI (así se cargó el seguimiento Q2), pero
-  // el mismo día se completaron los cuatro: ya no queda grupo de control, así
-  // que la comparación válida es contra la línea base Q2 (3,60 km/l).
-  "RENDIMIENTO COMBUSTIBLE LARGA DISTANCIA": [
-    "AE908DH",
-    "AE591EI",
-    "OJA403",
-    "AF664NY",
-  ],
+  // Vacío a propósito: el 06-jul-2026 quedaron limitados los 11 camiones, así
+  // que no hay grupo de control contra el cual separar una serie. La única
+  // comparación posible es contra el Q2 previo a la instalación.
+  "RENDIMIENTO COMBUSTIBLE LARGA DISTANCIA": [],
 }
 
 /** Rango de rendimiento plausible para un camión de reparto/larga distancia. */
