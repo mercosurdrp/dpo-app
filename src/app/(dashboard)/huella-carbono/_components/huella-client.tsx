@@ -18,7 +18,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { Factory, Fuel, Leaf, Printer, Truck, Zap } from "lucide-react"
+import { Factory, FileDown, Fuel, Leaf, Printer, Truck, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -117,9 +117,15 @@ export function HuellaClient({ huella, role }: { huella: HuellaAnual; role: User
             Inventario de emisiones GHG Protocol (alcances 1, 2 y 3) armado desde los sistemas de la empresa.
           </p>
         </div>
-        <Button variant="outline" onClick={() => { setTab("informe"); setTimeout(() => window.print(), 300) }}>
-          <Printer className="size-4" /> Imprimir / PDF
-        </Button>
+        <div className="flex gap-2">
+          {/* Informe con gráficos y conclusión, generado con el corte ene–jul 2026 */}
+          <Button variant="outline" onClick={() => window.open("/huella/Huella_Carbono_Pampeana_EneJul2026.pdf", "_blank")}>
+            <FileDown className="size-4" /> Descargar PDF
+          </Button>
+          <Button variant="outline" onClick={() => { setTab("informe"); setTimeout(() => window.print(), 300) }}>
+            <Printer className="size-4" /> Imprimir / PDF
+          </Button>
+        </div>
       </div>
 
       {/* KPIs: cada tarjeta abre el detalle mensual */}
@@ -153,7 +159,7 @@ export function HuellaClient({ huella, role }: { huella: HuellaAnual; role: User
         <button onClick={() => setTab("meses")} className="rounded-lg border p-3 text-left transition hover:shadow">
           <p className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground"><Factory className="size-3.5" /> Intensidad</p>
           <p className="text-2xl font-bold tabular-nums">{totales.intensidadKgHl != null ? nf2(totales.intensidadKgHl) : "—"}</p>
-          <p className="text-xs text-muted-foreground">kg CO₂e por HL entregado</p>
+          <p className="text-xs text-muted-foreground">kg CO₂e por HL vendido</p>
         </button>
       </div>
 
@@ -193,7 +199,7 @@ export function HuellaClient({ huella, role }: { huella: HuellaAnual; role: User
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Intensidad mensual (kg CO₂e por HL entregado)</CardTitle>
+                <CardTitle className="text-base">Intensidad mensual (kg CO₂e por HL vendido)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-56 w-full">
@@ -294,7 +300,7 @@ export function HuellaClient({ huella, role }: { huella: HuellaAnual; role: User
                 <thead>
                   <tr className="border-b text-left text-xs uppercase text-muted-foreground">
                     <th className="py-2 pr-2">Mes</th>
-                    <th className="py-2 pr-2 text-right">HL</th>
+                    <th className="py-2 pr-2 text-right">HL vendidos</th>
                     <th className="py-2 pr-2 text-right">Gasoil flota (l)</th>
                     <th className="py-2 pr-2 text-right">Autoelev. (l)</th>
                     <th className="py-2 pr-2 text-right">kWh</th>
@@ -404,7 +410,7 @@ function InformeHuella({ huella }: { huella: HuellaAnual }) {
         </div>
       </div>
       <p className="mt-2 text-sm">
-        <strong>Intensidad: {totales.intensidadKgHl != null ? nf2(totales.intensidadKgHl) : "—"} kg CO₂e por HL entregado</strong>{" "}
+        <strong>Intensidad: {totales.intensidadKgHl != null ? nf2(totales.intensidadKgHl) : "—"} kg CO₂e por HL vendido</strong>{" "}
         ({nf0(totales.hl)} HL en el período{totales.mesesSinKwh > 0 ? "; falta la electricidad de " + totales.mesesSinKwh + (totales.mesesSinKwh === 1 ? " mes" : " meses") : ""}).
       </p>
 
@@ -420,7 +426,7 @@ function InformeHuella({ huella }: { huella: HuellaAnual }) {
         <thead>
           <tr className="border-b text-left text-xs uppercase text-muted-foreground">
             <th className="py-1">Mes</th>
-            <th className="py-1 text-right">HL</th>
+            <th className="py-1 text-right">HL vendidos</th>
             <th className="py-1 text-right">Scope 1</th>
             <th className="py-1 text-right">Scope 2</th>
             <th className="py-1 text-right">Scope 3</th>
@@ -462,11 +468,11 @@ function InformeHuella({ huella }: { huella: HuellaAnual }) {
       <h3 className="mt-6 text-lg font-semibold">Metodología y supuestos</h3>
       <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
         <li>Estándar GHG Protocol Corporate. Resultado en toneladas de CO₂ equivalente. Factor gasoil: {params.feGasoil} kg CO₂e/l.</li>
-        <li>Gasoil de flota: registro digital de cargas desde {params.gasoilConfiableDesde}; meses anteriores estimados con {params.ratioLitrosHl} l por HL entregado (relación medida). El dato de factura, cuando se carga, pisa la estimación.</li>
+        <li>Gasoil de flota: registro digital de cargas desde {params.gasoilConfiableDesde}; meses anteriores estimados con {params.ratioLitrosHl} l por HL vendido (relación medida). El dato de factura, cuando se carga, pisa la estimación.</li>
         <li>Autoelevadores: medidos desde {params.autoMedidoDesde}; antes, estimados con {params.autoHorasDia} h/día × {params.autoLitrosHora} l/h (consumo medido en las cargas reales).</li>
         <li>Flete de abastecimiento: viajes registrados × km de <strong>ida y vuelta</strong> del tarifario por planta × {params.fleteConsumoL100} l/100 km. Se toma el circuito completo porque el servicio contratado incluye el regreso del camión (criterio GHG Protocol para transporte aguas arriba, que incorpora los tramos vacíos).</li>
         <li>Refrigerantes: kg recargados × GWP {nf0(params.gwpRefrigerante)} (R-404A).</li>
-        <li>HL entregados: suma diaria de ventas por fletero.</li>
+        <li>HL vendidos: la fila «Vendidos» del Cuadro Mensual — facturado Chess neto (distribuido Chess + mostrador + presupuesto − notas de crédito − devoluciones). Es todo lo facturado, la base contra la que se mide la intensidad.</li>
       </ul>
       <p className="mt-6 border-t pt-3 text-xs text-muted-foreground">
         Generado desde dpo-app · datos al {new Date().toLocaleDateString("es-AR")} · los valores estimados se

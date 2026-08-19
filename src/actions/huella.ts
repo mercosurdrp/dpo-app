@@ -52,7 +52,7 @@ export async function getHuellaAnual(anio: number): Promise<Result<HuellaAnual>>
   const desde = `${anio}-01-01`
   const hasta = `${anio}-12-31`
 
-  const [params, manual, comb, ventas] = await Promise.all([
+  const [params, manual, comb, ventas, mostrador] = await Promise.all([
     leerClave<Partial<HuellaParams>>(CLAVE_PARAMS),
     leerClave<Record<string, HuellaManualMes>>(claveManual(anio)),
     fetchAll<{ fecha: string; dominio: string | null; litros: number | null; tipo_combustible: string | null }>(
@@ -64,10 +64,18 @@ export async function getHuellaAnual(anio: number): Promise<Result<HuellaAnual>>
           .lte("fecha", hasta)
           .range(d, h),
     ),
-    fetchAll<{ fecha: string; total_hl: number | null }>((d, h) =>
+    fetchAll<{ fecha: string; origen: string | null; total_hl: number | null }>((d, h) =>
       supabase
         .from("ventas_diarias")
-        .select("fecha, total_hl")
+        .select("fecha, origen, total_hl")
+        .gte("fecha", desde)
+        .lte("fecha", hasta)
+        .range(d, h),
+    ),
+    fetchAll<{ fecha: string; ds_documento: string | null; total_hl: number | null }>((d, h) =>
+      supabase
+        .from("ventas_mostrador_diarias")
+        .select("fecha, ds_documento, total_hl")
         .gte("fecha", desde)
         .lte("fecha", hasta)
         .range(d, h),
@@ -76,6 +84,7 @@ export async function getHuellaAnual(anio: number): Promise<Result<HuellaAnual>>
 
   if ("error" in comb) return { error: `registro_combustible: ${comb.error}` }
   if ("error" in ventas) return { error: `ventas_diarias: ${ventas.error}` }
+  if ("error" in mostrador) return { error: `ventas_mostrador_diarias: ${mostrador.error}` }
 
   const p: HuellaParams = { ...HUELLA_PARAMS_DEFAULT, ...(params ?? {}) }
   const man: Record<string, HuellaManualMes> = manual ?? {}
@@ -93,10 +102,22 @@ export async function getHuellaAnual(anio: number): Promise<Result<HuellaAnual>>
 
   // ---- Agregados por mes ----
   const mesDe = (f: string) => f.slice(0, 7)
+  // HL VENDIDOS = la fila "Vendidos" del Cuadro Mensual (facturado Chess neto):
+  // distribuido SOLO origen chess + mostrador FCVTA + presupuesto PRVTA
+  // − notas de crédito DVVTA − devoluciones PRDVO. Definido así por Sebastián
+  // (19/08/2026): la intensidad se mide contra todo lo facturado, no contra
+  // lo distribuido. Enero 2026 valida exacto: 14.090 HL.
   const hlMes = new Map<string, number>()
   for (const v of ventas.rows) {
+    if (v.origen !== "chess") continue
     const m = mesDe(v.fecha)
     hlMes.set(m, (hlMes.get(m) ?? 0) + (Number(v.total_hl) || 0))
+  }
+  for (const v of mostrador.rows) {
+    const m = mesDe(v.fecha)
+    const hl = Number(v.total_hl) || 0
+    const signo = v.ds_documento === "DVVTA" || v.ds_documento === "PRDVO" ? -1 : 1
+    hlMes.set(m, (hlMes.get(m) ?? 0) + signo * hl)
   }
 
   const gasoilMes = new Map<string, number>() // flota de ruta, sin urea ni autoelevadores

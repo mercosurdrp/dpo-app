@@ -25,7 +25,7 @@ export interface HuellaParams {
   kmPlantas: Record<string, number>
   /** km ida y vuelta usado cuando la planta no está en el mapa. */
   kmDefault: number
-  /** Relación litros de gasoil por HL entregado (para estimar meses sin registro). */
+  /** Relación litros de gasoil por HL VENDIDO (para estimar meses sin registro). */
   ratioLitrosHl: number
   /** Desde qué mes (YYYY-MM) el registro de combustible de flota es confiable. */
   gasoilConfiableDesde: string
@@ -53,7 +53,7 @@ export const HUELLA_PARAMS_DEFAULT: HuellaParams = {
     FASAN: 509,
   },
   kmDefault: 420,
-  ratioLitrosHl: 1.009,
+  ratioLitrosHl: 0.66,
   gasoilConfiableDesde: "2026-05",
   autoLitrosHora: 3.44,
   autoHorasDia: 6.4,
