@@ -241,7 +241,12 @@ export function ExpositorDelDiaCard() {
                         : "text-muted-foreground",
                     )}
                   >
-                    {op.veces + op.credito}×{op.credito > 0 && "*"}
+                    {op.veces}×
+                    {op.credito > 0 && (
+                      <span className="ml-0.5 font-medium text-amber-700">
+                        +{op.credito}
+                      </span>
+                    )}
                   </span>
                 </>
               )
@@ -285,14 +290,16 @@ export function ExpositorDelDiaCard() {
           </div>
 
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            El número es cuántas veces le tocó. Sortea entre los que menos
-            tienen: esos van <span className="font-medium text-emerald-700">en verde</span>.
+            El número es cuántas reuniones dio de verdad. Sortea entre los que
+            menos tienen: esos van{" "}
+            <span className="font-medium text-emerald-700">en verde</span>.
             {plantel.some((o) => o.credito > 0) && (
               <>
                 {" "}
-                Un <span className="font-medium">*</span> quiere decir que parte
-                de esa cuenta se le acreditó al volver de una ausencia, para que
-                entre parejo con el resto.
+                El <span className="font-medium text-amber-700">+1</span> es un
+                crédito que se acredita al volver de una ausencia para entrar
+                parejo con el resto: no las dio, pero para el sorteo cuentan
+                igual.
               </>
             )}
           </p>
