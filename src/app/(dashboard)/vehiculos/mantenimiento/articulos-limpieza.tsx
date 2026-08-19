@@ -43,11 +43,25 @@ import {
   getEntregasArticulos,
   registrarEntregaArticulos,
   eliminarEntregaArticulos,
+  desmarcarArticuloUnidad,
   type EntregaArticulos,
 } from "@/actions/articulos-limpieza"
 import { ARTICULOS_LIMPIEZA, labelArticulo } from "@/lib/flota/articulos-limpieza"
 
 const fmtFecha = (f: string) => f.split("-").reverse().join("/")
+
+/**
+ * Hoy en hora argentina. El servidor puede estar en UTC y a la noche marcaría
+ * la entrega con la fecha del día siguiente.
+ */
+function hoyArgentina(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())
+}
 
 /**
  * Entrega de artículos de limpieza por unidad (escoba, rejilla, franela).
@@ -128,8 +142,9 @@ export function ArticulosLimpiezaSection({
       </CardHeader>
       <CardContent>
         <p className="mb-3 text-sm text-muted-foreground">
-          Qué artículo se le entregó a cada unidad y cuándo. El cuadro muestra la
-          última entrega de cada uno.
+          Qué artículo se le entregó a cada unidad y cuándo. Cada artículo es un
+          botón: tocalo y queda <strong>verde</strong> con la entrega del día.
+          Volviendo a tocarlo se deshace.
         </p>
 
         {error ? (
@@ -140,36 +155,12 @@ export function ArticulosLimpiezaSection({
           </p>
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <Table className="min-w-[28rem]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Unidad</TableHead>
-                    {ARTICULOS_LIMPIEZA.map((a) => (
-                      <TableHead key={a.id}>{a.label}</TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filas.map((d) => (
-                    <TableRow key={d}>
-                      <TableCell className="font-medium">{d}</TableCell>
-                      {ARTICULOS_LIMPIEZA.map((a) => {
-                        const f = ultima.get(`${d}|${a.id}`)
-                        return (
-                          <TableCell
-                            key={a.id}
-                            className={f ? "" : "text-muted-foreground/50"}
-                          >
-                            {f ? fmtFecha(f) : "—"}
-                          </TableCell>
-                        )
-                      })}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <CuadroArticulos
+              filas={filas}
+              ultima={ultima}
+              puedeEditar={puedeEditar}
+              onCambio={cargar}
+            />
 
             <Button
               variant="ghost"
@@ -392,5 +383,206 @@ function EntregaDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * El cuadro de entregas: una tarjeta por unidad y, adentro, un botón por
+ * artículo que se pone VERDE cuando esa unidad lo recibió, con la fecha de la
+ * última entrega debajo.
+ *
+ * 🚨 Antes era una tabla de fechas de sólo lectura: para marcar una escoba
+ * había que abrir el diálogo, elegir unidad, marcar el artículo y guardar. Se
+ * entrega recorriendo la flota, así que el registro tiene que ser un toque por
+ * unidad. El diálogo sigue estando para lo que el botón no puede: cargar con
+ * fecha vieja o dejar una observación.
+ */
+function CuadroArticulos({
+  filas,
+  ultima,
+  puedeEditar,
+  onCambio,
+}: {
+  filas: string[]
+  /** `${dominio}|${articuloId}` → fecha de la última entrega. */
+  ultima: Map<string, string>
+  puedeEditar: boolean
+  onCambio: () => Promise<void>
+}) {
+  // Qué botón está esperando al servidor, para que no se toque dos veces y se
+  // registre la entrega por duplicado.
+  const [guardando, setGuardando] = useState<string | null>(null)
+  // Desmarcar borra registro: se pregunta antes. Marcar no, porque un clic de
+  // más se deshace con otro clic.
+  const [aDesmarcar, setADesmarcar] = useState<{
+    dominio: string
+    articulo: string
+    fecha: string
+  } | null>(null)
+
+  const marcar = async (dominio: string, articulo: string) => {
+    const clave = `${dominio}|${articulo}`
+    setGuardando(clave)
+    const res = await registrarEntregaArticulos({
+      fecha: hoyArgentina(),
+      dominio,
+      articulos: [articulo],
+    })
+    if ("error" in res) toast.error(res.error)
+    else {
+      toast.success(`${labelArticulo(articulo)} · ${dominio}`)
+      await onCambio()
+    }
+    setGuardando(null)
+  }
+
+  const desmarcar = async () => {
+    if (!aDesmarcar) return
+    const { dominio, articulo } = aDesmarcar
+    setADesmarcar(null)
+    setGuardando(`${dominio}|${articulo}`)
+    const res = await desmarcarArticuloUnidad(dominio, articulo)
+    if ("error" in res) toast.error(res.error)
+    else {
+      toast.success(`Se deshizo ${labelArticulo(articulo)} de ${dominio}`)
+      await onCambio()
+    }
+    setGuardando(null)
+  }
+
+  if (filas.length === 0) {
+    return (
+      <p className="py-4 text-center text-sm text-muted-foreground">
+        Sin unidades en la flota.
+      </p>
+    )
+  }
+
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {filas.map((d) => {
+          const entregados = ARTICULOS_LIMPIEZA.filter((a) =>
+            ultima.has(`${d}|${a.id}`),
+          ).length
+          const completa = entregados === ARTICULOS_LIMPIEZA.length
+          return (
+            <div
+              key={d}
+              className={`rounded-lg border p-3 ${
+                completa
+                  ? "border-emerald-500/40 bg-emerald-500/5"
+                  : "bg-muted/30"
+              }`}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="truncate font-medium">{d}</span>
+                <span
+                  className={`shrink-0 text-xs font-semibold ${
+                    completa
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {entregados}/{ARTICULOS_LIMPIEZA.length}
+                </span>
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                {ARTICULOS_LIMPIEZA.map((a) => {
+                  const clave = `${d}|${a.id}`
+                  const fecha = ultima.get(clave)
+                  const ocupado = guardando === clave
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      aria-pressed={!!fecha}
+                      disabled={!puedeEditar || ocupado}
+                      title={
+                        !puedeEditar
+                          ? fecha
+                            ? `Entregada el ${fmtFecha(fecha)}`
+                            : "Sin entregar"
+                          : fecha
+                            ? `Entregada el ${fmtFecha(fecha)} — tocar para deshacer`
+                            : `Marcar ${a.label} entregada hoy a ${d}`
+                      }
+                      onClick={() =>
+                        fecha
+                          ? setADesmarcar({ dominio: d, articulo: a.id, fecha })
+                          : void marcar(d, a.id)
+                      }
+                      className={`flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-1.5 text-xs transition-colors disabled:opacity-60 ${
+                        fecha
+                          ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                          : "border-dashed border-muted-foreground/40 text-muted-foreground"
+                      } ${
+                        puedeEditar && !ocupado
+                          ? "hover:border-emerald-500 hover:bg-emerald-500/20"
+                          : "cursor-default"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1 font-medium">
+                        {ocupado ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : fecha ? (
+                          <Check className="size-3" strokeWidth={3} />
+                        ) : null}
+                        {a.label}
+                      </span>
+                      <span className="text-[11px] leading-tight opacity-80">
+                        {fecha ? fmtFecha(fecha) : "sin entregar"}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="size-3 rounded-sm border border-emerald-500/50 bg-emerald-500/40"
+          />{" "}
+          entregado — con la fecha de la última entrega
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="size-3 rounded-sm border border-dashed border-muted-foreground/50"
+          />{" "}
+          sin entregar
+        </span>
+        {puedeEditar && <span>El botón marca con la fecha de hoy.</span>}
+      </p>
+
+      {aDesmarcar && (
+        <Dialog open onOpenChange={(o) => !o && setADesmarcar(null)}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Deshacer la entrega</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Se saca <strong>{labelArticulo(aDesmarcar.articulo)}</strong> de la
+              entrega del <strong>{fmtFecha(aDesmarcar.fecha)}</strong> a{" "}
+              <strong>{aDesmarcar.dominio}</strong>. Los otros artículos de esa
+              misma entrega quedan como están.
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setADesmarcar(null)}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" onClick={() => void desmarcar()}>
+                Deshacer
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   )
 }

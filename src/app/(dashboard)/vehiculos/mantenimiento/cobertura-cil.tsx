@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Loader2, Truck } from "lucide-react"
+import { Check, Loader2, Truck, X } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -198,7 +198,11 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
               <SerieCobertura serie={serie} mesElegido={ym} onElegir={setYm} />
             )}
 
-            <TablaCobertura unidades={obligatorias} ciclo={ciclo} />
+            <TablaCobertura
+              titulo="Qué hizo cada unidad este mes"
+              unidades={obligatorias}
+              ciclo={ciclo}
+            />
 
             {optativas.length > 0 && (
               <div className="space-y-2">
@@ -209,7 +213,11 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
                     .join(" · ")}
                   . Se muestran igual: que no cuenten no significa esconderlas.
                 </p>
-                <TablaCobertura unidades={optativas} ciclo={ciclo} />
+                <TablaCobertura
+                  titulo="Unidades fuera del porcentaje"
+                  unidades={optativas}
+                  ciclo={ciclo}
+                />
               </div>
             )}
 
@@ -401,131 +409,150 @@ function SerieCobertura({
   )
 }
 
+/**
+ * El cuadro de la flota: una fila por unidad y un recuadro por tarea del ciclo,
+ * VERDE si la hizo y ROJO si le falta.
+ *
+ * 🚨 Antes cada tarea era un puntito de 3,5 px. De lejos —y esto se mira
+ * proyectado en la reunión— no se distinguía el verde del rojo y había que
+ * acercarse a leer la fecha. El recuadro pintado se lee de un vistazo desde
+ * cualquier lado, que es todo lo que se le pide a esta grilla; la fecha y el
+ * operario siguen adentro y en el `title`, porque son la prueba de la tarea.
+ */
 function TablaCobertura({
+  titulo,
   unidades,
   ciclo,
 }: {
+  titulo: string
   unidades: CoberturaCilMes["unidades"]
   ciclo: readonly string[]
 }) {
   if (unidades.length === 0) {
     return (
-      <p className="py-3 text-center text-sm text-muted-foreground">Sin unidades.</p>
+      <div className="rounded-lg border p-3 sm:p-4">
+        <p className="mb-2 text-sm font-medium text-foreground">{titulo}</p>
+        <p className="py-3 text-center text-sm text-muted-foreground">Sin unidades.</p>
+      </div>
     )
   }
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b text-left text-xs uppercase text-muted-foreground">
-            <th className="py-2 pr-3 font-medium">Unidad</th>
-            {ciclo.map((t) => (
-              <th
-                key={t}
-                title={labelTareaCil(t)}
-                className="px-1 py-2 text-center font-medium whitespace-nowrap sm:pr-3"
-              >
-                {/* En el celular sólo la primera palabra: con las tres columnas
-                    completas la de Lubricación se iba de la pantalla. */}
-                <span className="sm:hidden">{labelCorto(t).split(" ")[0]}</span>
-                <span className="hidden sm:inline">{labelCorto(t)}</span>
-              </th>
-            ))}
-            {/* El estado es el resumen de los tres puntos de la fila: en pantalla
-                chica se lee igual mirándolos, y sacarlo es lo que hace entrar la
-                grilla sin desplazar. */}
-            <th className="hidden py-2 font-medium sm:table-cell">Estado</th>
-          </tr>
-        </thead>
-        <tbody>
-          {unidades.map((u) => (
-            <tr key={u.dominio} className="border-b last:border-0">
-              <td className="py-2 pr-2 whitespace-nowrap font-medium sm:pr-3">
-                {u.dominio}
-                {u.numero && (
-                  // En el celular el número de flota baja de renglón: en la misma
-                  // línea empujaba la última columna fuera de la pantalla.
-                  <span className="block text-xs font-normal text-muted-foreground sm:ml-1 sm:inline">
-                    N° {u.numero}
-                  </span>
-                )}
-              </td>
-              {ciclo.map((t) => {
-                const hecha = u.hechas[t]
-                return (
-                  <td key={t} className="px-1 py-2 text-center sm:pr-3">
-                    {/*
-                      Círculo lleno = hecha, vacío = falta. El punto se lee de un
-                      vistazo en toda la grilla; la fecha y el operario siguen
-                      abajo y en el `title`, porque son la prueba de la tarea y
-                      sin ellos esto sería más lindo pero menos útil.
-                    */}
-                    <span
-                      className="inline-flex flex-col items-center gap-0.5"
-                      title={
-                        hecha
-                          ? `${labelTareaCil(t)} · ${fmtDia(hecha.fecha)} · ${hecha.operario}`
-                          : `${labelTareaCil(t)}: falta este mes`
-                      }
-                    >
-                      <span
-                        aria-hidden
-                        className={`size-3.5 rounded-full ${
-                          hecha
-                            ? "bg-emerald-500"
-                            : "border-2 border-red-400 dark:border-red-500"
-                        }`}
-                      />
-                      <span className="sr-only">
-                        {hecha ? "hecha" : "falta"}
-                      </span>
-                      {hecha ? (
-                        <span className="text-[11px] leading-tight text-muted-foreground">
-                          {fmtDia(hecha.fecha)}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] leading-tight text-red-600 dark:text-red-400">
-                          falta
-                        </span>
-                      )}
-                    </span>
-                  </td>
-                )
-              })}
-              <td className="hidden py-2 sm:table-cell">
-                {u.completa ? (
-                  <Badge
-                    variant="outline"
-                    className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                  >
-                    Al día
-                  </Badge>
-                ) : (
-                  <Badge
-                    variant="outline"
-                    className="border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400"
-                  >
-                    Falta {u.faltan.length}
-                  </Badge>
-                )}
-              </td>
+    <div className="rounded-lg border p-3 sm:p-4">
+      <p className="mb-2 text-sm font-medium text-foreground">{titulo}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+              <th className="py-2 pr-3 font-medium">Unidad</th>
+              {ciclo.map((t) => (
+                <th
+                  key={t}
+                  title={labelTareaCil(t)}
+                  className="px-1 py-2 text-center font-medium whitespace-nowrap sm:pr-3"
+                >
+                  {/* En el celular sólo la primera palabra: con las tres columnas
+                      completas la de Lubricación se iba de la pantalla. */}
+                  <span className="sm:hidden">{labelCorto(t).split(" ")[0]}</span>
+                  <span className="hidden sm:inline">{labelCorto(t)}</span>
+                </th>
+              ))}
+              {/* El estado es el resumen de los tres puntos de la fila: en pantalla
+                  chica se lee igual mirándolos, y sacarlo es lo que hace entrar la
+                  grilla sin desplazar. */}
+              <th className="hidden py-2 font-medium sm:table-cell">Estado</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {unidades.map((u) => (
+              <tr key={u.dominio} className="border-b last:border-0">
+                <td className="py-2 pr-2 whitespace-nowrap font-medium sm:pr-3">
+                  {u.dominio}
+                  {u.numero && (
+                    // En el celular el número de flota baja de renglón: en la misma
+                    // línea empujaba la última columna fuera de la pantalla.
+                    <span className="block text-xs font-normal text-muted-foreground sm:ml-1 sm:inline">
+                      N° {u.numero}
+                    </span>
+                  )}
+                </td>
+                {ciclo.map((t) => {
+                  const hecha = u.hechas[t]
+                  return (
+                    <td key={t} className="px-1 py-1.5 align-middle sm:px-1.5">
+                      {/*
+                        Cuadro verde = hecha, rojo = falta. Se lee de un vistazo en
+                        toda la grilla; la fecha va adentro del cuadro y el operario
+                        en el `title`, porque son la prueba de la tarea y sin ellos
+                        esto sería más lindo pero menos útil.
+                      */}
+                      <span
+                        className={`flex min-h-11 w-full min-w-14 flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-1 text-[11px] leading-tight font-medium ${
+                          hecha
+                            ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                            : "border-red-500/50 bg-red-500/15 text-red-700 dark:text-red-300"
+                        }`}
+                        title={
+                          hecha
+                            ? `${labelTareaCil(t)} · ${fmtDia(hecha.fecha)} · ${hecha.operario}`
+                            : `${labelTareaCil(t)}: falta este mes`
+                        }
+                      >
+                        <span className="sr-only">
+                          {hecha ? "hecha" : "falta"}
+                        </span>
+                        {hecha ? (
+                          <>
+                            <Check aria-hidden className="size-3.5" strokeWidth={3} />
+                            <span>{fmtDia(hecha.fecha)}</span>
+                          </>
+                        ) : (
+                          <>
+                            <X aria-hidden className="size-3.5" strokeWidth={3} />
+                            <span>falta</span>
+                          </>
+                        )}
+                      </span>
+                    </td>
+                  )
+                })}
+                <td className="hidden py-2 sm:table-cell">
+                  {u.completa ? (
+                    <Badge
+                      variant="outline"
+                      className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                    >
+                      Al día
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400"
+                    >
+                      Falta {u.faltan.length}
+                    </Badge>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
-          <span aria-hidden className="size-3 rounded-full bg-emerald-500" /> hecha —
-          con la fecha debajo
+          <span
+            aria-hidden
+            className="size-3 rounded-sm border border-emerald-500/50 bg-emerald-500/40"
+          />{" "}
+          hecha — con la fecha adentro
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span
             aria-hidden
-            className="size-3 rounded-full border-2 border-red-400 dark:border-red-500"
+            className="size-3 rounded-sm border border-red-500/50 bg-red-500/30"
           />{" "}
           falta este mes
         </span>
-        <span>Pasá el mouse por el punto para ver quién la hizo.</span>
+        <span>Pasá el mouse por el cuadro para ver quién la hizo.</span>
       </p>
     </div>
   )

@@ -106,3 +106,59 @@ export async function eliminarEntregaArticulos(
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
 }
+
+/**
+ * Saca UN artículo de la última entrega que lo tenga para esa unidad.
+ *
+ * Es lo que hace el botón del cuadro cuando se desmarca un artículo que estaba
+ * en verde. No borra la entrega entera: una misma parada suele haber entregado
+ * escoba y franela juntas, y desmarcar la escoba no puede llevarse puesta la
+ * franela. Si el artículo era el único de esa entrega, ahí sí se borra la clave
+ * —una entrega sin artículos no dice nada—.
+ */
+export async function desmarcarArticuloUnidad(
+  dominio: string,
+  articulo: string,
+): Promise<{ success: true; fecha: string } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+
+    const dom = dominio?.trim().toUpperCase()
+    if (!dom) return { error: "Unidad inválida" }
+    if (!ARTICULOS_LIMPIEZA.some((a) => a.id === articulo))
+      return { error: "Artículo inválido" }
+
+    const res = await leerPrefijo(PREFIJO)
+    if ("error" in res) return { error: res.error }
+
+    // La más reciente que tenga ese artículo: es la que muestra el cuadro.
+    let objetivo: EntregaArticulos | null = null
+    for (const fila of res.data) {
+      let e: EntregaArticulos
+      try {
+        e = JSON.parse(fila.valor) as EntregaArticulos
+      } catch {
+        continue
+      }
+      if (e.dominio !== dom || !e.articulos.includes(articulo)) continue
+      if (
+        !objetivo ||
+        e.fecha > objetivo.fecha ||
+        (e.fecha === objetivo.fecha && e.created_at > objetivo.created_at)
+      )
+        objetivo = e
+    }
+    if (!objetivo) return { error: "Esa unidad no tiene ese artículo entregado" }
+
+    const quedan = objetivo.articulos.filter((a) => a !== articulo)
+    const clave = PREFIJO + objetivo.id
+    const escritura =
+      quedan.length === 0
+        ? await borrarClave(clave)
+        : await escribirClave(clave, { ...objetivo, articulos: quedan }, profile.id)
+    if ("error" in escritura) return { error: escritura.error }
+    return { success: true, fecha: objetivo.fecha }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
