@@ -379,6 +379,27 @@ function InformeHuella({ huella }: { huella: HuellaAnual }) {
   const { totales, meses, anio, params } = huella
   const ultimo = meses[meses.length - 1]
   const periodo = `enero–${(MES_LABEL[ultimo?.mes.slice(5) ?? ""] ?? "").toLowerCase()} ${anio}`
+  // Los mismos gráficos del Resumen pero con tamaño FIJO: ResponsiveContainer
+  // mide 0 dentro del layout de impresión y los gráficos saldrían en blanco.
+  const feGasoil = params.feGasoil
+  const dataChart = meses.map((m) => ({
+    mes: mesCorto(m.mes),
+    "Camiones propios": Number(((m.gasoilFlotaL * feGasoil) / 1000).toFixed(1)),
+    Autoelevadores: Number(((m.autoL * feGasoil) / 1000).toFixed(1)),
+    Electricidad: m.s2 != null ? Number(m.s2.toFixed(1)) : 0,
+    "Flete de acarreo": Number(m.s3.toFixed(1)),
+  }))
+  const dataIntensidad = meses
+    .filter((m) => m.intensidadKgHl != null)
+    .map((m) => ({ mes: mesCorto(m.mes), intensidad: Number(m.intensidadKgHl!.toFixed(2)) }))
+  const camionesT = meses.reduce((a, m) => a + (m.gasoilFlotaL * feGasoil) / 1000, 0)
+  const autoelevT = meses.reduce((a, m) => a + (m.autoL * feGasoil) / 1000, 0)
+  const dataComposicion = [
+    { name: "Flete de acarreo", value: Number(totales.s3.toFixed(1)), color: COLOR_S3 },
+    { name: "Camiones propios", value: Number(camionesT.toFixed(1)), color: COLOR_S1 },
+    { name: "Autoelevadores", value: Number(autoelevT.toFixed(1)), color: COLOR_AUT },
+    ...(totales.s2 != null ? [{ name: "Electricidad", value: Number(totales.s2.toFixed(1)), color: COLOR_S2 }] : []),
+  ]
   return (
     <div className="huella-informe mx-auto max-w-3xl rounded-lg border bg-white p-8 text-[15px] leading-relaxed">
       <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
@@ -413,6 +434,47 @@ function InformeHuella({ huella }: { huella: HuellaAnual }) {
         <strong>Intensidad: {totales.intensidadKgHl != null ? nf2(totales.intensidadKgHl) : "—"} kg CO₂e por HL vendido</strong>{" "}
         ({nf0(totales.hl)} HL en el período{totales.mesesSinKwh > 0 ? "; falta la electricidad de " + totales.mesesSinKwh + (totales.mesesSinKwh === 1 ? " mes" : " meses") : ""}).
       </p>
+
+      <h3 className="mt-6 text-lg font-semibold">Emisiones por mes y fuente (t CO₂e)</h3>
+      <div className="mt-2 overflow-x-auto">
+        <BarChart width={660} height={230} data={dataChart}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="mes" fontSize={11} />
+          <YAxis fontSize={11} />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Bar dataKey="Camiones propios" stackId="a" fill={COLOR_S1} />
+          <Bar dataKey="Autoelevadores" stackId="a" fill={COLOR_AUT} />
+          <Bar dataKey="Electricidad" stackId="a" fill={COLOR_S2} />
+          <Bar dataKey="Flete de acarreo" stackId="a" fill={COLOR_S3} />
+        </BarChart>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-4">
+        <div>
+          <h3 className="text-lg font-semibold">Intensidad (kg CO₂e/HL vendido)</h3>
+          <LineChart width={380} height={180} data={dataIntensidad} margin={{ top: 14, right: 14, left: -22, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="mes" fontSize={11} />
+            <YAxis fontSize={11} domain={[0, "auto"]} />
+            {totales.intensidadKgHl != null && (
+              <ReferenceLine y={Number(totales.intensidadKgHl.toFixed(2))} stroke="#64748b" strokeDasharray="5 4" />
+            )}
+            <Line type="monotone" dataKey="intensidad" stroke="#1e6b4a" strokeWidth={2.5} dot={{ r: 3.5 }} isAnimationActive={false} />
+          </LineChart>
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold">Composición del total</h3>
+          <PieChart width={280} height={190}>
+            <Pie data={dataComposicion} dataKey="value" nameKey="name" innerRadius="52%" outerRadius="80%" paddingAngle={2} strokeWidth={2} isAnimationActive={false}
+              label={(e) => `${Math.round(((e.value as number) / totales.totalConocido) * 100)}%`}>
+              {dataComposicion.map((p) => (
+                <Cell key={p.name} fill={p.color} />
+              ))}
+            </Pie>
+            <Legend iconSize={9} wrapperStyle={{ fontSize: 11 }} />
+          </PieChart>
+        </div>
+      </div>
 
       <h3 className="mt-6 text-lg font-semibold">Qué mide cada alcance</h3>
       <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
