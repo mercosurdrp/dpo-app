@@ -49,6 +49,7 @@ import {
   TrendingUp,
   Shirt,
   Thermometer,
+  Leaf,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -344,6 +345,16 @@ const navItemsFlat: NavItem[] = [
     roles: ["admin", "supervisor", "admin_rrhh", "auditor"],
     hideForEmpleado: true,
   },
+  {
+    // Inventario GHG Protocol (Scope 1/2/3) calculado desde los sistemas:
+    // combustible de flota, fletes de abastecimiento y ventas, más los kWh
+    // y refrigerantes que se cargan a mano. Punto ESG 6.1.1 de Galaxia.
+    label: "Huella de Carbono",
+    href: "/huella-carbono",
+    icon: <Leaf className="size-5" />,
+    pampeanaOnly: true,
+    hideForEmpleado: true,
+  },
 ]
 
 // ===== Menú agrupado por dominio (rediseño 2026-08) =====
@@ -407,7 +418,7 @@ export const navSections: NavGroup[] = [
     "/trivia/ranking",
     "/sugerencias",
   ]),
-  grupo("Gestión", ["/herramientas-gestion", "/presupuesto", "/sla"]),
+  grupo("Gestión", ["/herramientas-gestion", "/presupuesto", "/sla", "/huella-carbono"]),
 ]
 
 // Red de seguridad: un item nuevo agregado a navItemsFlat pero olvidado en los
