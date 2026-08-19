@@ -407,6 +407,9 @@ export interface TmlSemanal {
   total_egresos: number
   dentro_meta: number
   pct_dentro_meta: number
+  /** Serie paralela "desde matinal": null cuando ningún egreso del bucket tiene check-in apareado. */
+  promedio_tml_matinal?: number | null
+  egresos_con_checkin?: number
 }
 
 export interface TmlMensual {
@@ -416,6 +419,27 @@ export interface TmlMensual {
   total_egresos: number
   dentro_meta: number
   pct_dentro_meta: number
+  /** Serie paralela "desde matinal": null cuando ningún egreso del bucket tiene check-in apareado. */
+  promedio_tml_matinal?: number | null
+  egresos_con_checkin?: number
+}
+
+/**
+ * Serie paralela en evaluación (H2 2026): TML medido desde el check-in a la
+ * reunión matinal (módulo Reunión Pre-Ruta) hasta el mismo egreso de portería.
+ * Los promedios y % se calculan SOLO sobre los egresos apareados con check-in,
+ * y el "oficial pareado" es el TML oficial de esos mismos egresos para que la
+ * comparación sea justa.
+ */
+export interface TmlMatinalKpis {
+  egresosConCheckin: number
+  pctCobertura: number
+  promedioTmlMatinal: number
+  dentroMeta: number
+  pctDentroMeta: number
+  promedioTmlOficialPareado: number
+  deltaMinutos: number
+  deltaPct: number
 }
 
 // Capacitaciones

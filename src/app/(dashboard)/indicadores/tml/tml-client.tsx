@@ -36,6 +36,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import {
   BarChart,
   Bar,
+  ComposedChart,
   LineChart,
   Line,
   XAxis,
@@ -54,6 +55,7 @@ import type {
   CatalogoVehiculo,
   TmlPlanResumen,
   TmlMesComparado,
+  TmlMatinalKpis,
 } from "@/types/database"
 import { franjaPorHoraSalida } from "@/lib/tml/calculo"
 import { TmlPlanAccionSection } from "./tml-plan-accion-section"
@@ -70,6 +72,7 @@ import {
   Pencil,
   Trash2,
   Loader2,
+  Sunrise,
 } from "lucide-react"
 import { updateRegistroVehiculo, deleteRegistroVehiculo } from "@/actions/registros-vehiculos"
 
@@ -83,6 +86,7 @@ interface KpiData {
   semanal: TmlSemanal[]
   mensual: TmlMensual[]
   comparadoYoY: TmlMesComparado[]
+  matinal: TmlMatinalKpis | null
 }
 
 interface Props {
@@ -131,6 +135,7 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
   const semanalData = kpis.semanal.map((s) => ({
     name: `S${s.semana}`,
     tml: s.promedio_tml,
+    tmlMatinal: s.promedio_tml_matinal ?? null,
     pctMeta: s.pct_dentro_meta,
     egresos: s.total_egresos,
   }))
@@ -138,9 +143,12 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
   const mensualData = kpis.mensual.map((m) => ({
     name: MESES[m.mes],
     tml: m.promedio_tml,
+    tmlMatinal: m.promedio_tml_matinal ?? null,
     pctMeta: m.pct_dentro_meta,
     egresos: m.total_egresos,
   }))
+
+  const hayMatinal = kpis.matinal != null && kpis.matinal.egresosConCheckin > 0
 
   return (
     <div className="space-y-6">
@@ -265,6 +273,68 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
         </Card>
       </div>
 
+      {/* Serie paralela en evaluación H2: TML desde el check-in a la matinal */}
+      {hayMatinal && kpis.matinal && (
+        <Card className="border-violet-200 bg-violet-50/40">
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-violet-100 p-3">
+                  <Sunrise className="h-5 w-5 text-violet-600" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-slate-900">TML desde matinal</p>
+                    <Badge className="bg-violet-100 text-violet-700 hover:bg-violet-100 text-[10px]">
+                      EN EVALUACIÓN H2
+                    </Badge>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground max-w-xl">
+                    Mismos egresos, pero midiendo desde el check-in a la Reunión Pre-Ruta
+                    en vez de la franja de turno. No reemplaza al TML oficial: corre en
+                    paralelo para comparar las dos formas de medir.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-6">
+                <div>
+                  <p className="text-xs text-muted-foreground">Promedio</p>
+                  <p className={`text-2xl font-bold ${
+                    kpis.matinal.promedioTmlMatinal <= kpis.metaMinutos ? "text-green-600" : "text-violet-700"
+                  }`}>
+                    {kpis.matinal.promedioTmlMatinal} min
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">% dentro meta</p>
+                  <p className="text-2xl font-bold text-slate-900">{kpis.matinal.pctDentroMeta}%</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">vs oficial (mismos egresos)</p>
+                  <p className={`text-2xl font-bold ${
+                    kpis.matinal.deltaMinutos <= 0 ? "text-green-600" : "text-red-600"
+                  }`}>
+                    {kpis.matinal.deltaMinutos > 0 ? "+" : ""}
+                    {kpis.matinal.deltaMinutos} min
+                    <span className="ml-1 text-sm font-medium text-muted-foreground">
+                      ({kpis.matinal.deltaPct > 0 ? "+" : ""}
+                      {kpis.matinal.deltaPct}%)
+                    </span>
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Cobertura</p>
+                  <p className="text-2xl font-bold text-slate-900">{kpis.matinal.pctCobertura}%</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {kpis.matinal.egresosConCheckin}/{kpis.totalEgresos} egresos con check-in
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Charts */}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -281,12 +351,15 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
               <CardContent>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={semanalData}>
+                    <ComposedChart data={semanalData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="name" fontSize={11} />
                       <YAxis fontSize={11} unit=" min" />
                       <Tooltip
-                        formatter={(value) => [`${value} min`, "TML"]}
+                        formatter={(value, name) => [
+                          value == null ? "—" : `${value} min`,
+                          name === "tmlMatinal" ? "Desde matinal" : "TML oficial",
+                        ]}
                         labelFormatter={(label) => `Semana ${label}`}
                       />
                       <ReferenceLine y={25} stroke="#10B981" strokeDasharray="5 5" label={{ value: "Meta 25min", position: "right", fontSize: 10 }} />
@@ -298,9 +371,25 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
                           />
                         ))}
                       </Bar>
-                    </BarChart>
+                      {hayMatinal && (
+                        <Line
+                          type="monotone"
+                          dataKey="tmlMatinal"
+                          stroke="#8B5CF6"
+                          strokeWidth={2}
+                          strokeDasharray="4 4"
+                          dot={{ fill: "#8B5CF6", r: 2.5 }}
+                          connectNulls
+                        />
+                      )}
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
+                {hayMatinal && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Línea violeta punteada: TML desde matinal (serie en evaluación)
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -343,12 +432,15 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
               <CardContent>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={mensualData}>
+                    <ComposedChart data={mensualData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="name" fontSize={11} />
                       <YAxis fontSize={11} unit=" min" />
                       <Tooltip
-                        formatter={(value) => [`${value} min`, "TML"]}
+                        formatter={(value, name) => [
+                          value == null ? "—" : `${value} min`,
+                          name === "tmlMatinal" ? "Desde matinal" : "TML oficial",
+                        ]}
                       />
                       <ReferenceLine y={25} stroke="#10B981" strokeDasharray="5 5" label={{ value: "Meta 25min", position: "right", fontSize: 10 }} />
                       <Bar dataKey="tml" radius={[4, 4, 0, 0]}>
@@ -359,9 +451,25 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
                           />
                         ))}
                       </Bar>
-                    </BarChart>
+                      {hayMatinal && (
+                        <Line
+                          type="monotone"
+                          dataKey="tmlMatinal"
+                          stroke="#8B5CF6"
+                          strokeWidth={2}
+                          strokeDasharray="4 4"
+                          dot={{ fill: "#8B5CF6", r: 2.5 }}
+                          connectNulls
+                        />
+                      )}
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
+                {hayMatinal && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Línea violeta punteada: TML desde matinal (serie en evaluación)
+                  </p>
+                )}
               </CardContent>
             </Card>
 

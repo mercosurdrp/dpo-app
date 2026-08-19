@@ -10,6 +10,7 @@ import type {
   TmlSemanal,
   TmlMensual,
   TmlMesComparado,
+  TmlMatinalKpis,
 } from "@/types/database"
 
 import {
@@ -18,6 +19,7 @@ import {
   contarTripulacion,
   franjaPorHoraSalida,
 } from "@/lib/tml/calculo"
+import { calcTmlMatinal, normalizaNombre } from "@/lib/tml/matinal"
 
 const MES_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
@@ -206,6 +208,75 @@ export async function deleteRegistroVehiculo(
 
 // ==================== KPIs TML ====================
 
+/**
+ * Serie paralela "TML desde matinal" (en evaluación H2): para cada egreso busca
+ * el check-in del chofer a la Reunión Pre-Ruta ese día y mide check-in → salida.
+ * Cruce chofer (texto libre del egreso) → legajo vía `empleados.nombre` y los
+ * alias de `mapeo_empleado_chofer`. Todo en lectura; si algo falla la serie
+ * simplemente no se muestra (no puede romper el indicador oficial).
+ */
+async function calcularTmlMatinalPorEgreso(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  registros: RegistroVehiculo[],
+): Promise<Map<string, number>> {
+  const porEgreso = new Map<string, number>()
+  if (registros.length === 0) return porEgreso
+
+  // `registros` viene ordenado por fecha asc
+  const fechaMin = registros[0].fecha
+  const fechaMax = registros[registros.length - 1].fecha
+
+  const [empRes, mapeoRes] = await Promise.all([
+    supabase.from("empleados").select("id,legajo,nombre"),
+    supabase.from("mapeo_empleado_chofer").select("empleado_id,nombre_chofer"),
+  ])
+  if (empRes.error || mapeoRes.error) return porEgreso
+
+  const empleados = (empRes.data || []) as Array<{ id: string; legajo: number; nombre: string }>
+  const mapeos = (mapeoRes.data || []) as Array<{ empleado_id: string; nombre_chofer: string }>
+
+  const legajoByEmpleadoId = new Map<string, number>()
+  const legajoByNombre = new Map<string, number>()
+  for (const e of empleados) {
+    legajoByEmpleadoId.set(e.id, e.legajo)
+    legajoByNombre.set(normalizaNombre(e.nombre), e.legajo)
+  }
+  for (const m of mapeos) {
+    const legajo = legajoByEmpleadoId.get(m.empleado_id)
+    if (legajo != null) legajoByNombre.set(normalizaNombre(m.nombre_chofer), legajo)
+  }
+
+  // reunion_preruta paginado: una fila por persona/día, Supabase corta en 1000
+  const checkinByLegajoFecha = new Map<string, string>()
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("reunion_preruta")
+      .select("legajo,fecha,hora_checkin")
+      .gte("fecha", fechaMin)
+      .lte("fecha", fechaMax)
+      .order("fecha", { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) return porEgreso
+    const rows = (data || []) as Array<{ legajo: number; fecha: string; hora_checkin: string }>
+    for (const r of rows) {
+      if (r.hora_checkin) checkinByLegajoFecha.set(`${r.legajo}|${r.fecha}`, r.hora_checkin)
+    }
+    if (rows.length < PAGE) break
+  }
+  if (checkinByLegajoFecha.size === 0) return porEgreso
+
+  for (const r of registros) {
+    const legajo = legajoByNombre.get(normalizaNombre(r.chofer))
+    if (legajo == null) continue
+    const checkin = checkinByLegajoFecha.get(`${legajo}|${r.fecha}`)
+    if (!checkin) continue
+    const tml = calcTmlMatinal(r.hora, checkin)
+    if (tml != null) porEgreso.set(r.id, tml)
+  }
+  return porEgreso
+}
+
 export async function getTmlKpis(filters?: {
   fechaDesde?: string
   fechaHasta?: string
@@ -222,6 +293,8 @@ export async function getTmlKpis(filters?: {
     semanal: TmlSemanal[]
     mensual: TmlMensual[]
     comparadoYoY: TmlMesComparado[]
+    /** Serie paralela "desde matinal" (en evaluación H2). null = sin datos apareados. */
+    matinal: TmlMatinalKpis | null
   }
 } | { error: string }> {
   try {
@@ -257,8 +330,17 @@ export async function getTmlKpis(filters?: {
           semanal: [],
           mensual: [],
           comparadoYoY: [],
+          matinal: null,
         },
       }
+    }
+
+    // Serie paralela desde matinal: si el cruce falla no rompe el indicador
+    let tmlMatinalById = new Map<string, number>()
+    try {
+      tmlMatinalById = await calcularTmlMatinalPorEgreso(supabase, registros)
+    } catch {
+      tmlMatinalById = new Map()
     }
 
     // Global stats
@@ -273,12 +355,15 @@ export async function getTmlKpis(filters?: {
     const promedioFte = Math.round((totalFte / totalEgresos) * 100) / 100
 
     // Group by week
-    const semanalMap = new Map<string, { tmls: number[]; year: number; semana: number }>()
+    const semanalMap = new Map<string, { tmls: number[]; tmlsMat: number[]; year: number; semana: number }>()
     for (const r of registros) {
       const year = new Date(r.fecha + "T12:00:00").getFullYear()
       const key = `${year}-${r.semana}`
-      if (!semanalMap.has(key)) semanalMap.set(key, { tmls: [], year, semana: r.semana })
-      semanalMap.get(key)!.tmls.push(r.tml_minutos!)
+      if (!semanalMap.has(key)) semanalMap.set(key, { tmls: [], tmlsMat: [], year, semana: r.semana })
+      const g = semanalMap.get(key)!
+      g.tmls.push(r.tml_minutos!)
+      const mat = tmlMatinalById.get(r.id)
+      if (mat != null) g.tmlsMat.push(mat)
     }
     const semanal: TmlSemanal[] = Array.from(semanalMap.values()).map((g) => {
       const dm = g.tmls.filter((t) => t <= TML_META_MINUTOS).length
@@ -289,18 +374,26 @@ export async function getTmlKpis(filters?: {
         total_egresos: g.tmls.length,
         dentro_meta: dm,
         pct_dentro_meta: Math.round((dm / g.tmls.length) * 100),
+        promedio_tml_matinal:
+          g.tmlsMat.length > 0
+            ? Math.round(g.tmlsMat.reduce((a, b) => a + b, 0) / g.tmlsMat.length)
+            : null,
+        egresos_con_checkin: g.tmlsMat.length,
       }
     })
 
     // Group by month
-    const mensualMap = new Map<string, { tmls: number[]; year: number; mes: number }>()
+    const mensualMap = new Map<string, { tmls: number[]; tmlsMat: number[]; year: number; mes: number }>()
     for (const r of registros) {
       const d = new Date(r.fecha + "T12:00:00")
       const year = d.getFullYear()
       const mes = d.getMonth() + 1
       const key = `${year}-${mes}`
-      if (!mensualMap.has(key)) mensualMap.set(key, { tmls: [], year, mes })
-      mensualMap.get(key)!.tmls.push(r.tml_minutos!)
+      if (!mensualMap.has(key)) mensualMap.set(key, { tmls: [], tmlsMat: [], year, mes })
+      const g = mensualMap.get(key)!
+      g.tmls.push(r.tml_minutos!)
+      const mat = tmlMatinalById.get(r.id)
+      if (mat != null) g.tmlsMat.push(mat)
     }
     const mensual: TmlMensual[] = Array.from(mensualMap.values()).map((g) => {
       const dm = g.tmls.filter((t) => t <= TML_META_MINUTOS).length
@@ -311,8 +404,36 @@ export async function getTmlKpis(filters?: {
         total_egresos: g.tmls.length,
         dentro_meta: dm,
         pct_dentro_meta: Math.round((dm / g.tmls.length) * 100),
+        promedio_tml_matinal:
+          g.tmlsMat.length > 0
+            ? Math.round(g.tmlsMat.reduce((a, b) => a + b, 0) / g.tmlsMat.length)
+            : null,
+        egresos_con_checkin: g.tmlsMat.length,
       }
     })
+
+    // KPIs de la serie matinal: solo sobre egresos apareados, y el "oficial
+    // pareado" son esos mismos egresos para que el delta compare peras con peras
+    let matinal: TmlMatinalKpis | null = null
+    if (tmlMatinalById.size > 0) {
+      const pares = registros
+        .filter((r) => tmlMatinalById.has(r.id))
+        .map((r) => ({ oficial: r.tml_minutos!, mat: tmlMatinalById.get(r.id)! }))
+      const n = pares.length
+      const promMat = Math.round(pares.reduce((a, p) => a + p.mat, 0) / n)
+      const promOfi = Math.round(pares.reduce((a, p) => a + p.oficial, 0) / n)
+      const dmMat = pares.filter((p) => p.mat <= TML_META_MINUTOS).length
+      matinal = {
+        egresosConCheckin: n,
+        pctCobertura: Math.round((n / totalEgresos) * 100),
+        promedioTmlMatinal: promMat,
+        dentroMeta: dmMat,
+        pctDentroMeta: Math.round((dmMat / n) * 100),
+        promedioTmlOficialPareado: promOfi,
+        deltaMinutos: promMat - promOfi,
+        deltaPct: promOfi > 0 ? Math.round(((promMat - promOfi) / promOfi) * 100) : 0,
+      }
+    }
 
     // YoY: últimos 12 meses calendario vs mismo mes año anterior
     const today = new Date()
@@ -350,6 +471,7 @@ export async function getTmlKpis(filters?: {
         semanal,
         mensual,
         comparadoYoY,
+        matinal,
       },
     }
   } catch (e) {
