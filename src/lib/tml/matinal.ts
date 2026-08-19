@@ -48,3 +48,10 @@ export function calcTmlMatinal(
 export function normalizaNombre(s: string): string {
   return s.trim().toUpperCase()
 }
+
+/** "HH:MM" en hora argentina de un timestamp UTC real (ej. hora_checkin). */
+export function horaARDeIso(iso: string): string | null {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return null
+  return horaARFormatter.format(d)
+}

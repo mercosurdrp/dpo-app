@@ -19,7 +19,7 @@ import {
   contarTripulacion,
   franjaPorHoraSalida,
 } from "@/lib/tml/calculo"
-import { calcTmlMatinal, normalizaNombre } from "@/lib/tml/matinal"
+import { calcTmlMatinal, normalizaNombre, horaARDeIso } from "@/lib/tml/matinal"
 
 const MES_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
@@ -218,8 +218,8 @@ export async function deleteRegistroVehiculo(
 async function calcularTmlMatinalPorEgreso(
   supabase: Awaited<ReturnType<typeof createClient>>,
   registros: RegistroVehiculo[],
-): Promise<Map<string, number>> {
-  const porEgreso = new Map<string, number>()
+): Promise<Map<string, { minutos: number; checkin: string }>> {
+  const porEgreso = new Map<string, { minutos: number; checkin: string }>()
   if (registros.length === 0) return porEgreso
 
   // `registros` viene ordenado por fecha asc
@@ -272,7 +272,10 @@ async function calcularTmlMatinalPorEgreso(
     const checkin = checkinByLegajoFecha.get(`${legajo}|${r.fecha}`)
     if (!checkin) continue
     const tml = calcTmlMatinal(r.hora, checkin)
-    if (tml != null) porEgreso.set(r.id, tml)
+    const checkinHHMM = horaARDeIso(checkin)
+    if (tml != null && checkinHHMM != null) {
+      porEgreso.set(r.id, { minutos: tml, checkin: checkinHHMM })
+    }
   }
   return porEgreso
 }
@@ -283,7 +286,7 @@ async function calcularTmlMatinalPorEgreso(
  */
 export async function getTmlMatinalDeRegistros(
   registros: Array<Pick<RegistroVehiculo, "id" | "fecha" | "hora" | "chofer">>,
-): Promise<{ data: Record<string, number> } | { error: string }> {
+): Promise<{ data: Record<string, { minutos: number; checkin: string }> } | { error: string }> {
   try {
     await requireAuth()
     const supabase = await createClient()
@@ -365,7 +368,7 @@ export async function getTmlKpis(filters?: {
     }
 
     // Serie paralela desde matinal: si el cruce falla no rompe el indicador
-    let tmlMatinalById = new Map<string, number>()
+    let tmlMatinalById = new Map<string, { minutos: number; checkin: string }>()
     try {
       tmlMatinalById = await calcularTmlMatinalPorEgreso(supabase, registros)
     } catch {
@@ -392,7 +395,7 @@ export async function getTmlKpis(filters?: {
       const g = semanalMap.get(key)!
       g.tmls.push(r.tml_minutos!)
       const mat = tmlMatinalById.get(r.id)
-      if (mat != null) g.tmlsMat.push(mat)
+      if (mat != null) g.tmlsMat.push(mat.minutos)
     }
     const semanal: TmlSemanal[] = Array.from(semanalMap.values()).map((g) => {
       const dm = g.tmls.filter((t) => t <= TML_META_MINUTOS).length
@@ -422,7 +425,7 @@ export async function getTmlKpis(filters?: {
       const g = mensualMap.get(key)!
       g.tmls.push(r.tml_minutos!)
       const mat = tmlMatinalById.get(r.id)
-      if (mat != null) g.tmlsMat.push(mat)
+      if (mat != null) g.tmlsMat.push(mat.minutos)
     }
     const mensual: TmlMensual[] = Array.from(mensualMap.values()).map((g) => {
       const dm = g.tmls.filter((t) => t <= TML_META_MINUTOS).length
@@ -447,7 +450,7 @@ export async function getTmlKpis(filters?: {
     if (tmlMatinalById.size > 0) {
       const pares = registros
         .filter((r) => tmlMatinalById.has(r.id))
-        .map((r) => ({ oficial: r.tml_minutos!, mat: tmlMatinalById.get(r.id)! }))
+        .map((r) => ({ oficial: r.tml_minutos!, mat: tmlMatinalById.get(r.id)!.minutos }))
       const n = pares.length
       const promMat = Math.round(pares.reduce((a, p) => a + p.mat, 0) / n)
       const promOfi = Math.round(pares.reduce((a, p) => a + p.oficial, 0) / n)

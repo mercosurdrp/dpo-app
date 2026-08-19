@@ -96,7 +96,7 @@ interface Props {
   vehiculos: CatalogoVehiculo[]
   planesResumen: TmlPlanResumen[]
   /** TML desde matinal por id de registro (solo los egresos apareados con check-in). */
-  tmlMatinalPorRegistro: Record<string, number>
+  tmlMatinalPorRegistro: Record<string, { minutos: number; checkin: string }>
 }
 
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -582,7 +582,7 @@ function RegistrosTable({
   registros: RegistroVehiculo[]
   choferes: CatalogoChofer[]
   vehiculos: CatalogoVehiculo[]
-  tmlMatinal: Record<string, number>
+  tmlMatinal: Record<string, { minutos: number; checkin: string }>
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -698,9 +698,17 @@ function RegistrosTable({
                       </TableCell>
                       <TableCell className="text-right">
                         {tmlMatinal[r.id] != null ? (
-                          <Badge className="bg-violet-100 text-violet-700 hover:bg-violet-100">
-                            {tmlMatinal[r.id]} min
-                          </Badge>
+                          <div
+                            className="inline-flex flex-col items-end gap-0.5"
+                            title={`Check-in matinal ${tmlMatinal[r.id].checkin} → salida ${r.hora.slice(0, 5)} = ${tmlMatinal[r.id].minutos} min`}
+                          >
+                            <Badge className="bg-violet-100 text-violet-700 hover:bg-violet-100">
+                              {tmlMatinal[r.id].minutos} min
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              {tmlMatinal[r.id].checkin} → {r.hora.slice(0, 5)}
+                            </span>
+                          </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
