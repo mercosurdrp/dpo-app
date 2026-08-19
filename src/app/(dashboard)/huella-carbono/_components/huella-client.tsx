@@ -6,7 +6,13 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -33,9 +39,10 @@ const nf0 = (v: number) => Math.round(v).toLocaleString("es-AR")
 const nf1 = (v: number) => v.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 const nf2 = (v: number) => v.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-const COLOR_S1 = "#059669" // emerald-600
-const COLOR_S2 = "#f59e0b" // amber-500
-const COLOR_S3 = "#0284c7" // sky-600
+const COLOR_S1 = "#059669" // emerald-600 — camiones propios
+const COLOR_AUT = "#8b5cf6" // violet-500 — autoelevadores
+const COLOR_S2 = "#f59e0b" // amber-500 — electricidad
+const COLOR_S3 = "#0284c7" // sky-600 — flete de acarreo
 
 const mesCorto = (mes: string) => MES_LABEL[mes.slice(5)]?.slice(0, 3) ?? mes
 
@@ -59,16 +66,36 @@ export function HuellaClient({ huella, role }: { huella: HuellaAnual; role: User
   const { totales, meses, anio } = huella
   const mesActual = new Date().toISOString().slice(0, 7)
 
+  const feGasoil = huella.params.feGasoil
   const dataChart = useMemo(
     () =>
       meses.map((m) => ({
         mes: mesCorto(m.mes),
-        "Scope 1": Number(m.s1.toFixed(1)),
-        "Scope 2": m.s2 != null ? Number(m.s2.toFixed(1)) : 0,
-        "Scope 3": Number(m.s3.toFixed(1)),
+        "Camiones propios": Number(((m.gasoilFlotaL * feGasoil) / 1000).toFixed(1)),
+        Autoelevadores: Number(((m.autoL * feGasoil) / 1000).toFixed(1)),
+        Electricidad: m.s2 != null ? Number(m.s2.toFixed(1)) : 0,
+        "Flete de acarreo": Number(m.s3.toFixed(1)),
       })),
+    [meses, feGasoil],
+  )
+  const dataIntensidad = useMemo(
+    () =>
+      meses
+        .filter((m) => m.intensidadKgHl != null)
+        .map((m) => ({ mes: mesCorto(m.mes), intensidad: Number(m.intensidadKgHl!.toFixed(2)) })),
     [meses],
   )
+  const dataComposicion = useMemo(() => {
+    const camiones = meses.reduce((a, m) => a + (m.gasoilFlotaL * feGasoil) / 1000, 0)
+    const autoelev = meses.reduce((a, m) => a + (m.autoL * feGasoil) / 1000, 0)
+    const partes = [
+      { name: "Flete de acarreo", value: Number(totales.s3.toFixed(1)), color: COLOR_S3 },
+      { name: "Camiones propios", value: Number(camiones.toFixed(1)), color: COLOR_S1 },
+      { name: "Autoelevadores", value: Number(autoelev.toFixed(1)), color: COLOR_AUT },
+    ]
+    if (totales.s2 != null) partes.push({ name: "Electricidad", value: Number(totales.s2.toFixed(1)), color: COLOR_S2 })
+    return partes
+  }, [meses, totales, feGasoil])
 
   return (
     <div className="space-y-4">
@@ -142,7 +169,7 @@ export function HuellaClient({ huella, role }: { huella: HuellaAnual; role: User
         <TabsContent value="resumen" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Emisiones por mes y alcance (t CO₂e)</CardTitle>
+              <CardTitle className="text-base">Emisiones por mes y fuente (t CO₂e)</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-72 w-full">
@@ -153,14 +180,79 @@ export function HuellaClient({ huella, role }: { huella: HuellaAnual; role: User
                     <YAxis fontSize={12} />
                     <Tooltip formatter={(v) => `${nf1(Number(v) || 0)} t`} />
                     <Legend />
-                    <Bar dataKey="Scope 1" stackId="a" fill={COLOR_S1} />
-                    <Bar dataKey="Scope 2" stackId="a" fill={COLOR_S2} />
-                    <Bar dataKey="Scope 3" stackId="a" fill={COLOR_S3} />
+                    <Bar dataKey="Camiones propios" stackId="a" fill={COLOR_S1} />
+                    <Bar dataKey="Autoelevadores" stackId="a" fill={COLOR_AUT} />
+                    <Bar dataKey="Electricidad" stackId="a" fill={COLOR_S2} />
+                    <Bar dataKey="Flete de acarreo" stackId="a" fill={COLOR_S3} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>
           </Card>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Intensidad mensual (kg CO₂e por HL entregado)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-56 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={dataIntensidad} margin={{ top: 8, right: 16, left: -18, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="mes" fontSize={12} />
+                      <YAxis fontSize={12} domain={[0, "auto"]} />
+                      <Tooltip formatter={(v) => `${nf2(Number(v) || 0)} kg/HL`} />
+                      {totales.intensidadKgHl != null && (
+                        <ReferenceLine
+                          y={Number(totales.intensidadKgHl.toFixed(2))}
+                          stroke="#64748b"
+                          strokeDasharray="5 4"
+                          label={{ value: `promedio ${nf2(totales.intensidadKgHl)}`, position: "insideTopRight", fontSize: 11, fill: "#64748b" }}
+                        />
+                      )}
+                      <Line type="monotone" dataKey="intensidad" name="kg CO₂e/HL" stroke="#1e6b4a" strokeWidth={2.5} dot={{ r: 4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  El verano rinde mejor por HL: mismos km con más volumen arriba. La medida que se compara año contra año.
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Composición del total ({nf1(totales.totalConocido)} t CO₂e)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-56 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={dataComposicion}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius="55%"
+                        outerRadius="85%"
+                        paddingAngle={2}
+                        strokeWidth={2}
+                        label={(e) => `${Math.round(((e.value as number) / totales.totalConocido) * 100)}%`}
+                      >
+                        {dataComposicion.map((p) => (
+                          <Cell key={p.name} fill={p.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v) => `${nf1(Number(v) || 0)} t CO₂e`} />
+                      <Legend iconSize={10} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  El flete contratado pesa más que toda la flota propia: la ocupación (paletas por viaje) es la palanca más grande.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
 
           <div className="grid gap-3 md:grid-cols-3">
             <Card>
