@@ -271,12 +271,18 @@ function Indicador({
 }
 
 /**
- * Cuánto avanzó cada letra del ciclo.
+ * Cuánto avanzó cada letra del ciclo, en barras VERTICALES.
  *
  * 🚨 Es la lectura que faltaba: la cobertura dice "5 de 12 al día" pero no cuál
  * de las tres tareas es la que las deja afuera. Con esto se ve de una que —por
  * ejemplo— la limpieza está casi cerrada y lo que falta es la lubricación, que
  * es una instrucción distinta para el supervisor.
+ *
+ * 🚨 Eran tres barras horizontales de 10 px apiladas. Comparar el largo de tres
+ * renglones finos obliga a leer los números; con las tres verticales, una al
+ * lado de la otra y sobre el mismo riel, la más baja salta sola —que es la única
+ * pregunta que esta caja tiene que contestar—. Mismo criterio que "Cómo viene
+ * mes a mes", justo abajo, así las dos se leen igual.
  */
 function AvancePorLetra({
   porLetra,
@@ -291,30 +297,35 @@ function AvancePorLetra({
       <p className="mt-1 text-xs text-muted-foreground">
         Sobre cuántas unidades quedó cerrada cada una de las tres.
       </p>
-      <div className="mt-3 space-y-2.5">
+
+      {/* `items-start`: las columnas arrancan arriba, así los tres rieles quedan
+          a la misma altura aunque una lleve el cartel de «la que más falta»
+          debajo. Con `items-end` esa barra subía y dejaba de comparar. */}
+      <div className="mt-4 flex items-start justify-center gap-3 sm:gap-6">
         {porLetra.map((l) => {
           const pct = l.total > 0 ? Math.round((l.hechas / l.total) * 100) : 0
           const traba = l.tarea === letraQueTraba
           return (
-            <div key={l.tarea}>
-              {/* El nombre y el número, siempre en la misma línea; el cartel de
-                  "la que más falta" abajo, porque metido al lado del nombre
-                  partía el renglón en el celular. */}
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="min-w-0 truncate text-sm text-foreground">
-                  {labelTareaCil(l.tarea)}
+            <div
+              key={l.tarea}
+              className="flex flex-1 flex-col items-center gap-1.5"
+              title={`${labelTareaCil(l.tarea)}: ${l.hechas} de ${l.total} unidades (${pct} %)`}
+            >
+              <span className="text-lg leading-none font-bold text-foreground">
+                {l.hechas}
+                <span className="text-sm font-medium text-muted-foreground">
+                  /{l.total}
                 </span>
-                <span className="shrink-0 text-sm font-semibold text-foreground">
-                  {l.hechas}
-                  <span className="font-medium text-muted-foreground">/{l.total}</span>
-                  <span className="ml-1 text-xs font-normal text-muted-foreground">
-                    ({pct}%)
-                  </span>
-                </span>
-              </div>
-              <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-muted">
+              </span>
+              <span className="text-xs font-semibold text-muted-foreground">
+                {pct}%
+              </span>
+
+              {/* Riel de alto fijo: sin él las tres barras no se comparan entre
+                  sí, que es todo lo que se le pide al gráfico. */}
+              <div className="flex h-44 w-full max-w-24 items-end overflow-hidden rounded-md border bg-muted/40 sm:h-56">
                 <div
-                  className={`h-full rounded-full transition-all ${
+                  className={`w-full transition-all ${
                     pct === 100
                       ? "bg-emerald-500"
                       : traba
@@ -323,12 +334,18 @@ function AvancePorLetra({
                   }`}
                   // El 0 % deja un hilo visible: una barra en blanco se lee como
                   // "no hay dato", y acá el cero es un dato.
-                  style={{ width: `${Math.max(pct, 2)}%` }}
+                  style={{ height: `${Math.max(pct, 2)}%` }}
                 />
               </div>
+
+              <span className="text-center text-xs leading-tight font-medium text-foreground">
+                {/* En el celular sólo el nombre corto: «Inspección (control de
+                    fluidos)» completo empuja las tres columnas. */}
+                {labelCorto(l.tarea)}
+              </span>
               {traba && (
-                <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                  Es la que más falta: por acá se destraba la cobertura.
+                <p className="text-center text-[11px] leading-tight font-medium text-amber-700 dark:text-amber-400">
+                  La que más falta: por acá se destraba la cobertura.
                 </p>
               )}
             </div>
