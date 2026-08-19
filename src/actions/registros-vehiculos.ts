@@ -277,6 +277,25 @@ async function calcularTmlMatinalPorEgreso(
   return porEgreso
 }
 
+/**
+ * TML desde matinal para un conjunto puntual de registros (ej. la tabla de
+ * últimos egresos). Devuelve { [registroId]: minutos } solo para los apareados.
+ */
+export async function getTmlMatinalDeRegistros(
+  registros: Array<Pick<RegistroVehiculo, "id" | "fecha" | "hora" | "chofer">>,
+): Promise<{ data: Record<string, number> } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    // calcularTmlMatinalPorEgreso asume orden por fecha asc para armar el rango
+    const orden = [...registros].sort((a, b) => a.fecha.localeCompare(b.fecha))
+    const map = await calcularTmlMatinalPorEgreso(supabase, orden as RegistroVehiculo[])
+    return { data: Object.fromEntries(map) }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 export async function getTmlKpis(filters?: {
   fechaDesde?: string
   fechaHasta?: string

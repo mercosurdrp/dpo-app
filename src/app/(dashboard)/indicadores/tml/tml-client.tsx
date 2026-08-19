@@ -95,6 +95,8 @@ interface Props {
   choferes: CatalogoChofer[]
   vehiculos: CatalogoVehiculo[]
   planesResumen: TmlPlanResumen[]
+  /** TML desde matinal por id de registro (solo los egresos apareados con check-in). */
+  tmlMatinalPorRegistro: Record<string, number>
 }
 
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -129,7 +131,7 @@ function Tendencia({ mensual }: { mensual: TmlMensual[] }) {
   )
 }
 
-export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen }: Props) {
+export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen, tmlMatinalPorRegistro }: Props) {
   const [tab, setTab] = useState("semanal")
 
   const semanalData = kpis.semanal.map((s) => ({
@@ -563,6 +565,7 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
         registros={registros}
         choferes={choferes}
         vehiculos={vehiculos}
+        tmlMatinal={tmlMatinalPorRegistro}
       />
     </div>
   )
@@ -574,10 +577,12 @@ function RegistrosTable({
   registros,
   choferes,
   vehiculos,
+  tmlMatinal,
 }: {
   registros: RegistroVehiculo[]
   choferes: CatalogoChofer[]
   vehiculos: CatalogoVehiculo[]
+  tmlMatinal: Record<string, number>
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -674,6 +679,7 @@ function RegistrosTable({
                     <TableHead>Ayudante 2</TableHead>
                     <TableHead>Odómetro</TableHead>
                     <TableHead className="text-right">TML</TableHead>
+                    <TableHead className="text-right">Desde matinal</TableHead>
                     <TableHead className="text-right w-24">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -689,6 +695,15 @@ function RegistrosTable({
                       <TableCell className="text-sm font-mono">{r.odometro || "—"}</TableCell>
                       <TableCell className="text-right">
                         {r.tml_minutos != null ? <TmlBadge tml={r.tml_minutos} /> : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {tmlMatinal[r.id] != null ? (
+                          <Badge className="bg-violet-100 text-violet-700 hover:bg-violet-100">
+                            {tmlMatinal[r.id]} min
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
