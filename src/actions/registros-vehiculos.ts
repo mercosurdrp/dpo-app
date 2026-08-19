@@ -301,22 +301,32 @@ export async function getTmlKpis(filters?: {
     await requireAuth()
     const supabase = await createClient()
 
-    let query = supabase
-      .from("registros_vehiculos")
-      .select("*")
-      .eq("tipo", "egreso")
-      .not("tml_minutos", "is", null)
-      .order("fecha", { ascending: true })
+    // Paginado: Supabase corta en 1000 filas y hay más de 1000 egresos — sin
+    // esto, el orden ascendente dejaba afuera los registros MÁS NUEVOS y los
+    // gráficos quedaban congelados en el pasado.
+    const registros: RegistroVehiculo[] = []
+    const PAGE = 1000
+    for (let from = 0; ; from += PAGE) {
+      let query = supabase
+        .from("registros_vehiculos")
+        .select("*")
+        .eq("tipo", "egreso")
+        .not("tml_minutos", "is", null)
+        .order("fecha", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1)
 
-    if (filters?.fechaDesde) query = query.gte("fecha", filters.fechaDesde)
-    if (filters?.fechaHasta) query = query.lte("fecha", filters.fechaHasta)
-    if (filters?.dominio) query = query.eq("dominio", filters.dominio)
-    if (filters?.chofer) query = query.eq("chofer", filters.chofer)
+      if (filters?.fechaDesde) query = query.gte("fecha", filters.fechaDesde)
+      if (filters?.fechaHasta) query = query.lte("fecha", filters.fechaHasta)
+      if (filters?.dominio) query = query.eq("dominio", filters.dominio)
+      if (filters?.chofer) query = query.eq("chofer", filters.chofer)
 
-    const { data, error } = await query
-    if (error) return { error: error.message }
-
-    const registros = (data || []) as RegistroVehiculo[]
+      const { data, error } = await query
+      if (error) return { error: error.message }
+      const page = (data || []) as RegistroVehiculo[]
+      registros.push(...page)
+      if (page.length < PAGE) break
+    }
 
     if (registros.length === 0) {
       return {
