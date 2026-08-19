@@ -48,7 +48,7 @@ function FuenteChip({ fuente }: { fuente: string }) {
   }
   return (
     <span className={`inline-block rounded-full border px-1.5 py-0 text-[10px] leading-4 ${estilos[fuente] ?? ""}`}>
-      {fuente}
+      {fuente === "factura" ? "cargado" : fuente}
     </span>
   )
 }
@@ -423,7 +423,8 @@ function DatosManuales({ huella, puedeEditar }: { huella: HuellaAnual; puedeEdit
               <th className="py-2 pr-2">Mes</th>
               <th className="py-2 pr-2">kWh electricidad</th>
               <th className="py-2 pr-2">Refrigerante (kg)</th>
-              <th className="py-2 pr-2">Gasoil factura (l)</th>
+              <th className="py-2 pr-2">Gasoil real (l)</th>
+              <th className="py-2 pr-2">Autoelev. real (l)</th>
               <th className="py-2 pr-2">Notas</th>
               {puedeEditar && <th className="py-2"></th>}
             </tr>
@@ -446,6 +447,9 @@ function DatosManuales({ huella, puedeEditar }: { huella: HuellaAnual; puedeEdit
                         <Input type="number" className="h-8 w-28" value={b.gasoilFacturaL ?? ""} onChange={(e) => set(m.mes, "gasoilFacturaL", e.target.value)} />
                       </td>
                       <td className="py-2 pr-2">
+                        <Input type="number" className="h-8 w-24" value={b.autoelevadorL ?? ""} onChange={(e) => set(m.mes, "autoelevadorL", e.target.value)} />
+                      </td>
+                      <td className="py-2 pr-2">
                         <Input className="h-8 w-40" value={b.notas ?? ""} onChange={(e) => set(m.mes, "notas", e.target.value)} />
                       </td>
                       <td className="py-2">
@@ -459,6 +463,7 @@ function DatosManuales({ huella, puedeEditar }: { huella: HuellaAnual; puedeEdit
                       <td className="py-2 pr-2 tabular-nums">{b.kwh ?? "—"}</td>
                       <td className="py-2 pr-2 tabular-nums">{b.refrigeranteKg ?? "—"}</td>
                       <td className="py-2 pr-2 tabular-nums">{b.gasoilFacturaL ?? "—"}</td>
+                      <td className="py-2 pr-2 tabular-nums">{b.autoelevadorL ?? "—"}</td>
                       <td className="py-2 pr-2">{b.notas ?? ""}</td>
                     </>
                   )}

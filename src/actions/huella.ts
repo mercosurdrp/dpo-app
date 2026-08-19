@@ -153,7 +153,10 @@ export async function getHuellaAnual(anio: number): Promise<Result<HuellaAnual>>
     // con las horas de horómetro típicas (h/día × l/h × días del mes).
     let autoL: number
     let autoFuente: FuenteDato
-    if (mes >= p.autoMedidoDesde) {
+    if (m.autoelevadorL != null) {
+      autoL = m.autoelevadorL
+      autoFuente = "factura"
+    } else if (mes >= p.autoMedidoDesde) {
       autoL = autoMes.get(mes) ?? 0
       autoFuente = "registrado"
     } else {
@@ -234,9 +237,10 @@ export async function guardarHuellaManualMes(
     kwh: datos.kwh != null ? Number(datos.kwh) : null,
     refrigeranteKg: datos.refrigeranteKg != null ? Number(datos.refrigeranteKg) : null,
     gasoilFacturaL: datos.gasoilFacturaL != null ? Number(datos.gasoilFacturaL) : null,
+    autoelevadorL: datos.autoelevadorL != null ? Number(datos.autoelevadorL) : null,
     notas: datos.notas ?? null,
   }
-  for (const k of ["kwh", "refrigeranteKg", "gasoilFacturaL"] as const) {
+  for (const k of ["kwh", "refrigeranteKg", "gasoilFacturaL", "autoelevadorL"] as const) {
     if (limpio[k] != null && !Number.isFinite(limpio[k])) return { error: `Valor inválido en ${k}` }
   }
   actual[mes] = limpio

@@ -69,6 +69,8 @@ export interface HuellaManualMes {
   refrigeranteKg?: number | null
   /** Litros de gasoil según facturas (pisa al registro/estimación del mes). */
   gasoilFacturaL?: number | null
+  /** Litros reales de autoelevador del mes (pisa la estimación por horómetro). */
+  autoelevadorL?: number | null
   notas?: string | null
 }
 
