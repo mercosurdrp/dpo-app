@@ -6,16 +6,20 @@ import { requireAuth, requireRole } from "@/lib/session"
 // leerClave/escribirClave son helpers genéricos de app_config (nacieron en
 // Clima pero no tienen nada específico de ese módulo). Misma razón que allá:
 // acá no se puede aplicar DDL, así que los datos manuales van a app_config.
-import { leerClave, escribirClave } from "@/lib/clima-store"
+import { leerClave, escribirClave, leerObjetos, borrarClave } from "@/lib/clima-store"
 import {
   HUELLA_PARAMS_DEFAULT,
   esAutoelevador,
   normalizarPlanta,
+  type EstadoPlan,
   type FuenteDato,
+  type FuentePlan,
   type HuellaAnual,
   type HuellaManualMes,
   type HuellaMes,
+  type HuellaMeta,
   type HuellaParams,
+  type HuellaPlan,
 } from "@/lib/huella/definiciones"
 
 type Result<T> = { data: T } | { error: string }
@@ -266,6 +270,81 @@ export async function guardarHuellaManualMes(
   }
   actual[mes] = limpio
   const res = await escribirClave(claveManual(anio), actual, profile.id)
+  return "error" in res ? res : { data: true }
+}
+
+/* ===================== Meta anual y planes de reducción ===================== */
+// Viven en app_config (acá no se puede aplicar DDL), mismo patrón que Clima:
+//   huella:metas:<año>  → HuellaMeta
+//   huella:plan:<uuid>  → HuellaPlan
+
+const claveMeta = (anio: number) => `huella:metas:${anio}`
+const PREFIJO_PLAN = "huella:plan:"
+
+export async function getHuellaMetaPlanes(
+  anio: number,
+): Promise<Result<{ meta: HuellaMeta | null; planes: HuellaPlan[] }>> {
+  await requireAuth()
+  const [meta, planesRes] = await Promise.all([
+    leerClave<HuellaMeta>(claveMeta(anio)),
+    leerObjetos<HuellaPlan>(PREFIJO_PLAN),
+  ])
+  if ("error" in planesRes) return { error: planesRes.error }
+  const planes = planesRes.data
+    .filter((p) => p.anio === anio)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  return { data: { meta, planes } }
+}
+
+export async function guardarHuellaMeta(anio: number, meta: HuellaMeta): Promise<Result<true>> {
+  const profile = await requireRole(["admin", "supervisor"])
+  if (meta.intensidadObjetivo != null) {
+    const v = Number(meta.intensidadObjetivo)
+    if (!Number.isFinite(v) || v <= 0) return { error: "La meta de intensidad tiene que ser un número mayor a 0" }
+    meta.intensidadObjetivo = v
+  }
+  const res = await escribirClave(claveMeta(anio), meta, profile.id)
+  return "error" in res ? res : { data: true }
+}
+
+export async function guardarHuellaPlan(
+  plan: Omit<HuellaPlan, "id" | "createdAt" | "updatedAt" | "creadoPor"> & { id?: string },
+): Promise<Result<HuellaPlan>> {
+  const profile = await requireRole(["admin", "supervisor"])
+  if (!plan.titulo?.trim()) return { error: "El plan necesita un título" }
+  const fuentes: FuentePlan[] = ["camiones", "autoelevadores", "electricidad", "acarreo", "general"]
+  if (!fuentes.includes(plan.fuente)) return { error: "Fuente inválida" }
+  const estados: EstadoPlan[] = ["abierto", "en_curso", "cerrado", "descartado"]
+  if (!estados.includes(plan.estado)) return { error: "Estado inválido" }
+  if (plan.impactoTCO2e != null && !Number.isFinite(Number(plan.impactoTCO2e)))
+    return { error: "El impacto estimado tiene que ser un número (t CO₂e por año)" }
+
+  const ahora = new Date().toISOString()
+  let existente: HuellaPlan | null = null
+  if (plan.id) existente = await leerClave<HuellaPlan>(`${PREFIJO_PLAN}${plan.id}`)
+  const completo: HuellaPlan = {
+    id: plan.id ?? crypto.randomUUID(),
+    anio: plan.anio,
+    fuente: plan.fuente,
+    titulo: plan.titulo.trim(),
+    descripcion: plan.descripcion?.trim() || null,
+    responsable: plan.responsable?.trim() || null,
+    fechaObjetivo: plan.fechaObjetivo || null,
+    impactoTCO2e: plan.impactoTCO2e != null ? Number(plan.impactoTCO2e) : null,
+    estado: plan.estado,
+    creadoPor: existente?.creadoPor ?? profile.id,
+    createdAt: existente?.createdAt ?? ahora,
+    updatedAt: ahora,
+  }
+  const res = await escribirClave(`${PREFIJO_PLAN}${completo.id}`, completo, profile.id)
+  return "error" in res ? res : { data: completo }
+}
+
+/** Borra un plan (sólo admin; lo normal es pasarlo a "descartado"). */
+export async function borrarHuellaPlan(id: string): Promise<Result<true>> {
+  await requireRole(["admin"])
+  if (!/^[0-9a-f-]{36}$/.test(id)) return { error: "Id inválido" }
+  const res = await borrarClave(`${PREFIJO_PLAN}${id}`)
   return "error" in res ? res : { data: true }
 }
 

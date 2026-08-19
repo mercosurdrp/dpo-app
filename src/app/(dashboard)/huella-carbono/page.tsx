@@ -1,4 +1,4 @@
-import { getHuellaAnual } from "@/actions/huella"
+import { getHuellaAnual, getHuellaMetaPlanes } from "@/actions/huella"
 import { requireAuth } from "@/lib/session"
 import { HuellaClient } from "./_components/huella-client"
 
@@ -13,7 +13,7 @@ export default async function HuellaCarbonoPage({
   const sp = await searchParams
   const anio = Number(typeof sp.anio === "string" ? sp.anio : "") || new Date().getFullYear()
 
-  const res = await getHuellaAnual(anio)
+  const [res, metaPlanes] = await Promise.all([getHuellaAnual(anio), getHuellaMetaPlanes(anio)])
   if ("error" in res) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-4">
@@ -25,5 +25,12 @@ export default async function HuellaCarbonoPage({
     )
   }
 
-  return <HuellaClient huella={res.data} role={profile.role} />
+  return (
+    <HuellaClient
+      huella={res.data}
+      role={profile.role}
+      meta={"error" in metaPlanes ? null : metaPlanes.data.meta}
+      planes={"error" in metaPlanes ? [] : metaPlanes.data.planes}
+    />
+  )
 }

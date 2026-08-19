@@ -31,8 +31,11 @@ import {
   type HuellaAnual,
   type HuellaManualMes,
   type HuellaMes,
+  type HuellaMeta,
   type HuellaParams,
+  type HuellaPlan,
 } from "@/lib/huella/definiciones"
+import { MetaPlanes } from "./meta-planes"
 import type { UserRole } from "@/types/database"
 
 const nf0 = (v: number) => Math.round(v).toLocaleString("es-AR")
@@ -60,7 +63,17 @@ function FuenteChip({ fuente }: { fuente: string }) {
   )
 }
 
-export function HuellaClient({ huella, role }: { huella: HuellaAnual; role: UserRole }) {
+export function HuellaClient({
+  huella,
+  role,
+  meta,
+  planes,
+}: {
+  huella: HuellaAnual
+  role: UserRole
+  meta: HuellaMeta | null
+  planes: HuellaPlan[]
+}) {
   const [tab, setTab] = useState("resumen")
   const puedeEditar = role === "admin" || role === "supervisor"
   const { totales, meses, anio } = huella
@@ -167,6 +180,7 @@ export function HuellaClient({ huella, role }: { huella: HuellaAnual; role: User
         <TabsList variant="line" className="print:hidden">
           <TabsTrigger value="resumen">Resumen</TabsTrigger>
           <TabsTrigger value="meses">Mes a mes</TabsTrigger>
+          <TabsTrigger value="metas">Meta y planes</TabsTrigger>
           <TabsTrigger value="informe">Informe</TabsTrigger>
           <TabsTrigger value="datos">Datos y factores</TabsTrigger>
         </TabsList>
@@ -215,6 +229,14 @@ export function HuellaClient({ huella, role }: { huella: HuellaAnual; role: User
                           stroke="#64748b"
                           strokeDasharray="5 4"
                           label={{ value: `promedio ${nf2(totales.intensidadKgHl)}`, position: "insideTopRight", fontSize: 11, fill: "#64748b" }}
+                        />
+                      )}
+                      {meta?.intensidadObjetivo != null && (
+                        <ReferenceLine
+                          y={meta.intensidadObjetivo}
+                          stroke="#dc2626"
+                          strokeDasharray="3 3"
+                          label={{ value: `meta ${nf2(meta.intensidadObjetivo)}`, position: "insideBottomRight", fontSize: 11, fill: "#dc2626" }}
                         />
                       )}
                       <Line type="monotone" dataKey="intensidad" name="kg CO₂e/HL" stroke="#1e6b4a" strokeWidth={2.5} dot={{ r: 4 }} />
@@ -356,6 +378,11 @@ export function HuellaClient({ huella, role }: { huella: HuellaAnual; role: User
               </p>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ===== META Y PLANES ===== */}
+        <TabsContent value="metas">
+          <MetaPlanes huella={huella} meta={meta} planes={planes} puedeEditar={puedeEditar} />
         </TabsContent>
 
         {/* ===== INFORME (imprimible) ===== */}

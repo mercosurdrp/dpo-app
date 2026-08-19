@@ -116,6 +116,50 @@ export interface HuellaAnual {
   manual: Record<string, HuellaManualMes>
 }
 
+/** Meta anual de reducción (vive en app_config, clave huella:metas:<año>). */
+export interface HuellaMeta {
+  /** Objetivo de intensidad del año, en kg CO₂e por HL vendido. */
+  intensidadObjetivo: number | null
+  /** De dónde salió la meta (ej.: "−4 % anual sobre la base ene–jul 2026"). */
+  base?: string | null
+  notas?: string | null
+}
+
+export type FuentePlan = "camiones" | "autoelevadores" | "electricidad" | "acarreo" | "general"
+export type EstadoPlan = "abierto" | "en_curso" | "cerrado" | "descartado"
+
+/** Plan de acción de reducción (app_config, clave huella:plan:<uuid>). */
+export interface HuellaPlan {
+  id: string
+  anio: number
+  fuente: FuentePlan
+  titulo: string
+  descripcion?: string | null
+  responsable?: string | null
+  fechaObjetivo?: string | null // YYYY-MM-DD
+  /** Reducción estimada en t CO₂e POR AÑO si el plan se cumple. */
+  impactoTCO2e?: number | null
+  estado: EstadoPlan
+  creadoPor?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export const FUENTE_PLAN_LABEL: Record<FuentePlan, string> = {
+  camiones: "Camiones propios",
+  autoelevadores: "Autoelevadores",
+  electricidad: "Energía eléctrica",
+  acarreo: "Camiones de acarreo",
+  general: "General",
+}
+
+export const ESTADO_PLAN_LABEL: Record<EstadoPlan, string> = {
+  abierto: "Abierto",
+  en_curso: "En curso",
+  cerrado: "Cerrado",
+  descartado: "Descartado",
+}
+
 /** Referencias para la sección de comparación del informe. */
 export const REFERENCIAS = {
   /** AB InBev global, Scope 1+2 de producción, 9M 2024. */
