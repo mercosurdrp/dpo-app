@@ -11,6 +11,7 @@ import {
   type AnalisisCombustible,
   type CombustibleCamion,
 } from "@/actions/combustible-analisis"
+import { ConsumoUrea } from "../consumo-urea"
 
 const MESES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -140,6 +141,12 @@ export function AnalisisCombustibleClient({ inicial }: { inicial: AnalisisCombus
         Rendimiento = km ÷ litros (km/l): a mayor número, mejor. Usa solo las cargas con medición de km
         (la 1ª carga de cada camión no la tiene). “vs Flota” compara contra el promedio del mes.
       </p>
+
+      {/* Urea: estaba en la solapa de Check lists de Mantenimiento, donde no
+          pinta nada. Es un consumo por unidad y su lectura es la misma que la de
+          arriba (km entre cargas), así que vive acá. No entra en el km/l ni en
+          el costo de combustible: se lee aparte. */}
+      <ConsumoUrea />
     </div>
   )
 }

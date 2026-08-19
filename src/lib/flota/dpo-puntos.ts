@@ -104,6 +104,16 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
       "Checklist digital con estratificación por vehículo, incidencia y conductor, y seguimiento de defectos críticos.",
   },
   {
+    // 🚨 El id es el estado de la solapa en la URL: no renombrarlo.
+    id: "cil",
+    label: "CIL / 5S",
+    grupo: "operacion",
+    puntos: ["4.1"],
+    requisitos: ["R4.1.1"],
+    aporta:
+      "Limpieza, inspección y lubricación autónoma (CIL/ATO) por unidad: cobertura mensual, tareas registradas con evidencia fotográfica y entrega de artículos de limpieza. Estaba dentro de Check lists, que responde otro punto (1.3, la verificación previa a la salida).",
+  },
+  {
     id: "analisis-items",
     label: "Análisis por ítem",
     grupo: "analisis",

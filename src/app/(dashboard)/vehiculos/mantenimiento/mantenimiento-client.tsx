@@ -88,6 +88,7 @@ import {
 import { TableroOperativo, type OTPendiente } from "./tablero-operativo"
 import { ProgramacionOt } from "./programacion-ot"
 import { ChecklistsMtto } from "./checklists-mtto"
+import { Cil } from "./cil"
 import { NeumaticosModule } from "./neumaticos-module"
 import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
@@ -714,6 +715,13 @@ export function MantenimientoClient({
           <ChecklistsMtto
             itemsNoOk={checklists.itemsNoOk}
             comentarios={checklists.comentarios}
+            puedeEditar={puedeEditar}
+          />
+        </TabsContent>
+
+        {/* ============ TAB: CIL ============ */}
+        <TabsContent value="cil" className="space-y-6">
+          <Cil
             tareasCil={tareasCil}
             dominiosFlota={unidades.map((u) => u.dominio)}
             puedeEditar={puedeEditar}
