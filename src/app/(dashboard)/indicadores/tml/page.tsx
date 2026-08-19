@@ -1,4 +1,4 @@
-import { getTmlKpis, getRegistrosVehiculos, getChoferes, getVehiculos } from "@/actions/registros-vehiculos"
+import { getTmlKpis, getRegistrosVehiculos, getChoferes, getVehiculos, getTmlMatinalDeRegistros } from "@/actions/registros-vehiculos"
 import { getTmlPlanesResumen } from "@/actions/tml-plan-accion"
 import { TmlClient } from "./tml-client"
 import Link from "next/link"
@@ -27,6 +27,11 @@ export default async function TmlPage() {
   const vehiculos = "data" in vehiculosRes ? vehiculosRes.data : []
   const planesResumen = "data" in planesRes ? planesRes.data : []
 
+  const matinalRes =
+    registros.length > 0 ? await getTmlMatinalDeRegistros(registros) : null
+  const tmlMatinalPorRegistro =
+    matinalRes && "data" in matinalRes ? matinalRes.data : {}
+
   return (
     <div className="space-y-4">
       <Link
@@ -41,6 +46,7 @@ export default async function TmlPage() {
         choferes={choferes}
         vehiculos={vehiculos}
         planesResumen={planesResumen}
+        tmlMatinalPorRegistro={tmlMatinalPorRegistro}
       />
     </div>
   )
