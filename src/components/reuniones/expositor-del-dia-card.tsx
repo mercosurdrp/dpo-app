@@ -198,6 +198,21 @@ export function ExpositorDelDiaCard() {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {plantel.map((op) => {
               const esTurno = turnoHoy?.nombre === op.nombre
+              // Lo que cuenta para el sorteo no son sólo las que dio: al que
+              // vuelve de una ausencia se le acreditan algunas para que entre
+              // parejo. Si no se explica, parece que el sorteo lo saltea.
+              const detalle = [
+                op.credito > 0
+                  ? `Cuenta ${op.veces + op.credito}: dio ${op.veces} y tiene ${op.credito} acreditada${op.credito > 1 ? "s" : ""} de cuando volvió de una ausencia.`
+                  : `Dio ${op.veces} reunion${op.veces === 1 ? "" : "es"}.`,
+                op.activo && !op.vuelve_hoy
+                  ? op.en_juego
+                    ? "Entra en el próximo sorteo."
+                    : "No entra en el próximo sorteo: hay otros con menos."
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" ")
               const contenido = (
                 <>
                   {op.activo ? (
@@ -218,8 +233,15 @@ export function ExpositorDelDiaCard() {
                       vuelve hoy
                     </span>
                   )}
-                  <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                    {op.veces}×
+                  <span
+                    className={cn(
+                      "ml-auto shrink-0 text-[11px] tabular-nums",
+                      op.en_juego
+                        ? "font-semibold text-emerald-700"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {op.veces + op.credito}×{op.credito > 0 && "*"}
                   </span>
                 </>
               )
@@ -227,6 +249,7 @@ export function ExpositorDelDiaCard() {
               const clases = cn(
                 "flex items-center gap-2 rounded-md border px-2.5 py-2 text-left",
                 op.activo ? "bg-white" : "bg-slate-50",
+                op.en_juego && "border-emerald-200 bg-emerald-50/50",
                 op.vuelve_hoy && op.activo && "border-amber-200 bg-amber-50/60",
                 esTurno && "border-blue-300 bg-blue-50",
                 puedeSortear && "hover:border-slate-300",
@@ -242,20 +265,37 @@ export function ExpositorDelDiaCard() {
                     !op.activo
                       ? `${op.nota ?? "Ausente"} — traer de vuelta`
                       : op.vuelve_hoy
-                        ? `${op.nombre} volvió hoy: mira la reunión y entra al sorteo desde mañana. Clic para marcarlo ausente.`
-                        : `Marcar ausente a ${op.nombre}`
+                        ? `${detalle} Volvió hoy: mira la reunión y entra al sorteo desde mañana. Clic para marcarlo ausente.`
+                        : `${detalle} Clic para marcarlo ausente.`
                   }
                   className={cn(clases, "disabled:opacity-60")}
                 >
                   {contenido}
                 </button>
               ) : (
-                <div key={op.id} className={clases} title={op.nota ?? undefined}>
+                <div
+                  key={op.id}
+                  className={clases}
+                  title={op.activo ? detalle : (op.nota ?? "Ausente")}
+                >
                   {contenido}
                 </div>
               )
             })}
           </div>
+
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            El número es cuántas veces le tocó. Sortea entre los que menos
+            tienen: esos van <span className="font-medium text-emerald-700">en verde</span>.
+            {plantel.some((o) => o.credito > 0) && (
+              <>
+                {" "}
+                Un <span className="font-medium">*</span> quiere decir que parte
+                de esa cuenta se le acreditó al volver de una ausencia, para que
+                entre parejo con el resto.
+              </>
+            )}
+          </p>
         </div>
 
         {/* Historial */}

@@ -20,9 +20,13 @@ export interface OperadorPlantel {
   nota: string | null
   /** Veces que expuso de verdad (historia, sin el crédito de reingreso). */
   veces: number
+  /** Crédito acreditado al volver de una ausencia: cuenta como si hubiera expuesto. */
+  credito: number
   ultima_vez: string | null
   /** Volvió hoy de una ausencia: mira la reunión, no la da. */
   vuelve_hoy: boolean
+  /** Entra en el próximo sorteo (está entre los de menos veces efectivas). */
+  en_juego: boolean
 }
 
 export interface TurnoExpositor {
@@ -70,7 +74,7 @@ export async function getEstadoExpositor(): Promise<Result<EstadoExpositor>> {
     const [plantelRes, turnosRes] = await Promise.all([
       supabase
         .from("warehouse_expositor_plantel")
-        .select("id, nombre, activo, nota, reingreso_fecha")
+        .select("id, nombre, activo, nota, reingreso_fecha, veces_offset")
         .order("nombre"),
       supabase
         .from("warehouse_expositor_turnos")
@@ -99,9 +103,22 @@ export async function getEstadoExpositor(): Promise<Result<EstadoExpositor>> {
       activo: o.activo as boolean,
       nota: (o.nota as string | null) ?? null,
       veces: veces.get(o.nombre as string) ?? 0,
+      credito: (o.veces_offset as number | null) ?? 0,
       ultima_vez: ultima.get(o.nombre as string) ?? null,
       vuelve_hoy: (o.reingreso_fecha as string | null) === hoy,
+      en_juego: false,
     }))
+
+    // Quiénes entran en el próximo sorteo: los disponibles con menos veces
+    // efectivas (las que dieron + el crédito de reingreso). Es el mismo
+    // criterio que usa sortearExpositorHoy, así la tarjeta no miente.
+    const enCarrera = plantel.filter((o) => o.activo && !o.vuelve_hoy)
+    if (enCarrera.length > 0) {
+      const minimo = Math.min(...enCarrera.map((o) => o.veces + o.credito))
+      for (const o of enCarrera) {
+        if (o.veces + o.credito === minimo) o.en_juego = true
+      }
+    }
 
     return {
       data: {
