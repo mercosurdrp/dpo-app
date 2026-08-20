@@ -28,7 +28,7 @@ import {
   type PlanMarcable,
 } from "@/components/plan-badge"
 import { ClienteModal, ClientesExplorador } from "./clientes-explorador"
-import { CoberturaBloque } from "./cobertura-bloque"
+import { CoberturaBloque, TASA_FOCO } from "./cobertura-bloque"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
 const MESES = [
@@ -142,6 +142,14 @@ export function RmdClient({ data, planesIniciales, cobertura }: Props) {
     verPlan(plan)
   }
 
+  // Plan general para SUBIR LA TASA DE RESPUESTA (botón de la solapa Cobertura):
+  // abre el formulario con el foco ya puesto en "Tasa de respuesta".
+  function planParaTasa() {
+    setTab("panel")
+    setFocoPlan({ foco_motivo: TASA_FOCO })
+    setAbrirPlanNonce((n) => n + 1)
+  }
+
   function abrirDetalleRecuperado(codCliente: number) {
     const c = clientes.find((x) => x.cod_cliente === codCliente)
     if (c) setRecupModal(c)
@@ -204,6 +212,7 @@ export function RmdClient({ data, planesIniciales, cobertura }: Props) {
               planes={planes}
               onCrearPlan={planParaClienteCobertura}
               onVerPlan={verPlanDesdeCobertura}
+              onCrearPlanTasa={planParaTasa}
             />
           ) : (
             <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -631,7 +640,7 @@ export function RmdClient({ data, planesIniciales, cobertura }: Props) {
         onPlanesChange={setPlanes}
         verPlanId={verPlanId}
         verPlanNonce={verPlanNonce}
-        motivos={motivos.map((m) => m.motivo)}
+        motivos={[...new Set([...motivos.map((m) => m.motivo), TASA_FOCO])]}
         clientes={clientes.map((c) => ({
           cod_cliente: c.cod_cliente,
           nombre_cliente: c.nombre_cliente,

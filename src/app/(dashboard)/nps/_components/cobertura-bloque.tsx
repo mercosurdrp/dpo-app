@@ -20,6 +20,7 @@ import {
   MailQuestion,
   MapPin,
   Send,
+  Target,
   User,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -110,12 +111,17 @@ const TOPES: Record<string, string> = {
   todos: "Todos",
 }
 
+/** Foco de los planes de acción que atacan la tasa de respuesta de la encuesta. */
+export const TASA_FOCO = "Tasa de respuesta"
+
 interface Props {
   data: NpsCoberturaData
   planes: NpsPlan[]
   /** Crea un plan de acción para ese cliente (abre el formulario prellenado). */
   onCrearPlan: (cliente: NpsCoberturaCliente) => void
   onVerPlan: (plan: PlanMarcable) => void
+  /** Crea un plan de acción general para subir la tasa de respuesta. */
+  onCrearPlanTasa: () => void
 }
 
 export function CoberturaBloque({
@@ -123,6 +129,7 @@ export function CoberturaBloque({
   planes,
   onCrearPlan,
   onVerPlan,
+  onCrearPlanTasa,
 }: Props) {
   const { meses, promotores, clientes, resumen, anio } = data
 
@@ -132,6 +139,12 @@ export function CoberturaBloque({
 
   const planesPorCliente = useMemo(
     () => planesPorClienteFoco(planes),
+    [planes],
+  )
+
+  /** Planes generales que atacan la tasa de respuesta (foco = TASA_FOCO). */
+  const planesTasa = useMemo(
+    () => planes.filter((p) => p.foco_driver === TASA_FOCO),
     [planes],
   )
 
@@ -225,6 +238,20 @@ export function CoberturaBloque({
             <p className="mt-1 text-xs text-slate-500">
               el NPS se calcula sobre esta parte
             </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {planesTasa.length > 0 && (
+                <PlanBadge planes={planesTasa} onVerPlan={onVerPlan} />
+              )}
+              <button
+                type="button"
+                onClick={onCrearPlanTasa}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-slate-300 hover:bg-slate-100"
+                title="Crear un plan de acción con foco en subir la tasa de respuesta"
+              >
+                <Target className="h-3.5 w-3.5" />
+                Plan para subir la tasa
+              </button>
+            </div>
           </CardContent>
         </Card>
 

@@ -30,7 +30,7 @@ import type { NpsPlan } from "@/actions/nps-planes"
 import type { PlanMarcable } from "@/components/plan-badge"
 import { SyncAviso } from "@/components/sync-aviso"
 import { ClientesExplorador } from "./clientes-explorador"
-import { CoberturaBloque } from "./cobertura-bloque"
+import { CoberturaBloque, TASA_FOCO } from "./cobertura-bloque"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
 const MESES = [
@@ -148,6 +148,14 @@ export function NpsClient({ data, planesIniciales, cobertura }: Props) {
     verPlan(plan)
   }
 
+  // Plan general para SUBIR LA TASA DE RESPUESTA (botón de la solapa Cobertura):
+  // abre el formulario con el foco ya puesto en "Tasa de respuesta".
+  function planParaTasa() {
+    setTab("panel")
+    setFocoPlan({ foco_driver: TASA_FOCO })
+    setAbrirPlanNonce((n) => n + 1)
+  }
+
   const mesesConDatos = por_mes.filter((m) => m.encuestas > 0 || m.rmd != null)
   const chartEvolucion = mesesConDatos.map((m) => ({
     mes: MESES[m.mes - 1],
@@ -205,6 +213,7 @@ export function NpsClient({ data, planesIniciales, cobertura }: Props) {
               planes={planes}
               onCrearPlan={planParaClienteCobertura}
               onVerPlan={verPlanDesdeCobertura}
+              onCrearPlanTasa={planParaTasa}
             />
           ) : (
             <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -607,7 +616,7 @@ export function NpsClient({ data, planesIniciales, cobertura }: Props) {
         onPlanesChange={setPlanes}
         verPlanId={verPlanId}
         verPlanNonce={verPlanNonce}
-        drivers={drivers_dp.map((d) => d.driver)}
+        drivers={[...new Set([...drivers_dp.map((d) => d.driver), TASA_FOCO])]}
         clientes={clientes_dp.map((c) => ({
           cod_cliente: c.cod_cliente,
           nombre_cliente: c.nombre_cliente,
