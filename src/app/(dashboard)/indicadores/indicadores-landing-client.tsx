@@ -284,6 +284,25 @@ export function IndicadoresLandingClient({ pilares }: Props) {
             </Card>
           </Link>
           {!IS_MISIONES && (
+            <Link href="/indicadores/desvio-plan">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-violet-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-violet-100 text-violet-600 group-hover:bg-violet-200 transition-colors">
+                    <Gauge className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      Desvío s/ Planificado
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Tiempo real vs plan de Foxtrot por ruta — Pilar Entrega 2.1
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
+          {!IS_MISIONES && (
             <Link href="/indicadores/tiempo-pdv">
               <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-orange-300">
                 <CardContent className="flex items-center gap-4 pt-6">
