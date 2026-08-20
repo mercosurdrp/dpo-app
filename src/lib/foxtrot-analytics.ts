@@ -153,6 +153,9 @@ export async function syncFoxtrotRouteAnalytics(
     const idxAuthSec = header.indexOf("Total Authorized Stops Seconds")
     const idxVisited = header.indexOf("Total Visited Customers Count")
     const idxPlannedDrvSec = header.indexOf("Planned Foxtrot Driving Seconds")
+    // Duración TOTAL planificada de la ruta (manejo + atención en PDV): es el
+    // "tiempo planificado" contra el que se mide el desvío del tiempo en ruta.
+    const idxPlannedJourneySec = header.indexOf("Planned Foxtrot Journey Seconds")
     const idxStemStartSec = header.indexOf("Stem Start Duration (Seconds)")
     const idxStemEndSec = header.indexOf("Stem End Duration (Seconds)")
     // Calidad de conducción (digital route): click score y adherencia a la
@@ -191,6 +194,7 @@ export async function syncFoxtrotRouteAnalytics(
       authStopsSec?: number
       visited?: number
       plannedDrvSec?: number
+      plannedJourneySec?: number
       stemStartSec?: number
       stemEndSec?: number
       clickScore?: number
@@ -217,6 +221,7 @@ export async function syncFoxtrotRouteAnalytics(
       m.authStopsSec = numAt(row, idxAuthSec) ?? m.authStopsSec
       m.visited = numAt(row, idxVisited) ?? m.visited
       m.plannedDrvSec = numAt(row, idxPlannedDrvSec) ?? m.plannedDrvSec
+      m.plannedJourneySec = numAt(row, idxPlannedJourneySec) ?? m.plannedJourneySec
       m.stemStartSec = numAt(row, idxStemStartSec) ?? m.stemStartSec
       m.stemEndSec = numAt(row, idxStemEndSec) ?? m.stemEndSec
       // 0-1 → porcentaje 0-100
@@ -270,6 +275,7 @@ export async function syncFoxtrotRouteAnalytics(
         if (m.authStopsSec != null) extra.tml_authorized_stops_seconds = m.authStopsSec
         if (m.visited != null) extra.tml_visited_customers = m.visited
         if (m.plannedDrvSec != null) extra.fx_planned_driving_sec = m.plannedDrvSec
+        if (m.plannedJourneySec != null) extra.fx_planned_journey_sec = m.plannedJourneySec
         if (m.stemStartSec != null) extra.fx_stem_start_sec = m.stemStartSec
         if (m.stemEndSec != null) extra.fx_stem_end_sec = m.stemEndSec
         // Calidad de conducción + operativos extra (prefijo fx_*).

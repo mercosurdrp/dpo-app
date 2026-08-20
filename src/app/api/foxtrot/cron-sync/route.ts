@@ -10,6 +10,11 @@
 // Backfill manual (tramos cortos — el sync es pesado y secuencial):
 //   curl -H "Authorization: Bearer $CRON_SECRET" \
 //     ".../api/foxtrot/cron-sync?desde=2026-05-01&hasta=2026-05-07"
+//
+// Con `&solo_analytics=1` se saltea el sync por día y solo mergea el CSV de
+// ROUTE_ANALYTICS sobre las rutas ya sincronizadas: sirve para backfillear
+// columnas nuevas del CSV (ej. fx_planned_journey_sec) en rangos largos, ya
+// que el CSV cubre todo el rango en un solo request.
 
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -69,13 +74,15 @@ async function handle(request: NextRequest) {
     guard++
   }
 
+  const soloAnalytics = url.searchParams.get("solo_analytics") === "1"
+
   try {
     const supabase = createAdminClient()
     const resultados: { fecha: string; ok: boolean; rutas: number; errores: number }[] =
       []
     let rutas = 0
     let errores = 0
-    for (const f of fechas) {
+    for (const f of soloAnalytics ? [] : fechas) {
       const log = await syncFoxtrotDay(supabase, f)
       rutas += log.rutas_sincronizadas
       errores += log.errores
