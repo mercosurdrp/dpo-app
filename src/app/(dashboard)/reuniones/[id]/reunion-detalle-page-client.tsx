@@ -87,6 +87,7 @@ import {
   SECCION_PEDIDOS_PROBLEMAS,
 } from "@/components/reuniones/seccion-pedidos-problemas"
 import { SeccionDesviosPresupuesto } from "@/components/reuniones/seccion-desvios-presupuesto"
+import { SeccionInspeccionEdilicia } from "@/components/reuniones/seccion-inspeccion-edilicia"
 import { SeccionArchivosReunion } from "@/components/reuniones/seccion-archivos-reunion"
 import { SeccionParticipacionCruzada } from "@/components/reuniones/seccion-participacion-cruzada"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
@@ -1406,6 +1407,13 @@ export function ReunionDetallePageClient({
           los compromisos. */}
       {detalle.tipo === "presupuesto" && (
         <SeccionDesviosPresupuesto fechaReunion={detalle.fecha} />
+      )}
+
+      {/* INSPECCIÓN EDILICIA — reunión mensual de Mantenimiento. La recorrida se
+          completa en la app de mantenimiento; acá queda el registro de que se
+          hizo, que es lo que pide el punto 1.7 del DPO. */}
+      {detalle.tipo === "mantenimiento" && (
+        <SeccionInspeccionEdilicia fechaReunion={detalle.fecha} />
       )}
 
       {/* PARTICIPACIÓN CRUZADA (pilar Planeamiento: conectar Ventas y
