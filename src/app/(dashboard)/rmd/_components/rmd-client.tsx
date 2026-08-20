@@ -63,11 +63,12 @@ const FMT_DIA_HORA = new Intl.DateTimeFormat("es-AR", {
 })
 
 // Color del puntaje 1-5 para la distribución.
+// Colores por CATEGORÍA: detractora (1-3) roja, pasiva (4) ámbar, promotora (5) verde.
 const COLOR_PUNT: Record<number, string> = {
   1: "bg-red-600",
-  2: "bg-red-400",
-  3: "bg-amber-400",
-  4: "bg-emerald-400",
+  2: "bg-red-500",
+  3: "bg-red-400",
+  4: "bg-amber-400",
   5: "bg-emerald-600",
 }
 
@@ -249,16 +250,43 @@ export function RmdClient({ data, planesIniciales, cobertura }: Props) {
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs font-medium uppercase text-slate-500">
-              Puntuaciones bajas (1-3)
+              Detractoras · Pasivas · Promotoras
             </p>
-            <p className="text-3xl font-bold text-red-600">
-              {resumen.detractores.toLocaleString("es-AR")}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {resumen.pct_detractores != null
-                ? `${resumen.pct_detractores.toFixed(1)}% del total`
-                : "—"}
-            </p>
+            <div className="mt-1 space-y-0.5 text-sm">
+              <p className="flex items-baseline justify-between">
+                <span className="text-slate-500">Detractoras (1-3)</span>
+                <span className="font-bold text-red-600">
+                  {resumen.detractores.toLocaleString("es-AR")}
+                  <span className="ml-1 text-xs font-normal text-slate-400">
+                    {resumen.pct_detractores != null
+                      ? `${resumen.pct_detractores.toFixed(1)}%`
+                      : ""}
+                  </span>
+                </span>
+              </p>
+              <p className="flex items-baseline justify-between">
+                <span className="text-slate-500">Pasivas (4)</span>
+                <span className="font-bold text-amber-600">
+                  {resumen.pasivos.toLocaleString("es-AR")}
+                  <span className="ml-1 text-xs font-normal text-slate-400">
+                    {resumen.pct_pasivos != null
+                      ? `${resumen.pct_pasivos.toFixed(1)}%`
+                      : ""}
+                  </span>
+                </span>
+              </p>
+              <p className="flex items-baseline justify-between">
+                <span className="text-slate-500">Promotoras (5)</span>
+                <span className="font-bold text-emerald-600">
+                  {resumen.promotores.toLocaleString("es-AR")}
+                  <span className="ml-1 text-xs font-normal text-slate-400">
+                    {resumen.pct_promotores != null
+                      ? `${resumen.pct_promotores.toFixed(1)}%`
+                      : ""}
+                  </span>
+                </span>
+              </p>
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -410,8 +438,15 @@ export function RmdClient({ data, planesIniciales, cobertura }: Props) {
           <CardContent className="space-y-2">
             {[...distribucion].reverse().map((d) => (
               <div key={d.puntuacion} className="flex items-center gap-2">
-                <div className="w-6 shrink-0 text-right text-sm font-semibold text-slate-700">
+                <div className="w-28 shrink-0 text-right text-sm font-semibold text-slate-700">
                   {d.puntuacion}
+                  <span className="ml-1 text-xs font-normal text-slate-400">
+                    {d.puntuacion === 5
+                      ? "Promotora"
+                      : d.puntuacion === 4
+                        ? "Pasiva"
+                        : "Detractora"}
+                  </span>
                 </div>
                 <div className="h-6 flex-1 rounded bg-slate-100">
                   <div
@@ -431,8 +466,8 @@ export function RmdClient({ data, planesIniciales, cobertura }: Props) {
               </div>
             ))}
             <p className="pt-2 text-xs text-slate-500">
-              Cantidad de entregas por cada puntuación (1 = peor, 5 = mejor). Las
-              puntuaciones 1-3 cuentan como detractoras.
+              Cantidad de entregas por cada puntuación (1 = peor, 5 = mejor).
+              Detractora = 1-3 · Pasiva = 4 · Promotora = 5.
             </p>
           </CardContent>
         </Card>

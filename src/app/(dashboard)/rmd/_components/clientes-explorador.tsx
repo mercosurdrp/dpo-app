@@ -62,10 +62,35 @@ export function rmdBadge(rmd: number): string {
   return "bg-red-100 text-red-800 border-red-200"
 }
 
+// Categoría de una puntuación individual: detractora 1-3 · pasiva 4 · promotora 5.
+type Categoria = "detractor" | "pasivo" | "promotor"
+
+function categoriaPunt(p: number): Categoria {
+  if (p <= 3) return "detractor"
+  if (p === 4) return "pasivo"
+  return "promotor"
+}
+
+const CAT_UI: Record<Categoria, { label: string; badge: string; activo: string }> = {
+  detractor: {
+    label: "Detractora",
+    badge: "bg-red-100 text-red-800 border-red-200",
+    activo: "bg-red-600 text-white border-red-600 hover:bg-red-600",
+  },
+  pasivo: {
+    label: "Pasiva",
+    badge: "bg-amber-100 text-amber-800 border-amber-200",
+    activo: "bg-amber-500 text-white border-amber-500 hover:bg-amber-500",
+  },
+  promotor: {
+    label: "Promotora",
+    badge: "bg-emerald-100 text-emerald-800 border-emerald-200",
+    activo: "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-600",
+  },
+}
+
 function puntBadge(p: number): string {
-  if (p >= 4) return "bg-emerald-100 text-emerald-800 border-emerald-200"
-  if (p === 3) return "bg-amber-100 text-amber-800 border-amber-200"
-  return "bg-red-100 text-red-800 border-red-200"
+  return CAT_UI[categoriaPunt(p)].badge
 }
 
 interface Props {
@@ -87,8 +112,9 @@ export function ClientesExplorador({
   const [fChofer, setFChofer] = useState<string>(TODOS)
   const [fLocalidad, setFLocalidad] = useState<string>(TODOS)
   // Por defecto el explorador arranca enfocado en los clientes cuya ÚLTIMA
-  // puntuación es baja (1-3) — los accionables hoy; el botón permite ver todos.
-  const [soloDetractoras, setSoloDetractoras] = useState(true)
+  // puntuación los deja detractores (1-3) — los accionables hoy; los botones
+  // permiten cambiar a pasivos (4), promotores (5) o ver todos.
+  const [fCategoria, setFCategoria] = useState<Categoria | "todas">("detractor")
   const [agruparPor, setAgruparPor] = useState<AgruparPor>("ninguno")
   const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("fecha")
   const [colapsados, setColapsados] = useState<Set<string>>(new Set())
@@ -118,14 +144,15 @@ export function ClientesExplorador({
       (c) =>
         (fChofer === TODOS || c.chofer === fChofer) &&
         (fLocalidad === TODOS || c.localidad === fLocalidad) &&
-        // "baja puntuación" = su ÚLTIMA puntuación es 1-3 (los que se
-        // recuperaron a 5 quedan fuera y aparecen en su propia vitrina)
-        (!soloDetractoras || c.ultima_puntuacion <= 3) &&
+        // La categoría del cliente sale de su ÚLTIMA puntuación (un detractor
+        // que se recuperó a 5 hoy es promotor y aparece en su propia vitrina)
+        (fCategoria === "todas" ||
+          categoriaPunt(c.ultima_puntuacion) === fCategoria) &&
         (!q ||
           c.nombre_cliente.toLowerCase().includes(q) ||
           String(c.cod_cliente).includes(q)),
     )
-  }, [clientes, busqueda, fChofer, fLocalidad, soloDetractoras])
+  }, [clientes, busqueda, fChofer, fLocalidad, fCategoria])
 
   const ordenar = useMemo(
     () => (arr: RmdCliente[]) =>
@@ -150,13 +177,13 @@ export function ClientesExplorador({
     !!busqueda.trim() ||
     fChofer !== TODOS ||
     fLocalidad !== TODOS ||
-    soloDetractoras
+    fCategoria !== "todas"
 
   function limpiarFiltros() {
     setBusqueda("")
     setFChofer(TODOS)
     setFLocalidad(TODOS)
-    setSoloDetractoras(false)
+    setFCategoria("todas")
   }
 
   const grupos = useMemo(() => {
@@ -191,10 +218,11 @@ export function ClientesExplorador({
   function encabezadoColumnas() {
     return (
       <div className="grid grid-cols-12 items-center gap-2 px-2 pb-1 text-xs font-medium uppercase text-slate-500">
-        <span className="col-span-4">Cliente</span>
+        <span className="col-span-3">Cliente</span>
         <span className="col-span-1 text-center">RMD</span>
+        <span className="col-span-2 text-center">Última</span>
         <span className="col-span-2 text-right">Puntuaciones</span>
-        <span className="col-span-3">Chofer</span>
+        <span className="col-span-2">Chofer</span>
         <span className="col-span-2 text-right">Acción</span>
       </div>
     )
@@ -213,7 +241,7 @@ export function ClientesExplorador({
         }}
         className="grid w-full cursor-pointer grid-cols-12 items-center gap-2 rounded-md border border-slate-100 bg-white px-2 py-1.5 text-left text-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
       >
-        <span className="col-span-4 min-w-0">
+        <span className="col-span-3 min-w-0">
           <span className="block truncate font-medium text-slate-800">
             {c.nombre_cliente}
           </span>
@@ -227,6 +255,12 @@ export function ClientesExplorador({
             {c.rmd.toFixed(2)}
           </Badge>
         </span>
+        <span className="col-span-2 text-center">
+          <Badge variant="outline" className={puntBadge(c.ultima_puntuacion)}>
+            {CAT_UI[categoriaPunt(c.ultima_puntuacion)].label} ·{" "}
+            {c.ultima_puntuacion}
+          </Badge>
+        </span>
         <span className="col-span-2 text-right text-xs text-slate-600">
           {c.puntuaciones}
           {c.detractoras > 0 && (
@@ -235,7 +269,7 @@ export function ClientesExplorador({
             </span>
           )}
         </span>
-        <span className="col-span-3 min-w-0 truncate text-xs text-slate-700">
+        <span className="col-span-2 min-w-0 truncate text-xs text-slate-700">
           {c.chofer ?? "—"}
         </span>
         <span className="col-span-2 text-right">
@@ -306,14 +340,32 @@ export function ClientesExplorador({
               ))}
             </SelectContent>
           </Select>
-          <Button
-            variant={soloDetractoras ? "default" : "outline"}
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => setSoloDetractoras((v) => !v)}
-          >
-            Baja puntuación (últ. 1-3)
-          </Button>
+          <div className="flex items-center gap-1" title="Categoría según la última puntuación del cliente: detractora 1-3, pasiva 4, promotora 5">
+            {(
+              [
+                ["todas", "Todas"],
+                ["detractor", "Detractoras (1-3)"],
+                ["pasivo", "Pasivas (4)"],
+                ["promotor", "Promotoras (5)"],
+              ] as Array<[Categoria | "todas", string]>
+            ).map(([valor, label]) => (
+              <Button
+                key={valor}
+                variant="outline"
+                size="sm"
+                className={`h-8 text-xs ${
+                  fCategoria === valor
+                    ? valor === "todas"
+                      ? "bg-slate-700 text-white border-slate-700 hover:bg-slate-700"
+                      : CAT_UI[valor].activo
+                    : ""
+                }`}
+                onClick={() => setFCategoria(valor)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
           {hayFiltros && (
             <Button
               variant="ghost"
@@ -549,12 +601,13 @@ export function ClienteModal({
                       <td className="whitespace-nowrap py-1.5 pr-2 text-slate-600">
                         {FMT_DIA.format(new Date(p.fecha_puntuacion))}
                       </td>
-                      <td className="px-2 py-1.5 text-center">
+                      <td className="whitespace-nowrap px-2 py-1.5 text-center">
                         <Badge
                           variant="outline"
                           className={puntBadge(p.puntuacion)}
                         >
-                          {p.puntuacion}
+                          {p.puntuacion} ·{" "}
+                          {CAT_UI[categoriaPunt(p.puntuacion)].label}
                         </Badge>
                       </td>
                       <td className="px-2 py-1.5 text-xs text-slate-600">

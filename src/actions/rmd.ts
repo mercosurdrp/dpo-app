@@ -27,6 +27,12 @@ export interface RmdResumen {
   detractores: number
   /** % de detractoras sobre el total. */
   pct_detractores: number | null
+  /** Puntuaciones 4. */
+  pasivos: number
+  pct_pasivos: number | null
+  /** Puntuaciones 5. */
+  promotores: number
+  pct_promotores: number | null
   /** Clientes distintos que puntuaron. */
   clientes: number
   ultima_puntuacion: string | null
@@ -184,10 +190,14 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
     const total = filas.length
     let suma = 0
     let detractores = 0
+    let pasivos = 0
+    let promotores = 0
     const clientesSet = new Set<number>()
     for (const f of filas) {
       suma += f.puntuacion
       if (f.puntuacion <= 3) detractores += 1
+      else if (f.puntuacion === 4) pasivos += 1
+      else promotores += 1
       clientesSet.add(f.cod_cliente)
     }
     const resumen: RmdResumen = {
@@ -196,6 +206,10 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
       rmd_respuestas: total,
       detractores,
       pct_detractores: total ? round1((detractores / total) * 100) : null,
+      pasivos,
+      pct_pasivos: total ? round1((pasivos / total) * 100) : null,
+      promotores,
+      pct_promotores: total ? round1((promotores / total) * 100) : null,
       clientes: clientesSet.size,
       ultima_puntuacion: total ? filas[total - 1].fecha_puntuacion : null,
       actualizado_en: ultimoSync,
