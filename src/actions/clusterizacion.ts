@@ -637,3 +637,38 @@ export async function getClusterizacion(
     },
   }
 }
+
+// El SOP vive en la plataforma (dpo_archivos, punto 4.2 de Planeamiento): se
+// firma la URL de la revisión vigente en vez de duplicar el PDF en el repo,
+// así el botón siempre abre la última versión subida al punto.
+export async function getSopClusterizacion(): Promise<
+  Result<{ url: string; nombre: string }>
+> {
+  await requireAuth()
+  if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("dpo_archivos")
+    .select("current_file_path, file_name")
+    .eq("pilar_codigo", "planeamiento")
+    .eq("punto_codigo", "4.2")
+    .eq("categoria", "SOP")
+    .eq("archivado", false)
+    .is("deleted_at", null)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) return { error: error.message }
+  if (!data?.current_file_path) {
+    return { error: "No hay un SOP subido en el punto 4.2 de Planeamiento." }
+  }
+
+  const { data: signed, error: errSign } = await supabase.storage
+    .from("dpo-evidencia")
+    .createSignedUrl(data.current_file_path, 60 * 10)
+  if (errSign || !signed) {
+    return { error: errSign?.message ?? "No se pudo firmar la URL del SOP" }
+  }
+  return { data: { url: signed.signedUrl, nombre: data.file_name as string } }
+}
