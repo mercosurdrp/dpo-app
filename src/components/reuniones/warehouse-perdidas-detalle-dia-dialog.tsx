@@ -1,7 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { AlertTriangle, Loader2, Truck, Warehouse } from "lucide-react"
+import {
+  AlertTriangle,
+  Loader2,
+  PackageCheck,
+  Truck,
+  Warehouse,
+} from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -25,7 +31,8 @@ import {
 import type { OrigenPerdida, RoturaDetalleSku } from "@/lib/warehouse/auto-indicadores"
 
 /** Qué indicador se clickeó. Cambia el contenido entero del diálogo: "wqi"
- *  abre las dos lecturas del WQI + las roturas por SKU; "faltantes" abre los
+ *  abre las dos lecturas del WQI + las dos aperturas por SKU que las explican
+ *  (lo roto y lo que entró a reempaque y se recuperó); "faltantes" abre los
  *  HL faltantes del día + qué faltó. Antes las celdas de Faltantes caían en la
  *  vista de WQI y mostraban roturas, que es otro indicador. */
 export type PerdidasDetalleTipo = "wqi" | "faltantes"
@@ -165,6 +172,15 @@ export function WarehousePerdidasDetalleDiaDialog({
   const faltantesFueraDeAlmacen = (data?.faltantes_detalle ?? []).filter(
     (r) => r.origen === "distribucion" || r.origen === "acarreo",
   )
+  // La otra mitad del WQI: lo que entró a reempaque y NO terminó descartado.
+  // El total sale de los dos escalares (WQI − roturas reales), no de sumar la
+  // columna: así el número del encabezado no puede contradecir a las tarjetas.
+  const reempaqueDetalle = data?.reempaque_detalle ?? []
+  const recuperadoHl =
+    data?.wqi_hl_dia != null && data?.roturas_hl_dia != null
+      ? data.wqi_hl_dia - data.roturas_hl_dia
+      : null
+  const hayMermaDeOtroDia = reempaqueDetalle.some((r) => r.sin_ingreso_dia)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -191,7 +207,8 @@ export function WarehousePerdidasDetalleDiaDialog({
                 entregado): el <strong>WQI total</strong>, que cuenta todo el
                 volumen afectado por rotura —incluido lo que se reempaca y se
                 recupera—, y las <strong>roturas reales</strong>, que es la merma
-                final del almacén.
+                final del almacén. Abajo, las dos aperturas por SKU: lo que se
+                rompió y lo que se envió a reempaque y se recuperó.
               </>
             )}
           </DialogDescription>
@@ -330,6 +347,101 @@ export function WarehousePerdidasDetalleDiaDialog({
                     dos números de arriba, igual que las de almacén.
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* La OTRA parte del WQI: lo que se envió a reempaque y no se
+                rompió. Sin esta lista, el popover explicaba sólo el tramo del
+                indicador que terminó en merma. */}
+            {reempaqueDetalle.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+                    <PackageCheck className="size-4 text-emerald-600" />
+                    Enviado a reempaque ({reempaqueDetalle.length})
+                  </p>
+                  {recuperadoHl != null && (
+                    <p className="text-xs text-muted-foreground">
+                      Recuperado{" "}
+                      <span className="font-semibold tabular-nums text-emerald-700">
+                        {fmt(recuperadoHl, 2)} HL
+                      </span>{" "}
+                      = WQI total − roturas reales
+                    </p>
+                  )}
+                </div>
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>SKU</TableHead>
+                        <TableHead>Descripción</TableHead>
+                        <TableHead className="text-right">Bultos</TableHead>
+                        <TableHead className="text-right">Enviado HL</TableHead>
+                        <TableHead className="text-right">Roto HL</TableHead>
+                        <TableHead className="text-right">
+                          Recuperado HL
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {reempaqueDetalle.map((r) => (
+                        <TableRow
+                          key={`reempaque-${r.sku}-${r.sin_ingreso_dia ? "previo" : "dia"}`}
+                        >
+                          <TableCell className="font-mono font-medium">
+                            {r.sku}
+                          </TableCell>
+                          <TableCell
+                            className="max-w-[220px] truncate"
+                            title={r.descripcion}
+                          >
+                            {r.descripcion || "—"}
+                            {r.sin_ingreso_dia && (
+                              <span className="ml-1 whitespace-nowrap rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
+                                entró otro día
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {r.sin_ingreso_dia
+                              ? "—"
+                              : fmt(r.bultos_eq ?? r.bultos, 2)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {r.sin_ingreso_dia ? "—" : fmt(r.hl, 4)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-red-700">
+                            {r.hl_roto > 0.00005 ? fmt(r.hl_roto, 4) : "—"}
+                          </TableCell>
+                          <TableCell
+                            className={
+                              r.hl_recuperado < 0
+                                ? "text-right font-semibold tabular-nums text-red-700"
+                                : "text-right font-semibold tabular-nums text-emerald-700"
+                            }
+                          >
+                            {fmt(r.hl_recuperado, 4)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Todo esto suma al <strong>WQI total</strong> —una rotura
+                  consume proceso aunque el producto se recupere— pero no a las{" "}
+                  <strong>roturas reales</strong>: la merma es sólo la columna
+                  &ldquo;Roto&rdquo;.
+                  {hayMermaDeOtroDia && (
+                    <>
+                      {" "}
+                      Las filas <strong>&ldquo;entró otro día&rdquo;</strong> son
+                      pallets que ingresaron antes y recién hoy dejaron merma:
+                      restan del recuperado del día, por eso van en negativo.
+                    </>
+                  )}
+                </p>
               </div>
             )}
 

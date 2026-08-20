@@ -28,7 +28,10 @@
  *     `roturas_dia`, que incluye las roturas de la calle (esas van al DQI).
  */
 import { requireAuth } from "@/lib/session"
-import type { RoturaDetalleSku } from "@/lib/warehouse/auto-indicadores"
+import type {
+  ReempaqueDetalleSku,
+  RoturaDetalleSku,
+} from "@/lib/warehouse/auto-indicadores"
 
 const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
 
@@ -50,6 +53,9 @@ export interface WarehousePerdidasDia {
   roturas_hl_dia: number | null
   /** Qué se rompió ese día, agregado por SKU y origen (ordenado por HL desc). */
   roturas_detalle: RoturaDetalleSku[]
+  /** Qué entró a reempaque ese día, por SKU, con la parte que se recuperó. Es
+   *  la apertura del tramo del WQI que NO terminó en merma. */
+  reempaque_detalle: ReempaqueDetalleSku[]
   /** HL de faltantes del día. */
   faltantes_hl_dia: number | null
   /** HL de faltantes acumulados del mes hasta ese día. */
@@ -73,6 +79,9 @@ interface SerieDiariaResp {
   hl_entregado_dia?: Record<string, number | null>
   /** Detalle de roturas por SKU de cada día. */
   roturas_detalle_dia?: Record<string, RoturaDetalleSku[]>
+  /** Detalle por SKU del ingreso a reempaque de cada día (ya sin los traslados
+   *  en bloque), con la baja del sector imputada al mismo SKU. */
+  reempaque_detalle_dia?: Record<string, ReempaqueDetalleSku[]>
   /** HL de faltantes del día y acumulado MTD. Misma fuente y mismo filtrado
    *  que la fila `auto_faltantes` de la grilla. */
   faltantes_dia?: Record<string, number | null>
@@ -131,6 +140,7 @@ export async function getWarehousePerdidasDia(
         roturas_ppm_mtd: num(serie.wqi_merma_final?.[fecha]),
         roturas_hl_dia: num(serie.roturas_almacen_dia?.[fecha]),
         roturas_detalle: serie.roturas_detalle_dia?.[fecha] ?? [],
+        reempaque_detalle: serie.reempaque_detalle_dia?.[fecha] ?? [],
         faltantes_hl_dia: num(serie.faltantes_dia?.[fecha]),
         faltantes_hl_mtd: num(serie.faltantes?.[fecha]),
         faltantes_detalle: serie.faltantes_detalle_dia?.[fecha] ?? [],

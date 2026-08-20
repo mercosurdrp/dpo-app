@@ -859,6 +859,26 @@ export interface RoturaDetalleSku {
   valor?: number
 }
 
+/** Un SKU que ENTRÓ a reempaque ese día (la otra mitad del numerador del WQI:
+ *  volumen afectado que no es rotura directa). `hl` es lo enviado, `hl_roto` la
+ *  parte que salió del sector como merma y `hl_recuperado` = enviado − roto, que
+ *  es lo que separa al WQI total de las roturas reales. */
+export interface ReempaqueDetalleSku {
+  sku: string
+  descripcion: string
+  bultos: number
+  unidades: number
+  bultos_eq?: number
+  /** HL enviados a reempaque ese día. */
+  hl: number
+  /** De esos HL, los que ese mismo día salieron como baja del sector. */
+  hl_roto: number
+  /** hl − hl_roto. Negativo si la merma corresponde a un ingreso de otro día. */
+  hl_recuperado: number
+  /** true = baja del sector sin ingreso ese día (el pallet entró antes). */
+  sin_ingreso_dia?: boolean
+}
+
 interface DepositoOcupacionShared {
   data?: {
     historico?: Array<{ fecha: string; pct_ocupacion?: number | null }>
