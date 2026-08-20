@@ -528,6 +528,7 @@ function ChoferesTable({
 
 function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
   const [semanaSel, setSemanaSel] = useState<string>(TODAS_LAS_SEMANAS)
+  const [fuenteSel, setFuenteSel] = useState<"todos" | "gps" | "checklist">("todos")
   const [tope, setTope] = useState(FILAS_POR_PAGINA)
 
   // Semanas presentes en los datos, de la más reciente a la más vieja, con el
@@ -549,13 +550,26 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
       .sort((a, b) => b.clave.localeCompare(a.clave, undefined, { numeric: true }))
   }, [registros])
 
-  const filtrados = useMemo(
+  const porSemana = useMemo(
     () =>
       semanaSel === TODAS_LAS_SEMANAS
         ? registros
         : registros.filter((r) => claveSemana(r.fecha) === semanaSel),
     [registros, semanaSel],
   )
+
+  // Filtro por fuente del inicio: llegada GPS de Foxtrot vs checklist de
+  // retorno. Los contadores siguen a la semana elegida para que los números
+  // coincidan siempre con lo que se ve.
+  const conGpsN = useMemo(
+    () => porSemana.filter((r) => r.fuente_inicio === "gps").length,
+    [porSemana],
+  )
+  const filtrados = useMemo(() => {
+    if (fuenteSel === "todos") return porSemana
+    if (fuenteSel === "gps") return porSemana.filter((r) => r.fuente_inicio === "gps")
+    return porSemana.filter((r) => r.fuente_inicio !== "gps")
+  }, [porSemana, fuenteSel])
 
   const visibles = filtrados.slice(0, tope)
 
@@ -566,28 +580,58 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
           <div>
             <CardTitle className="text-base">Detalle por retorno</CardTitle>
             <p className="text-xs text-muted-foreground">
-              TI = fichaje de salida − checklist de retorno, por chofer/día. Las filas sin TI se muestran con su motivo.
+              TI = fichaje de salida − inicio (llegada GPS al CD, o checklist de
+              retorno), por chofer/día. Las filas sin TI se muestran con su motivo.
             </p>
           </div>
-          {semanas.length > 0 && (
-            <select
-              value={semanaSel}
-              onChange={(e) => {
-                setSemanaSel(e.target.value)
-                setTope(FILAS_POR_PAGINA)
-              }}
-              className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700"
-            >
-              <option value={TODAS_LAS_SEMANAS}>
-                Todas las semanas ({registros.length})
-              </option>
-              {semanas.map((s) => (
-                <option key={s.clave} value={s.clave}>
-                  {s.label} — {s.cantidad}
-                </option>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-slate-300">
+              {(
+                [
+                  ["todos", `Todos (${porSemana.length})`],
+                  ["gps", `GPS (${conGpsN})`],
+                  ["checklist", `Checklist (${porSemana.length - conGpsN})`],
+                ] as const
+              ).map(([valor, label]) => (
+                <button
+                  key={valor}
+                  type="button"
+                  onClick={() => {
+                    setFuenteSel(valor)
+                    setTope(FILAS_POR_PAGINA)
+                  }}
+                  className={`h-9 px-3 text-sm transition-colors ${
+                    fuenteSel === valor
+                      ? valor === "gps"
+                        ? "bg-teal-600 text-white"
+                        : "bg-slate-900 text-white"
+                      : "bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  {label}
+                </button>
               ))}
-            </select>
-          )}
+            </div>
+            {semanas.length > 0 && (
+              <select
+                value={semanaSel}
+                onChange={(e) => {
+                  setSemanaSel(e.target.value)
+                  setTope(FILAS_POR_PAGINA)
+                }}
+                className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700"
+              >
+                <option value={TODAS_LAS_SEMANAS}>
+                  Todas las semanas ({registros.length})
+                </option>
+                {semanas.map((s) => (
+                  <option key={s.clave} value={s.clave}>
+                    {s.label} — {s.cantidad}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -595,7 +639,9 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
           <p className="py-8 text-center text-muted-foreground">
             {registros.length === 0
               ? "Sin retornos en el período."
-              : "Sin retornos en la semana elegida."}
+              : fuenteSel === "gps"
+                ? "Sin retornos con llegada GPS en la selección."
+                : "Sin retornos en la selección."}
           </p>
         ) : (
           <div className="overflow-x-auto">
