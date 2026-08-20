@@ -37,7 +37,10 @@ import { getSignedUrl } from "@/actions/presupuesto"
 import { eliminarIniciativa } from "@/actions/presupuesto-iniciativas"
 import type { EjecucionRubro } from "@/actions/presupuesto-generador"
 import type { KpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
-import type { KpiCombustible } from "@/actions/presupuesto-combustible-kpi"
+import type {
+  AhorroCombustible,
+  KpiCombustible,
+} from "@/actions/presupuesto-combustible-kpi"
 import type { IniciativaAhorroConDetalle } from "@/types/database"
 import {
   ESTADO_BADGE_CLASS,
@@ -777,6 +780,52 @@ function ajustePorVolumen(
   }
 }
 
+/**
+ * Ahorro calculado de una iniciativa de combustible: litros evitados desde la
+ * instalación × precio del gasoil del presupuesto. Reemplaza a la carga manual
+ * de los seguimientos (que quedó vacía a propósito: `costo_total` del registro
+ * de combustible está sucio y no se puede sumar). Sólo aplica a iniciativas sin
+ * rubro del EERR: con rubro, el ahorro sale del EERR como en las demás.
+ */
+function ahorroCombustibleDe(
+  ini: IniciativaAhorroConDetalle,
+  kpiCombustible: Record<string, KpiCombustible>,
+): AhorroCombustible | null {
+  if (ini.rubro) return null
+  const kc = ini.kpi_nombre
+    ? kpiCombustible[ini.kpi_nombre.trim().toUpperCase()]
+    : undefined
+  if (!kc?.ahorro || kc.ahorro.pesosAcum === null) return null
+  return kc.ahorro
+}
+
+/**
+ * Ahorro esperado a hoy para una iniciativa medida a diario (combustible): el
+ * compromiso anual prorrateado por los DÍAS que corrieron desde la instalación
+ * sobre los días que quedan de año. El prorrateo por meses cerrados del EERR no
+ * sirve acá: el dato es continuo y contar agosto entero con el mes a medias
+ * castigaría de más.
+ */
+function esperadoPorDias(
+  comprometidoAnual: number | null,
+  desde: string,
+  anio: number,
+  hoy = new Date(),
+): number | null {
+  if (comprometidoAnual === null || comprometidoAnual <= 0) return null
+  const inicio = new Date(`${desde}T12:00:00`)
+  const fin = new Date(`${anio}-12-31T12:00:00`)
+  if (Number.isNaN(inicio.getTime()) || inicio > fin) return null
+  const DIA = 86_400_000
+  const diasVigencia = Math.round((fin.getTime() - inicio.getTime()) / DIA) + 1
+  const diasCorridos = Math.min(
+    diasVigencia,
+    Math.max(0, Math.floor((hoy.getTime() - inicio.getTime()) / DIA) + 1),
+  )
+  if (diasCorridos === 0) return null
+  return (comprometidoAnual * diasCorridos) / diasVigencia
+}
+
 /** Trimestres ya CERRADOS del año, a hoy. Fallback cuando no hay EERR. */
 function trimestresCerrados(anio: number, hoy = new Date()): number {
   if (anio < hoy.getFullYear()) return 4
@@ -938,16 +987,22 @@ export function IniciativasAhorroSection({
     for (const ini of iniciativas) {
       comprometido += ini.ahorro_comprometido_anual ?? 0
       // Por la MISMA vía que la tarjeta de cada iniciativa (EERR si hay rubro,
-      // seguimientos si no): sumar acá los seguimientos a mano daba un total que
-      // no coincidía con lo que mostraban las tarjetas de abajo.
-      realAcum += ahorroDe(
-        ini,
-        ini.rubro ? ejecucionRubros[ini.rubro.trim().toUpperCase()] : undefined,
-      ).real
+      // rendimiento físico si es de combustible, seguimientos si no): sumar acá
+      // los seguimientos a mano daba un total que no coincidía con lo que
+      // mostraban las tarjetas de abajo.
+      const ahorroComb = ahorroCombustibleDe(ini, kpiCombustible)
+      realAcum +=
+        ahorroComb?.pesosAcum ??
+        ahorroDe(
+          ini,
+          ini.rubro
+            ? ejecucionRubros[ini.rubro.trim().toUpperCase()]
+            : undefined,
+        ).real
       if (ini.estado === "implementada") implementadas++
     }
     return { comprometido, realAcum, implementadas }
-  }, [iniciativas, ejecucionRubros])
+  }, [iniciativas, ejecucionRubros, kpiCombustible])
 
   return (
     <div className="space-y-5">
@@ -1096,9 +1151,16 @@ export function IniciativasAhorroSection({
               gastoComputado,
               fuente,
             } = ahorroDe(ini, ejec)
+            // Iniciativas de combustible: el ahorro no sale ni del EERR ni de
+            // los seguimientos, se calcula del rendimiento físico.
+            const ahorroComb =
+              fuente === "manual"
+                ? ahorroCombustibleDe(ini, kpiCombustible)
+                : null
+            const ahorroAcum = ahorroComb?.pesosAcum ?? realAcum
             const ahorroFrac =
               ini.ahorro_comprometido_anual && ini.ahorro_comprometido_anual > 0
-                ? realAcum / ini.ahorro_comprometido_anual
+                ? ahorroAcum / ini.ahorro_comprometido_anual
                 : null
             // último valor de KPI (mayor trimestre con dato)
             const conKpi = [...ini.seguimientos]
@@ -1119,14 +1181,21 @@ export function IniciativasAhorroSection({
             const qCerrados = trimestresCerrados(ini.anio)
             const mesesTranscurridos =
               mesesEerr ?? Math.max(0, qCerrados * 3 - (mesInicio - 1))
-            const esperado = esperadoALaFecha(
-              ini,
-              presupComputado,
-              fuente,
-              mesesTranscurridos,
-              mesesVigentes,
-            )
-            const ritmoFrac = esperado && esperado > 0 ? realAcum / esperado : null
+            const esperado = ahorroComb
+              ? esperadoPorDias(
+                  ini.ahorro_comprometido_anual,
+                  ahorroComb.desde,
+                  ini.anio,
+                )
+              : esperadoALaFecha(
+                  ini,
+                  presupComputado,
+                  fuente,
+                  mesesTranscurridos,
+                  mesesVigentes,
+                )
+            const ritmoFrac =
+              esperado && esperado > 0 ? ahorroAcum / esperado : null
             // Cuánto del desvío es volumen y no gestión: el ppto se armó para un
             // volumen proyectado y se vendió otro.
             const ajusteVol =
@@ -1241,19 +1310,32 @@ export function IniciativasAhorroSection({
                             {mesInicio > 1 && ` desde ${MES_NOMBRE[mesInicio]}`}
                           </>
                         )}
+                        {ahorroComb && (
+                          <>
+                            {" "}
+                            · litros evitados × precio del gasoil del
+                            presupuesto, desde el{" "}
+                            {ahorroComb.desde.slice(8, 10)}/
+                            {ahorroComb.desde.slice(5, 7)}
+                          </>
+                        )}
                       </span>
                       {esperado !== null && (
                         <RitmoBadge
                           frac={ritmoFrac}
-                          meses={mesesTranscurridos}
+                          meses={
+                            ahorroComb
+                              ? ahorroComb.meses.length
+                              : mesesTranscurridos
+                          }
                           mesesVigentes={mesesVigentes}
                         />
                       )}
                     </div>
                     <p
-                      className={`mt-1 text-sm font-medium ${realAcum < 0 ? "text-red-600" : "text-slate-900"}`}
+                      className={`mt-1 text-sm font-medium ${ahorroAcum < 0 ? "text-red-600" : "text-slate-900"}`}
                     >
-                      {formatMoney(realAcum)}
+                      {formatMoney(ahorroAcum)}
                       {esperado !== null && (
                         <span className="font-normal text-muted-foreground">
                           {" "}
@@ -1261,6 +1343,50 @@ export function IniciativasAhorroSection({
                         </span>
                       )}
                     </p>
+                    {/* La cuenta completa de cada mes, para que el número se
+                        pueda auditar: km a la línea base menos lo cargado. */}
+                    {ahorroComb && (
+                      <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
+                        {ahorroComb.meses.map((m) => (
+                          <p key={m.mes} className="tabular-nums">
+                            <span className="capitalize">
+                              {MES_CORTO[m.mes]}
+                            </span>
+                            : {m.km.toLocaleString("es-AR")} km ÷{" "}
+                            {formatNum(ahorroComb.lineaBase)} km/l ={" "}
+                            {m.litrosBase.toLocaleString("es-AR")} lts −{" "}
+                            {m.litros.toLocaleString("es-AR")} cargados ={" "}
+                            <strong
+                              className={
+                                m.litrosEvitados >= 0
+                                  ? "text-emerald-700"
+                                  : "text-red-600"
+                              }
+                            >
+                              {m.litrosEvitados.toLocaleString("es-AR")} lts
+                            </strong>
+                            {m.precioLitro !== null && m.pesos !== null && (
+                              <>
+                                {" "}
+                                × ${Math.round(m.precioLitro).toLocaleString(
+                                  "es-AR",
+                                )}
+                                /l ={" "}
+                                <strong
+                                  className={
+                                    m.pesos >= 0
+                                      ? "text-emerald-700"
+                                      : "text-red-600"
+                                  }
+                                >
+                                  {formatMoney(m.pesos)}
+                                </strong>
+                              </>
+                            )}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                     {/* Un ahorro negativo no es "poco ahorro": es gasto de más. */}
                     {realAcum < 0 && fuente === "eerr" && (
                       <p className="mt-1 text-xs text-red-600">

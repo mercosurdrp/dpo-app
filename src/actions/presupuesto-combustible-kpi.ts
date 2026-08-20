@@ -1,5 +1,6 @@
 "use server"
 
+import * as XLSX from "xlsx"
 import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
@@ -68,6 +69,38 @@ const DOMINIOS_INTERVENIDOS_POR_KPI: Record<string, string[]> = {
 const REND_MIN = 2
 const REND_MAX = 6
 
+/**
+ * Ahorro en plata de la iniciativa, estimado desde el rendimiento físico.
+ *
+ * `registro_combustible.costo_total` no sirve para esto: desde junio nadie lo
+ * carga y lo poco cargado es basura (cargas de 154 lts con $2.359 total). En su
+ * lugar: litros EVITADOS (los km recorridos a la línea base menos los litros
+ * realmente cargados) valorizados al precio del gasoil con el que se armó el
+ * presupuesto del año (fila "PRECIO COMBUSTIBLES - GASOIL" de la hoja FLOTA PXQ
+ * del EERR) — la misma vara contra la que se comprometió el ahorro.
+ */
+export interface AhorroCombustibleMes {
+  mes: number
+  km: number
+  litros: number
+  /** Litros que se habrían quemado a la línea base (km ÷ base). */
+  litrosBase: number
+  litrosEvitados: number
+  /** $/litro del presupuesto P×Q. null si el EERR no lo trae. */
+  precioLitro: number | null
+  pesos: number | null
+}
+
+export interface AhorroCombustible {
+  /** Primer día computado: el siguiente a la instalación. */
+  desde: string
+  lineaBase: number
+  meses: AhorroCombustibleMes[]
+  litrosEvitadosAcum: number
+  /** null si ningún mes tiene precio (sin EERR cargado). */
+  pesosAcum: number | null
+}
+
 export interface KpiCombustibleMes {
   mes: number
   /** km/l del grupo completo. null si el mes no tuvo cargas válidas. */
@@ -91,6 +124,11 @@ export interface KpiCombustible {
   dominiosIntervenidos: string[]
   /** Cargas descartadas por rendimiento implausible (para auditar el dato). */
   cargasDescartadas: number
+  /**
+   * Ahorro estimado desde la instalación. null si la iniciativa no tiene
+   * fecha de implementación o línea base cargadas.
+   */
+  ahorro: AhorroCombustible | null
 }
 
 interface FilaCarga {
@@ -104,6 +142,56 @@ interface FilaCarga {
 function ratio(km: number, litros: number): number | null {
   if (litros <= 0) return null
   return Math.round((km / litros) * 100) / 100
+}
+
+const SHEET_FLOTA_PXQ = "FLOTA PXQ mrp"
+const FILA_PRECIO_GASOIL = "PRECIO COMBUSTIBLES - GASOIL"
+
+/**
+ * Precio mensual del gasoil con el que se armó el presupuesto del año (índice
+ * 0 = enero), desde la hoja FLOTA PXQ del EERR. En esa hoja el concepto va en
+ * la columna 3 y enero arranca en la columna 6 (la 5 es el precio base del
+ * armado). null si no hay EERR o no trae la fila: el ahorro queda en litros.
+ */
+async function getPreciosGasoil(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  anio: number,
+): Promise<(number | null)[] | null> {
+  const { data: eerr } = await supabase
+    .from("presupuestos_eerr_anual")
+    .select("archivo_url")
+    .eq("anio", anio)
+    .maybeSingle()
+  if (!eerr?.archivo_url) return null
+
+  const { data: blob } = await supabase.storage
+    .from("presupuestos")
+    .download(eerr.archivo_url)
+  if (!blob) return null
+
+  const wb = XLSX.read(await blob.arrayBuffer(), { type: "array" })
+  const ws = wb.Sheets[SHEET_FLOTA_PXQ]
+  if (!ws) return null
+  const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+    header: 1,
+    raw: true,
+    defval: null,
+  })
+  const fila = aoa.find(
+    (f) =>
+      typeof f?.[3] === "string" &&
+      f[3].replace(/\s+/g, " ").trim().toUpperCase() === FILA_PRECIO_GASOIL,
+  )
+  if (!fila) return null
+  return Array.from({ length: 12 }, (_, m) => {
+    const v = fila[6 + m]
+    return typeof v === "number" && v > 0 ? v : null
+  })
+}
+
+interface IniciativaCombustible {
+  fecha_implementacion: string | null
+  lineaBase: number | null
 }
 
 export async function getKpiCombustible(
@@ -130,6 +218,23 @@ export async function getKpiCombustible(
   if (error) {
     return { error: `No se pudo leer el registro de combustible: ${error.message}` }
   }
+
+  // Fecha de instalación y línea base de cada iniciativa, para el ahorro.
+  const { data: inis } = await supabase
+    .from("presupuestos_iniciativas")
+    .select("kpi_nombre, fecha_implementacion, kpi_linea_base")
+    .eq("anio", anio)
+    .not("kpi_nombre", "is", null)
+  const iniPorKpi = new Map<string, IniciativaCombustible>()
+  for (const i of inis ?? []) {
+    if (!i.kpi_nombre) continue
+    iniPorKpi.set(i.kpi_nombre.trim().toUpperCase(), {
+      fecha_implementacion: i.fecha_implementacion,
+      lineaBase: i.kpi_linea_base,
+    })
+  }
+
+  const preciosGasoil = await getPreciosGasoil(supabase, anio)
 
   const filas = (data ?? []) as FilaCarga[]
   const out: Record<string, KpiCombustible> = {}
@@ -218,6 +323,68 @@ export async function getKpiCombustible(
       { km: 0, litros: 0, kmInt: 0, litrosInt: 0, kmCtl: 0, litrosCtl: 0 },
     )
 
+    // Ahorro: sólo las cargas POSTERIORES al día de la instalación (una carga
+    // del mismo día puede ser combustible quemado sin la mejora). El mes de la
+    // instalación entra parcial: se cuentan sus km y litros desde ese corte.
+    let ahorro: AhorroCombustible | null = null
+    const ini = iniPorKpi.get(kpi)
+    if (ini?.fecha_implementacion && ini.lineaBase && ini.lineaBase > 0) {
+      const base = ini.lineaBase
+      const desdeDate = new Date(`${ini.fecha_implementacion}T12:00:00`)
+      desdeDate.setDate(desdeDate.getDate() + 1)
+      const desde = desdeDate.toISOString().slice(0, 10)
+      const porMes = new Map<number, { km: number; litros: number }>()
+      for (const f of delGrupo) {
+        if (f.fecha < desde) continue
+        const km = f.km_recorridos
+        const litros = f.litros
+        const rend = f.rendimiento
+        if (km === null || litros === null || litros <= 0) continue
+        if (rend === null || rend < REND_MIN || rend > REND_MAX) continue
+        const mes = Number(f.fecha.slice(5, 7))
+        if (!Number.isFinite(mes) || mes < 1 || mes > 12) continue
+        const a = porMes.get(mes) ?? { km: 0, litros: 0 }
+        a.km += km
+        a.litros += litros
+        porMes.set(mes, a)
+      }
+      if (porMes.size > 0) {
+        const mesesAhorro: AhorroCombustibleMes[] = [...porMes.entries()]
+          .sort((x, y) => x[0] - y[0])
+          .map(([mes, a]) => {
+            const litrosBase = a.km / base
+            const litrosEvitados = litrosBase - a.litros
+            const precioLitro = preciosGasoil?.[mes - 1] ?? null
+            return {
+              mes,
+              km: Math.round(a.km),
+              litros: Math.round(a.litros),
+              litrosBase: Math.round(litrosBase),
+              litrosEvitados: Math.round(litrosEvitados),
+              precioLitro,
+              pesos:
+                precioLitro !== null
+                  ? Math.round(litrosEvitados * precioLitro)
+                  : null,
+            }
+          })
+        const conPrecio = mesesAhorro.filter((m) => m.pesos !== null)
+        ahorro = {
+          desde,
+          lineaBase: base,
+          meses: mesesAhorro,
+          litrosEvitadosAcum: mesesAhorro.reduce(
+            (s, m) => s + m.litrosEvitados,
+            0,
+          ),
+          pesosAcum:
+            conPrecio.length > 0
+              ? conPrecio.reduce((s, m) => s + (m.pesos ?? 0), 0)
+              : null,
+        }
+      }
+    }
+
     out[kpi] = {
       meses,
       realAcum: ratio(tot.km, tot.litros),
@@ -226,6 +393,7 @@ export async function getKpiCombustible(
       dominios,
       dominiosIntervenidos: intervenidos,
       cargasDescartadas,
+      ahorro,
     }
   }
 
