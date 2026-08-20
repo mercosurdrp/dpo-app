@@ -67,11 +67,28 @@ export interface DqiPlan {
   month: number | null
 }
 
+/**
+ * Corrección auditoría DPO H2 (punto 1.4): el DQI debe incluir el volumen que
+ * entra a REEMPAQUE — un producto que vuelve de ruta con el packaging roto es
+ * una falla de calidad de entrega aunque se recupere y vuelva al stock. La
+ * medición anterior (solo merma de ruta) subestimaba ~25× el indicador.
+ */
+export interface DqiCorreccion {
+  /** HL que entraron a reempaque en el mes (serie diaria del tablero). */
+  reempaque_hl: number
+  /** Aporte del reempaque en PPM sobre los HL entregados del mes. */
+  reempaque_ppm: number | null
+  /** DQI corregido: (HL rotos en ruta + HL a reempaque) ÷ HL entregados × 1M. */
+  ppm_corregido: number | null
+}
+
 export interface DqiData {
   year: number
   month: number
   dqi: DqiCard
   detalle: DqiDetalle
+  /** null si la serie diaria del tablero no respondió. */
+  correccion: DqiCorreccion | null
   /** Target en PPM tomado del indicador del punto 1.4 (meta). null si no está cargado. */
   target: number | null
   /** Planes de acción del punto 1.4 (todos los periodos). */
@@ -105,9 +122,10 @@ export async function getDqi(
     }
 
     // Target + planes del punto 1.4 (viven en dpo-app, no en el tablero) +
-    // roturas reportadas por choferes desde la app (registro).
+    // roturas reportadas por choferes desde la app (registro) + insumos de la
+    // corrección H2 (reempaque del mes + HL entregados, en paralelo).
     const supabase = await createClient()
-    const [{ data: ind }, { data: planesRaw }, roturasRes] = await Promise.all([
+    const [{ data: ind }, { data: planesRaw }, roturasRes, reempaqueHl, hlEntregados] = await Promise.all([
       supabase
         .from("indicadores")
         .select("meta")
@@ -120,8 +138,26 @@ export async function getDqi(
         .eq("pregunta_id", PREGUNTA_14_ID)
         .order("created_at", { ascending: false }),
       getRoturasChofer(year, month),
+      getReempaqueHlMes(year, month),
+      getHlEntregados(year, month),
     ])
     const roturas_chofer = "data" in roturasRes ? roturasRes.data : []
+
+    // DQI corregido (auditoría H2): roturas de ruta + reempaque, mismo
+    // denominador que la tarjeta mensual oficial (HL entregados del mes).
+    let correccion: DqiCorreccion | null = null
+    if (reempaqueHl != null) {
+      const hlRuta = j.dqi_detalle?.hl_mes ?? 0
+      correccion = {
+        reempaque_hl: Math.round(reempaqueHl * 100) / 100,
+        reempaque_ppm: hlEntregados
+          ? Math.round((reempaqueHl / hlEntregados) * 1_000_000)
+          : null,
+        ppm_corregido: hlEntregados
+          ? Math.round(((hlRuta + reempaqueHl) / hlEntregados) * 1_000_000)
+          : null,
+      }
+    }
 
     const target = ind?.meta && ind.meta > 0 ? Number(ind.meta) : null
     const planes: DqiPlan[] = (planesRaw ?? []).map((p) => {
@@ -152,6 +188,7 @@ export async function getDqi(
             pct_de_roturas: null,
             top_skus: [],
           },
+        correccion,
         target,
         planes,
         roturas_chofer,
@@ -165,6 +202,42 @@ export async function getDqi(
           : "Error consultando el tablero de pérdidas.",
     }
   }
+}
+
+/** HL que entraron a reempaque en el mes (Σ `reempaque_hl_dia` de la serie
+ * diaria del tablero). Devuelve null si el tablero no responde: la corrección
+ * del DQI simplemente no se muestra, la página no se rompe. */
+const reempaqueMesCache = new Map<string, { t: number; v: number | null }>()
+
+async function getReempaqueHlMes(
+  year: number,
+  month: number,
+): Promise<number | null> {
+  const key = `${year}-${month}`
+  const hit = reempaqueMesCache.get(key)
+  if (hit && Date.now() - hit.t < HL_TTL_MS) return hit.v
+  let total: number | null = null
+  try {
+    const res = await fetch(
+      `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
+      { cache: "no-store", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+    )
+    if (res.ok) {
+      const j = (await res.json()) as {
+        reempaque_hl_dia?: Record<string, number | null>
+      }
+      if (j?.reempaque_hl_dia) {
+        total = 0
+        for (const v of Object.values(j.reempaque_hl_dia)) {
+          if (v != null && Number.isFinite(v)) total += v
+        }
+      }
+    }
+  } catch {
+    total = null
+  }
+  reempaqueMesCache.set(key, { t: Date.now(), v: total })
+  return total
 }
 
 /** Crea un plan de acción del punto 1.4 asociado a un mes concreto del DQI.

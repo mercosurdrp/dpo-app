@@ -198,7 +198,7 @@ export function DqiClient({ initial, initialYear, initialMonth }: Props) {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">DQI · Calidad de entrega</h1>
             <p className="text-sm text-muted-foreground">
-              Roturas en distribución (ruta) ÷ HL entregados · Pilar Entrega DPO 1.4
+              (Roturas en ruta + reempaque) ÷ HL entregados · Pilar Entrega DPO 1.4
             </p>
           </div>
         </div>
@@ -239,15 +239,35 @@ export function DqiClient({ initial, initialYear, initialMonth }: Props) {
       )}
 
       {/* Métricas del mes */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <Card className="border-emerald-200 bg-emerald-50/40">
+          <CardContent className="pt-6">
+            <p className="text-[11px] uppercase tracking-wide text-emerald-700">
+              DQI corregido · {MESES_FULL[month - 1]}
+            </p>
+            <p className="text-3xl font-bold text-slate-900">
+              {fmtPPM(data.correccion?.ppm_corregido)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {data.correccion
+                ? `= roturas ${fmtPPM(dqi.mes)} + reempaque ${fmtPPM(data.correccion.reempaque_ppm)}`
+                : "el tablero no publicó el reempaque del mes"}
+            </p>
+            <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-600">
+              Medición H2 · incluye reempaque
+            </p>
+          </CardContent>
+        </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">DQI · {MESES_FULL[month - 1]}</p>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">
+              Solo roturas · {MESES_FULL[month - 1]}
+            </p>
             <p className={`text-3xl font-bold ${target != null && dqi.mes != null && dqi.mes > target ? "text-red-600" : "text-emerald-700"}`}>
               {fmtPPM(dqi.mes)}
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              Meta: {target != null ? fmtPPM(target) : "sin definir"}
+              Medición anterior · meta: {target != null ? fmtPPM(target) : "sin definir"}
             </p>
             {vsLy != null && (
               <p className={`mt-0.5 inline-flex items-center gap-0.5 text-xs font-medium ${vsLy < 0 ? "text-emerald-600" : "text-red-500"}`}>
@@ -261,14 +281,22 @@ export function DqiClient({ initial, initialYear, initialMonth }: Props) {
           <CardContent className="pt-6">
             <p className="text-[11px] uppercase tracking-wide text-slate-400">Acumulado {year}</p>
             <p className="text-3xl font-bold text-slate-800">{fmtPPM(dqi.anual_acum)}</p>
-            <p className="mt-1 text-xs text-slate-400">LY: {fmtPPM(dqi.ly_anual)}</p>
+            <p className="mt-1 text-xs text-slate-400">Solo roturas · LY: {fmtPPM(dqi.ly_anual)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">HL rotos en ruta</p>
-            <p className="text-3xl font-bold text-slate-800">{fmtHL(det.hl_mes)}</p>
-            <p className="mt-1 text-xs text-slate-400">{fmtPesos(det.valor_mes)} en el mes</p>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">HL afectados en el mes</p>
+            <p className="text-3xl font-bold text-slate-800">
+              {data.correccion
+                ? fmtHL(det.hl_mes + data.correccion.reempaque_hl)
+                : fmtHL(det.hl_mes)}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              {data.correccion
+                ? `rotos ${fmtHL(det.hl_mes)} + reempaque ${fmtHL(data.correccion.reempaque_hl)}`
+                : `${fmtPesos(det.valor_mes)} en el mes`}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -286,7 +314,9 @@ export function DqiClient({ initial, initialYear, initialMonth }: Props) {
       <Card>
         <CardContent className="pt-6">
           <div className="mb-1 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-700">Evolución mensual · DQI (PPM)</h2>
+            <h2 className="text-sm font-semibold text-slate-700">
+              Evolución mensual · DQI solo roturas (PPM)
+            </h2>
             <span className="text-[11px] text-slate-400">Real {year} vs {year - 1}</span>
           </div>
           <p className="mb-3 inline-flex items-center gap-1 text-[11px] text-slate-400">
