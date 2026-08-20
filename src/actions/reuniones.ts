@@ -4922,6 +4922,11 @@ async function getIndicadoresMesCore(
           // (hoy: verde ≥300 min, amarillo 250-300, rojo <300 y <gatillo), por
           // eso la meta va en null y la inyecta el wrapper desde la config.
           fxRow("auto_fx_tiempo_ruta", "Tiempo en ruta", "min", fx.tiempo_ruta, "promedio", null, "mayor"),
+          // Desvío del tiempo real vs el planificado por Foxtrot (rutas
+          // finalizadas limpias con fx_planned_journey_sec). Positivo = la
+          // ruta tardó más que el plan. Meta/gatillo desde la config (DPO
+          // Entrega 2.1: PDAs sobre el desvío del tiempo planificado).
+          fxRow("auto_fx_desvio_plan", "Desvío s/ tiempo planificado", "%", fx.desvio_tiempo_plan, "promedio", null, "menor"),
         )
         // Tiempo por PDV, Km recorridos y Paradas no autorizadas: dados de baja
         // de la matinal a pedido de la operación (2026-07-21). Los dos primeros

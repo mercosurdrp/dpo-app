@@ -21,6 +21,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { foxtrotDcIds } from "@/lib/foxtrot"
+import { esRutaLimpia } from "@/lib/foxtrot/ruta-limpia"
 
 const PAGE_SIZE = 1000
 
@@ -35,6 +36,13 @@ export interface PampeanaFoxtrotSerie {
   pct_resecuenciado: Record<string, number | null>
   /** Tiempo de ruta promedio (min), solo rutas finalizadas. */
   tiempo_ruta: Record<string, number | null>
+  /**
+   * Desvío % del tiempo real vs el planificado por Foxtrot
+   * (`fx_planned_journey_sec`): (Σreal − Σplan) / Σplan, ponderado por ruta.
+   * Solo rutas finalizadas LIMPIAS (cerradas el mismo día) con plan > 0.
+   * Positivo = tardamos más que lo planificado.
+   */
+  desvio_tiempo_plan: Record<string, number | null>
   /** % de rutas finalizadas. */
   pct_finalizadas: Record<string, number | null>
   /** % de entregas exitosas (clientes), solo rutas finalizadas. */
@@ -60,6 +68,9 @@ type RouteRow = {
   adherencia_secuencia: number | null
   raw_data: {
     fx_seq_enabled?: boolean | null
+    fx_planned_journey_sec?: number | null
+    started_timestamp?: string | null
+    finalized_timestamp?: string | null
     fx_driven_m?: number | null
     fx_planned_m?: number | null
     fx_unauth_stops_count?: number | null
@@ -74,6 +85,7 @@ type Acc = {
   adhSum: number; adhN: number
   seqEnabled: number; seqTotal: number
   tiempoSum: number; tiempoN: number
+  planMin: number; realMin: number
   finalizadas: number; rutas: number
   delSuccess: number; delTotal: number
   drivenM: number; plannedM: number
@@ -87,6 +99,7 @@ function emptyAcc(): Acc {
     adhSum: 0, adhN: 0,
     seqEnabled: 0, seqTotal: 0,
     tiempoSum: 0, tiempoN: 0,
+    planMin: 0, realMin: 0,
     finalizadas: 0, rutas: 0,
     delSuccess: 0, delTotal: 0,
     drivenM: 0, plannedM: 0,
@@ -108,6 +121,7 @@ export async function buildPampeanaFoxtrotSerie(
     adherencia_secuencia: {},
     pct_resecuenciado: {},
     tiempo_ruta: {},
+    desvio_tiempo_plan: {},
     pct_finalizadas: {},
     pct_entregas_exitosas: {},
     km_recorridos: {},
@@ -184,6 +198,19 @@ export async function buildPampeanaFoxtrotSerie(
     if (finalizada && r.tiempo_ruta_minutos != null && r.tiempo_ruta_minutos > 0) {
       a.tiempoSum += r.tiempo_ruta_minutos
       a.tiempoN++
+      // Desvío vs planificado: además de finalizada, la ruta tiene que ser
+      // LIMPIA (cerrada el mismo día) — si el chofer no la cierra, Foxtrot la
+      // finaliza horas después y el "real" deja de ser tiempo de trabajo.
+      const planSec = rd.fx_planned_journey_sec
+      if (
+        planSec != null &&
+        Number.isFinite(planSec) &&
+        planSec > 0 &&
+        esRutaLimpia(rd.started_timestamp ?? null, rd.finalized_timestamp ?? null)
+      ) {
+        a.planMin += planSec / 60
+        a.realMin += r.tiempo_ruta_minutos
+      }
     }
     if (finalizada) {
       a.delTotal += r.total_deliveries ?? 0
@@ -208,6 +235,9 @@ export async function buildPampeanaFoxtrotSerie(
     if (a.adhN > 0) serie.adherencia_secuencia[f] = round1(a.adhSum / a.adhN)
     if (a.seqTotal > 0) serie.pct_resecuenciado[f] = round1((100 * a.seqEnabled) / a.seqTotal)
     if (a.tiempoN > 0) serie.tiempo_ruta[f] = Math.round(a.tiempoSum / a.tiempoN)
+    if (a.planMin > 0) {
+      serie.desvio_tiempo_plan[f] = round1((100 * (a.realMin - a.planMin)) / a.planMin)
+    }
     if (a.rutas > 0) serie.pct_finalizadas[f] = round1((100 * a.finalizadas) / a.rutas)
     if (a.delTotal > 0) serie.pct_entregas_exitosas[f] = round1((100 * a.delSuccess) / a.delTotal)
     if (a.drivenM > 0) serie.km_recorridos[f] = round1(a.drivenM / 1000)

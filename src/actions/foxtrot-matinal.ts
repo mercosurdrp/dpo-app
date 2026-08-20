@@ -20,6 +20,7 @@ import {
   patentesPorChoferFecha,
   normChofer,
 } from "@/lib/foxtrot/patente-pampeana"
+import { esRutaLimpia } from "@/lib/foxtrot/ruta-limpia"
 import type {
   FoxtrotKpiId,
   FoxtrotKpiUnidadDetalle,
@@ -35,6 +36,7 @@ const META: Record<FoxtrotKpiId, { titulo: string; unidad: string; serieKey: key
   auto_fx_pct_finalizadas: { titulo: "Rutas finalizadas", unidad: "%", serieKey: "pct_finalizadas" },
   auto_fx_entregas_ok: { titulo: "Entregas exitosas", unidad: "%", serieKey: "pct_entregas_exitosas" },
   auto_fx_tiempo_ruta: { titulo: "Tiempo en ruta", unidad: "min", serieKey: "tiempo_ruta" },
+  auto_fx_desvio_plan: { titulo: "Desvío s/ tiempo planificado", unidad: "%", serieKey: "desvio_tiempo_plan" },
   auto_fx_tiempo_pdv: { titulo: "Tiempo por PDV", unidad: "min", serieKey: "tiempo_pdv" },
   auto_fx_km: { titulo: "Km recorridos", unidad: "km", serieKey: "km_recorridos" },
   auto_fx_paradas_no_auth: { titulo: "Paradas no autorizadas", unidad: "u.", serieKey: "paradas_no_autorizadas" },
@@ -51,6 +53,9 @@ type RouteRow = {
   raw_data: {
     name?: string | null
     fx_seq_enabled?: boolean | null
+    fx_planned_journey_sec?: number | null
+    started_timestamp?: string | null
+    finalized_timestamp?: string | null
     fx_driven_m?: number | null
     fx_unauth_stops_count?: number | null
     tml_authorized_stops_seconds?: number | null
@@ -83,6 +88,25 @@ function valorRuta(
     }
     case "auto_fx_tiempo_ruta":
       return fin && r.tiempo_ruta_minutos ? { valor: Math.round(r.tiempo_ruta_minutos), texto: null } : { valor: null, texto: null }
+    case "auto_fx_desvio_plan": {
+      // Mismo criterio que la serie del tablero: finalizada + limpia + plan > 0.
+      const plan = rd.fx_planned_journey_sec
+      if (
+        !fin ||
+        !r.tiempo_ruta_minutos ||
+        r.tiempo_ruta_minutos <= 0 ||
+        plan == null ||
+        !Number.isFinite(plan) ||
+        plan <= 0 ||
+        !esRutaLimpia(rd.started_timestamp ?? null, rd.finalized_timestamp ?? null)
+      ) {
+        return { valor: null, texto: null }
+      }
+      const planMin = plan / 60
+      const desvio = round1((100 * (r.tiempo_ruta_minutos - planMin)) / planMin)
+      const texto = `${desvio > 0 ? "+" : ""}${desvio}% (${Math.round(r.tiempo_ruta_minutos)} vs ${Math.round(planMin)} min)`
+      return { valor: desvio, texto }
+    }
     case "auto_fx_tiempo_pdv": {
       const a = rd.tml_authorized_stops_seconds
       const v = rd.tml_visited_customers

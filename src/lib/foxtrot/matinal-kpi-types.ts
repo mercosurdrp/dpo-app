@@ -12,6 +12,7 @@ export type FoxtrotKpiId =
   | "auto_fx_pct_finalizadas"
   | "auto_fx_entregas_ok"
   | "auto_fx_tiempo_ruta"
+  | "auto_fx_desvio_plan"
   | "auto_fx_tiempo_pdv"
   | "auto_fx_km"
   | "auto_fx_paradas_no_auth"
