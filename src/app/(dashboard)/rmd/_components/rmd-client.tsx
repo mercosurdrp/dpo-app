@@ -22,6 +22,8 @@ import type {
   RmdCoberturaData,
 } from "@/actions/rmd-cobertura"
 import type { RmdPlan } from "@/actions/rmd-planes"
+import type { TiempoRespuestaData } from "@/lib/sla-cumplimiento"
+import { TiempoRespuestaBloque } from "@/components/casos/tiempo-respuesta-bloque"
 import { SyncAviso } from "@/components/sync-aviso"
 import {
   planesPorClienteFoco,
@@ -82,9 +84,11 @@ interface Props {
   planesIniciales: RmdPlan[]
   /** Encuestadas vs calificadas (solapa Cobertura). Null si falló la consulta. */
   cobertura: RmdCoberturaData | null
+  /** Días encuesta→cierre del plan (solapa Tiempo de respuesta). */
+  tiempoRespuesta: TiempoRespuestaData | null
 }
 
-export function RmdClient({ data, planesIniciales, cobertura }: Props) {
+export function RmdClient({ data, planesIniciales, cobertura, tiempoRespuesta }: Props) {
   const { resumen, por_mes, distribucion, motivos, clientes, recuperados } =
     data
 
@@ -191,10 +195,21 @@ export function RmdClient({ data, planesIniciales, cobertura }: Props) {
       />
 
       <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-2xl grid-cols-3">
           <TabsTrigger value="panel">🚚 Panel RMD</TabsTrigger>
           <TabsTrigger value="cobertura">📨 Cobertura de encuestas</TabsTrigger>
+          <TabsTrigger value="tiempo">⏱️ Tiempo de respuesta</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="tiempo" className="mt-4">
+          {tiempoRespuesta ? (
+            <TiempoRespuestaBloque tipo="rmd" data={tiempoRespuesta} />
+          ) : (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              No se pudo calcular el tiempo de respuesta de los casos.
+            </p>
+          )}
+        </TabsContent>
 
         <TabsContent value="cobertura" className="mt-4">
           {cobertura ? (

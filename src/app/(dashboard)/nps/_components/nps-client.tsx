@@ -28,6 +28,8 @@ import type {
 } from "@/actions/nps-cobertura"
 import type { NpsPlan } from "@/actions/nps-planes"
 import type { PlanMarcable } from "@/components/plan-badge"
+import type { TiempoRespuestaData } from "@/lib/sla-cumplimiento"
+import { TiempoRespuestaBloque } from "@/components/casos/tiempo-respuesta-bloque"
 import { SyncAviso } from "@/components/sync-aviso"
 import { ClientesExplorador } from "./clientes-explorador"
 import { CoberturaBloque } from "./cobertura-bloque"
@@ -81,9 +83,11 @@ interface Props {
   planesIniciales: NpsPlan[]
   /** Enviadas vs respondidas (solapa Cobertura). Null si falló esa consulta. */
   cobertura: NpsCoberturaData | null
+  /** Días encuesta→cierre del plan (solapa Tiempo de respuesta). */
+  tiempoRespuesta: TiempoRespuestaData | null
 }
 
-export function NpsClient({ data, planesIniciales, cobertura }: Props) {
+export function NpsClient({ data, planesIniciales, cobertura, tiempoRespuesta }: Props) {
   const { resumen, por_mes, drivers_dp, por_promotor, clientes_dp, recuperados } =
     data
 
@@ -193,10 +197,21 @@ export function NpsClient({ data, planesIniciales, cobertura }: Props) {
       />
 
       <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-2xl grid-cols-3">
           <TabsTrigger value="panel">📊 Panel NPS</TabsTrigger>
           <TabsTrigger value="cobertura">📨 Cobertura de encuestas</TabsTrigger>
+          <TabsTrigger value="tiempo">⏱️ Tiempo de respuesta</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="tiempo" className="mt-4">
+          {tiempoRespuesta ? (
+            <TiempoRespuestaBloque tipo="nps" data={tiempoRespuesta} />
+          ) : (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              No se pudo calcular el tiempo de respuesta de los casos.
+            </p>
+          )}
+        </TabsContent>
 
         <TabsContent value="cobertura" className="mt-4">
           {cobertura ? (

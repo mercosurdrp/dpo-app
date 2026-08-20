@@ -328,6 +328,167 @@ export interface CasoSlaDetalle {
   evaluacion: EvaluacionCaso
 }
 
+// --- Indicador de TIEMPO DE RESPUESTA (pestaña en /nps y /rmd) --------------
+// El SLA ent_nps/ent_rmd dice SI el caso cerró en plazo; este indicador dice
+// CUÁNTO tardó: días desde la fecha de la encuesta hasta el cierre del plan
+// del cliente. Un caso todavía sin cierre muestra los días que lleva abierto.
+// Se calcula sobre los MISMOS casos y cierres que la matriz de /sla, para que
+// los dos números siempre cierren entre sí.
+
+export type EstadoCasoTiempo =
+  | "cerrado_en_plazo"
+  | "cerrado_tarde"
+  | "abierto" // sin cierre, con el plazo todavía corriendo
+  | "abierto_vencido" // sin cierre y con el plazo vencido
+
+export interface CasoTiempo {
+  cod_cliente: number
+  nombre_cliente: string | null
+  categoria: CasoCategoria
+  /** Score NPS (0-10) o puntuación RMD (1-5). */
+  valor: number
+  fecha: string
+  vencimiento: string
+  /** Cierre tomado (en plazo o tardío); null si sigue abierto. */
+  cierre: string | null
+  /** Cerrado: encuesta→cierre · abierto: encuesta→hoy (días que lleva). */
+  dias: number
+  estado: EstadoCasoTiempo
+}
+
+export interface TiempoRespuestaMes {
+  /** YYYY-MM de la encuesta. */
+  mes: string
+  /** Promedio de días de cierre de los casos cerrados del mes. */
+  promedio: number | null
+  cerrados: number
+  abiertos: number
+}
+
+export interface TiempoRespuestaData {
+  mideDesde: string
+  hoy: string
+  /** Promedio de días encuesta→cierre, sólo casos ya cerrados. */
+  promedioDias: number | null
+  promedioDetractores: number | null
+  promedioPasivos: number | null
+  cerrados: number
+  cerradosTarde: number
+  abiertos: number
+  abiertosVencidos: number
+  /** % en plazo con el MISMO criterio que la fila de la matriz /sla. */
+  pctEnPlazo: number | null
+  cumplidosSla: number
+  evaluadosSla: number
+  porMes: TiempoRespuestaMes[]
+  casos: CasoTiempo[]
+}
+
+/** Días corridos entre dos 'YYYY-MM-DD' (b − a). */
+export function diasEntre(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map(Number)
+  const [by, bm, bd] = b.split("-").map(Number)
+  return Math.round(
+    (Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000,
+  )
+}
+
+function promedio(valores: number[]): number | null {
+  if (valores.length === 0) return null
+  return Math.round((valores.reduce((s, v) => s + v, 0) / valores.length) * 10) / 10
+}
+
+const ORDEN_ESTADO_TIEMPO: Record<EstadoCasoTiempo, number> = {
+  abierto_vencido: 0,
+  abierto: 1,
+  cerrado_tarde: 2,
+  cerrado_en_plazo: 3,
+}
+
+export function armarTiempoRespuesta(
+  casosSla: CasoSlaDetalle[],
+  hoy: string,
+  mideDesde: string,
+): TiempoRespuestaData {
+  const casos: CasoTiempo[] = casosSla.map((c) => {
+    const { cierre, cierreTardio, vencimiento } = c.evaluacion
+    const cierreTomado = cierre ?? cierreTardio
+    let estado: EstadoCasoTiempo
+    if (cierre) estado = "cerrado_en_plazo"
+    else if (cierreTardio) estado = "cerrado_tarde"
+    else estado = hoy > vencimiento ? "abierto_vencido" : "abierto"
+    return {
+      cod_cliente: c.cod_cliente,
+      nombre_cliente: c.nombre_cliente,
+      categoria: c.categoria,
+      valor: c.valor,
+      fecha: c.fecha,
+      vencimiento,
+      cierre: cierreTomado,
+      dias: diasEntre(c.fecha, cierreTomado ?? hoy),
+      estado,
+    }
+  })
+
+  const cerrados = casos.filter((c) => c.cierre !== null)
+  const abiertos = casos.filter((c) => c.cierre === null)
+  // El % en plazo sale de la evaluación del SLA (cumplido/incumplido), no se
+  // recuenta acá: los "pendiente" no entran al denominador.
+  const cumplidosSla = casosSla.filter((c) => c.evaluacion.estado === "cumplido").length
+  const evaluadosSla =
+    cumplidosSla + casosSla.filter((c) => c.evaluacion.estado === "incumplido").length
+
+  const meses = new Map<string, { dias: number[]; abiertos: number }>()
+  for (const c of casos) {
+    const mes = c.fecha.slice(0, 7)
+    const m = meses.get(mes) ?? { dias: [], abiertos: 0 }
+    if (c.cierre !== null) m.dias.push(c.dias)
+    else m.abiertos++
+    meses.set(mes, m)
+  }
+  const porMes: TiempoRespuestaMes[] = [...meses.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([mes, m]) => ({
+      mes,
+      promedio: promedio(m.dias),
+      cerrados: m.dias.length,
+      abiertos: m.abiertos,
+    }))
+
+  // Primero lo que quema: abiertos vencidos (más viejos arriba), después los
+  // abiertos por vencer (menos margen arriba) y al final los cerrados recientes.
+  const ordenados = [...casos].sort((a, b) => {
+    const oa = ORDEN_ESTADO_TIEMPO[a.estado]
+    const ob = ORDEN_ESTADO_TIEMPO[b.estado]
+    if (oa !== ob) return oa - ob
+    if (a.estado === "abierto") return a.vencimiento.localeCompare(b.vencimiento)
+    if (a.estado === "abierto_vencido") return b.dias - a.dias
+    return b.fecha.localeCompare(a.fecha)
+  })
+
+  return {
+    mideDesde,
+    hoy,
+    promedioDias: promedio(cerrados.map((c) => c.dias)),
+    promedioDetractores: promedio(
+      cerrados.filter((c) => c.categoria === "detractor").map((c) => c.dias),
+    ),
+    promedioPasivos: promedio(
+      cerrados.filter((c) => c.categoria === "pasivo").map((c) => c.dias),
+    ),
+    cerrados: cerrados.length,
+    cerradosTarde: cerrados.filter((c) => c.estado === "cerrado_tarde").length,
+    abiertos: abiertos.length,
+    abiertosVencidos: abiertos.filter((c) => c.estado === "abierto_vencido").length,
+    pctEnPlazo:
+      evaluadosSla > 0 ? Math.round((cumplidosSla / evaluadosSla) * 100) : null,
+    cumplidosSla,
+    evaluadosSla,
+    porMes,
+    casos: ordenados,
+  }
+}
+
 // --- Umbrales DIARIOS configurables ------------------------------------------
 /**
  * Un día cumple capacidad si la ocupación promedio (CEq/TARGET_CEQ × 100) ≥
