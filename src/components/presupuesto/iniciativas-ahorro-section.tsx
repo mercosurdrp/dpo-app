@@ -1313,8 +1313,8 @@ export function IniciativasAhorroSection({
                         {ahorroComb && (
                           <>
                             {" "}
-                            · litros evitados × precio del gasoil del
-                            presupuesto, desde el{" "}
+                            · litros evitados × precio Axion neto de IVA,
+                            desde el{" "}
                             {ahorroComb.desde.slice(8, 10)}/
                             {ahorroComb.desde.slice(5, 7)}
                           </>

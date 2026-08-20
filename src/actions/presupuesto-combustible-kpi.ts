@@ -1,6 +1,5 @@
 "use server"
 
-import * as XLSX from "xlsx"
 import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
@@ -75,9 +74,9 @@ const REND_MAX = 6
  * `registro_combustible.costo_total` no sirve para esto: desde junio nadie lo
  * carga y lo poco cargado es basura (cargas de 154 lts con $2.359 total). En su
  * lugar: litros EVITADOS (los km recorridos a la línea base menos los litros
- * realmente cargados) valorizados al precio del gasoil con el que se armó el
- * presupuesto del año (fila "PRECIO COMBUSTIBLES - GASOIL" de la hoja FLOTA PXQ
- * del EERR) — la misma vara contra la que se comprometió el ahorro.
+ * realmente cargados) valorizados al precio del gasoil de la tarjeta Axion,
+ * NETO de IVA — el IVA es crédito fiscal, no costo, y el neto es lo comparable
+ * con el EERR.
  */
 export interface AhorroCombustibleMes {
   mes: number
@@ -86,7 +85,7 @@ export interface AhorroCombustibleMes {
   /** Litros que se habrían quemado a la línea base (km ÷ base). */
   litrosBase: number
   litrosEvitados: number
-  /** $/litro del presupuesto P×Q. null si el EERR no lo trae. */
+  /** $/litro Axion neto de IVA. null si el año no tiene la serie cargada. */
   precioLitro: number | null
   pesos: number | null
 }
@@ -144,49 +143,24 @@ function ratio(km: number, litros: number): number | null {
   return Math.round((km / litros) * 100) / 100
 }
 
-const SHEET_FLOTA_PXQ = "FLOTA PXQ mrp"
-const FILA_PRECIO_GASOIL = "PRECIO COMBUSTIBLES - GASOIL"
-
 /**
- * Precio mensual del gasoil con el que se armó el presupuesto del año (índice
- * 0 = enero), desde la hoja FLOTA PXQ del EERR. En esa hoja el concepto va en
- * la columna 3 y enero arranca en la columna 6 (la 5 es el precio base del
- * armado). null si no hay EERR o no trae la fila: el ahorro queda en litros.
+ * Precio del gasoil por mes de 2026, NETO de IVA, de la tarjeta Axion con la
+ * que carga la flota (índice 0 = enero).
+ *
+ * Ene-jun son los precios REALES de las transacciones de la tarjeta; jul-dic
+ * es la proyección del ajuste presupuestario de gasoil (jun 1.977 $/l +2,5 %
+ * por mes) — el mismo modelo que quedó en la hoja FORECAST del EERR, así que
+ * el ahorro se valoriza con la misma vara que el forecast aprobado. NO usar el
+ * precio del P×Q original ($1.447 +2 %/mes): quedó ~20 % abajo del real desde
+ * la suba de feb-2026. Cuando cierre el precio real de un mes proyectado, se
+ * actualiza acá a mano.
  */
-async function getPreciosGasoil(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  anio: number,
-): Promise<(number | null)[] | null> {
-  const { data: eerr } = await supabase
-    .from("presupuestos_eerr_anual")
-    .select("archivo_url")
-    .eq("anio", anio)
-    .maybeSingle()
-  if (!eerr?.archivo_url) return null
+const PRECIOS_GASOIL_NETO_2026 = [
+  1567, 1570, 1720, 1950, 1966, 1977, 2026, 2077, 2129, 2182, 2237, 2293,
+]
 
-  const { data: blob } = await supabase.storage
-    .from("presupuestos")
-    .download(eerr.archivo_url)
-  if (!blob) return null
-
-  const wb = XLSX.read(await blob.arrayBuffer(), { type: "array" })
-  const ws = wb.Sheets[SHEET_FLOTA_PXQ]
-  if (!ws) return null
-  const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, {
-    header: 1,
-    raw: true,
-    defval: null,
-  })
-  const fila = aoa.find(
-    (f) =>
-      typeof f?.[3] === "string" &&
-      f[3].replace(/\s+/g, " ").trim().toUpperCase() === FILA_PRECIO_GASOIL,
-  )
-  if (!fila) return null
-  return Array.from({ length: 12 }, (_, m) => {
-    const v = fila[6 + m]
-    return typeof v === "number" && v > 0 ? v : null
-  })
+function getPreciosGasoil(anio: number): (number | null)[] | null {
+  return anio === 2026 ? PRECIOS_GASOIL_NETO_2026 : null
 }
 
 interface IniciativaCombustible {
@@ -234,7 +208,7 @@ export async function getKpiCombustible(
     })
   }
 
-  const preciosGasoil = await getPreciosGasoil(supabase, anio)
+  const preciosGasoil = getPreciosGasoil(anio)
 
   const filas = (data ?? []) as FilaCarga[]
   const out: Record<string, KpiCombustible> = {}
