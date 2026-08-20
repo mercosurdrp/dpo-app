@@ -42,9 +42,6 @@ import {
   casoCategoriaLabel,
   plazoCasoDias,
   evaluarCaso,
-  sumarDias,
-  armarTiempoRespuesta,
-  type TiempoRespuestaData,
   cuentaComoCumplido,
   cumpleRecepcion,
   esPicoRecepcion,
@@ -1349,39 +1346,6 @@ async function evaluarCasosDelRango(
       hoy,
     ),
   }))
-}
-
-/**
- * Indicador de tiempo de respuesta para la pestaña de /nps y /rmd: días desde
- * la encuesta hasta el cierre del plan, caso por caso, sobre el MISMO universo
- * que mide el SLA (desde SLA_CASOS_MIDE_DESDE, no retroactivo).
- */
-export async function getTiempoRespuestaCasos(
-  tipo: "nps" | "rmd",
-): Promise<Result<TiempoRespuestaData>> {
-  try {
-    await requireAuth()
-    if (IS_MISIONES) {
-      return { error: "El tiempo de respuesta solo está disponible en Pampeana." }
-    }
-    const supabase = await createClient()
-    const hoy = hoyISO()
-    const casos = await evaluarCasosDelRango(
-      supabase,
-      tipo,
-      SLA_CASOS_MIDE_DESDE,
-      sumarDias(hoy, 1),
-    )
-    if (casos === null) {
-      return { error: "No se pudieron leer las encuestas." }
-    }
-    return { data: armarTiempoRespuesta(casos, hoy, SLA_CASOS_MIDE_DESDE) }
-  } catch (err) {
-    return {
-      error:
-        err instanceof Error ? err.message : "Error calculando el tiempo de respuesta",
-    }
-  }
 }
 
 async function filaCasos(

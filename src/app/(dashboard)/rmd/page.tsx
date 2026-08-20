@@ -1,17 +1,15 @@
 import { getRmdDashboard } from "@/actions/rmd"
 import { getRmdCobertura } from "@/actions/rmd-cobertura"
 import { listarPlanesRmd } from "@/actions/rmd-planes"
-import { getTiempoRespuestaCasos } from "@/actions/sla"
 import { RmdClient } from "./_components/rmd-client"
 
 export const dynamic = "force-dynamic"
 
 export default async function RmdPage() {
-  const [datos, planes, cobertura, tiempoRespuesta] = await Promise.all([
+  const [datos, planes, cobertura] = await Promise.all([
     getRmdDashboard(),
     listarPlanesRmd(),
     getRmdCobertura(),
-    getTiempoRespuestaCasos("rmd"),
   ])
 
   if ("error" in datos) {
@@ -30,7 +28,6 @@ export default async function RmdPage() {
       data={datos.data}
       planesIniciales={"data" in planes ? planes.data : []}
       cobertura={"data" in cobertura ? cobertura.data : null}
-      tiempoRespuesta={"data" in tiempoRespuesta ? tiempoRespuesta.data : null}
     />
   )
 }

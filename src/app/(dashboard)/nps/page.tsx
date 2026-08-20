@@ -1,17 +1,15 @@
 import { getNpsDashboard } from "@/actions/nps"
 import { getNpsCobertura } from "@/actions/nps-cobertura"
 import { listarPlanesNps } from "@/actions/nps-planes"
-import { getTiempoRespuestaCasos } from "@/actions/sla"
 import { NpsClient } from "./_components/nps-client"
 
 export const dynamic = "force-dynamic"
 
 export default async function NpsPage() {
-  const [datos, planes, cobertura, tiempoRespuesta] = await Promise.all([
+  const [datos, planes, cobertura] = await Promise.all([
     getNpsDashboard(),
     listarPlanesNps(),
     getNpsCobertura(),
-    getTiempoRespuestaCasos("nps"),
   ])
 
   if ("error" in datos) {
@@ -30,7 +28,6 @@ export default async function NpsPage() {
       data={datos.data}
       planesIniciales={"data" in planes ? planes.data : []}
       cobertura={"data" in cobertura ? cobertura.data : null}
-      tiempoRespuesta={"data" in tiempoRespuesta ? tiempoRespuesta.data : null}
     />
   )
 }
