@@ -41,6 +41,7 @@ import {
   Boxes,
   ClipboardCheck,
   FileDown,
+  FileText,
   CheckCircle2,
   AlertTriangle,
 } from "lucide-react"
@@ -77,7 +78,7 @@ import {
   type ClusterPlanCubo,
   type ClusterPlanFrente,
 } from "@/actions/clusterizacion-planes"
-import { getClusterizacion } from "@/actions/clusterizacion"
+import { getClusterizacion, getSopClusterizacion } from "@/actions/clusterizacion"
 import { SolapaMercado } from "./mercado-censo"
 
 // El gráfico 3D (Three.js/WebGL) se carga solo en el cliente.
@@ -227,6 +228,27 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
       if ("error" in r) setErrorSem(r.error)
       else setData(r.data)
     })
+  }
+  const [abriendoSop, setAbriendoSop] = useState(false)
+  const [errorSop, setErrorSop] = useState<string | null>(null)
+  const abrirSop = async () => {
+    setErrorSop(null)
+    setAbriendoSop(true)
+    // La pestaña se abre antes del await: si no, el bloqueador de popups la come.
+    const win = window.open("about:blank", "_blank")
+    try {
+      const r = await getSopClusterizacion()
+      if ("error" in r) {
+        win?.close()
+        setErrorSop(r.error)
+      } else if (win) {
+        win.location.href = r.data.url
+      } else {
+        window.location.href = r.data.url
+      }
+    } finally {
+      setAbriendoSop(false)
+    }
   }
   const [tab, setTab] = useState<"clientes" | "analisis" | "diagrama" | "mercado" | "planes">("clientes")
   const [filtroCluster, setFiltroCluster] = useState<ClusterId | "todos">("todos")
@@ -403,6 +425,10 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={abrirSop} disabled={abriendoSop}>
+            <FileText className="h-4 w-4" /> {abriendoSop ? "Abriendo…" : "SOP (PDF)"}
+          </Button>
+          {errorSop ? <span className="text-xs text-red-600">{errorSop}</span> : null}
           <label className="text-xs text-muted-foreground">Semestre</label>
           <select
             value={periodo.semestre_id}
