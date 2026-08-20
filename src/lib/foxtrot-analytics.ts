@@ -145,6 +145,9 @@ export async function syncFoxtrotRouteAnalytics(
     const header = parseCsvLine(lines[0])
     const idxRoute = header.indexOf("Route ID")
     const idxDep = header.indexOf("Actual Route Departure Time")
+    // Llegada real al CD (geofence GPS del teléfono al entrar al radio del
+    // depósito): inicio del Tiempo Interno (TI = biométrico salida − llegada).
+    const idxArr = header.indexOf("Actual Route Arrival Time")
     // Tiempo por PDV: segundos de paradas autorizadas / clientes visitados.
     // 🚨 Las columnas de paradas salen del GPS del camión y Foxtrot las manda
     // VACÍAS (solo ~2% de las rutas las trae). El tiempo en PDV real se despeja
@@ -191,6 +194,7 @@ export async function syncFoxtrotRouteAnalytics(
 
     type Metrics = {
       departure?: string
+      arrival?: string
       authStopsSec?: number
       visited?: number
       plannedDrvSec?: number
@@ -218,6 +222,10 @@ export async function syncFoxtrotRouteAnalytics(
       const iso = arLocalToIso(row[idxDep])
       if (iso) m.departure = iso
       else sinDeparture++
+      if (idxArr >= 0) {
+        const isoArr = arLocalToIso(row[idxArr])
+        if (isoArr) m.arrival = isoArr
+      }
       m.authStopsSec = numAt(row, idxAuthSec) ?? m.authStopsSec
       m.visited = numAt(row, idxVisited) ?? m.visited
       m.plannedDrvSec = numAt(row, idxPlannedDrvSec) ?? m.plannedDrvSec
@@ -272,6 +280,7 @@ export async function syncFoxtrotRouteAnalytics(
         const m = metricsByRoute.get(r.route_id)!
         const extra: Record<string, unknown> = {}
         if (m.departure) extra.tml_actual_departure = m.departure
+        if (m.arrival) extra.tml_actual_arrival = m.arrival
         if (m.authStopsSec != null) extra.tml_authorized_stops_seconds = m.authStopsSec
         if (m.visited != null) extra.tml_visited_customers = m.visited
         if (m.plannedDrvSec != null) extra.fx_planned_driving_sec = m.plannedDrvSec

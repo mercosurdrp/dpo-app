@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { registerActivity } from "@/lib/dpo-activity"
+import { foxtrotDcIds } from "@/lib/foxtrot"
 // La semana se calcula en un solo lugar: el filtro del detalle usa la misma
 // función, así los números coinciden con la serie semanal.
 import { semanaDelAnio } from "@/lib/tiempo-interno"
@@ -19,7 +20,10 @@ import type {
 } from "@/types/database"
 
 // ===== TI — Tiempo Interno =====
-// TI = (fichaje biométrico de salida) − (hora del checklist de retorno), por chofer/día.
+// TI = (fichaje biométrico de salida) − (inicio), por chofer/día. El inicio es
+// la llegada GPS al CD de Foxtrot (`tml_actual_arrival`, geofence al entrar al
+// radio del depósito — mejora H2 pedida por el auditor) cuando existe (~38% de
+// las rutas), y si no la hora del checklist de retorno (criterio histórico).
 const TI_META_MINUTOS = 30
 const PCT_META_MINIMO = 65
 const TI_OUTLIER_MINUTOS = 180 // > 3h se descarta como anomalía (no es tiempo interno)
@@ -129,6 +133,43 @@ export async function getTiKpis(filters?: {
     })
     retornos.sort((a, b) => a.fecha.localeCompare(b.fecha))
 
+    // 1.b) Llegada GPS al CD (Foxtrot, `raw_data.tml_actual_arrival` = "Actual
+    // Route Arrival Time" del CSV: geofence del teléfono al entrar al radio del
+    // depósito). Cuando existe es el INICIO real del TI — el checklist de
+    // retorno a veces se carga mucho después de llegar (cola medida de +13 a
+    // +95 min) y subestima el indicador justo en los peores casos.
+    // 🚨 raw_data SIEMPRE proyectado con ->> (traer el jsonb entero mata la
+    // query por statement timeout — ver lib/foxtrot/ruta-limpia.ts).
+    const desdeFx = filters?.fechaDesde || retornos[0]?.fecha || "2026-01-01"
+    const llegadaPorChoferFecha = new Map<string, number>()
+    try {
+      const rutasFx = await leerTodo<{
+        fecha: string
+        driver_name: string | null
+        llegada: string | null
+      }>((f, t) => {
+        let q = supabase
+          .from("foxtrot_routes")
+          .select("fecha, driver_name, llegada:raw_data->>tml_actual_arrival")
+          .in("dc_id", foxtrotDcIds())
+          .gte("fecha", desdeFx)
+        if (filters?.fechaHasta) q = q.lte("fecha", filters.fechaHasta)
+        return q.order("route_id").range(f, t)
+      })
+      for (const rf of rutasFx) {
+        if (!rf.llegada || !rf.driver_name) continue
+        const ms = new Date(rf.llegada).getTime()
+        if (!Number.isFinite(ms)) continue
+        const k = `${rf.fecha}|${norm(rf.driver_name)}`
+        // Si un chofer tuviera más de una ruta en el día, vale la última llegada.
+        if (!llegadaPorChoferFecha.has(k) || ms > llegadaPorChoferFecha.get(k)!) {
+          llegadaPorChoferFecha.set(k, ms)
+        }
+      }
+    } catch {
+      // sin Foxtrot el TI sigue funcionando con el checklist, como siempre
+    }
+
     // 2) Resolver chofer → empleado (legajo). Usa mapeo_empleado_chofer + match por nombre.
     const [empRes, mapRes] = await Promise.all([
       supabase.from("empleados").select("id,legajo,nombre"),
@@ -197,9 +238,14 @@ export async function getTiKpis(filters?: {
     const sinFichajeSet = new Set<string>()
     let sinBio = 0, excluidos = 0, noFicha = 0, bajoUmbral = 0
     const minTi = filters?.minTiMinutos ?? 0
+    let conGps = 0
     for (const r of retornos) {
       const emp = resolveLegajo(r.chofer)
-      const base = { fecha: r.fecha, chofer: r.chofer, dominio: r.dominio, hora_retorno: r.hora }
+      const llegadaMs = llegadaPorChoferFecha.get(`${r.fecha}|${norm(r.chofer)}`)
+      const base = {
+        fecha: r.fecha, chofer: r.chofer, dominio: r.dominio, hora_retorno: r.hora,
+        hora_llegada_gps: llegadaMs != null ? new Date(llegadaMs).toISOString() : null,
+      }
       if (!emp) {
         registros.push({ ...base, legajo: null, hora_salida: null, ti_minutos: null, motivo_sin_dato: "sin_match" })
         continue
@@ -216,25 +262,38 @@ export async function getTiKpis(filters?: {
         registros.push({ ...base, legajo: emp.legajo, hora_salida: null, ti_minutos: null, motivo_sin_dato: "sin_biometrico" })
         continue
       }
-      const ti = Math.round((salMs - new Date(r.hora).getTime()) / 60000)
+      // Inicio del TI: llegada GPS al CD si existe y da un TI plausible (0..
+      // outlier); si el geofence disparó mal (TI negativo o gigante), se cae al
+      // checklist de retorno, que era el comportamiento histórico.
+      const tiCk = Math.round((salMs - new Date(r.hora).getTime()) / 60000)
+      let ti = tiCk
+      let fuente: "gps" | "checklist" = "checklist"
+      if (llegadaMs != null) {
+        const tiGps = Math.round((salMs - llegadaMs) / 60000)
+        if (tiGps >= 0 && tiGps <= TI_OUTLIER_MINUTOS) {
+          ti = tiGps
+          fuente = "gps"
+        }
+      }
       const salidaIso = new Date(salMs).toISOString()
       if (ti < 0) {
         excluidos++
-        registros.push({ ...base, legajo: emp.legajo, hora_salida: salidaIso, ti_minutos: ti, motivo_sin_dato: "negativo" })
+        registros.push({ ...base, legajo: emp.legajo, hora_salida: salidaIso, ti_minutos: ti, fuente_inicio: fuente, motivo_sin_dato: "negativo" })
         continue
       }
       if (ti > TI_OUTLIER_MINUTOS) {
         excluidos++
-        registros.push({ ...base, legajo: emp.legajo, hora_salida: salidaIso, ti_minutos: ti, motivo_sin_dato: "outlier" })
+        registros.push({ ...base, legajo: emp.legajo, hora_salida: salidaIso, ti_minutos: ti, fuente_inicio: fuente, motivo_sin_dato: "outlier" })
         continue
       }
       if (minTi > 0 && ti < minTi) {
         bajoUmbral++
-        registros.push({ ...base, legajo: emp.legajo, hora_salida: salidaIso, ti_minutos: ti, motivo_sin_dato: "bajo_umbral" })
+        registros.push({ ...base, legajo: emp.legajo, hora_salida: salidaIso, ti_minutos: ti, fuente_inicio: fuente, motivo_sin_dato: "bajo_umbral" })
         continue
       }
       tis.push(ti)
-      registros.push({ ...base, legajo: emp.legajo, hora_salida: salidaIso, ti_minutos: ti, motivo_sin_dato: null })
+      if (fuente === "gps") conGps++
+      registros.push({ ...base, legajo: emp.legajo, hora_salida: salidaIso, ti_minutos: ti, fuente_inicio: fuente, motivo_sin_dato: null })
     }
 
     // 5) KPIs globales
@@ -288,7 +347,7 @@ export async function getTiKpis(filters?: {
     return {
       data: {
         totalRetornos: retornos.length,
-        conTi, sinBiometrico: sinBio, excluidos,
+        conTi, conGps, sinBiometrico: sinBio, excluidos,
         noFicha, choferesSinFichaje: [...sinFichajeSet].sort(),
         minTiMinutos: minTi, bajoUmbral,
         promedioMinutos, mediana, dentroMeta, pctDentroMeta,

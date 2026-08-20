@@ -105,7 +105,8 @@ export function TiempoInternoClient({ kpis, planesResumen }: Props) {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Tiempo Interno (TI)</h1>
         <p className="text-sm text-muted-foreground">
-          Desde el checklist de retorno al CD hasta el fichaje de salida del chofer — Pilar Entrega 1.3
+          Desde la llegada al CD (GPS de Foxtrot, o checklist de retorno) hasta el
+          fichaje de salida del chofer — Pilar Entrega 1.3
         </p>
       </div>
 
@@ -172,6 +173,7 @@ export function TiempoInternoClient({ kpis, planesResumen }: Props) {
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               {kpis.conTi}/{kpis.totalRetornos} retornos con TI calculable
+              {kpis.conGps > 0 && ` · ${kpis.conGps} con llegada GPS`}
             </p>
           </CardContent>
         </Card>
@@ -603,7 +605,7 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
                   <TableHead>Fecha</TableHead>
                   <TableHead>Chofer</TableHead>
                   <TableHead>Dominio</TableHead>
-                  <TableHead>Retorno</TableHead>
+                  <TableHead>Inicio</TableHead>
                   <TableHead>Salida</TableHead>
                   <TableHead className="text-right">TI</TableHead>
                 </TableRow>
@@ -614,7 +616,21 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
                     <TableCell className="text-sm">{r.fecha}</TableCell>
                     <TableCell className="text-sm">{r.chofer}</TableCell>
                     <TableCell className="font-medium">{r.dominio}</TableCell>
-                    <TableCell className="text-sm font-mono">{horaArg(r.hora_retorno)}</TableCell>
+                    <TableCell className="text-sm font-mono">
+                      {r.fuente_inicio === "gps" && r.hora_llegada_gps ? (
+                        <span
+                          className="inline-flex items-center gap-1.5"
+                          title={`Llegada GPS al CD ${horaArg(r.hora_llegada_gps)} · checklist de retorno ${horaArg(r.hora_retorno)}`}
+                        >
+                          {horaArg(r.hora_llegada_gps)}
+                          <Badge className="bg-teal-100 text-teal-700 hover:bg-teal-100 text-[10px] px-1.5">
+                            GPS
+                          </Badge>
+                        </span>
+                      ) : (
+                        horaArg(r.hora_retorno)
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm font-mono">{horaArg(r.hora_salida)}</TableCell>
                     <TableCell className="text-right">
                       {r.motivo_sin_dato === null && r.ti_minutos != null ? (
