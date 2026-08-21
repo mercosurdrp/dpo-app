@@ -18,7 +18,9 @@ import type { RetiroCubiertas } from "@/lib/vehiculos/neumaticos-tipos"
  * y deja la evidencia ambiental del pilar.
  */
 
-const MATERIAL_CUBIERTAS = "Cubiertas"
+// La tabla restringe `material` por CHECK a neumaticos/aceite/filtros/baterias/
+// chatarra/otros (migración 20260711160000). "Cubiertas" no pasa la constraint.
+const MATERIAL_CUBIERTAS = "neumaticos"
 
 // ==================== LECTURA ====================
 
@@ -32,7 +34,7 @@ export async function getRetirosCubiertas(): Promise<
     const { data, error } = await supabase
       .from("mantenimiento_residuos")
       .select("*")
-      .ilike("material", "%cubierta%")
+      .eq("material", MATERIAL_CUBIERTAS)
       .order("fecha", { ascending: false })
     if (error) return { error: error.message }
     return { data: (data || []) as RetiroCubiertas[] }

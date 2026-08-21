@@ -316,7 +316,13 @@ export async function guardarMedicionesNeumaticos(
       (m) => !cubiertaConforme(m.profundidad_mm, m.presion_psi),
     ).length
 
+    // 🚨 También el módulo del supervisor: esta acción escribe
+    // `profundidad_actual_mm`, que es lo que lee la Cobertura de neumáticos en
+    // /vehiculos/mantenimiento. Revalidando sólo /mis-neumaticos, el supervisor
+    // seguía viendo el dibujo viejo. Mismo criterio que odometro-lecturas.ts y
+    // urea.ts, que sí revalidan las dos rutas.
     revalidatePath("/mis-neumaticos")
+    revalidatePath("/vehiculos/mantenimiento")
     return { success: true, guardadas: filtradas.length, desvios }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }

@@ -269,7 +269,11 @@ export async function createMiTareaCil(
       return { error: error.message }
     }
 
+    // 🚨 Ídem: la Cobertura del CIL vive en /vehiculos/mantenimiento y es la que
+    // pinta los cuadros verde/rojo por unidad. Sin esto, el supervisor no ve la
+    // tarea que el chofer acaba de cargar.
     revalidatePath("/mi-cil")
+    revalidatePath("/vehiculos/mantenimiento")
     return { success: true, creadas: tareas.length }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
