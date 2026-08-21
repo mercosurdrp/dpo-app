@@ -216,7 +216,11 @@ async function chequeoPuntosSinPlan(sb: Sb): Promise<Alerta[]> {
       .map((p: any) => p.pregunta_id),
   )
 
-  const pregById = new Map((preguntas ?? []).map((p: any) => [p.id, p]))
+  // Tipada a mano: sin esto el `.map()` sobre un `any[]` infiere Map<{}, {}>
+  // y el acceso a .numero no compila.
+  const pregById = new Map<string, { numero: string; texto: string }>(
+    (preguntas ?? []).map((p: any) => [p.id as string, { numero: p.numero, texto: p.texto }]),
+  )
   const out: Alerta[] = []
   for (const [preguntaId, puntaje] of ultima) {
     if (puntaje > 1) continue
