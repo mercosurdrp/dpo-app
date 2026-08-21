@@ -21,8 +21,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { AdjuntosInput } from "@/components/adjuntos-input"
 import {
   actualizarPlanNps,
+  agregarAvancePlanNps,
   crearPlanNps,
   type NpsPlan,
   type PrioridadNpsPlan,
@@ -74,6 +76,10 @@ export function PlanFormDialog({
   const [promotor, setPromotor] = useState<string>(SIN_PROMOTOR)
   const [responsableId, setResponsableId] = useState<string>(SIN_RESPONSABLE)
   const [fechaObjetivo, setFechaObjetivo] = useState("")
+  // Evidencia del arranque: se sube como PRIMER AVANCE del plan recién creado
+  // (los adjuntos cuelgan de los avances, no del plan). Sólo en alta: en
+  // edición la evidencia se agrega desde el detalle, que ya tiene su bloque.
+  const [archivos, setArchivos] = useState<File[]>([])
 
   // Prefill al abrir (edición o foco inicial).
   useEffect(() => {
@@ -105,6 +111,7 @@ export function PlanFormDialog({
       setResponsableId(SIN_RESPONSABLE)
       setFechaObjetivo("")
     }
+    setArchivos([])
   }, [open, planExistente, focoInicial])
 
   function handleSubmit() {
@@ -136,14 +143,38 @@ export function PlanFormDialog({
     fd.append("fecha_objetivo", fechaObjetivo || "")
 
     startTransition(async () => {
-      const r = esEdicion
-        ? await actualizarPlanNps(planExistente!.id, fd)
-        : await crearPlanNps(fd)
+      if (esEdicion) {
+        const r = await actualizarPlanNps(planExistente!.id, fd)
+        if ("error" in r) {
+          toast.error(r.error)
+          return
+        }
+        toast.success("Plan actualizado")
+        onOpenChange(false)
+        onSaved()
+        return
+      }
+
+      const r = await crearPlanNps(fd)
       if ("error" in r) {
         toast.error(r.error)
         return
       }
-      toast.success(esEdicion ? "Plan actualizado" : "Plan creado")
+      // Evidencia inicial: va como primer avance del plan recién creado. Si
+      // fallara, el plan YA existe: se avisa y se reintenta desde el detalle.
+      if (archivos.length > 0) {
+        const fdAv = new FormData()
+        fdAv.append("comentario", "Evidencia cargada al crear el plan")
+        for (const f of archivos) fdAv.append("archivo", f)
+        const rav = await agregarAvancePlanNps(r.data.id, fdAv)
+        if ("error" in rav) {
+          toast.error(`Plan creado, pero la evidencia no subió: ${rav.error}`)
+          onOpenChange(false)
+          onSaved()
+          return
+        }
+      }
+      toast.success("Plan creado")
       onOpenChange(false)
       onSaved()
     })
@@ -293,6 +324,24 @@ export function PlanFormDialog({
               onChange={(e) => setFechaObjetivo(e.target.value)}
             />
           </div>
+
+          {!esEdicion && (
+            <div className="space-y-1">
+              <Label>
+                Evidencia (opcional — foto o archivo, podés pegar con Ctrl+V)
+              </Label>
+              <AdjuntosInput
+                archivos={archivos}
+                onChange={setArchivos}
+                activo={open}
+                disabled={pending}
+              />
+              <p className="text-xs text-slate-500">
+                Queda como primer avance del plan. Después podés sumar más
+                evidencia abriendo el plan.
+              </p>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
