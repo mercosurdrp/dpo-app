@@ -17,6 +17,9 @@ export interface OwdKpisMini {
   obsMesActual: number
   metaMensual: number | null
   metaCumplimiento: number
+  // Cobertura del padrón: el denominador cuando la plantilla no tiene meta.
+  ruteadoresTotal: number
+  ruteadoresCubiertos: number
 }
 
 interface Props {

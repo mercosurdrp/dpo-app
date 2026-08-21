@@ -51,6 +51,9 @@ interface KpiData {
   mensual: OwdMensual[]
   porEtapa: Array<{ etapa: string; pct: number; total: number }>
   itemsMasFallados: OwdItemStats[]
+  // Cobertura del padrón: el denominador cuando la plantilla no tiene meta.
+  ruteadoresTotal: number
+  ruteadoresCubiertos: number
 }
 
 interface Contexto {
