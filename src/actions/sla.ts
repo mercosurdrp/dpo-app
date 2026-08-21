@@ -1643,9 +1643,21 @@ const CARGA_EXCEPCIONES_A_TIEMPO: Record<string, Set<number>> = {
 //   • 2026-07-01: los viajes marcados tarde (carga ~07:25–07:31, a segundos unos
 //     de otros) fueron despachos ficticios (regularización) que salieron al día
 //     siguiente; el reparto real del día cumplió.
+//   • 2026-08-07 y 2026-08-12: el único viaje tarde de cada día (TMS 1809 /
+//     WMS 1860, 09:10, y TMS 1827 / WMS 1878, 08:18) no era un camión que
+//     tuviera que salir temprano, así que no hubo retraso de reparto. Revisado
+//     en la reunión de logística del 21-08-2026.
+//     🚨 PROVISORIO: el pusher todavía no distingue los camiones que efectivamente
+//     salían temprano de los que no, y los marca tarde por la sola hora de carga.
+//     Cuando esa distinción exista, estas dos entradas se borran: el día tiene que
+//     dar verde solo.
 const CARGA_EXCEPCIONES_DIA_CUMPLE: Record<string, string> = {
   "2026-07-01":
     "Cumplido por revisión manual: los viajes tarde fueron despachos ficticios (regularización) que salieron al día siguiente.",
+  "2026-08-07":
+    "Cumplido por revisión manual: el viaje marcado tarde (TMS 1809, 09:10) no correspondía a un camión que debiera salir temprano; el reparto del día cumplió.",
+  "2026-08-12":
+    "Cumplido por revisión manual: el viaje marcado tarde (TMS 1827, 08:18) no correspondía a un camión que debiera salir temprano; el reparto del día cumplió.",
 }
 
 // Feriados sin reparto: el depósito no carga, así que el día no aplica (ni verde
