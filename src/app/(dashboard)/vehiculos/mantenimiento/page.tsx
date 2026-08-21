@@ -15,6 +15,7 @@ import {
 import {
   getNeumaticos,
   getAlineaciones,
+  getDesgasteNeumaticos,
   getKmFlota,
   getRotaciones,
   getIntervalosNeumaticos,
@@ -54,6 +55,7 @@ export default async function MantenimientoPage() {
     tableroRes,
     checklistsRes,
     neumaticosRes,
+    desgasteNeumaticosRes,
     recapadosRes,
     retirosCubiertasRes,
     alineacionesRes,
@@ -84,6 +86,7 @@ export default async function MantenimientoPage() {
     getTableroOperativo(),
     getChecklistsMtto(),
     getNeumaticos(),
+    getDesgasteNeumaticos(),
     getRecapados(),
     getRetirosCubiertas(),
     getAlineaciones(),
@@ -162,6 +165,7 @@ export default async function MantenimientoPage() {
     "data" in retirosCubiertasRes ? retirosCubiertasRes.data : []
   const alineaciones = "data" in alineacionesRes ? alineacionesRes.data : []
   const kmFlota = kmFlotaRes.data
+  const desgasteNeumaticos = desgasteNeumaticosRes.data
   const rotaciones = "data" in rotacionesRes ? rotacionesRes.data : []
   const diasRuteo = "data" in diasRuteoRes ? diasRuteoRes.data : []
   const indisponibilidades = "data" in indispRes ? indispRes.data : []
@@ -225,6 +229,7 @@ export default async function MantenimientoPage() {
       overrides={estadoRes.data.overrides}
       ultimasLecturas={estadoRes.data.ultimasLecturas}
       historialLecturas={estadoRes.data.historialLecturas}
+      desgasteNeumaticos={desgasteNeumaticos}
       mantenimientos={mantenimientos}
       reprogramadas={reprogramadas}
       siguienteNumeroOt={siguienteNumeroOt}

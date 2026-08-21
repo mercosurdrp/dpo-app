@@ -90,6 +90,7 @@ import { ProgramacionOt } from "./programacion-ot"
 import { ChecklistsMtto } from "./checklists-mtto"
 import { Cil } from "./cil"
 import { NeumaticosModule } from "./neumaticos-module"
+import type { DesgasteFlota } from "@/actions/neumaticos"
 import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
 import { GastosTab } from "./gastos-tab"
@@ -353,6 +354,8 @@ function DisponibilidadCell({
 
 interface MantenimientoClientProps {
   estados: EstadoPlanVehiculo[]
+  /** Desgaste medido de las cubiertas (mm cada 1.000 km), ya calculado en el server. */
+  desgasteNeumaticos: DesgasteFlota
   tareas: MantenimientoPlanTarea[]
   overrides: MantenimientoPlanOverride[]
   ultimasLecturas: Record<string, LecturaSugerida[]>
@@ -403,6 +406,7 @@ interface MantenimientoClientProps {
 
 export function MantenimientoClient({
   estados,
+  desgasteNeumaticos,
   tareas,
   overrides,
   ultimasLecturas,
@@ -758,6 +762,7 @@ export function MantenimientoClient({
         <TabsContent value="neumaticos" className="space-y-6">
           <NeumaticosModule
             neumaticos={neumaticos}
+            desgaste={desgasteNeumaticos}
             recapados={recapados}
             retirosCubiertas={retirosCubiertas}
             alineaciones={alineaciones}

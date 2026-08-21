@@ -2,14 +2,29 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
-import type { EjeNeumatico } from "@/lib/vehiculos/neumaticos-layout"
+import { ejeDePosicion, type EjeNeumatico } from "@/lib/vehiculos/neumaticos-layout"
+import type { VehiculoTipo } from "@/types/database"
 import {
   fetchLecturas,
   kmActualPorDominio,
   daysBetween,
   addDays,
+  addMonths,
   today,
 } from "@/lib/vehiculos/lecturas"
+import {
+  desgasteNeumatico,
+  PERIODOS_DESGASTE,
+  PERIODO_DESGASTE_MESES,
+  TOLERANCIA_ODOMETRO_DIAS,
+  type CubiertaDesgaste,
+  type FilaDesgaste,
+  type LecturaOdometro,
+  type MovimientoCubierta,
+  type PeriodoDesgaste,
+  type PuntoEvolucion,
+  type PuntoMedicion,
+} from "@/lib/vehiculos/desgaste-neumaticos"
 import {
   PROFUNDIDAD_CRITICA_MM,
   type AccionNeumaticos,
@@ -1019,3 +1034,175 @@ export async function eliminarRotacion(input: {
 
 // La generación de OT desde Neumáticos ahora usa createMantenimiento (misma OT
 // que la pestaña Órdenes de Trabajo: N° correlativo automático, taller, costos).
+
+// ==================== DESGASTE POR KM ====================
+
+/** Hasta dónde atrás se traen lecturas de odómetro para fechar las mediciones. */
+const VENTANA_ODOMETRO_MESES = 24
+
+/**
+ * Desgaste real de las cubiertas: mm de dibujo por cada 1.000 km, a partir del
+ * historial de mediciones de la ronda mensual (DPO 3.4).
+ *
+ * Se calcula acá y no en el cliente porque hacen falta tres fuentes que el
+ * módulo no recibe: los movimientos (para cortar el tramo de vida en el último
+ * montaje), las lecturas de odómetro históricas (para completar las mediciones
+ * que se cargaron sin km — 82 de 236 al 21/08/2026) y el ritmo km/día de cada
+ * unidad (para pasar de km restantes a fecha de cambio).
+ *
+ * La lógica del cálculo vive en `lib/vehiculos/desgaste-neumaticos.ts`, sin
+ * dependencias de servidor, para poder razonarla y probarla aparte.
+ */
+export interface DesgasteFlota {
+  /** La misma cuenta hecha sobre tres ventanas, para poder acotar la tasa a lo
+   *  reciente sin volver al server. */
+  periodos: Record<PeriodoDesgaste, FilaDesgaste[]>
+  /** Profundidades medidas ronda por ronda: la lectura mensual del desgaste. */
+  evolucion: PuntoEvolucion[]
+}
+
+const VACIO: DesgasteFlota = {
+  periodos: { todo: [], m12: [], m6: [] },
+  evolucion: [],
+}
+
+export async function getDesgasteNeumaticos(): Promise<{ data: DesgasteFlota }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: cubiertas, error: neuErr } = await supabase
+      .from("mantenimiento_neumaticos")
+      .select(
+        "id, numero, marca, medida, tipo, dominio, posicion, eje, profundidad_actual_mm, fecha_instalacion"
+      )
+      .eq("estado", "instalado")
+    if (neuErr || !cubiertas?.length) return { data: VACIO }
+
+    const ids = cubiertas.map((c) => c.id)
+    const [medRes, movRes, vehRes] = await Promise.all([
+      supabase
+        .from("mantenimiento_neumatico_mediciones")
+        .select("neumatico_id, fecha, profundidad_mm, km")
+        .in("neumatico_id", ids),
+      supabase
+        .from("mantenimiento_neumatico_movimientos")
+        .select("neumatico_id, tipo, fecha, km")
+        .in("neumatico_id", ids),
+      supabase.from("catalogo_vehiculos").select("dominio, tipo"),
+    ])
+
+    // 45 de las 108 cubiertas instaladas no tienen el eje cargado (se completó
+    // recién cuando el diagrama empezó a pedirlo). Sin eje no hay con quién
+    // comparar el desgaste, así que se deduce de la posición y el tipo de
+    // unidad, que es de donde sale el eje del diagrama.
+    const tipoPorDominio = new Map<string, VehiculoTipo | null>()
+    for (const v of vehRes.data || []) tipoPorDominio.set(v.dominio, v.tipo)
+
+    const medPorNeum = new Map<string, PuntoMedicion[]>()
+    for (const m of medRes.data || []) {
+      const arr = medPorNeum.get(m.neumatico_id) ?? []
+      arr.push({ fecha: m.fecha, profundidad_mm: m.profundidad_mm, km: m.km })
+      medPorNeum.set(m.neumatico_id, arr)
+    }
+    const movPorNeum = new Map<string, MovimientoCubierta[]>()
+    for (const m of movRes.data || []) {
+      const arr = movPorNeum.get(m.neumatico_id) ?? []
+      arr.push({ tipo: m.tipo, fecha: m.fecha, km: m.km })
+      movPorNeum.set(m.neumatico_id, arr)
+    }
+
+    // Odómetro de la ventana de mediciones: sin esto, las mediciones que se
+    // cargaron sin km quedarían fuera del cálculo (82 de 236 al 21/08/2026).
+    //
+    // La ventana se acota a VENTANA_ODOMETRO_MESES: hay una medición suelta de
+    // 2022 que, sin tope, hacía traer cuatro años de lecturas de las tres
+    // fuentes en cada carga de la página. Ningún tramo de vida útil llega a
+    // tanto — el más largo de la flota va de julio/2025 a julio/2026.
+    const fechas = (medRes.data || []).map((m) => m.fecha).filter(Boolean).sort()
+    const lecturasPorDominio = new Map<string, LecturaOdometro[]>()
+    if (fechas.length > 0) {
+      const tope = addMonths(hoyArgentina(), -VENTANA_ODOMETRO_MESES)
+      const inicio = addDays(fechas[0], -TOLERANCIA_ODOMETRO_DIAS)
+      const lecturas = await fetchLecturas({
+        fechaDesde: inicio > tope ? inicio : tope,
+      })
+      for (const l of lecturas) {
+        const arr = lecturasPorDominio.get(l.dominio) ?? []
+        arr.push({ fecha: l.fecha, km: l.odometro })
+        lecturasPorDominio.set(l.dominio, arr)
+      }
+    }
+
+    const { data: kmFlota } = await getKmFlota()
+    const hoy = hoyArgentina()
+
+    const identidad = new Map<string, CubiertaDesgaste>()
+    for (const c of cubiertas) {
+      identidad.set(c.id, {
+        id: c.id,
+        numero: c.numero,
+        marca: c.marca,
+        medida: c.medida,
+        tipo: c.tipo,
+        dominio: c.dominio,
+        posicion: c.posicion,
+        eje:
+          c.eje ??
+          (c.dominio && c.posicion
+            ? ejeDePosicion(tipoPorDominio.get(c.dominio) ?? null, c.posicion)
+            : null),
+        profundidad_actual_mm: c.profundidad_actual_mm,
+        fecha_instalacion: c.fecha_instalacion,
+      })
+    }
+
+    // La misma cuenta sobre tres ventanas. Se resuelven acá y no en el cliente
+    // porque el costo real ya se pagó (traer mediciones, movimientos y
+    // odómetro): recortar por fecha y recalcular es aritmética sobre datos que
+    // ya están en memoria.
+    const periodos = {} as Record<PeriodoDesgaste, FilaDesgaste[]>
+    for (const periodo of PERIODOS_DESGASTE) {
+      const meses = PERIODO_DESGASTE_MESES[periodo]
+      const desde = meses != null ? addMonths(hoy, -meses) : null
+      periodos[periodo] = cubiertas.map((c) => {
+        const cubierta = identidad.get(c.id)!
+        const meds = medPorNeum.get(c.id) ?? []
+        const d = desgasteNeumatico(
+          cubierta,
+          desde ? meds.filter((m) => m.fecha >= desde) : meds,
+          movPorNeum.get(c.id) ?? [],
+          c.dominio ? lecturasPorDominio.get(c.dominio) : undefined,
+          c.dominio ? (kmFlota[c.dominio]?.kmDia ?? null) : null,
+          hoy
+        )
+        return { ...d, cubierta }
+      })
+    }
+
+    // Evolución: cada profundidad medida, con la posición donde estaba. Es lo
+    // único que se puede leer mes a mes con honestidad — la TASA de un mes solo
+    // queda por debajo del error del calibre (ver `PeriodoDesgaste`).
+    const evolucion: PuntoEvolucion[] = []
+    for (const [neumaticoId, meds] of medPorNeum) {
+      const cubierta = identidad.get(neumaticoId)
+      if (!cubierta) continue
+      for (const m of meds) {
+        if (m.profundidad_mm == null) continue
+        evolucion.push({
+          neumatico_id: neumaticoId,
+          dominio: cubierta.dominio,
+          posicion: cubierta.posicion,
+          numero: cubierta.numero,
+          fecha: m.fecha,
+          profundidad_mm: Number(m.profundidad_mm),
+        })
+      }
+    }
+    evolucion.sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0))
+
+    return { data: { periodos, evolucion } }
+  } catch {
+    return { data: VACIO }
+  }
+}

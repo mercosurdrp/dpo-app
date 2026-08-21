@@ -119,6 +119,13 @@ import { ProveedorPicker, ProveedoresProvider } from "./_components/proveedor-pi
 import { KpiCard } from "./_components/kpi-card"
 import { RecapadosPanel } from "./_components/recapados-panel"
 import { DesechoPanel } from "./_components/desecho-panel"
+import { DesgastePorKmCard } from "./_components/desgaste-por-km"
+import {
+  MOTIVO_SIN_TASA_LABEL,
+  PROF_OBJETIVO_MM,
+  type FilaDesgaste,
+} from "@/lib/vehiculos/desgaste-neumaticos"
+import type { DesgasteFlota } from "@/actions/neumaticos"
 import { marcarParaDesecho } from "@/actions/desecho-neumaticos"
 
 interface UnidadFlota {
@@ -130,6 +137,10 @@ interface UnidadFlota {
 
 interface Props {
   neumaticos: Neumatico[]
+  /** Desgaste medido por cubierta (mm cada 1.000 km) y evolución de las
+   *  profundidades. Se calcula en el server: necesita los movimientos y el
+   *  odómetro histórico, que acá no llegan. */
+  desgaste: DesgasteFlota
   /** Remitos de envío al recapador (con sus cubiertas). */
   recapados: Recapado[]
   /** Retiros de cubiertas a la recicladora (disposición de residuos). */
@@ -226,6 +237,7 @@ function estadoAlineacionConKm(
 
 export function NeumaticosModule({
   neumaticos,
+  desgaste,
   recapados,
   retirosCubiertas,
   alineaciones,
@@ -317,6 +329,15 @@ export function NeumaticosModule({
       m.set(n.id, vidaNeumatico(n, kmUnidad.kmActual, kmUnidad.kmDia))
     return m
   }, [instaladasEnUnidad, kmUnidad.kmActual, kmUnidad.kmDia])
+
+  // Desgaste medido (mm/1.000 km) por cubierta, para la tabla de instaladas.
+  // Va sobre el tramo de vida completo: la tabla muestra el estado de cada
+  // cubierta, no una ventana temporal.
+  const desgastePorId = useMemo(() => {
+    const m = new Map<string, FilaDesgaste>()
+    for (const d of desgaste.periodos.todo) m.set(d.neumatico_id, d)
+    return m
+  }, [desgaste])
 
   const vidaResumenUnidad = useMemo(() => {
     let cambiar = 0
@@ -469,6 +490,20 @@ export function NeumaticosModule({
         }}
       />
 
+      {/* Desgaste real: mm de dibujo por cada 1.000 km, del historial de la
+          ronda mensual de arriba. Va acá, entre la ronda y el diagrama, porque
+          es la lectura de lo que esa ronda produjo. */}
+      <DesgastePorKmCard
+        data={desgaste}
+        dominioSel={unidadSel}
+        onIrAUnidad={(dominio) => {
+          setUnidadSel(dominio)
+          document
+            .getElementById("diagrama-unidad")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" })
+        }}
+      />
+
       {/* Diagrama por unidad */}
       <Card id="diagrama-unidad">
         {/* La unidad se elige en "Inspección mensual" (arriba): ahí están todas
@@ -609,13 +644,18 @@ export function NeumaticosModule({
                     <th className="text-right">Prof. inic.</th>
                     <th className="text-right">Prof. act.</th>
                     <th className="text-right">mm gast.</th>
-                    <th className="text-right">Km/mm</th>
+                    <th className="text-right" title="Desgaste medido: milímetros de dibujo cada 1.000 km, del historial de mediciones">
+                      mm/1.000 km
+                    </th>
                     <th className="text-right pr-3">Presión</th>
                     <th className="border-l pl-3">Instalación</th>
                     <th className="text-right">Km inst.</th>
                     <th className="text-right">Recorridos</th>
                     <th className="text-right">Restante (est.)</th>
                     <th className="text-right">Días (est.)</th>
+                    <th className="text-right" title={`Km hasta ${PROF_OBJETIVO_MM} mm al ritmo REAL medido, no al km de vida teórico`}>
+                      Km a {PROF_OBJETIVO_MM} mm
+                    </th>
                     <th>Vida útil</th>
                   </tr>
                 </thead>
@@ -631,10 +671,7 @@ export function NeumaticosModule({
                             0
                           )
                         : null
-                    const kmPorMm =
-                      mmGastados != null && mmGastados > 0 && v?.kmRodados != null
-                        ? Math.round(v.kmRodados / mmGastados)
-                        : null
+                    const d = desgastePorId.get(n.id)
                     return (
                       <tr
                         key={n.id}
@@ -665,8 +702,17 @@ export function NeumaticosModule({
                         <td className="text-right tabular-nums text-muted-foreground">
                           {mmGastados ?? "—"}
                         </td>
-                        <td className="text-right tabular-nums text-muted-foreground">
-                          {kmPorMm != null ? fmtNum(kmPorMm) : "—"}
+                        <td
+                          className="text-right tabular-nums text-muted-foreground"
+                          title={
+                            d?.mmPorMilKm != null
+                              ? `Medido sobre ${fmtNum(d.kmMedidos)} km (${d.puntos} mediciones, ${d.desde} → ${d.hasta})`
+                              : d?.motivo
+                                ? MOTIVO_SIN_TASA_LABEL[d.motivo]
+                                : undefined
+                          }
+                        >
+                          {d?.mmPorMilKm != null ? d.mmPorMilKm.toFixed(2) : "—"}
                         </td>
                         <td className="text-right tabular-nums text-muted-foreground pr-3">
                           {pres != null ? `${pres} psi` : "—"}
@@ -698,6 +744,21 @@ export function NeumaticosModule({
                         </td>
                         <td className="text-right tabular-nums text-muted-foreground">
                           {v?.diasRestantes != null ? `${fmtNum(v.diasRestantes)} d` : "—"}
+                        </td>
+                        <td
+                          className={cn(
+                            "text-right tabular-nums",
+                            d?.kmHastaCambio != null && d.kmHastaCambio <= 5_000
+                              ? "font-medium text-destructive"
+                              : "text-foreground"
+                          )}
+                          title={
+                            d?.fechaCambio
+                              ? `Llegaría a ${PROF_OBJETIVO_MM} mm alrededor del ${fmtFecha(d.fechaCambio)}`
+                              : undefined
+                          }
+                        >
+                          {d?.kmHastaCambio != null ? `${fmtNum(d.kmHastaCambio)} km` : "—"}
                         </td>
                         <td>
                           {v && (
