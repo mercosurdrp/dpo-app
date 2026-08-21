@@ -9,12 +9,13 @@ import { Button } from "@/components/ui/button"
 import { ClipboardCheck, Plus, ExternalLink, Settings, Loader2 } from "lucide-react"
 import type { OwdTemplate } from "@/types/database"
 import { createOwdTemplate } from "@/actions/owd"
+import { esPorCobertura } from "@/lib/warehouse/owd-padron"
 
 export interface OwdKpisMini {
   totalObservaciones: number
   promedioCumplimiento: number
   obsMesActual: number
-  metaMensual: number
+  metaMensual: number | null
   metaCumplimiento: number
 }
 
@@ -70,6 +71,13 @@ export function OwdTab({ preguntaId, template, kpis, isAdmin }: Props) {
     )
   }
 
+  // Ojo con `??`: metaMensual = null es un valor válido (plantilla por cobertura),
+  // no un "sin dato", así que no puede caer al meta_mensual de la plantilla.
+  const metaMensual = esPorCobertura(template)
+    ? null
+    : kpis
+      ? kpis.metaMensual
+      : template.meta_mensual
   const meta = kpis?.metaCumplimiento ?? 90
   const pct = kpis?.promedioCumplimiento ?? 0
   const pctColor = pct >= meta ? "text-green-600" : pct >= meta - 15 ? "text-amber-600" : "text-red-600"
@@ -86,9 +94,10 @@ export function OwdTab({ preguntaId, template, kpis, isAdmin }: Props) {
             <p className="text-xs text-muted-foreground">Obs. del mes</p>
             <p className="text-2xl font-bold text-slate-900">
               {kpis?.obsMesActual ?? 0}
-              <span className="text-base font-normal text-muted-foreground">
-                /{kpis?.metaMensual ?? template.meta_mensual}
-              </span>
+              {/* Sin meta (Almacén) no hay denominador: se mide por cobertura del padrón */}
+              {metaMensual !== null && (
+                <span className="text-base font-normal text-muted-foreground">/{metaMensual}</span>
+              )}
             </p>
           </div>
           <div>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ClipboardCheck, Settings, Plus, CalendarCheck, CalendarDays } from "lucide-react"
 import type { OwdTemplateResumen } from "@/types/database"
+import { esPorCobertura } from "@/lib/warehouse/owd-padron"
 
 interface Props {
   templates: OwdTemplateResumen[]
@@ -90,7 +91,9 @@ export function OwdLandingClient({ templates, isAdmin, canAgenda }: Props) {
                   <div className="flex items-center justify-between border-t pt-3 text-sm">
                     <span className="flex items-center gap-1 text-muted-foreground">
                       <CalendarCheck className="h-4 w-4" />
-                      {t.pilar_nombre === "Almacén"
+                      {/* Sin meta = plantilla por cobertura del padrón. Antes esto
+                          miraba el nombre del pilar; ahora lo decide el dato. */}
+                      {esPorCobertura(t.template) || t.template.meta_mensual === null
                         ? `${t.obs_mes} este mes`
                         : `${t.obs_mes}/${t.template.meta_mensual} este mes`}
                     </span>

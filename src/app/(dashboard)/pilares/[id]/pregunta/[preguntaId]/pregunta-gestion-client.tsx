@@ -1648,7 +1648,13 @@ export function PreguntaGestionClient({
             OWD
             {owdTemplate && owdKpis && (
               <span className="ml-1 text-[10px] text-muted-foreground">
-                ({owdKpis.obsMesActual}/{owdKpis.metaMensual})
+                (
+                {owdKpis.metaMensual !== null
+                  ? `${owdKpis.obsMesActual}/${owdKpis.metaMensual}`
+                  : owdKpis.ruteadoresTotal > 0
+                    ? `${owdKpis.ruteadoresCubiertos}/${owdKpis.ruteadoresTotal}`
+                    : owdKpis.obsMesActual}
+                )
               </span>
             )}
           </TabsTrigger>

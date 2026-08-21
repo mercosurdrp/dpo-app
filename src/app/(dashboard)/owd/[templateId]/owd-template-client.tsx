@@ -46,7 +46,7 @@ interface KpiData {
   totalObservaciones: number
   promedioCumplimiento: number
   obsMesActual: number
-  metaMensual: number
+  metaMensual: number | null
   metaCumplimiento: number
   mensual: OwdMensual[]
   porEtapa: Array<{ etapa: string; pct: number; total: number }>
@@ -249,9 +249,12 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
                 <p className="text-sm text-muted-foreground">Observaciones</p>
                 <p className="text-3xl font-bold text-slate-900">
                   {obsCount}
-                  <span className="text-lg font-normal text-muted-foreground">
-                    /{kpis.metaMensual}
-                  </span>
+                  {/* Sin meta (Almacén) el denominador es el padrón, no un número fijo */}
+                  {kpis.metaMensual !== null && (
+                    <span className="text-lg font-normal text-muted-foreground">
+                      /{kpis.metaMensual}
+                    </span>
+                  )}
                 </p>
               </div>
               <div className="rounded-full bg-blue-100 p-3">
@@ -259,7 +262,12 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
               </div>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              {obsCountLabel} · Meta {kpis.metaMensual}/mes
+              {obsCountLabel}
+              {kpis.metaMensual !== null
+                ? ` · Meta ${kpis.metaMensual}/mes`
+                : kpis.ruteadoresTotal > 0
+                  ? ` · Cobertura ${kpis.ruteadoresCubiertos}/${kpis.ruteadoresTotal} del padrón`
+                  : ""}
             </p>
           </CardContent>
         </Card>

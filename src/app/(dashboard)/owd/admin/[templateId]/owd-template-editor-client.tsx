@@ -21,6 +21,7 @@ import {
 import { Plus, Pencil, Trash2, Loader2, Save, ExternalLink } from "lucide-react"
 import type { OwdItem, OwdTemplate, OwdResponsable, OwdItemRol } from "@/types/database"
 import { createOwdItem, updateOwdItem, deleteOwdItem, updateOwdTemplate } from "@/actions/owd"
+import { esPorCobertura } from "@/lib/warehouse/owd-padron"
 
 const RESPONSABLE_LABEL: Record<OwdResponsable, string> = {
   operario: "Operario observado",
@@ -55,7 +56,11 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
   // --- Cabecera ---
   const [nombre, setNombre] = useState(t.nombre)
   const [descripcion, setDescripcion] = useState(t.descripcion ?? "")
-  const [metaMensual, setMetaMensual] = useState(String(t.meta_mensual))
+  // Vacío = sin meta: la plantilla se mide por cobertura del padrón (roles_cobertura).
+  const porCobertura = esPorCobertura(t)
+  const [metaMensual, setMetaMensual] = useState(
+    porCobertura || t.meta_mensual === null ? "" : String(t.meta_mensual),
+  )
   const [metaCumplimiento, setMetaCumplimiento] = useState(String(t.meta_cumplimiento_pct))
   const [activo, setActivo] = useState(t.activo)
   const [savingHeader, setSavingHeader] = useState(false)
@@ -65,7 +70,11 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
     const res = await updateOwdTemplate(templateId, {
       nombre: nombre.trim(),
       descripcion: descripcion.trim() || null,
-      meta_mensual: Number(metaMensual) || 8,
+      // En las plantillas por cobertura ni se manda: escribir null antes de que
+      // el SQL haga la columna NULLable revienta con un error de constraint.
+      ...(porCobertura
+        ? {}
+        : { meta_mensual: metaMensual.trim() === "" ? null : Number(metaMensual) || null }),
       meta_cumplimiento_pct: Number(metaCumplimiento) || 90,
       activo,
     })
@@ -214,9 +223,16 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
               <Input
                 type="number"
                 min={1}
+                placeholder="Sin meta — cubre el padrón"
                 value={metaMensual}
+                disabled={porCobertura}
                 onChange={(e) => setMetaMensual(e.target.value)}
               />
+              <p className="text-[11px] text-muted-foreground">
+                {porCobertura
+                  ? "Esta OWD no lleva meta: se observa a todos los operadores que hacen la tarea."
+                  : "Vacío = sin meta: se observa a todos los operadores que hacen la tarea."}
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Meta de cumplimiento (%)</Label>

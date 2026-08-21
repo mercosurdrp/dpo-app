@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import { registerActivity } from "@/lib/dpo-activity"
+import { resolverPadron, normalizarNombre, esPorCobertura } from "@/lib/warehouse/owd-padron"
 
 const OWD_FOTOS_BUCKET = "owd-evidencias"
 
@@ -50,13 +51,15 @@ interface OwdKpis {
   totalObservaciones: number
   promedioCumplimiento: number
   obsMesActual: number
-  metaMensual: number
+  // null = la plantilla NO se mide por meta mensual, sino por cobertura del
+  // padrón (todas las OWD de Almacén). Ver owd_templates.roles_cobertura.
+  metaMensual: number | null
   metaCumplimiento: number
   mensual: OwdMensual[]
   porEtapa: Array<{ etapa: string; pct: number; total: number }>
   itemsMasFallados: OwdItemStats[]
-  // Cumplimiento por ruteador del mes actual (1 OWD/mes a cada uno).
-  // empleados_permitidos del template = ruteadores a observar.
+  // Cobertura del padrón en el mes actual (1 OWD a cada uno).
+  // El padrón sale de roles_cobertura (SKAP) o, si no, de empleados_permitidos.
   porRuteador: Array<{ nombre: string; obsMes: number; cubierto: boolean }>
   ruteadoresTotal: number
   ruteadoresCubiertos: number
@@ -267,7 +270,8 @@ interface CreateTemplateInput {
   preguntaId: string
   nombre?: string
   descripcion?: string
-  metaMensual?: number
+  // null/undefined = plantilla por cobertura del padrón, sin meta mensual.
+  metaMensual?: number | null
   metaCumplimiento?: number
 }
 
@@ -295,7 +299,7 @@ export async function createOwdTemplate(
         pregunta_id: input.preguntaId,
         nombre,
         descripcion: input.descripcion?.trim() || null,
-        meta_mensual: input.metaMensual ?? 8,
+        meta_mensual: input.metaMensual ?? null,
         meta_cumplimiento_pct: input.metaCumplimiento ?? 90,
       })
       .select("*")
@@ -315,7 +319,7 @@ export async function updateOwdTemplate(
   patch: Partial<{
     nombre: string
     descripcion: string | null
-    meta_mensual: number
+    meta_mensual: number | null
     meta_cumplimiento_pct: number
     activo: boolean
   }>,
@@ -993,12 +997,17 @@ export async function getOwdKpis(
     if (obsRes.error) return { error: obsRes.error.message }
     if (itemsRes.error) return { error: itemsRes.error.message }
 
-    const metaMensual = tplRes.data?.meta_mensual ?? 8
+    // NULL = plantilla por cobertura, no por meta. No se cae a 8: ese default era
+    // un valor que nadie tocó y hacía que Almacén midiera contra un número
+    // inventado en vez de contra el padrón de quién hace la tarea.
+    const metaRaw = tplRes.data?.meta_mensual
+    const metaMensual =
+      esPorCobertura(tplRes.data) || metaRaw === null || metaRaw === undefined
+        ? null
+        : Number(metaRaw)
     const metaCumplimiento = Number(tplRes.data?.meta_cumplimiento_pct ?? 90)
-    // Ruteadores asignados al punto (defensivo: en esquemas sin la columna queda [])
-    const permitidos = ((tplRes.data?.empleados_permitidos ?? []) as string[])
-      .map((n) => (n || "").trim())
-      .filter(Boolean)
+    // Padrón a cubrir: roles SKAP si la plantilla los declara, si no el array manual.
+    const permitidos = await resolverPadron(supabase as never, tplRes.data)
 
     const observaciones = (obsRes.data || []) as OwdObservacion[]
     const items = (itemsRes.data || []) as OwdItem[]
@@ -1051,14 +1060,16 @@ export async function getOwdKpis(
     const obsMesActual = obsDelMes.length
 
     // Cobertura por ruteador del mes actual: cuántas OWD tuvo cada permitido
+    // empleado_observado es texto libre: se compara normalizado, porque el mismo
+    // operario está cargado como "PABLO SELENZO" y como "SELENZO, PABLO".
     const obsPorEmpleadoMes = new Map<string, number>()
     for (const o of obsDelMes) {
-      const e = (o.empleado_observado || "").trim()
+      const e = normalizarNombre(o.empleado_observado || "")
       if (!e) continue
       obsPorEmpleadoMes.set(e, (obsPorEmpleadoMes.get(e) ?? 0) + 1)
     }
     const porRuteador = permitidos.map((nombre) => {
-      const obsMes = obsPorEmpleadoMes.get(nombre) ?? 0
+      const obsMes = obsPorEmpleadoMes.get(normalizarNombre(nombre)) ?? 0
       return { nombre, obsMes, cubierto: obsMes >= 1 }
     })
     const ruteadoresTotal = permitidos.length

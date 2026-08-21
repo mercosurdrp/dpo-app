@@ -1088,10 +1088,14 @@ export interface OwdTemplate {
   pregunta_id: string
   nombre: string
   descripcion: string | null
-  meta_mensual: number
+  // null = la plantilla no se mide por meta mensual sino por cobertura del
+  // padrón: se observa a todos los que hacen la tarea (ver roles_cobertura).
+  meta_mensual: number | null
   meta_cumplimiento_pct: number
   activo: boolean
   empleados_permitidos: string[] | null
+  // Roles SKAP que la plantilla debe cubrir. null/vacío = sin control de cobertura.
+  roles_cobertura: string[] | null
   supervisor_default: string | null
   created_by: string | null
   created_at: string
