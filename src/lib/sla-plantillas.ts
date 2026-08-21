@@ -280,8 +280,8 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "El caso se cierra cuando un plan de acción de ESE cliente (plan con cliente foco) queda en estado «completado». La fecha de cierre es la del avance que lo dejó completado, con su evidencia cargada.",
       "Un caso cumple si el cierre ocurre entre la fecha de la encuesta y su vencimiento (30 o 45 días según la categoría). Un plan cerrado antes de la encuesta no cuenta: estaba atendiendo un caso anterior.",
       "Mientras el plazo no vence, el caso figura «en curso» y no computa: no cuenta ni como cumplido ni como incumplido.",
-      "El indicador mensual se calcula como: casos cerrados en plazo ÷ casos con plazo vencido o ya cerrados, agrupados por el mes de la encuesta.",
-      "🚨 El porcentaje de un mes sigue moviéndose hasta 45 días después de terminado: un caso pasivo del 30 de agosto recién vence el 14 de octubre. Es propio de un acuerdo con plazo de un mes y medio y hay que tenerlo en cuenta al leerlo en la reunión.",
+      "El indicador mensual se calcula como: casos cerrados en plazo ÷ casos con plazo vencido o ya cerrados, agrupados por el MES EN QUE VENCÍA cada caso —no por el mes de la encuesta—, de modo que el número de un mes queda firme cuando el mes termina. Un mes en el que no venció ningún caso se informa como 100 %.",
+      "El seguimiento diario del acuerdo muestra el estado de la DEUDA: el día en que un caso vence sin plan cerrado queda marcado como incumplido, y los días siguientes siguen marcados hasta que ese plan se cierra. Cerrarlo tarde limpia el seguimiento de ahí en adelante, pero no borra los días ya incumplidos ni recupera el caso, que sigue contando como incumplido en su mes.",
     ],
     roles: [
       {
@@ -345,8 +345,8 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "El caso se cierra cuando un plan de acción de ESE cliente (plan con cliente foco) queda en estado «completado». La fecha de cierre es la del avance que lo dejó completado, con su evidencia cargada.",
       "Un caso cumple si el cierre ocurre entre la fecha de la puntuación y su vencimiento (30 días para 1-3, 45 días para 4). Un plan cerrado antes de la puntuación no cuenta: estaba atendiendo un caso anterior.",
       "Mientras el plazo no vence, el caso figura «en curso» y no computa: no cuenta ni como cumplido ni como incumplido.",
-      "El indicador mensual se calcula como: casos cerrados en plazo ÷ casos con plazo vencido o ya cerrados, agrupados por el mes de la puntuación.",
-      "🚨 El porcentaje de un mes sigue moviéndose hasta 45 días después de terminado: un caso pasivo del 30 de agosto recién vence el 14 de octubre.",
+      "El indicador mensual se calcula como: casos cerrados en plazo ÷ casos con plazo vencido o ya cerrados, agrupados por el MES EN QUE VENCÍA cada caso —no por el mes de la puntuación—, de modo que el número de un mes queda firme cuando el mes termina. Un mes en el que no venció ningún caso se informa como 100 %.",
+      "El seguimiento diario del acuerdo muestra el estado de la DEUDA: el día en que un caso vence sin plan cerrado queda marcado como incumplido, y los días siguientes siguen marcados hasta que ese plan se cierra. Cerrarlo tarde limpia el seguimiento de ahí en adelante, pero no borra los días ya incumplidos ni recupera el caso, que sigue contando como incumplido en su mes.",
     ],
     roles: [
       {

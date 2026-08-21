@@ -42,6 +42,7 @@ import {
   casoCategoriaLabel,
   plazoCasoDias,
   evaluarCaso,
+  sumarDias,
   cuentaComoCumplido,
   cumpleRecepcion,
   esPicoRecepcion,
@@ -1159,15 +1160,21 @@ async function filaEquiposFrio(
 // Un detractor al que nunca se le abre un plan cuenta como incumplido al vencer
 // el plazo — si no, el indicador se maquillaría simplemente no abriendo el plan.
 //
-// Estado del día (el día es el de la ENCUESTA):
-//   "na" → sin casos ese día, o día anterior a SLA_CASOS_MIDE_DESDE
-//   "si" → todos los casos del día cerraron dentro del plazo
-//   "no" → al menos un caso venció sin cierre
-//   "sd" → los casos del día siguen dentro del plazo (todavía no se juzgan)
+// Estado del día — el día NO es el de la encuesta, es el del VENCIMIENTO, que
+// es cuando el acuerdo se juega. El color refleja la DEUDA ABIERTA de ese día:
+//   "na" → día anterior a SLA_CASOS_MIDE_DESDE (el acuerdo no es retroactivo)
+//   "sd" → día futuro (todavía no ocurrió)
+//   "no" → hay al menos un caso vencido y todavía sin cerrar
+//   "si" → no hay ninguna deuda abierta (aunque ese día no venciera nada)
 //
-// 🚨 El % del mes se cuenta POR CASO, no por día (igual que `alm_recepcion`),
-// y sigue moviéndose hasta 45 días después de cerrado el mes: un caso del 30/08
-// recién vence el 14/10. Es inherente a un SLA con plazo de un mes y medio.
+// 🚨 El rojo ARRASTRA: empieza el día del vencimiento y sigue todos los días
+// siguientes hasta que el plan del cliente se cierra, aunque el cierre llegue
+// tarde. Los días que ya estuvieron en rojo NO se despintan: un cierre tardío
+// limpia de ahí en adelante, y el caso sigue contando como incumplido.
+//
+// 🚨 El % del mes se cuenta POR CASO (igual que `alm_recepcion`) sobre los casos
+// que VENCÍAN en ese mes, así que el número queda firme al terminar el mes. Sin
+// ningún caso vencido el mes va 100 %: no hay incumplimiento que mostrar.
 // ===========================================================================
 
 type TipoCasos = "nps" | "rmd"
@@ -1348,6 +1355,20 @@ async function evaluarCasosDelRango(
   }))
 }
 
+/**
+ * Casos vencidos y todavía sin cerrar al final del día `iso` — la DEUDA ABIERTA.
+ * Un caso incumplido ensucia todos los días desde su vencimiento hasta el día en
+ * que el plan se cierra (tarde). El día del cierre ya sale limpio.
+ */
+function deudaAbierta(casos: CasoSlaDetalle[], iso: string): CasoSlaDetalle[] {
+  return casos.filter((c) => {
+    if (c.evaluacion.estado !== "incumplido") return false
+    if (c.evaluacion.vencimiento > iso) return false
+    const cierre = c.evaluacion.cierreTardio
+    return cierre === null || cierre > iso
+  })
+}
+
 async function filaCasos(
   supabase: Awaited<ReturnType<typeof createClient>>,
   tipo: TipoCasos,
@@ -1357,61 +1378,80 @@ async function filaCasos(
 ): Promise<CumplimientoSlaFila> {
   const { codigo, nombre } = CASOS_CONFIG[tipo]
   const base = { codigo, nombre, target: SLA_CASOS_TARGET }
-  const vacio = (estado: EstadoCumplimiento): CumplimientoSlaFila => ({
-    ...base,
-    porcentaje: null,
-    cumplidos: 0,
-    totalAplica: 0,
-    dias: Array.from({ length: diasDelMes }, () => estado),
-  })
-
+  const hoy = hoyISO()
   const primeroDelMes = `${year}-${String(month).padStart(2, "0")}-01`
   const hastaExcl = primerDiaMesSiguiente(year, month)
-  // 🚨 El acuerdo no se mide hacia atrás: antes de SLA_CASOS_MIDE_DESDE las
-  // encuestas están cargadas (baseline) pero los días quedan en "no aplica".
-  const desde =
-    primeroDelMes > SLA_CASOS_MIDE_DESDE ? primeroDelMes : SLA_CASOS_MIDE_DESDE
-  if (desde >= hastaExcl) return vacio("na")
+  const isoDia = (d: number) =>
+    `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
 
-  const casos = await evaluarCasosDelRango(supabase, tipo, desde, hastaExcl)
-  if (casos === null) return vacio("sd")
+  // Un día se puede juzgar si está dentro de la vigencia y ya pasó. El resto
+  // queda "no aplica" (antes del acuerdo) o "sin dato" (todavía no ocurrió).
+  const evaluable = (iso: string) => iso >= SLA_CASOS_MIDE_DESDE && iso <= hoy
+  const hayDiaEvaluable = evaluable(isoDia(diasDelMes)) || evaluable(primeroDelMes)
 
-  const porDia = new Map<
-    number,
-    { cumplidos: number; incumplidos: number; pendientes: number }
-  >()
+  const marco = (estadoDelDia: (iso: string) => EstadoCumplimiento) =>
+    Array.from({ length: diasDelMes }, (_, i) => {
+      const iso = isoDia(i + 1)
+      if (iso < SLA_CASOS_MIDE_DESDE) return "na" as EstadoCumplimiento
+      if (iso > hoy) return "sd" as EstadoCumplimiento
+      return estadoDelDia(iso)
+    })
+
+  // 🚨 Se traen TODAS las encuestas desde el inicio de la vigencia, no sólo las
+  // del mes: un caso vencido en agosto y sin cerrar sigue pintando rojo en
+  // septiembre. El corte de arriba (hasta fin de mes − 30 d) es lo último que
+  // puede llegar a vencer dentro del mes que se está mostrando.
+  const hastaEncExcl = sumarDias(hastaExcl, -CASO_PLAZO_DETRACTOR_DIAS)
+
+  if (!hayDiaEvaluable || SLA_CASOS_MIDE_DESDE >= hastaEncExcl) {
+    // Mes futuro, mes previo al acuerdo, o sin ninguna encuesta que pueda haber
+    // vencido: no hay nada que reprochar, la fila va verde donde corresponde.
+    return {
+      ...base,
+      porcentaje: hayDiaEvaluable ? 100 : null,
+      cumplidos: 0,
+      totalAplica: 0,
+      dias: marco(() => "si"),
+    }
+  }
+
+  const casos = await evaluarCasosDelRango(
+    supabase,
+    tipo,
+    SLA_CASOS_MIDE_DESDE,
+    hastaEncExcl,
+  )
+  if (casos === null) {
+    return {
+      ...base,
+      porcentaje: null,
+      cumplidos: 0,
+      totalAplica: 0,
+      dias: Array.from({ length: diasDelMes }, () => "sd" as EstadoCumplimiento),
+    }
+  }
+
+  // El % del mes se juega con los casos que VENCÍAN en el mes: cerrados en plazo
+  // sobre el total ya juzgable. Los que todavía están en curso no computan, y el
+  // número deja de moverse cuando termina el mes.
   let cumplidos = 0
   let totalAplica = 0
   for (const c of casos) {
-    const dia = Number(c.fecha.slice(8, 10))
-    const a = porDia.get(dia) ?? { cumplidos: 0, incumplidos: 0, pendientes: 0 }
+    const venc = c.evaluacion.vencimiento
+    if (venc < primeroDelMes || venc >= hastaExcl) continue
     if (c.evaluacion.estado === "cumplido") {
-      a.cumplidos++
       cumplidos++
       totalAplica++
     } else if (c.evaluacion.estado === "incumplido") {
-      a.incumplidos++
       totalAplica++
-    } else {
-      a.pendientes++
     }
-    porDia.set(dia, a)
   }
 
-  const dias: EstadoCumplimiento[] = []
-  for (let d = 1; d <= diasDelMes; d++) {
-    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
-    const a = porDia.get(d)
-    if (iso < SLA_CASOS_MIDE_DESDE || !a) {
-      dias.push("na") // fuera de vigencia, o ningún caso ese día
-      continue
-    }
-    if (a.incumplidos > 0) dias.push("no")
-    else if (a.pendientes > 0) dias.push("sd") // aún dentro del plazo
-    else dias.push("si")
-  }
+  // Rojo mientras haya deuda abierta, verde en cuanto no queda ninguna.
+  const dias = marco((iso) => (deudaAbierta(casos, iso).length > 0 ? "no" : "si"))
 
-  const porcentaje = totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
+  const porcentaje =
+    totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : 100
   return { ...base, porcentaje, cumplidos, totalAplica, dias }
 }
 
@@ -2619,6 +2659,7 @@ export async function getDetalleDiaSla(
       const tipo: TipoCasos = codigo === "ent_nps" ? "nps" : "rmd"
       const nombre = CASOS_CONFIG[tipo].nombre
       const metaLabel = `Cierre ≤ ${CASO_PLAZO_DETRACTOR_DIAS} d (detractor) / ≤ ${CASO_PLAZO_PASIVO_DIAS} d (pasivo)`
+      const escala = tipo === "nps" ? "NPS" : "RMD"
 
       if (fecha < SLA_CASOS_MIDE_DESDE) {
         return {
@@ -2635,8 +2676,34 @@ export async function getDetalleDiaSla(
           },
         }
       }
+      if (fecha > hoyISO()) {
+        return {
+          data: {
+            codigo,
+            nombre,
+            fecha,
+            diaSemana,
+            estado: "sd",
+            metaLabel,
+            valorLabel: "—",
+            filas: [],
+            nota: "Este día todavía no ocurrió.",
+          },
+        }
+      }
 
-      const casos = await evaluarCasosDelRango(supabase, tipo, fecha, nextISO(fecha))
+      // Todo lo que pudo haber vencido hasta este día, desde el inicio de la
+      // vigencia: el día arrastra los casos vencidos antes y aún sin cerrar.
+      const hastaEncExcl = sumarDias(fecha, -CASO_PLAZO_DETRACTOR_DIAS + 1)
+      const casos =
+        SLA_CASOS_MIDE_DESDE < hastaEncExcl
+          ? await evaluarCasosDelRango(
+              supabase,
+              tipo,
+              SLA_CASOS_MIDE_DESDE,
+              hastaEncExcl,
+            )
+          : []
       if (casos === null) {
         return {
           data: {
@@ -2648,79 +2715,61 @@ export async function getDetalleDiaSla(
             metaLabel,
             valorLabel: "—",
             filas: [],
-            nota: "No se pudieron leer las encuestas de este día.",
-          },
-        }
-      }
-      if (casos.length === 0) {
-        return {
-          data: {
-            codigo,
-            nombre,
-            fecha,
-            diaSemana,
-            estado: "na",
-            metaLabel,
-            valorLabel: "Sin casos",
-            filas: [],
-            nota: `Este día no hubo encuestas ${tipo.toUpperCase()} detractoras ni pasivas.`,
+            nota: "No se pudieron leer las encuestas.",
           },
         }
       }
 
-      const escala = tipo === "nps" ? "NPS" : "RMD"
-      const filas = casos
-        .slice()
-        .sort((a, b) => a.valor - b.valor)
-        .map((c) => {
-          const quien = c.nombre_cliente?.trim() || `Cliente ${c.cod_cliente}`
-          const label = `${casoCategoriaLabel(c.categoria)} · ${quien}`
-          const puntaje = `${escala} ${c.valor}`
-          const { estado, cierre, vencimiento, cierreTardio } = c.evaluacion
-          if (estado === "cumplido" && cierre) {
-            const dias = diasEntre(c.fecha, cierre)
-            return {
-              label,
-              valor: `${puntaje} · cerrado ${fmtFechaCorta(cierre)} (${dias} d de ${plazoCasoDias(c.categoria)}) ✓`,
+      const abiertos = deudaAbierta(casos, fecha)
+      const vencenHoy = casos.filter((c) => c.evaluacion.vencimiento === fecha)
+      const arrastre = abiertos.filter((c) => c.evaluacion.vencimiento < fecha)
+      const quien = (c: CasoSlaDetalle) =>
+        c.nombre_cliente?.trim() || `Cliente ${c.cod_cliente}`
+
+      const filas = [
+        ...vencenHoy
+          .slice()
+          .sort((a, b) => a.valor - b.valor)
+          .map((c) => {
+            const label = `Vence hoy · ${casoCategoriaLabel(c.categoria)} · ${quien(c)}`
+            const puntaje = `${escala} ${c.valor} del ${fmtFechaCorta(c.fecha)}`
+            const { estado, cierre, cierreTardio } = c.evaluacion
+            if (estado === "cumplido" && cierre) {
+              const dias = diasEntre(c.fecha, cierre)
+              return {
+                label,
+                valor: `${puntaje} · cerrado ${fmtFechaCorta(cierre)} (${dias} d de ${plazoCasoDias(c.categoria)}) ✓`,
+              }
             }
-          }
-          if (estado === "incumplido") {
-            const cola = cierreTardio
-              ? `cerrado tarde ${fmtFechaCorta(cierreTardio)} (${diasEntre(c.fecha, cierreTardio)} d)`
-              : "sin plan cerrado"
-            return {
-              label,
-              valor: `${puntaje} · venció ${fmtFechaCorta(vencimiento)}, ${cola} ✗`,
+            if (estado === "incumplido") {
+              const cola = cierreTardio
+                ? `cerrado tarde ${fmtFechaCorta(cierreTardio)}`
+                : "sin plan cerrado"
+              return { label, valor: `${puntaje} · ${cola} ✗` }
             }
-          }
-          return {
-            label,
-            valor: `${puntaje} · vence ${fmtFechaCorta(vencimiento)} (quedan ${diasEntre(hoyISO(), vencimiento)} d)`,
-          }
-        })
+            return { label, valor: `${puntaje} · último día para cerrarlo` }
+          }),
+        ...arrastre
+          .slice()
+          .sort((a, b) => a.evaluacion.vencimiento.localeCompare(b.evaluacion.vencimiento))
+          .map((c) => ({
+            label: `Arrastra · ${casoCategoriaLabel(c.categoria)} · ${quien(c)}`,
+            valor: `${escala} ${c.valor} del ${fmtFechaCorta(c.fecha)} · venció ${fmtFechaCorta(c.evaluacion.vencimiento)}, ${diasEntre(c.evaluacion.vencimiento, fecha)} d sin cerrar ✗`,
+          })),
+      ]
 
-      const cerrados = casos.filter((c) => c.evaluacion.estado === "cumplido").length
-      const vencidos = casos.filter((c) => c.evaluacion.estado === "incumplido").length
-      const pendientes = casos.length - cerrados - vencidos
+      const estado: EstadoCumplimiento = abiertos.length > 0 ? "no" : "si"
+      const valorLabel =
+        abiertos.length > 0
+          ? `${abiertos.length} caso(s) vencido(s) sin cerrar`
+          : vencenHoy.length > 0
+            ? `${vencenHoy.length} caso(s) vencen hoy · sin deuda abierta`
+            : "Sin casos vencidos"
 
-      let estado: EstadoCumplimiento
-      if (vencidos > 0) estado = "no"
-      else if (pendientes > 0) estado = "sd"
-      else estado = "si"
-
-      const partes = [
-        cerrados ? `${cerrados} en plazo` : null,
-        vencidos ? `${vencidos} vencido(s)` : null,
-        pendientes ? `${pendientes} en curso` : null,
-      ].filter(Boolean)
-
-      let nota: string | undefined
-      if (vencidos > 0) {
-        nota =
-          "Los casos vencidos ya no se recuperan: cerrar el plan del cliente igual y llevar el motivo del atraso al Action Log de la reunión."
-      } else if (pendientes > 0) {
-        nota = `Todavía dentro del plazo: el día no puntúa hasta que venza el último caso. Los casos en curso no cuentan en el % del mes.`
-      }
+      const nota =
+        abiertos.length > 0
+          ? "El día queda en rojo mientras haya casos vencidos sin cerrar, y sigue rojo los días siguientes hasta que el plan del cliente se cierre. Cerrarlo tarde limpia de ahí en adelante, pero el caso ya cuenta como incumplido en el % de su mes."
+          : undefined
 
       return {
         data: {
@@ -2730,7 +2779,7 @@ export async function getDetalleDiaSla(
           diaSemana,
           estado,
           metaLabel,
-          valorLabel: `${casos.length} caso(s) · ${partes.join(", ")}`,
+          valorLabel,
           filas,
           nota,
         },

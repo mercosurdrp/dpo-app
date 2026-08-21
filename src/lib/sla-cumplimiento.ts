@@ -219,6 +219,10 @@ export function cumpleRecepcion(
 // meses después— y se detiene cuando el plan de acción de ese cliente queda
 // cerrado. Un detractor al que nunca se le abre un plan no desaparece de la
 // medición: al vencer el plazo cuenta como incumplido.
+//
+// En el calendario el caso se ubica por su VENCIMIENTO, y mientras siga vencido
+// sin cerrar ensucia también los días siguientes (ver `deudaAbierta` en
+// actions/sla.ts). `cierreTardio` es lo que apaga ese arrastre.
 
 export const SLA_CASOS_NPS_NOMBRE = "Cierre de casos NPS (detractores y pasivos)"
 export const SLA_CASOS_RMD_NOMBRE = "Cierre de casos RMD (detractores y pasivos)"
