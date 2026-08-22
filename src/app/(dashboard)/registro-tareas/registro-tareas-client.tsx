@@ -9,6 +9,7 @@ import {
   Download,
   Plus,
   Search,
+  Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,17 +28,38 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   getRegistroTareasDirectas,
+  type RegistroOrigen,
   type RegistroTareaItem,
   type RegistroTareasFiltros,
 } from "@/actions/tareas-directas"
+import { CrearAccionDialog } from "../5s/acciones/_components/crear-accion-dialog"
 import {
   ESTADO_PLAN_COLORS,
   ESTADO_PLAN_LABELS,
 } from "@/lib/constants"
-import type { EstadoPlan } from "@/types/database"
+import type { EstadoPlan, S5SectorAlmacen, S5Tipo } from "@/types/database"
 
 type EstadoFiltro = "all" | EstadoPlan
+type OrigenFiltro = "all" | RegistroOrigen
+
+const ORIGEN_LABEL: Record<RegistroOrigen, string> = {
+  manual: "Manual DPO",
+  "5s_almacen": "5S Almacén",
+  "5s_flota": "5S Flota",
+}
+
+const ORIGEN_BADGE_CLASS: Record<RegistroOrigen, string> = {
+  manual: "bg-slate-100 text-slate-700",
+  "5s_almacen": "bg-emerald-100 text-emerald-800",
+  "5s_flota": "bg-sky-100 text-sky-800",
+}
 
 interface Props {
   tareasIniciales: RegistroTareaItem[]
@@ -50,6 +72,11 @@ interface Props {
   pilares: Array<{ id: string; nombre: string; color: string }>
   bloques: Array<{ id: string; nombre: string; pilar_id: string }>
   puedeCrear: boolean
+  /** s5_acciones_insert sólo deja a admin/auditor. */
+  puedeCrear5S: boolean
+  sectoresAlmacen: S5SectorAlmacen[]
+  vehiculos: Array<{ id: string; dominio: string }>
+  responsables5s: Array<{ id: string; nombre: string; email: string }>
 }
 
 function formatDate(iso: string | null): string {
@@ -80,6 +107,10 @@ export function RegistroTareasClient({
   pilares,
   bloques,
   puedeCrear,
+  puedeCrear5S,
+  sectoresAlmacen,
+  vehiculos,
+  responsables5s,
 }: Props) {
   const [pending, startTransition] = useTransition()
   const [tareas, setTareas] = useState<RegistroTareaItem[]>(tareasIniciales)
@@ -91,9 +122,17 @@ export function RegistroTareasClient({
   const [bloqueId, setBloqueId] = useState<string>("")
   const [responsableId, setResponsableId] = useState<string>("")
   const [estado, setEstado] = useState<EstadoFiltro>("all")
+  const [origen, setOrigen] = useState<OrigenFiltro>("all")
   const [fechaDesde, setFechaDesde] = useState<string>("")
   const [fechaHasta, setFechaHasta] = useState<string>("")
   const [query, setQuery] = useState<string>("")
+
+  // Diálogo de alta de acción 5S (reutiliza el de /5s/acciones)
+  const [dialog5S, setDialog5S] = useState<S5Tipo | null>(null)
+
+  // Los filtros del manual no aplican a las acciones 5S: si el usuario
+  // filtra por pilar/bloque, el backend devuelve sólo tareas directas.
+  const filtrandoPorManual = Boolean(pilarId || bloqueId)
 
   const bloquesFiltrados = useMemo(
     () => (pilarId ? bloques.filter((b) => b.pilar_id === pilarId) : bloques),
@@ -106,6 +145,7 @@ export function RegistroTareasClient({
       bloqueId: bloqueId || undefined,
       responsableId: responsableId || undefined,
       estado,
+      origen,
       fechaDesde: fechaDesde || undefined,
       fechaHasta: fechaHasta || undefined,
       query: query || undefined,
@@ -121,11 +161,28 @@ export function RegistroTareasClient({
     setBloqueId("")
     setResponsableId("")
     setEstado("all")
+    setOrigen("all")
     setFechaDesde("")
     setFechaHasta("")
     setQuery("")
     startTransition(async () => {
       const result = await getRegistroTareasDirectas({})
+      if ("data" in result) setTareas(result.data)
+    })
+  }
+
+  function recargar() {
+    startTransition(async () => {
+      const result = await getRegistroTareasDirectas({
+        pilarId: pilarId || undefined,
+        bloqueId: bloqueId || undefined,
+        responsableId: responsableId || undefined,
+        estado,
+        origen,
+        fechaDesde: fechaDesde || undefined,
+        fechaHasta: fechaHasta || undefined,
+        query: query || undefined,
+      })
       if ("data" in result) setTareas(result.data)
     })
   }
@@ -138,11 +195,15 @@ export function RegistroTareasClient({
     >()
 
     for (const t of tareas) {
-      const key = t.pregunta_id ?? "__sin_punto__"
+      // Las acciones 5S no cuelgan del manual: se agrupan por su módulo.
+      const key =
+        t.origen !== "manual" ? t.origen : t.pregunta_id ?? "__sin_punto__"
       const label =
-        t.pregunta_id && t.pregunta_numero
-          ? `${t.pregunta_numero} · ${t.pregunta_texto ?? ""}`
-          : "Sin punto del manual asociado"
+        t.origen !== "manual"
+          ? ORIGEN_LABEL[t.origen]
+          : t.pregunta_id && t.pregunta_numero
+            ? `${t.pregunta_numero} · ${t.pregunta_texto ?? ""}`
+            : "Sin punto del manual asociado"
       const existing = m.get(key)
       if (existing) {
         existing.items.push(t)
@@ -174,6 +235,8 @@ export function RegistroTareasClient({
 
   function exportarCsv() {
     const headers = [
+      "Origen",
+      "Contexto",
       "Punto manual",
       "Pilar",
       "Bloque",
@@ -188,13 +251,15 @@ export function RegistroTareasClient({
       "Evidencias",
     ]
     const rows = tareas.map((t) => [
+      ORIGEN_LABEL[t.origen],
+      t.origen_detalle ?? "—",
       t.pregunta_numero ?? "—",
       t.pilar_nombre ?? "—",
       t.bloque_nombre ?? "—",
       t.titulo ?? "",
       t.descripcion,
       ESTADO_PLAN_LABELS[t.estado],
-      t.prioridad,
+      t.prioridad ?? "—",
       formatDate(t.fecha_limite),
       formatDate(t.created_at),
       t.creador_nombre,
@@ -222,13 +287,32 @@ export function RegistroTareasClient({
             Registro de tareas
           </h1>
           <p className="text-xs text-slate-500">
-            Trazabilidad de tareas asignadas vinculadas al manual DPO.
+            Trazabilidad de tareas asignadas: manual DPO + acciones 5S
+            (incluidas las que salen de reuniones y auditorías).
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={exportarCsv}>
             <Download className="mr-1 h-4 w-4" /> Exportar CSV
           </Button>
+          {puedeCrear5S && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button size="sm" variant="outline" />}
+              >
+                <Sparkles className="mr-1 h-4 w-4" /> Nueva acción 5S
+                <ChevronDown className="ml-1 h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setDialog5S("almacen")}>
+                  5S Almacén
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setDialog5S("flota")}>
+                  5S Flota
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           {puedeCrear && (
             <Button size="sm" render={<Link href="/tareas/nueva" />}>
               <Plus className="mr-1 h-4 w-4" /> Nueva tarea
@@ -236,6 +320,20 @@ export function RegistroTareasClient({
           )}
         </div>
       </div>
+
+      {dialog5S && (
+        <CrearAccionDialog
+          tipo={dialog5S}
+          open={dialog5S !== null}
+          onOpenChange={(o) => {
+            if (!o) setDialog5S(null)
+          }}
+          responsables={responsables5s}
+          vehiculos={vehiculos}
+          sectoresAlmacen={sectoresAlmacen}
+          onSaved={recargar}
+        />
+      )}
 
       {/* Filtros */}
       <Card>
@@ -254,6 +352,24 @@ export function RegistroTareasClient({
           </div>
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label className="text-xs text-slate-600">Origen</label>
+              <Select
+                value={origen}
+                onValueChange={(v) => setOrigen((v || "all") as OrigenFiltro)}
+              >
+                <SelectTrigger size="sm">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="manual">Manual DPO</SelectItem>
+                  <SelectItem value="5s_almacen">5S Almacén</SelectItem>
+                  <SelectItem value="5s_flota">5S Flota</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div>
               <label className="text-xs text-slate-600">Pilar</label>
               <Select
@@ -393,6 +509,11 @@ export function RegistroTareasClient({
       {/* Resultados */}
       <div className="text-xs text-slate-500">
         {tareas.length} tarea{tareas.length === 1 ? "" : "s"}
+        {filtrandoPorManual && (
+          <span className="ml-1 text-amber-700">
+            · filtrando por manual: las acciones 5S quedan fuera
+          </span>
+        )}
       </div>
 
       {tareas.length === 0 ? (
@@ -464,14 +585,36 @@ function TareaRow({ tarea }: { tarea: RegistroTareaItem }) {
   const overdue = isOverdue(tarea.fecha_limite, tarea.estado)
   return (
     <Link
-      href={`/planes/${tarea.id}`}
+      href={tarea.href}
       className="block rounded-md border bg-white p-3 transition hover:border-slate-400 hover:shadow-sm"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           {/* Breadcrumb del manual */}
           <div className="flex flex-wrap items-center gap-1 text-[10px]">
-            {tarea.pregunta_id ? (
+            {tarea.origen !== "manual" ? (
+              <>
+                <span
+                  className={`inline-flex rounded-full px-1.5 py-0.5 font-medium ${ORIGEN_BADGE_CLASS[tarea.origen]}`}
+                >
+                  {ORIGEN_LABEL[tarea.origen]}
+                </span>
+                {tarea.origen_detalle && (
+                  <>
+                    <span className="text-slate-400">/</span>
+                    <span className="text-slate-600">
+                      {tarea.origen_detalle}
+                    </span>
+                  </>
+                )}
+                {tarea.origen_reunion_id && (
+                  <>
+                    <span className="text-slate-400">/</span>
+                    <span className="text-slate-600">Desde reunión</span>
+                  </>
+                )}
+              </>
+            ) : tarea.pregunta_id ? (
               <>
                 {tarea.pilar_color && tarea.pilar_nombre && (
                   <span

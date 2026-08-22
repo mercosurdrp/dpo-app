@@ -5,6 +5,8 @@ import {
   getPilaresParaFiltro,
   getBloquesParaFiltro,
 } from "@/actions/tareas-directas"
+import { getSectoresAlmacen, getVehiculosActivos } from "@/actions/s5"
+import { listResponsablesPosibles } from "@/actions/s5-acciones"
 import { RegistroTareasClient } from "./registro-tareas-client"
 
 export const dynamic = "force-dynamic"
@@ -12,11 +14,22 @@ export const dynamic = "force-dynamic"
 export default async function RegistroTareasPage() {
   const profile = await requireAuth()
 
-  const [resultado, operadores, pilares, bloques] = await Promise.all([
+  const [
+    resultado,
+    operadores,
+    pilares,
+    bloques,
+    sectoresRes,
+    vehiculosRes,
+    responsables5sRes,
+  ] = await Promise.all([
     getRegistroTareasDirectas(),
     getOperadoresParaAsignar(),
     getPilaresParaFiltro(),
     getBloquesParaFiltro(),
+    getSectoresAlmacen(),
+    getVehiculosActivos(),
+    listResponsablesPosibles(),
   ])
 
   if ("error" in resultado) {
@@ -33,6 +46,10 @@ export default async function RegistroTareasPage() {
     profile.role === "auditor" ||
     profile.puede_asignar_tareas === true
 
+  // Crear acciones 5S es más restrictivo que crear tareas directas: la policy
+  // s5_acciones_insert sólo deja a admin/auditor.
+  const puedeCrear5S = profile.role === "admin" || profile.role === "auditor"
+
   return (
     <RegistroTareasClient
       tareasIniciales={resultado.data}
@@ -40,6 +57,12 @@ export default async function RegistroTareasPage() {
       pilares={pilares}
       bloques={bloques}
       puedeCrear={puedeCrear}
+      puedeCrear5S={puedeCrear5S}
+      sectoresAlmacen={"error" in sectoresRes ? [] : sectoresRes.data}
+      vehiculos={"error" in vehiculosRes ? [] : vehiculosRes.data}
+      responsables5s={
+        "error" in responsables5sRes ? [] : responsables5sRes.data
+      }
     />
   )
 }

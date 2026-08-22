@@ -37,7 +37,7 @@ export function TareasOperariosBloque() {
 
   useEffect(() => {
     let activo = true
-    getRegistroTareasDirectas({})
+    getRegistroTareasDirectas({ origen: "manual" })
       .then((res) => {
         if (!activo) return
         if ("error" in res) setError(res.error)

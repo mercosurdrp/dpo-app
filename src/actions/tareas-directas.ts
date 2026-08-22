@@ -8,6 +8,7 @@ import type {
   Profile,
   PrioridadPlan,
   PlanTipo,
+  S5AccionEstado,
 } from "@/types/database"
 
 // ============================================================
@@ -33,7 +34,7 @@ export interface RegistroTareaItem {
   titulo: string | null
   descripcion: string
   estado: EstadoPlan
-  prioridad: PrioridadPlan
+  prioridad: PrioridadPlan | null
   fecha_limite: string | null
   evidencia_obligatoria: boolean
   created_at: string
@@ -48,7 +49,21 @@ export interface RegistroTareaItem {
   pilar_nombre: string | null
   pilar_color: string | null
   evidencias_count: number
+  /**
+   * De dónde sale la fila: 'manual' es una tarea directa de planes_accion;
+   * las '5s_*' son filas de s5_acciones (cargadas a mano, espejadas desde una
+   * reunión con destino 5S, o nacidas de una auditoría 5S).
+   */
+  origen: RegistroOrigen
+  /** Contexto del origen: sector del almacén o dominio del vehículo. */
+  origen_detalle: string | null
+  /** Si la acción 5S vino espejada de una reunión, el id para linkearla. */
+  origen_reunion_id: string | null
+  /** A dónde navega la fila. */
+  href: string
 }
+
+export type RegistroOrigen = "manual" | "5s_almacen" | "5s_flota"
 
 export interface RegistroTareasFiltros {
   pilarId?: string
@@ -59,6 +74,7 @@ export interface RegistroTareasFiltros {
   fechaDesde?: string
   fechaHasta?: string
   query?: string
+  origen?: RegistroOrigen | "all"
 }
 
 // ============================================================
@@ -321,7 +337,11 @@ export async function asociarPuntoManual(
 // Registro de tareas (vista para defender auditoría)
 // ============================================================
 
-export async function getRegistroTareasDirectas(
+/**
+ * Filas del registro que salen de planes_accion (tareas directas atadas al
+ * manual DPO). El merge con las acciones 5S lo hace getRegistroTareasDirectas.
+ */
+async function getTareasDirectasItems(
   filtros: RegistroTareasFiltros = {}
 ): Promise<{ data: RegistroTareaItem[] } | { error: string }> {
   try {
@@ -521,6 +541,10 @@ export async function getRegistroTareasDirectas(
         pilar_nombre: pilar?.nombre ?? null,
         pilar_color: pilar?.color ?? null,
         evidencias_count: evCount.get(plan.id) ?? 0,
+        origen: "manual",
+        origen_detalle: null,
+        origen_reunion_id: null,
+        href: `/planes/${plan.id}`,
       }
     })
 
@@ -561,6 +585,205 @@ export async function getRegistroTareasDirectas(
       error: err instanceof Error ? err.message : "Error cargando registro",
     }
   }
+}
+
+// ============================================================
+// Acciones 5S dentro del registro
+// ============================================================
+
+const ESTADO_S5_A_PLAN: Record<S5AccionEstado, EstadoPlan> = {
+  no_comenzada: "pendiente",
+  en_curso: "en_progreso",
+  cerrada: "completado",
+}
+
+const ESTADO_PLAN_A_S5: Record<EstadoPlan, S5AccionEstado> = {
+  pendiente: "no_comenzada",
+  en_progreso: "en_curso",
+  completado: "cerrada",
+}
+
+type Accion5SRow = {
+  id: string
+  tipo: "almacen" | "flota"
+  sector_numero: number | null
+  descripcion: string
+  responsable_id: string | null
+  fecha_compromiso: string | null
+  estado: S5AccionEstado
+  creado_por: string | null
+  created_at: string
+  origen_reunion_actividad_id: string | null
+  vehiculo: { dominio: string } | null
+  origen_actividad: { reunion_id: string } | null
+  evidencias: { id: string }[] | null
+}
+
+/**
+ * Filas del registro que salen de s5_acciones. Incluye las tres procedencias
+ * del módulo: carga manual en /5s/acciones, espejo de una actividad de reunión
+ * con destino 5S, y acción nacida de una auditoría 5S.
+ *
+ * Los filtros del manual (pilar / bloque / punto) no aplican acá: si alguno
+ * viene seteado devolvemos vacío, porque el usuario está filtrando por una
+ * dimensión que las acciones 5S no tienen.
+ */
+async function getAcciones5SItems(
+  filtros: RegistroTareasFiltros = {}
+): Promise<{ data: RegistroTareaItem[] } | { error: string }> {
+  try {
+    if (filtros.pilarId || filtros.bloqueId || filtros.preguntaId) {
+      return { data: [] }
+    }
+
+    const supabase = await createClient()
+
+    let q = supabase
+      .from("s5_acciones")
+      .select(
+        `id, tipo, sector_numero, descripcion, responsable_id, fecha_compromiso,
+         estado, creado_por, created_at, origen_reunion_actividad_id,
+         vehiculo:catalogo_vehiculos!s5_acciones_vehiculo_id_fkey(dominio),
+         origen_actividad:reuniones_actividades!s5_acciones_origen_reunion_actividad_id_fkey(reunion_id),
+         evidencias:s5_acciones_evidencias(id)`
+      )
+      .order("created_at", { ascending: false })
+
+    if (filtros.origen === "5s_almacen") q = q.eq("tipo", "almacen")
+    if (filtros.origen === "5s_flota") q = q.eq("tipo", "flota")
+    if (filtros.estado && filtros.estado !== "all") {
+      q = q.eq("estado", ESTADO_PLAN_A_S5[filtros.estado])
+    }
+    if (filtros.fechaDesde) q = q.gte("created_at", filtros.fechaDesde)
+    if (filtros.fechaHasta) q = q.lte("created_at", filtros.fechaHasta)
+    if (filtros.responsableId) {
+      q = q.eq("responsable_id", filtros.responsableId)
+    }
+
+    const { data, error } = await q
+    if (error) return { error: error.message }
+
+    const rows = (data ?? []) as unknown as Accion5SRow[]
+    if (rows.length === 0) return { data: [] }
+
+    // Nombres de sector (la tabla puede estar vacía: fallback "Sector N")
+    const { data: sectoresRows } = await supabase
+      .from("s5_sectores_almacen")
+      .select("numero, nombre")
+
+    const sectorMap = new Map(
+      ((sectoresRows ?? []) as Array<{ numero: number; nombre: string }>).map(
+        (s) => [s.numero, s.nombre]
+      )
+    )
+
+    const profileIds = Array.from(
+      new Set(
+        rows
+          .flatMap((r) => [r.responsable_id, r.creado_por])
+          .filter((id): id is string => !!id)
+      )
+    )
+    const { data: profilesRows } = profileIds.length
+      ? await supabase.from("profiles").select("id, nombre").in("id", profileIds)
+      : { data: [] as Array<{ id: string; nombre: string }> }
+
+    const profileMap = new Map(
+      ((profilesRows ?? []) as Array<{ id: string; nombre: string }>).map(
+        (p) => [p.id, p.nombre]
+      )
+    )
+
+    let items: RegistroTareaItem[] = rows.map((r) => {
+      const esAlmacen = r.tipo === "almacen"
+      const detalle = esAlmacen
+        ? r.sector_numero
+          ? sectorMap.get(r.sector_numero) || `Sector ${r.sector_numero}`
+          : null
+        : r.vehiculo?.dominio ?? null
+
+      return {
+        id: r.id,
+        titulo: null,
+        descripcion: r.descripcion,
+        estado: ESTADO_S5_A_PLAN[r.estado],
+        prioridad: null,
+        fecha_limite: r.fecha_compromiso,
+        // Cerrar una acción 5S exige evidencia (lo valida cerrarAccion).
+        evidencia_obligatoria: true,
+        created_at: r.created_at,
+        created_by: r.creado_por,
+        creador_nombre: r.creado_por
+          ? profileMap.get(r.creado_por) ?? "—"
+          : "—",
+        responsables: r.responsable_id
+          ? [
+              {
+                profile_id: r.responsable_id,
+                nombre: profileMap.get(r.responsable_id) ?? "—",
+              },
+            ]
+          : [],
+        pregunta_id: null,
+        pregunta_numero: null,
+        pregunta_texto: null,
+        bloque_nombre: null,
+        pilar_id: null,
+        pilar_nombre: null,
+        pilar_color: null,
+        evidencias_count: r.evidencias?.length ?? 0,
+        origen: esAlmacen ? "5s_almacen" : "5s_flota",
+        origen_detalle: detalle,
+        origen_reunion_id: r.origen_actividad?.reunion_id ?? null,
+        href: esAlmacen ? "/5s/acciones/almacen" : "/5s/acciones/flota",
+      }
+    })
+
+    if (filtros.query && filtros.query.trim().length > 0) {
+      const qs = filtros.query.trim().toLowerCase()
+      items = items.filter(
+        (t) =>
+          t.descripcion.toLowerCase().includes(qs) ||
+          (t.origen_detalle ?? "").toLowerCase().includes(qs)
+      )
+    }
+
+    return { data: items }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error cargando acciones 5S",
+    }
+  }
+}
+
+// ============================================================
+// Registro de tareas: manual DPO + 5S en una sola lista
+// ============================================================
+
+export async function getRegistroTareasDirectas(
+  filtros: RegistroTareasFiltros = {}
+): Promise<{ data: RegistroTareaItem[] } | { error: string }> {
+  const origen = filtros.origen ?? "all"
+  const vacio = { data: [] as RegistroTareaItem[] }
+
+  const [directas, acciones] = await Promise.all([
+    origen === "all" || origen === "manual"
+      ? getTareasDirectasItems(filtros)
+      : Promise.resolve(vacio),
+    origen === "all" || origen === "5s_almacen" || origen === "5s_flota"
+      ? getAcciones5SItems(filtros)
+      : Promise.resolve(vacio),
+  ])
+
+  if ("error" in directas) return directas
+  if ("error" in acciones) return acciones
+
+  const items = [...directas.data, ...acciones.data].sort((a, b) =>
+    a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0
+  )
+
+  return { data: items }
 }
 
 // ============================================================
