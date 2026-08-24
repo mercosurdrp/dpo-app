@@ -13,8 +13,11 @@ import {
   startOfYear,
   today,
   daysBetween,
+  fetchLecturas,
+  kmActualPorDominio,
   type LecturaSugerida,
 } from "@/lib/vehiculos/lecturas"
+import { validarLectura } from "@/lib/vehiculos/validar-lectura"
 import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
 import { TAREAS_CIL } from "@/lib/flota/cil-tareas"
 import type {
@@ -911,6 +914,67 @@ async function sincronizarTareasReprogramadas(
   }
 }
 
+/**
+ * Valida el odómetro/horómetro que se carga en una OT, con el MISMO criterio que
+ * el checklist y las cargas de combustible.
+ *
+ * 🚨 Hasta el 24/08/2026 este era el único camino de carga de odómetro SIN
+ * validar: `validarLectura` corría en checklist, combustible y urea, pero no
+ * acá. Por ese agujero entró la OT 1758 del AE908DH con 131.940 km el 19/08
+ * (real 142.790), y como el km actual de la unidad sale del máximo de las
+ * lecturas aceptadas, ese dedazo arrastró el plan preventivo, la proyección del
+ * service y la validación del checklist de salida.
+ *
+ * La lectura previa se busca hasta la FECHA de la OT, no hasta hoy: las órdenes
+ * se cargan retroactivas (la factura del mes llega junta) y ahí el odómetro de
+ * ese día es legítimamente menor al de hoy.
+ */
+async function validarMedicionOt(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  dominio: string,
+  fecha: string,
+  odometro: number | null | undefined,
+  horometro: number | null | undefined,
+  /**
+   * Lectura que esta misma OT tiene guardada hoy. Se saca del historial antes de
+   * validar: si no, corregir una OT cargada de más sería imposible —su propio
+   * número mal sería el piso contra el que se la compara— y el dato malo
+   * quedaría clavado para siempre.
+   */
+  propiaActual?: { fecha: string; valor: number } | null
+): Promise<string | null> {
+  const valor = odometro ?? horometro
+  if (valor == null) return null
+  const dom = dominio.trim().toUpperCase()
+
+  const { data: veh } = await supabase
+    .from("catalogo_vehiculos")
+    .select("tipo")
+    .eq("dominio", dom)
+    .maybeSingle()
+  const esHorometro = (veh?.tipo ?? "camion") === "autoelevador"
+
+  let lecturas = await fetchLecturas({ dominio: dom, fechaHasta: fecha }, supabase)
+  if (propiaActual) {
+    let quitada = false
+    lecturas = lecturas.filter((l) => {
+      if (quitada) return true
+      if (
+        l.fuente === "mantenimiento" &&
+        l.fecha === propiaActual.fecha &&
+        l.odometro === propiaActual.valor
+      ) {
+        quitada = true
+        return false
+      }
+      return true
+    })
+  }
+  const previa = kmActualPorDominio(lecturas).get(dom) ?? null
+
+  return validarLectura({ valor, previa, fecha, esHorometro })
+}
+
 export async function createMantenimiento(
   input: CreateMantenimientoInput
 ): Promise<{ data: MantenimientoRealizado; warning?: string } | { error: string }> {
@@ -920,6 +984,15 @@ export async function createMantenimiento(
       return { error: "Agregá al menos una tarea realizada" }
     }
     const supabase = await createClient()
+
+    const errorMedicion = await validarMedicionOt(
+      supabase,
+      input.dominio,
+      input.fecha,
+      input.odometro,
+      input.horometro
+    )
+    if (errorMedicion) return { error: errorMedicion }
     const fs = derivarFueraServicio(input)
 
     // Toda OT nueva queda numerada: si no vino un N° de OT, se asigna el
@@ -1057,6 +1130,31 @@ export async function updateMantenimiento(
   try {
     await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
+
+    // Mismo control que al crear: cerrar la OT también carga el kilometraje, y
+    // ese camino es justamente por donde entró el 131.940 del AE908DH. El
+    // dominio y la fecha salen de la OT si no vienen en el patch.
+    if (input.odometro != null || input.horometro != null) {
+      const { data: actual } = await supabase
+        .from("mantenimiento_realizados")
+        .select("dominio, fecha, odometro, horometro")
+        .eq("id", input.id)
+        .maybeSingle()
+      if (actual) {
+        const valorViejo = (actual.odometro ?? actual.horometro) as number | null
+        const errorMedicion = await validarMedicionOt(
+          supabase,
+          actual.dominio as string,
+          input.fecha ?? (actual.fecha as string),
+          input.odometro,
+          input.horometro,
+          valorViejo != null
+            ? { fecha: actual.fecha as string, valor: Number(valorViejo) }
+            : null
+        )
+        if (errorMedicion) return { error: errorMedicion }
+      }
+    }
 
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
     if (input.fecha !== undefined) patch.fecha = input.fecha
