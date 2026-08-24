@@ -3,7 +3,9 @@
  *
  * NUMERADOR — "HL vendidos", la misma definición que la pestaña Ventas del
  * cuadro mensual: `ventas_diarias` (distribuido Chess+Gestión) +
- * `ventas_mostrador_diarias` (mostrador). El mostrador se PRORRATEA entre los
+ * `ventas_mostrador_diarias` NETO (FCVTA mostrador + PRVTA presupuesto −
+ * DVVTA notas de crédito − PRDVO devoluciones; la tabla las guarda a todas en
+ * valor absoluto, ver `./datos`). El mostrador se PRORRATEA entre los
  * días operativos del mes en proporción a lo distribuido: Chess lo imputa casi
  * todo al último día del mes (31-mar/26: 3.295 HL en una sola línea "SEGUNDA
  * VUELTA"), lo que dispara el WNP de ese día (47,66) y deprime el resto. El

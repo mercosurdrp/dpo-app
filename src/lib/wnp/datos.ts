@@ -46,8 +46,9 @@ export type SerieWnp = {
 
 /**
  * Arma la serie del WNP para un rango: HL vendidos (distribuido + mostrador
- * prorrateado) y horas-hombre (fichaje real, ausencias y jornada teórica donde
- * el reloj falló). Ver `./calculo` para el detalle de cada regla.
+ * NETO de notas de crédito, prorrateado) y horas-hombre (fichaje real,
+ * ausencias y jornada teórica donde el reloj falló). Ver `./calculo` para el
+ * detalle de cada regla.
  */
 export async function cargarSerieWnp(
   supabase: SupabaseClient,
@@ -66,14 +67,15 @@ export async function cargarSerieWnp(
         .order("fecha", { ascending: true })
         .range(desde, hasta),
     ),
-    traerTodo<{ fecha: string; total_hl: number | null }>((desde, hasta) =>
-      supabase
-        .from("ventas_mostrador_diarias")
-        .select("fecha, total_hl")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta)
-        .order("fecha", { ascending: true })
-        .range(desde, hasta),
+    traerTodo<{ fecha: string; ds_documento: string | null; total_hl: number | null }>(
+      (desde, hasta) =>
+        supabase
+          .from("ventas_mostrador_diarias")
+          .select("fecha, ds_documento, total_hl")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+          .order("fecha", { ascending: true })
+          .range(desde, hasta),
     ),
     traerTodo<{ fecha: string; legajo: number; horas_trabajadas: number | null }>(
       (desde, hasta) =>
@@ -160,12 +162,19 @@ export async function cargarSerieWnp(
     const hl = Number(v.total_hl ?? 0)
     if (Number.isFinite(hl)) distribuido[v.fecha] = (distribuido[v.fecha] ?? 0) + hl
   }
+  // `ventas_mostrador_diarias` guarda TODO en valor absoluto: las notas de
+  // crédito (DVVTA) y las devoluciones de presupuesto (PRDVO) hay que RESTARLAS,
+  // igual que la fila "facturado Chess" del cuadro mensual
+  // (FCVTA + PRVTA − DVVTA − PRDVO). Sumarlas infla el numerador con
+  // mercadería que volvió. Y como la tabla `rechazos` son esos mismos DVVTA
+  // (jul/26: 73,2 de 76,9 HL), restar acá YA descuenta los rechazos: no hay que
+  // restarlos otra vez o se cuenta el mismo HL dos veces.
   const mostradorPorFecha: Record<string, number> = {}
   for (const v of mostrador) {
     const hl = Number(v.total_hl ?? 0)
-    if (Number.isFinite(hl)) {
-      mostradorPorFecha[v.fecha] = (mostradorPorFecha[v.fecha] ?? 0) + hl
-    }
+    if (!Number.isFinite(hl)) continue
+    const signo = v.ds_documento === "DVVTA" || v.ds_documento === "PRDVO" ? -1 : 1
+    mostradorPorFecha[v.fecha] = (mostradorPorFecha[v.fecha] ?? 0) + signo * hl
   }
   // Solo los días con venta reciben mostrador prorrateado (un día sin despacho
   // no es día operativo: no debe cargar volumen ajeno).
