@@ -38,13 +38,30 @@ UPDATE mantenimiento_realizados
    AND numero_ot = '1755'
    AND odometro = 117922;
 
+-- ---------------------------------------------------------------------------
+-- AE908DH · checklist de retorno del 23/08/2026 · cargó 133.097 km
+-- El 4 tecleado como 3. Valor confirmado por Flota el 24/08: 143.097.
+-- Queda 1 km por debajo del egreso del 22/08 (143.098), así que el km actual de
+-- la unidad sigue siendo 143.098 y esta lectura sigue sin computar — se corrige
+-- para que el historial quede limpio, no porque cambie ningún cálculo.
+-- ---------------------------------------------------------------------------
+UPDATE checklist_vehiculos
+   SET odometro = 143097
+ WHERE id = '056c502d-fe92-4deb-aade-b1fdf16d83c0'
+   AND dominio = 'AE908DH'
+   AND fecha = '2026-08-23'
+   AND odometro = 133097;
+
 COMMIT;
 
--- Control: las dos tienen que quedar en 142790 y 119027.
+-- Control: 142790, 119027 y 143097.
 SELECT numero_ot, dominio, fecha, odometro
   FROM mantenimiento_realizados
  WHERE id IN ('a76d4fde-a9b6-4110-8c03-06f9f0ae59e3',
               'ce9de882-2679-4ed7-bd2f-ae120b9a7470');
+SELECT dominio, fecha, odometro
+  FROM checklist_vehiculos
+ WHERE id = '056c502d-fe92-4deb-aade-b1fdf16d83c0';
 
 
 -- ===========================================================================
@@ -58,9 +75,6 @@ SELECT numero_ot, dominio, fecha, odometro
 --    La unidad estaba entre 80.068 (18/07) y 80.817 (27/07). Faltan ~250 km,
 --    pero no hay lectura del día que fije el número.
 --
---  · AE908DH · checklist de retorno del 23/08 · 133.097 km
---    El 22/08 el egreso marcó 143.098. Parece 143.097 (un dígito), pero queda
---    1 km por debajo del egreso: confirmarlo con el chofer antes de tocarlo.
 --
 -- Y estas NO son errores de OT, son de registro de egreso (no anclan el plan
 -- preventivo; el filtro de outliers ya las descarta). Se listan por si se
