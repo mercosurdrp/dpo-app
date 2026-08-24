@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Camera, History, Info, Pencil, Plus, Trash2 } from "lucide-react"
+import { Camera, Check, History, Info, Pencil, Plus, Trash2 } from "lucide-react"
 import type { DiaCalendario } from "./client"
 import { detectarPeriodosCriticos } from "../_lib/detectar-periodos"
 
@@ -107,6 +107,9 @@ export function SwotTab({
   const [error, setError] = useState<string | null>(null)
   // null = cerrado · {item|null, cat} = abierto (item null => crear)
   const [editor, setEditor] = useState<{ item: SwotItem | null; cat: Categoria } | null>(null)
+  // Período elegido para sacarle la foto (antes / después). Vive acá y no dentro
+  // del Select porque los dos botones de foto lo comparten.
+  const [periodoFoto, setPeriodoFoto] = useState("")
 
   // Períodos críticos del año visible, para taggear de cuál surgió un item.
   const periodos = useMemo<PeriodoOpcion[]>(() => {
@@ -243,34 +246,67 @@ export function SwotTab({
           </SelectContent>
         </Select>
 
+        {/* Foto del FODA: se elige el período UNA vez y cada botón guarda su
+            momento. Antes iba todo en un solo Select que listaba cada período
+            dos veces ("Previo · X" / "Posterior · X"), y no se veía cuál ya
+            tenía foto. El check verde marca las que ya están guardadas; volver
+            a apretar PISA esa foto (upsert por período+momento), que es la
+            forma de corregir una evidencia mal tomada. */}
         {!soloLectura && periodos.length > 0 && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <span className="text-xs text-slate-500">Congelar como evidencia:</span>
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-slate-500">Guardar foto del FODA:</span>
             <Select
-              disabled={congelando}
-              onValueChange={(v: string | null) => {
-                if (!v) return
-                const [momento, nombre] = v.split("|")
-                const p = periodos.find((x) => x.nombre === nombre)
-                if (p) void congelar(p, momento as "previo" | "posterior")
-              }}
+              value={periodoFoto}
+              onValueChange={(v: string | null) => setPeriodoFoto(v ?? "")}
             >
-              <SelectTrigger className="h-8 w-[240px] text-xs">
-                <SelectValue placeholder="Elegí período y momento…" />
+              <SelectTrigger className="h-8 w-[220px] text-xs">
+                <SelectValue placeholder="Elegí el período…" />
               </SelectTrigger>
               <SelectContent>
                 {periodos.map((p) => (
-                  <SelectItem key={`previo|${p.nombre}`} value={`previo|${p.nombre}`}>
-                    Previo · {p.nombre}
-                  </SelectItem>
-                ))}
-                {periodos.map((p) => (
-                  <SelectItem key={`posterior|${p.nombre}`} value={`posterior|${p.nombre}`}>
-                    Posterior · {p.nombre}
+                  <SelectItem key={p.nombre} value={p.nombre}>
+                    {p.nombre}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+
+            {(["previo", "posterior"] as const).map((momento) => {
+              const yaExiste = snapshots.some(
+                (s) =>
+                  s.periodo_nombre === periodoFoto &&
+                  s.periodo_anio === anio &&
+                  s.momento === momento,
+              )
+              const etiqueta = momento === "previo" ? "Antes" : "Después"
+              return (
+                <Button
+                  key={momento}
+                  size="sm"
+                  variant={momento === "posterior" ? "default" : "outline"}
+                  className="h-8 gap-1 text-xs"
+                  disabled={congelando || !periodoFoto}
+                  title={
+                    !periodoFoto
+                      ? "Elegí primero el período"
+                      : yaExiste
+                        ? `Ya hay una foto "${etiqueta}" de ${periodoFoto}. Volver a guardar la reemplaza.`
+                        : `Guardar el FODA de hoy como la foto "${etiqueta}" de ${periodoFoto}`
+                  }
+                  onClick={() => {
+                    const p = periodos.find((x) => x.nombre === periodoFoto)
+                    if (p) void congelar(p, momento)
+                  }}
+                >
+                  {yaExiste ? (
+                    <Check className="size-3.5 text-emerald-600" />
+                  ) : (
+                    <Camera className="size-3.5" />
+                  )}
+                  {etiqueta} del período
+                </Button>
+              )
+            })}
           </div>
         )}
       </div>
