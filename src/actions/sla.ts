@@ -407,7 +407,7 @@ export async function deleteSla(
 // ---------------------------------------------------------------------------
 // Mide, día a día, si el ruteo cerró dentro de la ventana pactada:
 //   • Lunes a viernes → antes de las 09:00 hs
-//   • Sábados         → antes de las 07:30 hs
+//   • Sábados         → antes de las 07:45 hs
 //   • Domingos        → no aplica
 // Fuente: ruteo_cierres.hora_fin (timestamp real del clic "Fin de ruteo").
 // 🚨 hora_fin se guarda en UTC; Argentina es UTC-3 fijo (sin DST), así que
@@ -424,7 +424,7 @@ function dowFromISO(iso: string): number {
 /** Límite del fin de RUTEO (min desde medianoche ARG), o null si no aplica. */
 function limiteMinutos(dow: number): number | null {
   if (dow === 0) return null // domingo: no se rutea
-  if (dow === 6) return 7 * 60 + 30 // sábado 07:30
+  if (dow === 6) return 7 * 60 + 45 // sábado 07:45
   return 9 * 60 // L-V 09:00
 }
 

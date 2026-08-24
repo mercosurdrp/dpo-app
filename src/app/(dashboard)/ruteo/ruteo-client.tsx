@@ -105,7 +105,7 @@ const limiteSla = (fecha: string, tipo: "preventa" | "ruteo"): number | null => 
   const dow = dowFromISO(fecha)
   if (dow === 0) return null // domingo: no aplica
   if (tipo === "preventa") return dow === 6 ? 7 * 60 : 8 * 60 // sáb 07:00 · L-V 08:00
-  return dow === 6 ? 7 * 60 + 30 : 9 * 60 // sáb 07:30 · L-V 09:00
+  return dow === 6 ? 7 * 60 + 45 : 9 * 60 // sáb 07:45 · L-V 09:00
 }
 
 // true si la hora registrada superó el límite SLA del día (null si no aplica
@@ -344,7 +344,7 @@ export function RuteoClient({
               placeholder="Observaciones del ruteo"
             />
             <p className="mt-1 text-[11px] text-slate-500">
-              Si el cierre queda después del límite SLA (L-V 09:00 · sáb 07:30),
+              Si el cierre queda después del límite SLA (L-V 09:00 · sáb 07:45),
               dejá acá el justificativo.
             </p>
           </div>
@@ -720,7 +720,7 @@ function BloqueEstado({
             </span>
           </p>
           <p className="mt-0.5 text-xs text-slate-500">
-            Límite de cierre: L-V <b>09:00</b> · sáb <b>07:30</b>.
+            Límite de cierre: L-V <b>09:00</b> · sáb <b>07:45</b>.
           </p>
         </div>
         {!mostrarForm && (

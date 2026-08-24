@@ -211,7 +211,7 @@ export async function setFinPreventa(
 /**
  * Comentario/justificativo del día: "preventa" escribe comentario_preventa
  * (por qué la preventa llegó después de las 08:00/07:00) y "ruteo" escribe
- * notas (por qué el ruteo cerró después de las 09:00/07:30). Se puede cargar
+ * notas (por qué el ruteo cerró después de las 09:00/07:45). Se puede cargar
  * o corregir en cualquier momento del día, haya o no incumplimiento.
  */
 export async function setComentarioRuteo(

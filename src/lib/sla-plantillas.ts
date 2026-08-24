@@ -28,13 +28,13 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "Ruteo se compromete a entregar el ruteo diario finalizado dentro de la ventana horaria pactada, de modo que Almacén disponga del tiempo necesario para preparar la carga sin retrasos en la salida de reparto.",
     nivelServicio: [
       "Lunes a viernes: ruteo finalizado antes de las 09:00 hs.",
-      "Sábados: ruteo finalizado antes de las 07:30 hs.",
+      "Sábados: ruteo finalizado antes de las 07:45 hs.",
       "Objetivo de cumplimiento mensual: ≥ 95 %.",
     ],
     medicion: [
       "La medición es automática a partir del módulo Ruteo de la plataforma DPO.",
       "El Ruteador registra el inicio del ruteo y, al terminar, el fin de ruteo (queda guardada la fecha y hora real del cierre).",
-      "Un día cumple si la hora de fin es anterior al límite del día (09:00 hs L-V / 07:30 hs sábados).",
+      "Un día cumple si la hora de fin es anterior al límite del día (09:00 hs L-V / 07:45 hs sábados).",
       "El indicador mensual se calcula como: días cumplidos ÷ días con ruteo registrado.",
     ],
     roles: [
