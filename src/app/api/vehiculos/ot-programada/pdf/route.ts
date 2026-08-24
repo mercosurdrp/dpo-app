@@ -8,6 +8,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import PDFDocument from "pdfkit"
 import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
+import { fetchLecturas, kmActualPorDominio } from "@/lib/vehiculos/lecturas"
 import {
   COLOR_BORDER,
   COLOR_HEADER_BG,
@@ -80,16 +81,25 @@ export async function GET(req: NextRequest) {
       ).data?.numero_ot ?? null
     : null
 
-  const [fichaRes, perfilRes] = await Promise.all([
+  const [fichaRes, perfilRes, lecturas] = await Promise.all([
     supabase
       .from("vehiculos_ficha")
-      .select("marca, modelo, anio, cf_odometro, cf_odometro_fecha")
+      .select("marca, modelo, anio")
       .eq("dominio", ot.dominio)
       .maybeSingle(),
     ot.created_by
       ? supabase.from("profiles").select("nombre").eq("id", ot.created_by).maybeSingle()
       : Promise.resolve({ data: null }),
+    // 🚨 El odómetro del PDF sale de las lecturas REALES (checklist, registros,
+    // combustible, OT cerradas), no de `vehiculos_ficha.cf_odometro`: esa columna
+    // es una foto de Cloudfleet que sólo se refresca sincronizando la ficha a
+    // mano, y quedó congelada en mayo. El 24/08/2026 el PDF imprimía 52.000 km
+    // del AF664NY (real 58.853) y 127.179 del AE908DH (real 143.098): el taller
+    // planificaba el trabajo con quince mil kilómetros de menos.
+    fetchLecturas({ dominio: ot.dominio }, supabase),
   ])
+
+  const ultimaLectura = kmActualPorDominio(lecturas).get(ot.dominio) ?? null
 
   const data: OtPdfData = {
     dominio: ot.dominio,
@@ -103,8 +113,8 @@ export async function GET(req: NextRequest) {
     marca: fichaRes.data?.marca ?? null,
     modelo: fichaRes.data?.modelo ?? null,
     anio: fichaRes.data?.anio ?? null,
-    odometro: fichaRes.data?.cf_odometro != null ? Number(fichaRes.data.cf_odometro) : null,
-    odometro_fecha: fichaRes.data?.cf_odometro_fecha ?? null,
+    odometro: ultimaLectura?.odometro ?? null,
+    odometro_fecha: ultimaLectura?.fecha ?? null,
   }
 
   let pdfBuf: Buffer
@@ -229,9 +239,13 @@ function buildPDF(doc: Doc, data: OtPdfData) {
     margin + 8 + col * 2.6,
     y + 7,
     col * 1.4 - 12,
+    // La fecha va al lado del número: una lectura de hace una semana no es lo
+    // mismo que la de ayer, y el mecánico tiene que poder ver cuál está mirando.
     "Odómetro",
     data.odometro != null
-      ? `${new Intl.NumberFormat("es-AR").format(data.odometro)} km`
+      ? `${new Intl.NumberFormat("es-AR").format(data.odometro)} km${
+          data.odometro_fecha ? ` (${data.odometro_fecha.slice(8, 10)}/${data.odometro_fecha.slice(5, 7)})` : ""
+        }`
       : "—",
   )
   doc.y = y + 52

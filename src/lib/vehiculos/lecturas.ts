@@ -495,6 +495,10 @@ export function resumenHorasHorometro(
  * cargó 1.030.694 km en el checklist del AE908DG (real: 103.069) y el módulo de
  * Neumáticos pasó a creer que las cubiertas habían rodado 956.000 km, así que
  * las marcaba TODAS en rojo. Mismo criterio que `kmActualRobustoPorDominio`.
+ *
+ * 🚨 Y descarta los RETROCESOS: una lectura menor a la última aceptada no puede
+ * pasar a ser la referencia, o un dedazo bajo deja fuera todo lo que viene
+ * después (ver el detalle del AE908DH en el cuerpo de la función).
  */
 export function kmActualPorDominio(
   lecturas: Lectura[]
@@ -519,7 +523,16 @@ export function kmActualPorDominio(
     // ventana quedaría como km actual y bloquearía las cargas siguientes).
     const desde = arr.length >= 2 && arr[0].odometro > arr[1].odometro * 1.2 ? 1 : 0
     for (const l of arr.slice(desde)) {
-      if (prev != null && l.odometro >= prev.odometro) {
+      if (prev != null) {
+        // 🚨 El odómetro no retrocede: una lectura MENOR a la última aceptada es
+        // un error de carga, y hasta el 22/08/2026 se la tomaba igual como nueva
+        // referencia (el chequeo de salto solo corría para las mayores). Con eso
+        // un solo dedazo bajo clavaba el punto de comparación y descartaba TODAS
+        // las lecturas buenas que venían después: la OT 1758 del AE908DH cargó
+        // 131.940 km el 19/08 (real 142.790) y el 22/08 la app seguía creyendo
+        // que la unidad marcaba 131.940 — 173 lecturas descartadas desde mayo —
+        // así que rechazó el checklist de salida con "11.158 km en 3 días".
+        if (l.odometro < prev.odometro) continue
         const dias = Math.max(1, daysBetween(prev.fecha, l.fecha))
         if ((l.odometro - prev.odometro) / dias > KM_DIA_MAX_PLAUSIBLE) continue
       }

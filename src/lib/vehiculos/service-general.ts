@@ -339,6 +339,12 @@ export function kmActualRobustoPorDominio(
       // Salto imposible respecto de la última lectura aceptada: típico tipeo de
       // un dígito de más (p. ej. 136.084 → 186.084 en un día). Se descarta para
       // que un error de carga no dispare un "service vencido" falso.
+      //
+      // Acá el retroceso SÍ se acepta como referencia, al revés que en
+      // `kmActualPorDominio`: esta función se queda con la lectura más reciente
+      // plausible, no con el máximo, justamente para el caso del odómetro que
+      // hoy marca menos que un registro viejo. El ancla del service es la que
+      // pone el piso.
       if (prev != null && l.odometro >= prev.odometro) {
         const dias = Math.max(1, daysBetween(prev.fecha, l.fecha))
         if ((l.odometro - prev.odometro) / dias > KM_DIA_MAX_PLAUSIBLE) continue
