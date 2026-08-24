@@ -159,9 +159,11 @@ export const SLA_CARGA_TARGET = 95
 export const CARGA_LIMITE_HORA = "07:00:00"
 
 // --- SLA #7 recepción: ventana de arribo + tiempo de descarga --------------
-// La recepción opera 07:00–17:00, pero el cumplimiento de descarga ≤ 3 h se
-// EXIGE solo a los arribos dentro de la ventana 08:00–16:00 (ARG). Los arribos
-// fuera de esa franja no se computan en el SLA (cumpleRecepcion → null).
+// La recepción opera 07:00–17:00 y el compromiso de descarga ≤ 3 h corre dentro
+// de la ventana 08:00–16:00 (ARG):
+//   · arribo ANTES de las 08:00 → el camión SÍ se mide, pero el reloj arranca a
+//     las 08:00 (la espera hasta que abre la ventana no es demora nuestra).
+//   · arribo desde las 16:00 → fuera del compromiso, no se computa (→ null).
 export const RECEPCION_VENTANA_INICIO_MIN = 8 * 60 // 08:00
 export const RECEPCION_VENTANA_FIN_MIN = 16 * 60 // 16:00
 export const RECEPCION_MAX_DESCARGA_MIN = 180 // ≤ 3 h
@@ -177,11 +179,39 @@ function minutosArgentina(iso: string): number {
   return arg.getUTCHours() * 60 + arg.getUTCMinutes()
 }
 
+/** Un arribo anterior a las 08:00: se mide, pero con el reloj corrido a las 08:00. */
+export function arriboAnticipadoRecepcion(arriboIso: string): boolean {
+  return minutosArgentina(arriboIso) < RECEPCION_VENTANA_INICIO_MIN
+}
+
+/**
+ * Momento (epoch ms) en que empieza a correr el compromiso de descarga: el
+ * arribo, o las 08:00 de ese día si el camión llegó antes de que abra la
+ * ventana. Es el "cero" tanto del tiempo de descarga como del ciclo del pico.
+ */
+export function inicioRelojRecepcion(arriboIso: string): number {
+  const t = new Date(arriboIso).getTime()
+  if (!arriboAnticipadoRecepcion(arriboIso)) return t
+  // 08:00 ARG del mismo día calendario del arribo, de vuelta a epoch real.
+  const arg = new Date(t - 3 * 60 * 60 * 1000)
+  const ochoArg = Date.UTC(
+    arg.getUTCFullYear(),
+    arg.getUTCMonth(),
+    arg.getUTCDate(),
+    RECEPCION_VENTANA_INICIO_MIN / 60,
+    0,
+    0,
+  )
+  return ochoArg + 3 * 60 * 60 * 1000
+}
+
 /**
  * Un ciclo de más de 8 h no es una demora: es un camión que quedó abierto en la
  * pantalla y se cerró mucho después. Se mide hasta la salida cuando está
  * registrada (desde el 27-07-2026); una salida sellada en el mismo instante que
  * el fin de descarga es el cierre retroactivo de los viajes viejos, no un dato.
+ * Arranca en el reloj del compromiso, no en el arribo: la espera de un camión
+ * que llegó de madrugada no debe disparar el pico y sacarlo de la medición.
  */
 export function esPicoRecepcion(
   arriboIso: string,
@@ -190,26 +220,26 @@ export function esPicoRecepcion(
 ): boolean {
   const cierre = salidaIso && salidaIso !== finIso ? salidaIso : finIso
   if (!cierre) return false
-  const ciclo = (new Date(cierre).getTime() - new Date(arriboIso).getTime()) / 60000
+  const ciclo = (new Date(cierre).getTime() - inicioRelojRecepcion(arriboIso)) / 60000
   return ciclo > RECEPCION_PICO_MIN
 }
 
 /**
- * Cumplimiento de una recepción para el SLA #7. Devuelve:
- *   true  → arribo en ventana 08:00–16:00 y descarga ≤ 3 h
- *   false → arribo en ventana pero descarga > 3 h
- *   null  → no evaluable (sin fin de descarga, arribo fuera de 08:00–16:00 o pico)
+ * Cumplimiento de una recepción para el SLA #7. El reloj arranca en el arribo,
+ * o a las 08:00 si el camión llegó antes (compromiso de ventana). Devuelve:
+ *   true  → descarga ≤ 3 h desde el inicio del reloj
+ *   false → descarga > 3 h desde el inicio del reloj
+ *   null  → no evaluable (sin fin de descarga, arribo desde las 16:00 o pico)
  */
 export function cumpleRecepcion(
   arriboIso: string,
   finIso: string | null,
   salidaIso: string | null = null,
 ): boolean | null {
-  const min = minutosArgentina(arriboIso)
-  if (min < RECEPCION_VENTANA_INICIO_MIN || min >= RECEPCION_VENTANA_FIN_MIN) return null
+  if (minutosArgentina(arriboIso) >= RECEPCION_VENTANA_FIN_MIN) return null
   if (!finIso) return null
   if (esPicoRecepcion(arriboIso, finIso, salidaIso)) return null
-  const dur = (new Date(finIso).getTime() - new Date(arriboIso).getTime()) / 60000
+  const dur = (new Date(finIso).getTime() - inicioRelojRecepcion(arriboIso)) / 60000
   return dur <= RECEPCION_MAX_DESCARGA_MIN
 }
 

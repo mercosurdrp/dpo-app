@@ -206,13 +206,14 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
     nivelServicio: [
       "Ventana de recepción: los camiones de Acarreo / Abastecimiento se reciben de 07:00 a 17:00 hs.",
       "Tiempo de descarga: Almacén se compromete a descargar cada camión dentro de las 3 horas posteriores a su arribo.",
-      "El cumplimiento del tiempo de descarga (≤ 3 hs) se exige para los camiones que arriban dentro de la ventana de 08:00 a 16:00 hs; los arribos fuera de esa franja (07:00–08:00 y 16:00–17:00) se reciben pero no se computan en el indicador.",
+      "El compromiso rige desde las 08:00 hs: un camión que arriba antes de esa hora se mide igual, pero el reloj de las 3 hs empieza a correr a las 08:00 (la espera previa a la apertura de la ventana no se computa como demora).",
+      "Los arribos a partir de las 16:00 hs se reciben pero no se computan en el indicador.",
       "Objetivo de cumplimiento mensual: ≥ 95 % de las recepciones medidas.",
     ],
     medicion: [
       "El chofer del acarreo se autoanuncia al llegar (escaneando un QR) y queda registrada la hora de arribo; Almacén marca el inicio y la finalización de la descarga.",
-      "Una recepción cumple si: (a) el arribo ocurre entre las 08:00 y las 16:00 hs, y (b) el tiempo transcurrido entre el arribo y el fin de descarga es menor o igual a 3 horas.",
-      "Los arribos fuera de la franja 08:00–16:00, o las recepciones sin fin de descarga registrado, no se computan en el indicador.",
+      "Una recepción cumple si el tiempo transcurrido entre el inicio del reloj y el fin de descarga es menor o igual a 3 horas. El reloj arranca en la hora de arribo, o a las 08:00 hs si el camión llegó antes.",
+      "Los arribos a partir de las 16:00 hs, o las recepciones sin fin de descarga registrado, no se computan en el indicador.",
       "El indicador mensual se calcula como: recepciones cumplidas ÷ recepciones medidas del mes.",
     ],
     roles: [

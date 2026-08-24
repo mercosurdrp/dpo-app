@@ -44,6 +44,7 @@ import {
   evaluarCaso,
   sumarDias,
   cuentaComoCumplido,
+  arriboAnticipadoRecepcion,
   cumpleRecepcion,
   esPicoRecepcion,
   type CasoCategoria,
@@ -2285,7 +2286,7 @@ export async function getDetalleDiaSla(
     }
 
     if (codigo === "alm_recepcion") {
-      const metaLabel = "Arribo 08:00–16:00 y descarga ≤ 3 h"
+      const metaLabel = "Descarga ≤ 3 h desde el arribo (o desde las 08:00 si llegó antes)"
       let estado: EstadoCumplimiento = "sd"
       let nota: string | undefined
       let valorLabel = "—"
@@ -2314,7 +2315,7 @@ export async function getDetalleDiaSla(
           nota =
             rows.length === 0
               ? "Sin recepciones registradas este día."
-              : "Sin recepciones evaluables (arribos fuera de 08:00–16:00, descarga sin finalizar o camiones que quedaron abiertos más de 8 h)."
+              : "Sin recepciones evaluables (arribos desde las 16:00, descarga sin finalizar o camiones que quedaron abiertos más de 8 h)."
         } else {
           const cumplidas = evaluables.filter(Boolean).length
           estado = cumplidas === evaluables.length ? "si" : "no"
@@ -2327,9 +2328,12 @@ export async function getDetalleDiaSla(
           const arr = fmtMin(minutosARG(r.hora_arribo))
           const fin = r.hora_fin_descarga ? fmtMin(minutosARG(r.hora_fin_descarga)) : "—"
           const mark = pico ? "pico" : ok === null ? "·" : ok ? "✓" : "✗"
+          // Llegó antes de que abra la ventana: se aclara que el reloj arrancó
+          // a las 08:00, si no el "02:20→08:37 ✓" se lee como un error.
+          const reloj = arriboAnticipadoRecepcion(r.hora_arribo) ? " (reloj 08:00)" : ""
           filas.push({
             label: `${r.patente ?? "—"}${r.origen ? ` · ${r.origen}` : ""}`,
-            valor: `${arr}→${fin} ${mark}`,
+            valor: `${arr}→${fin} ${mark}${reloj}`,
           })
         }
       }
