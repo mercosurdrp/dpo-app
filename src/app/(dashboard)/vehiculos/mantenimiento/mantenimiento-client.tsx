@@ -790,6 +790,7 @@ export function MantenimientoClient({
             proveedores={provList}
             onProveedorCreado={agregarProveedor}
             onEditarOrden={(m) => setEditMant(m)}
+            planes={flotaPlanes}
             puedeEditar={puedeEditar}
           />
         </TabsContent>

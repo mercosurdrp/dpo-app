@@ -84,6 +84,8 @@ import {
   PROFUNDIDAD_CRITICA_MM,
   SIN_DIBUJO,
 } from "@/lib/vehiculos/neumaticos-tipos"
+import { PlanesNeumaticos } from "./_components/planes-neumaticos"
+import type { FlotaPlanConItems } from "@/actions/flota-indicadores"
 import {
   layoutDeTipo,
   type PosicionNeumatico,
@@ -164,6 +166,8 @@ interface Props {
   onProveedorCreado: (p: MantenimientoProveedor) => void
   /** Abre el diálogo de edición de OT (vive en MantenimientoClient). */
   onEditarOrden: (m: MantenimientoRealizado) => void
+  /** Planes de acción de flota: los de neumáticos se arman desde acá. */
+  planes: FlotaPlanConItems[]
   puedeEditar: boolean
 }
 
@@ -253,6 +257,7 @@ export function NeumaticosModule({
   proveedores,
   onProveedorCreado,
   onEditarOrden,
+  planes,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -463,6 +468,16 @@ export function NeumaticosModule({
           onClick={() => setDetalleResumen("bajas")}
         />
       </div>
+
+      {/* De la medición a la acción: qué cubierta hay que reponer y qué unidad
+          falta medir este mes, con el plan ya escrito. */}
+      <PlanesNeumaticos
+        neumaticos={neumaticos}
+        unidades={unidades}
+        planes={planes}
+        puedeEditar={puedeEditar}
+        onPlanCreado={refresh}
+      />
 
       {puedeEditar && (
         <div className="flex flex-wrap justify-end gap-2">
