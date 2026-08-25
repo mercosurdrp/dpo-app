@@ -7,7 +7,7 @@ import type { WnpPersonaDia } from "@/lib/wnp/calculo"
 
 export type WnpDetalleDia = {
   fecha: string
-  /** HL vendidos del día = distribuido + mostrador prorrateado del mes. */
+  /** HL entregados al día hábil siguiente (lo que este día se preparó). */
   hl: number
   horas: number
   wnp: number | null

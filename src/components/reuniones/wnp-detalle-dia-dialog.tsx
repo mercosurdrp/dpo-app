@@ -108,7 +108,7 @@ export function WnpDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
         <DialogHeader>
           <DialogTitle>WNP del día</DialogTitle>
           <DialogDescription>
-            {formatFechaLarga(fecha)} · HL vendidos ÷ horas-hombre de Depósito
+            {formatFechaLarga(fecha)} · HL preparados ÷ horas-hombre de Depósito
           </DialogDescription>
         </DialogHeader>
 
@@ -128,7 +128,12 @@ export function WnpDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
           <>
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-md border p-3">
-                <p className="text-xs text-muted-foreground">HL vendidos</p>
+                <p className="text-xs text-muted-foreground">
+                  HL preparados
+                  <span className="block text-[10px] leading-tight">
+                    (entregados el día hábil siguiente)
+                  </span>
+                </p>
                 <p className="text-lg font-semibold">{num(data.hl, 1)}</p>
               </div>
               <div className="rounded-md border p-3">

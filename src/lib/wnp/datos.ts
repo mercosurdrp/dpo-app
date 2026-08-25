@@ -6,9 +6,18 @@ import {
   LEGAJO_WNP_SUPERVISOR,
   WNP_FICHAJE_DESDE,
   calcularHorasDia,
+  imputarAlDiaDePicking,
   prorratearHlVendidos,
+  sumarDias,
   type WnpDia,
 } from "./calculo"
+
+/**
+ * La venta se imputa al día hábil anterior (ver `./calculo`), así que el último
+ * día del rango necesita ver la entrega que viene DESPUÉS del corte. Se piden
+ * unos días de más: alcanza para cruzar un fin de semana largo.
+ */
+const DIAS_EXTRA_ENTREGA = 10
 
 /** PostgREST corta cada request en 1000 filas: hay que paginar o las sumas mienten. */
 async function traerTodo<T>(
@@ -49,6 +58,9 @@ export type SerieWnp = {
  * NETO de notas de crédito, prorrateado) y horas-hombre (fichaje real,
  * ausencias y jornada teórica donde el reloj falló). Ver `./calculo` para el
  * detalle de cada regla.
+ *
+ * La serie va indexada por **día de picking**: el HL de cada fecha es el que se
+ * entregó al día hábil siguiente, que es el que ese día se preparó.
  */
 export async function cargarSerieWnp(
   supabase: SupabaseClient,
@@ -56,6 +68,7 @@ export async function cargarSerieWnp(
   fechaHasta: string,
 ): Promise<SerieWnp> {
   const legajos = [...LEGAJOS_WNP_OPERARIOS, LEGAJO_WNP_SUPERVISOR]
+  const fechaHastaEntrega = sumarDias(fechaHasta, DIAS_EXTRA_ENTREGA)
 
   const [ventas, mostrador, fichaje, empleados] = await Promise.all([
     traerTodo<{ fecha: string; total_hl: number | null }>((desde, hasta) =>
@@ -63,7 +76,7 @@ export async function cargarSerieWnp(
         .from("ventas_diarias")
         .select("fecha, total_hl")
         .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta)
+        .lte("fecha", fechaHastaEntrega)
         .order("fecha", { ascending: true })
         .range(desde, hasta),
     ),
@@ -73,7 +86,7 @@ export async function cargarSerieWnp(
           .from("ventas_mostrador_diarias")
           .select("fecha, ds_documento, total_hl")
           .gte("fecha", fechaDesde)
-          .lte("fecha", fechaHasta)
+          .lte("fecha", fechaHastaEntrega)
           .order("fecha", { ascending: true })
           .range(desde, hasta),
     ),
@@ -176,14 +189,6 @@ export async function cargarSerieWnp(
     const signo = v.ds_documento === "DVVTA" || v.ds_documento === "PRDVO" ? -1 : 1
     mostradorPorFecha[v.fecha] = (mostradorPorFecha[v.fecha] ?? 0) + signo * hl
   }
-  // Solo los días con venta reciben mostrador prorrateado (un día sin despacho
-  // no es día operativo: no debe cargar volumen ajeno).
-  const distribuidoOperativo: Record<string, number> = {}
-  for (const [f, hl] of Object.entries(distribuido)) {
-    if (hl > 0) distribuidoOperativo[f] = hl
-  }
-  const hlPorFecha = prorratearHlVendidos(distribuidoOperativo, mostradorPorFecha)
-
   const fichajePorFecha: Record<string, Record<number, number>> = {}
   for (const f of fichaje) {
     const h = Number(f.horas_trabajadas ?? 0)
@@ -191,11 +196,35 @@ export async function cargarSerieWnp(
     ;(fichajePorFecha[f.fecha] ??= {})[Number(f.legajo)] = h
   }
 
+  // Las horas se calculan ANTES que el numerador porque son las que definen qué
+  // días estuvo abierto el depósito, y esos son los que pueden recibir una
+  // venta (la del día hábil siguiente, ver `imputarAlDiaDePicking`).
+  const horasPorFecha: Record<string, WnpDia> = {}
+  const diasLaborales: string[] = []
+  for (let f = fechaDesde; f <= fechaHasta; f = sumarDias(f, 1)) {
+    const dia = calcularHorasDia(f, fichajePorFecha, ausentePorFecha, nombrePorLegajo)
+    if (dia.horas <= 0) continue
+    horasPorFecha[f] = dia
+    diasLaborales.push(f)
+  }
+
+  const distribuidoPicking = imputarAlDiaDePicking(distribuido, diasLaborales)
+  const mostradorPicking = imputarAlDiaDePicking(mostradorPorFecha, diasLaborales)
+  // Solo los días con venta reciben mostrador prorrateado (un día sin despacho
+  // no es día operativo: no debe cargar volumen ajeno).
+  const distribuidoOperativo: Record<string, number> = {}
+  for (const [f, hl] of Object.entries(distribuidoPicking)) {
+    if (hl > 0) distribuidoOperativo[f] = hl
+  }
+  const hlPorFecha = prorratearHlVendidos(distribuidoOperativo, mostradorPicking)
+
   const porFecha: Record<string, WnpDia> = {}
-  for (const fecha of Object.keys(hlPorFecha).sort()) {
+  for (const fecha of diasLaborales) {
     // Antes de que existiera el reloj no hay WNP diario que reconstruir.
     if (fecha < WNP_FICHAJE_DESDE) continue
-    const dia = calcularHorasDia(fecha, fichajePorFecha, ausentePorFecha, nombrePorLegajo)
+    const dia = horasPorFecha[fecha]
+    // El último día abierto todavía no tiene entrega que imputarle (sale
+    // mañana): queda en 0 y el tablero lo muestra vacío, no como día malo.
     dia.hl = hlPorFecha[fecha] ?? 0
     porFecha[fecha] = dia
   }

@@ -12,6 +12,17 @@
  * prorrateo no altera el total del mes — sigue cerrando exacto contra el cuadro
  * mensual — solo reparte en qué día cae. Decisión del usuario 2026-07-14.
  *
+ * 🚨 EL NUMERADOR VA CORRIDO UN DÍA HÁBIL (2026-08-25). La fecha de la venta es
+ * la de ENTREGA —verificado contra Chess: en las 5 rutas del 24/8/26
+ * `fechaComprobante` = `fechaEntrega` = 24/8, con pedidos de preventa del 18 al
+ * 22—, y el depósito prepara HOY lo que sale MAÑANA. Dividir la salida del día
+ * por las horas del mismo día compara el trabajo de ayer contra la gente de
+ * hoy: en agosto/26 eso dibujaba una sierra de lunes (4,12) a sábado (9,13),
+ * porque el sábado despachaba lo pickeado el viernes (8 hs) sobre media jornada
+ * y el lunes despachaba lo pickeado el sábado (4 hs) sobre jornada completa.
+ * Por eso cada venta se imputa al día hábil ANTERIOR a su entrega, que es el
+ * que la preparó (`imputarAlDiaDePicking`). Pedido del usuario 2026-08-25.
+ *
  * DENOMINADOR — horas del personal de Depósito, por persona y por día:
  *   1. ausencia cargada → 0 hs, no se completa. Vale de las DOS fuentes donde
  *      se carga una ausencia en la app: la novedad diaria de /asistencia
@@ -60,7 +71,7 @@ export type WnpPersonaDia = {
 
 export type WnpDia = {
   fecha: string
-  /** HL vendidos del día (distribuido + mostrador prorrateado). */
+  /** HL entregados al día hábil SIGUIENTE = lo que este día se preparó. */
   hl: number
   /** Horas-hombre computadas del día. */
   horas: number
@@ -87,6 +98,44 @@ export function jornadaTeorica(fecha: string): number {
   if (d === 0) return 0
   if (d === 6) return WNP_HS_SABADO
   return WNP_HS_LUNES_A_VIERNES
+}
+
+/**
+ * Corre el numerador al día que hizo el trabajo: cada venta se imputa al día
+ * hábil ANTERIOR a su fecha de entrega (ver el encabezado del módulo).
+ *
+ * `diasLaborales` son los días en que el depósito estuvo abierto —los que
+ * terminaron con horas > 0—, en orden. Se usan esos y no "de lunes a sábado"
+ * para que un feriado, un domingo trabajado o un paro caigan solos en su lugar:
+ * si el lunes 17/8 fue feriado, lo que salió el martes 18 lo pickeó el sábado
+ * 15. Varias fechas de venta pueden caer en el mismo día de picking (el
+ * domingo con 8 bultos sueltos se suma al lunes), y por eso acumula en vez de
+ * pisar.
+ *
+ * Las ventas anteriores al primer día laboral del rango se descartan: su día de
+ * picking cae fuera de la ventana pedida (es del período anterior).
+ */
+export function imputarAlDiaDePicking(
+  porFechaDeEntrega: Record<string, number>,
+  diasLaborales: string[],
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  let i = 0
+  for (const entrega of Object.keys(porFechaDeEntrega).sort()) {
+    while (i < diasLaborales.length && diasLaborales[i] < entrega) i++
+    // `i` quedó en el primer día laboral >= entrega ⇒ el anterior es el que preparó.
+    if (i === 0) continue
+    const picking = diasLaborales[i - 1]
+    out[picking] = (out[picking] ?? 0) + porFechaDeEntrega[entrega]
+  }
+  return out
+}
+
+/** `fecha` + `dias` (ambos en UTC, mediodía para no correrse por husos). */
+export function sumarDias(fecha: string, dias: number): string {
+  const d = new Date(`${fecha}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + dias)
+  return d.toISOString().slice(0, 10)
 }
 
 /**
