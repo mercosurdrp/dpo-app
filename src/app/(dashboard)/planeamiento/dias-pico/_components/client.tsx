@@ -19,7 +19,7 @@ const DOW = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
 
 // Bandas de criticidad sobre la capacidad diaria (criterio Jefatura de
 // Logística): PICO arriba de 120%, MEDIA entre 100% y 120%, BAJA debajo.
-type Nivel = "PICO" | "MEDIA" | "BAJA"
+type Nivel = "PICO" | "MEDIA" | "SERVICIO" | "BAJA"
 function nivelDe(hl: number, cap: number): Nivel {
   if (cap <= 0) return "BAJA"
   if (hl > cap * 1.2) return "PICO"
@@ -29,6 +29,9 @@ function nivelDe(hl: number, cap: number): Nivel {
 const COLOR: Record<Nivel, string> = {
   PICO: "bg-red-600 text-white",
   MEDIA: "bg-amber-400 text-amber-950",
+  // Día que no exigió a la flota pero falló el servicio. El manual pide
+  // mirarlos: "revise los casos en que OTIF fue bajo".
+  SERVICIO: "bg-violet-500 text-white",
   BAJA: "bg-emerald-500/80 text-white",
 }
 
@@ -63,6 +66,8 @@ export function DiasPicoClient({
   const [camiones, setCamiones] = useState(10)
   const [hlCamion, setHlCamion] = useState(72)
   const [ocupacion, setOcupacion] = useState(80)
+  // Target de rechazo, el mismo umbral que usa el módulo de Períodos Críticos.
+  const [rechazoMax, setRechazoMax] = useState(3)
   // "flota"  = techo físico fijo, igual todo el año (camiones × HL × ocupación).
   // "mensual"= referencia relativa: el promedio diario del presupuesto de cada
   //            mes. No mide flota, mide concentración dentro del propio mes, y
@@ -250,12 +255,20 @@ export function DiasPicoClient({
         out.push({
           fecha: iso, mes: m, dow: dt.getDay(), cap: capMes,
           hl: r.hl, clientes: r.clientes, rechazo: r.rechazo, ausentismo: r.ausentismo,
-          nivel: nivelDe(r.hl, capMes),
+          // Piso de volumen para el criterio de servicio: sin él, un día de
+          // 6 HL con 2 clientes da 7% de rechazo y entraría como crítico.
+          // El piso es el 50% de la capacidad, igual que `vol_medio`.
+          nivel:
+            nivelDe(r.hl, capMes) !== "BAJA"
+              ? nivelDe(r.hl, capMes)
+              : r.rechazo >= rechazoMax / 100 && r.hl >= capMes * 0.5
+                ? "SERVICIO"
+                : "BAJA",
         })
       }
     }
     return out
-  }, [anioBase, basePorFecha, capPorMes])
+  }, [anioBase, basePorFecha, capPorMes, rechazoMax])
 
   // Resumen mes a mes: capacidad instalada contra presupuesto y contra real.
   const resumen = useMemo(() => {
@@ -372,6 +385,11 @@ export function DiasPicoClient({
             <Input type="number" min={1} max={100} value={ocupacion} className="h-8"
               onChange={(e) => setOcupacion(Math.min(100, Math.max(1, Number(e.target.value) || 0)))} />
           </div>
+          <div className="w-28">
+            <Label className="text-xs text-slate-500">Rechazo target %</Label>
+            <Input type="number" min={0} step={0.5} value={rechazoMax} className="h-8"
+              onChange={(e) => setRechazoMax(Math.max(0, Number(e.target.value) || 0))} />
+          </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2">
             <div className="text-xs text-slate-500">
               {modo === "flota" ? "Capacidad diaria" : "Referencia (varía por mes)"}
@@ -386,6 +404,9 @@ export function DiasPicoClient({
             <div><b>PICO</b> &gt; 120% de la referencia</div>
             <div><b>MEDIA</b> 100–120%</div>
             <div><b>BAJA</b> &lt; 100%</div>
+            <div className="mt-1 border-t border-slate-200 pt-1">
+              <b>SERVICIO</b>: rechazo ≥ {rechazoMax}% con al menos 50% de capacidad
+            </div>
           </div>
         </div>
         </CardContent>
@@ -520,6 +541,7 @@ export function DiasPicoClient({
             <span className="font-medium">Referencia:</span>
             <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-red-600" /> PICO &gt;120%</span>
             <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-amber-400" /> MEDIA 100–120%</span>
+            <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-violet-500" /> SERVICIO</span>
             <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-emerald-500/80" /> BAJA</span>
             <span className="text-slate-500">
               {vista === "base"
@@ -670,6 +692,7 @@ function MesGrillaBase({
 
   const picos = delMes.filter((d) => d.nivel === "PICO").length
   const medias = delMes.filter((d) => d.nivel === "MEDIA").length
+  const servicio = delMes.filter((d) => d.nivel === "SERVICIO").length
 
   return (
     <Card>
@@ -679,6 +702,9 @@ function MesGrillaBase({
           <span className="text-xs text-slate-500">
             Capacidad <b className="text-slate-700">{n0(capMes)} HL/día</b>
           </span>
+          {servicio > 0 && (
+            <Badge className="bg-violet-500 text-[10px] text-white hover:bg-violet-500">{servicio} servicio</Badge>
+          )}
           {medias > 0 && (
             <Badge className="bg-amber-400 text-[10px] text-amber-950 hover:bg-amber-400">{medias} media</Badge>
           )}
