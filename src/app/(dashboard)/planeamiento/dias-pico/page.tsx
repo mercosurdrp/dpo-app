@@ -30,16 +30,18 @@ export default async function DiasPicoPage() {
         .select("mes, hl")
         .eq("anio", ANIO)
         .order("mes", { ascending: true }),
+      // La vista ya trae las cuatro variables juntas: HL, clientes, rechazo y
+      // ausentismo. Es la misma que alimenta el módulo de Períodos Críticos.
       supabase
-        .from("pc_volumen_diario")
-        .select("fecha, bultos_distribuidos, clientes_distribuidos")
+        .from("v_pc_calendario_dia_multianio")
+        .select("fecha, hl, clientes_dia, otif_estimado, pct_ausentismo")
         .gte("fecha", `${ANIO}-01-01`)
         .lte("fecha", `${ANIO}-12-31`)
         .order("fecha", { ascending: true }),
-      // Año anterior: de acá sale el peso de cada día dentro de su mes.
+      // Año anterior: define la criticidad y aporta el peso de cada día.
       supabase
-        .from("pc_volumen_diario")
-        .select("fecha, bultos_distribuidos, clientes_distribuidos")
+        .from("v_pc_calendario_dia_multianio")
+        .select("fecha, hl, clientes_dia, otif_estimado, pct_ausentismo")
         .gte("fecha", `${ANIO_BASE}-01-01`)
         .lte("fecha", `${ANIO_BASE}-12-31`)
         .order("fecha", { ascending: true }),
@@ -47,13 +49,18 @@ export default async function DiasPicoPage() {
     ])
 
   const aDias = (
-    rows: { fecha: string; bultos_distribuidos: number | null; clientes_distribuidos: number | null }[] | null,
+    rows:
+      | { fecha: string; hl: number | null; clientes_dia: number | null; otif_estimado: number | null; pct_ausentismo: number | null }[]
+      | null,
   ): DiaReal[] =>
     (rows ?? [])
       .map((r) => ({
         fecha: r.fecha,
-        hl: Number(r.bultos_distribuidos ?? 0),
-        clientes: Number(r.clientes_distribuidos ?? 0),
+        hl: Number(r.hl ?? 0),
+        clientes: Number(r.clientes_dia ?? 0),
+        // `otif_estimado` en la vista es la TASA DE RECHAZO, no el OTIF.
+        rechazo: Number(r.otif_estimado ?? 0),
+        ausentismo: Number(r.pct_ausentismo ?? 0),
       }))
       .filter((d) => d.hl > 0)
 

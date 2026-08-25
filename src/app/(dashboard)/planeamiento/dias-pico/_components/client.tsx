@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Truck, CalendarDays, TableIcon, AlertTriangle, CalendarRange } from "lucide-react"
 
 export type MesProyectado = { mes: number; hl: number }
-export type DiaReal = { fecha: string; hl: number; clientes: number }
+export type DiaReal = { fecha: string; hl: number; clientes: number; rechazo: number; ausentismo: number }
 export type Feriado = { fecha: string; nombre: string }
 
 const MESES = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -77,6 +77,10 @@ export function DiasPicoClient({
   //   "posicion" → día hábil N del año base presta su peso al día hábil N.
   //                Copia la forma exacta del mes, incluidos los días raros.
   const [reparto, setReparto] = useState<"anual" | "dow" | "posicion">("anual")
+  // Qué año se está mirando. El período crítico se DEFINE con el año base:
+  // lo realmente facturado contra la capacidad. El año en curso es la
+  // proyección, que sirve para planificar pero no para definir.
+  const [vista, setVista] = useState<"base" | "actual">("base")
 
   const capFlota = camiones * hlCamion * (ocupacion / 100)
   const setFer = useMemo(() => new Set(feriados.map((f) => f.fecha)), [feriados])
@@ -141,6 +145,15 @@ export function DiasPicoClient({
     return out
   }, [base])
 
+  const basePorFecha = useMemo(
+    () => Object.fromEntries(base.map((d) => [d.fecha, d])) as Record<string, DiaReal>,
+    [base],
+  )
+  const realPorFechaFull = useMemo(
+    () => Object.fromEntries(real.map((d) => [d.fecha, d])) as Record<string, DiaReal>,
+    [real],
+  )
+
   // Índice de día de semana sobre el año base completo. 1,00 = día promedio.
   const indiceAnual = useMemo(() => {
     const porDow: Record<number, number[]> = {}
@@ -178,6 +191,7 @@ export function DiasPicoClient({
       fecha: string; mes: number; dow: number; cap: number
       hlProy: number; hlReal: number | null
       cliRef: number | null; cliReal: number | null
+      rechazo: number | null; ausentismo: number | null
       nivelProy: Nivel; nivelReal: Nivel | null
     }[] = []
     for (let m = 1; m <= 12; m++) {
@@ -201,18 +215,47 @@ export function DiasPicoClient({
       fechas.forEach((f, i) => {
         const hlProy = (ppto * pesos[i]) / suma
         const hlReal = realPorFecha[f] ?? null
+        const rr = realPorFechaFull[f]
         const cliReal = cliPorFecha[f] ?? null
         const cliRef = cb.length ? cb[Math.min(i, cb.length - 1)] : null
         out.push({
           fecha: f, mes: m, dow: new Date(f + "T12:00:00").getDay(), cap: capMes,
           hlProy, hlReal, cliRef, cliReal,
+          rechazo: rr ? rr.rechazo : null, ausentismo: rr ? rr.ausentismo : null,
           nivelProy: nivelDe(hlProy, capMes),
           nivelReal: hlReal == null ? null : nivelDe(hlReal, capMes),
         })
       })
     }
     return out
-  }, [anio, setFer, pesosBase, pesosDow, indiceAnual, reparto, pptoPorMes, realPorFecha, cliPorFecha, cliBase, capPorMes])
+  }, [anio, setFer, pesosBase, pesosDow, indiceAnual, reparto, pptoPorMes, realPorFecha, realPorFechaFull, cliPorFecha, cliBase, capPorMes])
+
+  // Días del AÑO BASE: acá el nivel sale de lo realmente facturado contra la
+  // capacidad. Es lo que define el período crítico (R3.4.1 pide el año anterior).
+  const diasBase = useMemo(() => {
+    const out: {
+      fecha: string; mes: number; dow: number; cap: number
+      hl: number; clientes: number; rechazo: number; ausentismo: number
+      nivel: Nivel
+    }[] = []
+    for (let m = 1; m <= 12; m++) {
+      const ultimo = new Date(anioBase, m, 0).getDate()
+      const capMes = capPorMes[m] ?? 0
+      for (let d = 1; d <= ultimo; d++) {
+        const iso = `${anioBase}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+        const dt = new Date(anioBase, m - 1, d)
+        if (dt.getDay() === 0) continue
+        const r = basePorFecha[iso]
+        if (!r) continue
+        out.push({
+          fecha: iso, mes: m, dow: dt.getDay(), cap: capMes,
+          hl: r.hl, clientes: r.clientes, rechazo: r.rechazo, ausentismo: r.ausentismo,
+          nivel: nivelDe(r.hl, capMes),
+        })
+      }
+    }
+    return out
+  }, [anioBase, basePorFecha, capPorMes])
 
   // Resumen mes a mes: capacidad instalada contra presupuesto y contra real.
   const resumen = useMemo(() => {
@@ -249,6 +292,23 @@ export function DiasPicoClient({
           separado de <b>Períodos Críticos</b>, que es el módulo que se audita y usa detección
           retrospectiva por triggers.
         </p>
+      </div>
+
+      {/* Qué año se mira */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2.5">
+        <button type="button" onClick={() => setVista("base")}
+          className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${vista === "base" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+          {anioBase} facturado — define el período crítico
+        </button>
+        <button type="button" onClick={() => setVista("actual")}
+          className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${vista === "actual" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+          {anio} programado — para planificar
+        </button>
+        <span className="text-xs text-slate-500">
+          {vista === "base"
+            ? `El día es crítico cuando lo facturado en ${anioBase} alcanzó la capacidad. Clientes, rechazo y ausentismo van al lado como contexto.`
+            : `Presupuesto ${anio} repartido por día. Sirve para anticipar, no para definir el período crítico.`}
+        </span>
       </div>
 
       {/* Parámetros de capacidad */}
@@ -462,13 +522,19 @@ export function DiasPicoClient({
             <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-amber-400" /> MEDIA 100–120%</span>
             <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-emerald-500/80" /> BAJA</span>
             <span className="text-slate-500">
-              <b>Cli</b> = clientes atendidos; con <b>~</b> es el dato del día equivalente del año anterior.
+              {vista === "base"
+                ? "Cada celda: HL facturado, clientes, rechazo y ausentismo de ese día."
+                : "Cada celda: proyectado, real, clientes y capacidad. Con ~ el dato es del día equivalente del año anterior."}
             </span>
           </div>
           <div className="grid gap-3 2xl:grid-cols-2">
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <MesGrilla key={m} anio={anio} mes={m} dias={dias} />
-            ))}
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) =>
+              vista === "base" ? (
+                <MesGrillaBase key={m} anio={anioBase} mes={m} dias={diasBase} />
+              ) : (
+                <MesGrilla key={m} anio={anio} mes={m} dias={dias} />
+              ),
+            )}
           </div>
         </TabsContent>
       </Tabs>
@@ -569,6 +635,97 @@ function MesGrilla({
                   <div className="flex justify-between gap-1 border-t border-white/25 pt-0.5">
                     <span className="opacity-70">Cap</span>
                     <span className="tabular-nums opacity-80">{n0(d.cap)}</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * Grilla del AÑO BASE. Acá el color sale de lo realmente facturado contra la
+ * capacidad —es lo que define el período crítico— y las otras tres variables
+ * que pide R3.4.1 (clientes, rechazo, ausentismo) van como contexto del día.
+ */
+function MesGrillaBase({
+  anio, mes, dias,
+}: {
+  anio: number
+  mes: number
+  dias: { fecha: string; mes: number; dow: number; cap: number; hl: number; clientes: number; rechazo: number; ausentismo: number; nivel: Nivel }[]
+}) {
+  const delMes = dias.filter((d) => d.mes === mes)
+  const porDia = new Map(delMes.map((d) => [Number(d.fecha.slice(8, 10)), d]))
+  const ultimo = new Date(anio, mes, 0).getDate()
+  const offset = new Date(anio, mes - 1, 1).getDay()
+  const capMes = delMes[0]?.cap ?? 0
+
+  const celdas: (number | null)[] = Array(offset).fill(null)
+  for (let d = 1; d <= ultimo; d++) celdas.push(d)
+  while (celdas.length % 7 !== 0) celdas.push(null)
+
+  const picos = delMes.filter((d) => d.nivel === "PICO").length
+  const medias = delMes.filter((d) => d.nivel === "MEDIA").length
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 py-2">
+        <CardTitle className="text-sm font-semibold">{MESES[mes]} {anio}</CardTitle>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500">
+            Capacidad <b className="text-slate-700">{n0(capMes)} HL/día</b>
+          </span>
+          {medias > 0 && (
+            <Badge className="bg-amber-400 text-[10px] text-amber-950 hover:bg-amber-400">{medias} media</Badge>
+          )}
+          {picos > 0 && (
+            <Badge className="bg-red-600 text-[10px] text-white hover:bg-red-600">{picos} pico</Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="p-2">
+        <div className="grid grid-cols-7 gap-1 text-center">
+          {["D", "L", "M", "M", "J", "V", "S"].map((d, i) => (
+            <div key={i} className="pb-1 text-[11px] font-medium text-slate-400">{d}</div>
+          ))}
+          {celdas.map((num, i) => {
+            if (num == null) return <div key={i} />
+            const d = porDia.get(num)
+            if (!d) {
+              return (
+                <div key={i} className="rounded border border-slate-100 bg-slate-50 p-1 text-[11px] text-slate-300">
+                  {num}
+                </div>
+              )
+            }
+            return (
+              <div key={i} className={`rounded p-1 text-left leading-tight ${COLOR[d.nivel]}`}>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[11px] font-bold opacity-90">{num}</span>
+                  <span className="text-[10px] font-semibold opacity-90">
+                    {d.cap > 0 ? pct(d.hl / d.cap) : "—"}
+                  </span>
+                </div>
+                <div className="mt-0.5 space-y-0.5 text-[10px]">
+                  <div className="flex justify-between gap-1">
+                    <span className="opacity-70">HL</span>
+                    <span className="font-semibold tabular-nums">{n0(d.hl)}</span>
+                  </div>
+                  <div className="flex justify-between gap-1">
+                    <span className="opacity-70">Cli</span>
+                    <span className="font-semibold tabular-nums">{d.clientes > 0 ? n0(d.clientes) : "—"}</span>
+                  </div>
+                  <div className="flex justify-between gap-1">
+                    <span className="opacity-70">Rech</span>
+                    <span className="tabular-nums">{(d.rechazo * 100).toFixed(1)}%</span>
+                  </div>
+                  <div className="flex justify-between gap-1 border-t border-white/25 pt-0.5">
+                    <span className="opacity-70">Aus</span>
+                    <span className="tabular-nums opacity-80">{(d.ausentismo * 100).toFixed(1)}%</span>
                   </div>
                 </div>
               </div>
