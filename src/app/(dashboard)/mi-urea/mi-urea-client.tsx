@@ -1,4 +1,5 @@
 "use client"
+import { parseEnteroEsAR, parseNumeroEsAR } from "@/lib/numeros"
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
@@ -50,7 +51,7 @@ export function MiUreaClient({ data }: { data: MiUreaData }) {
 
   const errorOdometro = odometro
     ? validarLectura({
-        valor: parseInt(odometro, 10),
+        valor: parseEnteroEsAR(odometro) ?? NaN,
         previa: unidad?.ultima
           ? { odometro: unidad.ultima.odometro, fecha: unidad.ultima.fecha }
           : null,
@@ -62,7 +63,7 @@ export function MiUreaClient({ data }: { data: MiUreaData }) {
   // mientras tipea, que es cuando sirve para darse cuenta de un dedazo.
   const kmDesdeUltima =
     unidad?.ultima && odometro && !errorOdometro
-      ? parseInt(odometro, 10) - unidad.ultima.odometro
+      ? parseEnteroEsAR(odometro) ?? NaN - unidad.ultima.odometro
       : null
 
   const listo =
@@ -74,8 +75,8 @@ export function MiUreaClient({ data }: { data: MiUreaData }) {
       const res = await crearCargaUrea({
         dominio,
         chofer,
-        odometro: parseInt(odometro, 10),
-        litros: parseFloat(litros),
+        odometro: parseEnteroEsAR(odometro) ?? NaN,
+        litros: parseNumeroEsAR(litros) ?? 0,
       })
       if ("error" in res) {
         toast.error(res.error)

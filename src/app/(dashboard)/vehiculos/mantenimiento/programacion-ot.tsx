@@ -35,6 +35,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CalendarDays, ChevronLeft, ChevronRight, FileDown, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { parseEnteroEsAR } from "@/lib/numeros"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { fmtMoneyOt } from "./_components/ot-formato"
 import { CalendarioPreventivo } from "./_components/calendario-preventivo"
@@ -1039,10 +1040,9 @@ function TallerPanel({
 
   const unidad = esAutoelevador ? "hs" : "km"
   const labelMedicion = esAutoelevador ? "Horómetro (hs)" : "Odómetro (km)"
-  const numero = (v: string) => {
-    const n = Number(v.replace(",", "."))
-    return v.trim() && isFinite(n) ? n : null
-  }
+  // 🚨 Va por parseEnteroEsAR y no por Number(): "58.853" con el punto de miles
+  // se leía como 58,853 km y la validación lo rechazaba por retroceso.
+  const numero = (v: string) => parseEnteroEsAR(v)
   const medicionParaEnviar = () => {
     const n = numero(medicion)
     return esAutoelevador ? { horometro: n } : { odometro: n }
@@ -1073,6 +1073,7 @@ function TallerPanel({
   /** El trabajo ya se hizo: crea la orden de trabajo y la cierra de una. */
   const resolver = async () => {
     setSaving(true)
+    try {
     const comps = await subirComprobantes(ot.dominio, comprobantes)
     if (comps === null) return setSaving(false)
     const res = await resolverOtProgramada({
@@ -1093,6 +1094,13 @@ function TallerPanel({
     if ("error" in res) return toast.error(res.error)
     toast.success("Orden resuelta: quedó cargada en Órdenes de Trabajo")
     onHecho()
+    } catch (e) {
+      // Sin esto, cualquier excepción —subida de comprobantes, red— dejaba el
+      // botón en "Cerrando…" y ni un mensaje. Apretar Finalizar y que no pase
+      // nada es peor que un error: se vuelve a apretar y se carga dos veces.
+      setSaving(false)
+      toast.error(e instanceof Error ? e.message : "No se pudo finalizar la orden")
+    }
   }
 
   const cerrar = async () => {

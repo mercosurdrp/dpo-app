@@ -1,4 +1,5 @@
 "use client"
+import { parseEnteroEsAR, parseNumeroEsAR } from "@/lib/numeros"
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
@@ -81,7 +82,7 @@ export function CombustibleFormClient({
   const lecturaPrevia = dominio ? (ultimasLecturas[dominio] ?? null) : null
   const errorOdometro = odometro
     ? validarLectura({
-        valor: parseInt(odometro, 10),
+        valor: parseEnteroEsAR(odometro) ?? NaN,
         previa: lecturaPrevia,
         fecha: hoyISO,
         esHorometro: vehiculoSel?.tipo === "autoelevador",
@@ -103,7 +104,7 @@ export function CombustibleFormClient({
       toast.error("Completá odómetro y litros")
       return
     }
-    const errorLitros = validarLitros(parseFloat(litros))
+    const errorLitros = validarLitros(parseNumeroEsAR(litros) ?? NaN)
     if (errorLitros) {
       toast.error(errorLitros)
       return
@@ -120,8 +121,8 @@ export function CombustibleFormClient({
       fecha: hoy,
       dominio,
       chofer: choferFinal,
-      odometro: parseInt(odometro),
-      litros: parseFloat(litros),
+      odometro: parseEnteroEsAR(odometro) ?? 0,
+      litros: parseNumeroEsAR(litros) ?? 0,
     })
 
     if ("error" in result) {

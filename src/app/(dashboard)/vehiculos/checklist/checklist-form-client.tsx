@@ -1,4 +1,5 @@
 "use client"
+import { parseEnteroEsAR } from "@/lib/numeros"
 
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -271,7 +272,7 @@ export function ChecklistFormClient({
   const lecturaPrevia = dominio ? (ultimasLecturas[dominio] ?? null) : null
   const errorOdometro = odometro
     ? validarLectura({
-        valor: parseInt(odometro, 10),
+        valor: parseEnteroEsAR(odometro) ?? NaN,
         previa: lecturaPrevia,
         fecha: ahora.toISOString().slice(0, 10),
         esHorometro: esAutoelevador,
@@ -400,7 +401,7 @@ export function ChecklistFormClient({
       fecha: hoy,
       dominio,
       chofer,
-      odometro: odometro ? parseInt(odometro) : undefined,
+      odometro: parseEnteroEsAR(odometro) ?? undefined,
       observaciones: observaciones || undefined,
       iniciadoEn: new Date(inicioMs).toISOString(),
       duracionSegundos: Math.max(0, Math.round((Date.now() - inicioMs) / 1000)),
