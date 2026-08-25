@@ -1112,6 +1112,20 @@ function InspeccionMensualCard({
       .sort((a, b) => a.localeCompare(b))
   }, [filas, unidades])
 
+  /**
+   * El color lo lleva el CUADRO de la unidad, no un cartelito al costado.
+   *
+   * Con 16 patentes en tres columnas, el badge obligaba a leer una por una para
+   * saber qué falta. Pintado el cuadro entero, la ronda del mes se lee de un
+   * golpe de vista: lo verde está hecho, lo blanco falta.
+   */
+  const CUADRO: Record<string, string> = {
+    completa:
+      "border-emerald-500/50 bg-emerald-500/10 hover:bg-emerald-500/20 dark:border-emerald-500/40",
+    parcial:
+      "border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 dark:border-amber-500/40",
+    pendiente: "border-border bg-card hover:bg-muted",
+  }
   const BADGE: Record<string, string> = {
     completa: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
     parcial: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
@@ -1176,11 +1190,18 @@ function InspeccionMensualCard({
               <button
                 key={f.dominio}
                 className={cn(
-                  "flex items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5 text-left transition-colors hover:bg-muted",
-                  dominioSel === f.dominio && "border-primary bg-primary/5"
+                  "flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left transition-colors",
+                  CUADRO[f.estado],
+                  // La unidad abierta en el diagrama se marca con el borde, sin
+                  // pisarle el color: si no, la elegida parecía siempre pendiente.
+                  dominioSel === f.dominio && "border-primary ring-1 ring-primary/40"
                 )}
                 onClick={() => onIrAUnidad(f.dominio)}
-                title="Ir al diagrama de la unidad para cargar mediciones"
+                title={
+                  f.estado === "completa"
+                    ? "Medida este mes. Ir al diagrama de la unidad."
+                    : "Falta medirla este mes. Ir al diagrama para cargar mediciones."
+                }
               >
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground">{f.dominio}</p>
@@ -1189,9 +1210,12 @@ function InspeccionMensualCard({
                     {f.ultima && ` · ${fmtFecha(f.ultima)}`}
                   </p>
                 </div>
-                <Badge variant="outline" className={cn("shrink-0", BADGE[f.estado])}>
-                  {LABEL[f.estado]}
-                </Badge>
+                {/* Lo verde ya se explica solo; el cartel queda para lo que falta. */}
+                {f.estado !== "completa" && (
+                  <Badge variant="outline" className={cn("shrink-0", BADGE[f.estado])}>
+                    {LABEL[f.estado]}
+                  </Badge>
+                )}
               </button>
             ))}
             {sinCubiertas.map((dominio) => (
