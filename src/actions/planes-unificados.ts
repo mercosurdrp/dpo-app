@@ -27,6 +27,7 @@ export type PlanOrigen =
   | "s5"
   | "tlp"
   | "tiempo_pdv"
+  | "arbol_kpi"
   | "reunion"
   | "presupuesto"
   | "presupuesto_plan"
@@ -60,6 +61,7 @@ const ORIGEN_LABEL: Record<PlanOrigen, string> = {
   s5: "5S",
   tlp: "TLP",
   tiempo_pdv: "Tiempo por PDV",
+  arbol_kpi: "Árbol KPI",
   reunion: "Reunión",
   presupuesto: "Presupuesto",
   // Distinto de "Presupuesto": esas son tareas de ANÁLISIS del desvío;
@@ -283,6 +285,7 @@ export async function getPlanesUnificados(opts?: {
       { origen: "owd", tabla: "owd_planes", href: "/owd" },
       { origen: "tlp", tabla: "tlp_planes", href: "/indicadores/tlp" },
       { origen: "tiempo_pdv", tabla: "tiempo_pdv_planes", href: "/indicadores/tiempo-pdv" },
+      { origen: "arbol_kpi", tabla: "arbol_kpi_planes", href: "/arbol-kpi" },
     ]
 
     for (const cfg of comunes) {

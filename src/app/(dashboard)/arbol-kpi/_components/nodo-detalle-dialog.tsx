@@ -20,6 +20,7 @@ import { SerieMensualChart } from "@/components/arbol-kpi/serie-mensual-chart"
 import { getArbolKpiRechazoSeries, type ArbolKpiSeries } from "@/actions/arbol-kpi"
 import { NIVEL_KPI_LABEL, type NodoResuelto } from "@/lib/arbol-kpi/rechazo"
 import { ObjetivoNodoForm } from "./objetivo-nodo-form"
+import { PlanesNodo } from "./planes-nodo"
 
 interface Props {
   nodo: NodoResuelto | null
@@ -30,6 +31,8 @@ interface Props {
   mesLabel: string
   anio: number
   puedeEditar: boolean
+  /** El nodo cruzó su gatillo: el diálogo empuja a abrir un plan. */
+  exigePlan: boolean
   onClose: () => void
 }
 
@@ -68,6 +71,7 @@ export function NodoDetalleDialog({
   mesLabel,
   anio,
   puedeEditar,
+  exigePlan,
   onClose,
 }: Props) {
   const [series, setSeries] = useState<ArbolKpiSeries | null>(null)
@@ -232,6 +236,14 @@ export function NodoDetalleDialog({
                 anio={anio}
                 puedeEditar={puedeEditar}
                 unidadFmt={(v) => fmt(v, nodo.unidad)}
+              />
+
+              {/* Qué se está haciendo al respecto */}
+              <PlanesNodo
+                nodo={nodo}
+                valorActual={mth}
+                puedeEditar={puedeEditar}
+                exigePlan={exigePlan}
               />
 
               {/* De dónde sale el número: sin esto el árbol no se discute */}

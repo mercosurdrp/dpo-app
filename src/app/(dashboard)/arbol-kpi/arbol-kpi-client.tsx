@@ -319,6 +319,16 @@ export function ArbolKpiClient({ data, config, puedeEditar }: Props) {
         mesLabel={data.mesLabel}
         anio={data.anio}
         puedeEditar={puedeEditar}
+        exigePlan={
+          detalle
+            ? estadoDe(
+                valorDe(detalle.key).mth,
+                detalle.meta,
+                detalle.gatillo,
+                detalle.mejorSi,
+              ) === "mal"
+            : false
+        }
         onClose={() => setDetalle(null)}
       />
     </div>
