@@ -68,6 +68,13 @@ export function DiasPicoClient({
   //            mes. No mide flota, mide concentración dentro del propio mes, y
   //            por eso cambia mes a mes siguiendo la estacionalidad.
   const [modo, setModo] = useState<"flota" | "mensual">("flota")
+  // Cómo se reparte el presupuesto del mes entre sus días, siempre con datos
+  // del año anterior:
+  //   "dow"      → promedio del MISMO DÍA DE SEMANA en ese mes del año base.
+  //                Respeta que viernes pesa más que lunes y no desalinea.
+  //   "posicion" → día hábil N del año base presta su peso al día hábil N.
+  //                Copia la forma exacta del mes, incluidos los días raros.
+  const [reparto, setReparto] = useState<"dow" | "posicion">("dow")
 
   const capFlota = camiones * hlCamion * (ocupacion / 100)
   const setFer = useMemo(() => new Set(feriados.map((f) => f.fecha)), [feriados])
@@ -113,6 +120,25 @@ export function DiasPicoClient({
     return out
   }, [base])
 
+  // Peso promedio de cada día de semana dentro de cada mes del año base.
+  const pesosDow = useMemo(() => {
+    const acc: Record<number, Record<number, number[]>> = {}
+    for (const d of base) {
+      const dt = new Date(d.fecha + "T12:00:00")
+      if (dt.getDay() === 0) continue
+      const m = Number(d.fecha.slice(5, 7))
+      ;((acc[m] ??= {})[dt.getDay()] ??= []).push(d.hl)
+    }
+    const out: Record<number, Record<number, number>> = {}
+    for (const [m, porDow] of Object.entries(acc)) {
+      out[Number(m)] = {}
+      for (const [dow, arr] of Object.entries(porDow)) {
+        out[Number(m)][Number(dow)] = arr.reduce((a, b) => a + b, 0) / arr.length
+      }
+    }
+    return out
+  }, [base])
+
   // Capacidad de referencia de cada mes, según el modo elegido.
   const capPorMes = useMemo(() => {
     const out: Record<number, number> = {}
@@ -136,7 +162,14 @@ export function DiasPicoClient({
     for (let m = 1; m <= 12; m++) {
       const fechas = diasHabiles(anio, m, setFer)
       const w = pesosBase[m] ?? []
-      const pesos = fechas.map((_, i) => (w.length ? w[Math.min(i, w.length - 1)] : 1 / fechas.length))
+      const wd = pesosDow[m] ?? {}
+      const pesos = fechas.map((f, i) => {
+        if (reparto === "dow") {
+          const dow = new Date(f + "T12:00:00").getDay()
+          return wd[dow] ?? 1
+        }
+        return w.length ? w[Math.min(i, w.length - 1)] : 1 / fechas.length
+      })
       const suma = pesos.reduce((a, b) => a + b, 0) || 1
       const ppto = pptoPorMes[m] ?? 0
       const capMes = capPorMes[m] ?? 0
@@ -155,7 +188,7 @@ export function DiasPicoClient({
       })
     }
     return out
-  }, [anio, setFer, pesosBase, pptoPorMes, realPorFecha, cliPorFecha, cliBase, capPorMes])
+  }, [anio, setFer, pesosBase, pesosDow, reparto, pptoPorMes, realPorFecha, cliPorFecha, cliBase, capPorMes])
 
   // Resumen mes a mes: capacidad instalada contra presupuesto y contra real.
   const resumen = useMemo(() => {
@@ -211,6 +244,22 @@ export function DiasPicoClient({
               className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${modo === "mensual" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
               Promedio del mes (relativo)
             </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+            <span className="text-xs font-medium text-slate-600">Reparto del presupuesto:</span>
+            <button type="button" onClick={() => setReparto("dow")}
+              className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${reparto === "dow" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+              Por día de semana
+            </button>
+            <button type="button" onClick={() => setReparto("posicion")}
+              className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${reparto === "posicion" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+              Por posición en el mes
+            </button>
+            <span className="text-xs text-slate-500">
+              {reparto === "dow"
+                ? `Promedio del mismo día de semana en ese mes de ${anioBase}. Respeta que viernes pesa más que lunes y no desalinea.`
+                : `El día hábil N de ${anioBase} le presta su peso al día hábil N. Copia la forma exacta del mes, arrastrando también sus días atípicos.`}
+            </span>
           </div>
           <p className="text-xs text-slate-500">
             {modo === "flota"
