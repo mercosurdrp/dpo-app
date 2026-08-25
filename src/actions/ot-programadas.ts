@@ -216,6 +216,12 @@ export async function llevarOtAlTaller(input: {
   horometro?: number | null
   /** Service general (rodado): reinicia el contador del próximo service. */
   esServiceGeneral?: boolean
+  /**
+   * Taller tal como quedó escrito en el diálogo. Pisa al de la orden: el que
+   * cierra suele corregirlo recién ahí ("iba a Pozzi, terminó yendo a Luval") y
+   * antes ese cambio se perdía salvo que además tocara "Guardar cambios".
+   */
+  taller?: string
 }): Promise<Result<OtProgramada>> {
   try {
     await requireRole(["admin", "supervisor"])
@@ -229,6 +235,8 @@ export async function llevarOtAlTaller(input: {
     if (error || !prog) return { error: error?.message ?? "No se encontró la orden programada" }
     const ot = prog as OtProgramada
     if (ot.realizado_id) return { error: "Esta orden ya tiene una OT de trabajo asociada" }
+
+    const taller = (input.taller ?? "").trim() || ot.taller || ""
 
     const delPlan = new Set((input.nombresDelPlan ?? []).map((n) => n.trim()))
     const tareas = [
@@ -248,7 +256,7 @@ export async function llevarOtAlTaller(input: {
       entrada_taller: conHora(input.fecha, input.hora),
       odometro: input.odometro ?? null,
       horometro: input.horometro ?? null,
-      taller: ot.taller || undefined,
+      taller: taller || undefined,
       observaciones: ot.notas || undefined,
       es_service_general: input.esServiceGeneral ?? false,
       tareas,
@@ -257,7 +265,12 @@ export async function llevarOtAlTaller(input: {
 
     const { data, error: upErr } = await supabase
       .from("mantenimiento_ot_programadas")
-      .update({ estado: "en_taller", realizado_id: res.data.id })
+      .update({
+        estado: "en_taller",
+        realizado_id: res.data.id,
+        // El taller corregido al cerrar también queda en la programada.
+        ...(taller !== ot.taller ? { taller } : {}),
+      })
       .eq("id", input.id)
       .select("*")
       .single()
@@ -421,6 +434,8 @@ export async function resolverOtProgramada(input: {
   horometro?: number | null
   esServiceGeneral?: boolean
   observaciones?: string
+  /** Taller tal como quedó escrito en el diálogo. */
+  taller?: string
   /** Única fuente del costo y del N° de factura de la OT. */
   facturas?: ComprobanteInput[]
 }): Promise<Result<OtProgramada>> {
@@ -434,6 +449,7 @@ export async function resolverOtProgramada(input: {
     odometro: input.odometro,
     horometro: input.horometro,
     esServiceGeneral: input.esServiceGeneral,
+    taller: input.taller,
   })
   if ("error" in abierta) return abierta
 
