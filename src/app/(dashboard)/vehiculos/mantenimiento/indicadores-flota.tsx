@@ -256,6 +256,16 @@ const KPI_DEFS: KpiDef[] = [
     nLabel: { sing: "repuesto contado", plural: "repuestos contados" },
   },
   {
+    kpi: "repuestos_stock_minimo",
+    label: "Cumplimiento del stock mínimo",
+    descripcion:
+      "Ítems del último conteo físico del mes que estaban en o por encima de su stock mínimo ÷ ítems contados CON mínimo definido. Los ítems sin mínimo cargado no entran: no tienen regla que cumplir, y contarlos daría 100 % sin haber hecho nada",
+    fmt: (v) => `${v.toFixed(0)}%`,
+    conSerie: true,
+    dpo: "2.3",
+    nLabel: { sing: "repuesto con mínimo", plural: "repuestos con mínimo" },
+  },
+  {
     kpi: "combustible_kml",
     label: "Rendimiento de combustible",
     descripcion:

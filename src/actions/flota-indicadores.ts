@@ -28,6 +28,7 @@ export type FlotaKpi =
   | "estandares_mandatorios"
   | "estandares_excelencia"
   | "inventario_exactitud"
+  | "repuestos_stock_minimo"
   | "combustible_kml"
   | "co2_flota"
   | "cil_tareas"
@@ -336,7 +337,9 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .gte("updated_at", `${inicioVentana}T00:00:00`),
       supabase
         .from("mantenimiento_conteos")
-        .select("id, fecha, items:mantenimiento_conteo_items(stock_sistema, stock_contado)")
+        .select(
+          "id, fecha, items:mantenimiento_conteo_items(stock_sistema, stock_contado, repuesto:mantenimiento_repuestos(stock_min))"
+        )
         .gte("fecha", inicioVentana)
         .order("fecha", { ascending: true }),
       supabase
@@ -497,9 +500,23 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     // Cuántos ítems tuvo el conteo del mes: un 100 % sobre 2 repuestos de 19 no
     // es lo mismo que un 100 % sobre los 19, y sin el n se leen igual.
     const exactitudN = new Map<string, number>()
+    // Cumplimiento del stock mínimo (SOP de repuestos, DPO 2.3): de los ítems
+    // contados que TIENEN un mínimo definido, cuántos estaban en o por encima.
+    //
+    // 🚨 Los ítems con mínimo 0 o sin cargar quedan afuera del denominador. Son
+    // los que no tienen regla que cumplir, y contarlos como cumplidos infla el
+    // indicador hasta el 100 % sin que nadie haya hecho nada: al 25/08/2026 la
+    // mayoría del pañol está en `stock_min = 0`. Mes sin ningún ítem con
+    // mínimo definido = null (sin dato), no 100 %.
+    const stockMinimo = new Map<string, number | null>()
+    const stockMinimoN = new Map<string, number>()
     for (const c of (conteosRes.data || []) as unknown as Array<{
       fecha: string
-      items: Array<{ stock_sistema: number; stock_contado: number }>
+      items: Array<{
+        stock_sistema: number
+        stock_contado: number
+        repuesto: { stock_min: number | null } | null
+      }>
     }>) {
       const ym = c.fecha.slice(0, 7)
       if (!meses.includes(ym) || c.items.length === 0) continue
@@ -508,6 +525,18 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       ).length
       exactitud.set(ym, (sinDif / c.items.length) * 100)
       exactitudN.set(ym, c.items.length)
+
+      const conMinimo = c.items.filter((i) => Number(i.repuesto?.stock_min ?? 0) > 0)
+      if (conMinimo.length === 0) {
+        stockMinimo.set(ym, null)
+        stockMinimoN.set(ym, 0)
+        continue
+      }
+      const cumplen = conMinimo.filter(
+        (i) => Number(i.stock_contado) >= Number(i.repuesto!.stock_min)
+      ).length
+      stockMinimo.set(ym, (cumplen / conMinimo.length) * 100)
+      stockMinimoN.set(ym, conMinimo.length)
     }
 
     // Combustible: km/l ponderado del mes (Σ km ÷ Σ litros de cargas con
@@ -747,6 +776,11 @@ export async function getFlotaKpiSeriesExtra(): Promise<
           ym,
           valor: exactitud.get(ym) ?? null,
           n: exactitudN.get(ym) ?? null,
+        })),
+        repuestos_stock_minimo: meses.map((ym) => ({
+          ym,
+          valor: stockMinimo.get(ym) ?? null,
+          n: stockMinimoN.get(ym) ?? null,
         })),
         correctivo_dias_parado: meses.map((ym) => ({
           ym,

@@ -147,6 +147,12 @@ export interface PuntoMedicion {
   fecha: string
   profundidad_mm: number | null
   km: number | null
+  /**
+   * 'alta' = dibujo nominal declarado (alta de la cubierta o retorno del
+   * recapado). 'ronda' = medido con calibre. Sólo la ronda entra al cálculo.
+   * Opcional porque no todo llamador la trae; sin ella manda el piso de fecha.
+   */
+  origen?: "alta" | "ronda" | null
 }
 
 export interface MovimientoCubierta {
@@ -177,12 +183,33 @@ export interface DesgasteNeumatico {
   kmPorMm: number | null
   /** Km del tramo efectivamente medido (no los km de vida de la cubierta). */
   kmMedidos: number | null
-  /** mm consumidos en ese tramo. */
+  /**
+   * mm consumidos en ese tramo SEGÚN LA RECTA ajustada (pendiente × km), no la
+   * resta de la primera contra la última medición. Es lo que corresponde ahora
+   * que la tasa sale de una regresión: si el último punto vino con el calibre
+   * corrido, la resta se lo come entero y la recta lo promedia.
+   */
   mmGastados: number | null
+  /** La resta cruda primera−última, para poder mostrar el dato observado. */
+  mmObservados: number | null
+  /**
+   * Qué tan bien la recta explica los puntos (0 a 1). Es la medida honesta de
+   * si el número ya sirve: con dos rondas siempre da 1 y no dice nada; con
+   * cinco o seis, un R² alto es lo que separa una tendencia de una nube.
+   * NULL con menos de tres puntos.
+   */
+  r2: number | null
   desde: string | null
   hasta: string | null
   /** Cuántas mediciones con profundidad entraron en el tramo. */
   puntos: number
+  /**
+   * Los puntos del tramo con km resuelto (km acumulado y profundidad). Salen
+   * acá para que la tasa agregada por unidad+eje pueda juntar los de las 6
+   * cubiertas del eje: agrupar tasas ya calculadas dejaba afuera justamente a
+   * las que todavía no llegan al piso individual, que son la mayoría.
+   */
+  tramoPuntos: Array<{ fecha: string; km: number; prof: number }>
   /** Km que le quedan hasta PROF_OBJETIVO_MM, al ritmo medido. */
   kmHastaCambio: number | null
   diasHastaCambio: number | null
@@ -274,6 +301,60 @@ function tramoVigente(
 }
 
 /**
+ * Pendiente de desgaste por mínimos cuadrados: cuántos mm baja el dibujo por km.
+ *
+ * Por qué una recta y no la resta primera−última: el calibre tiene una
+ * dispersión de ±1–2 mm y el desgaste real de un mes es de ~0,3 mm. Con la
+ * resta, TODO el error de esos dos puntos entra en el numerador —por eso en las
+ * rondas de julio y agosto de 2026 la mitad de los deltas daban negativo, y en
+ * el mismo eje del AF399KY una cubierta daba +2,42 y la de al lado −1,90—.
+ * Ajustando una recta sobre las N rondas el ruido cae con √N, así que cada
+ * ronda que se suma mejora el número en vez de sólo estirar el tramo.
+ *
+ * Devuelve la pendiente en mm/km (positiva = se gasta) y el R². Con dos puntos
+ * la recta pasa por los dos y el R² es 1: no informa nada, se devuelve null.
+ */
+function pendienteDesgaste(
+  puntos: Array<{ km: number; prof: number }>
+): { mmPorKm: number; r2: number | null } | null {
+  const n = puntos.length
+  if (n < 2) return null
+  let sx = 0
+  let sy = 0
+  for (const p of puntos) {
+    sx += p.km
+    sy += p.prof
+  }
+  const mx = sx / n
+  const my = sy / n
+  let sxy = 0
+  let sxx = 0
+  for (const p of puntos) {
+    sxy += (p.km - mx) * (p.prof - my)
+    sxx += (p.km - mx) * (p.km - mx)
+  }
+  // Todas las mediciones al mismo km (unidad parada entre rondas): sin recta.
+  if (sxx <= 0) return null
+  const pendiente = sxy / sxx
+
+  let r2: number | null = null
+  if (n >= 3) {
+    let ssTot = 0
+    let ssRes = 0
+    for (const p of puntos) {
+      const esperado = my + pendiente * (p.km - mx)
+      ssTot += (p.prof - my) * (p.prof - my)
+      ssRes += (p.prof - esperado) * (p.prof - esperado)
+    }
+    r2 = ssTot > 0 ? Math.max(0, Math.min(1, 1 - ssRes / ssTot)) : null
+  }
+
+  // La profundidad BAJA con los km: la pendiente del ajuste es negativa y el
+  // desgaste es su opuesto.
+  return { mmPorKm: -pendiente, r2 }
+}
+
+/**
  * Calcula el desgaste por km de una cubierta.
  *
  * @param n cubierta
@@ -297,9 +378,12 @@ export function desgasteNeumatico(
     kmPorMm: null,
     kmMedidos: null,
     mmGastados: null,
+    mmObservados: null,
+    r2: null,
     desde: null,
     hasta: null,
     puntos: 0,
+    tramoPuntos: [],
     kmHastaCambio: null,
     diasHastaCambio: null,
     fechaCambio: null,
@@ -313,8 +397,15 @@ export function desgasteNeumatico(
   // que use esta función tiene que quedar afuera del nominal del alta, o vuelve
   // el sesgo que hacía que la misma goma diera 0,056 o 0,312 mm/1.000 km según
   // la antigüedad del alta.
+  // Dos barreras contra el nominal, y las dos hacen falta: `origen` es lo que
+  // va a funcionar de acá en adelante (un alta cargada mañana también es
+  // nominal y cae del lado bueno de la fecha), y el piso de fecha cubre
+  // cualquier fila vieja que quedara sin marcar.
   const conProf = mediciones
-    .filter((m) => m.profundidad_mm != null && m.fecha >= INICIO_MEDICIONES)
+    .filter(
+      (m) =>
+        m.profundidad_mm != null && m.origen !== "alta" && m.fecha >= INICIO_MEDICIONES
+    )
     .map<PuntoResuelto>((m) => ({
       fecha: m.fecha,
       prof: Number(m.profundidad_mm),
@@ -334,20 +425,29 @@ export function desgasteNeumatico(
   const a = conKm[0]
   const b = conKm[conKm.length - 1]
   const kmMedidos = Math.round(b.km! - a.km!)
-  const mmGastados = Math.round((a.prof - b.prof) * 100) / 100
+  const mmObservados = Math.round((a.prof - b.prof) * 100) / 100
+
+  const tramoPuntos = conKm.map((p) => ({ fecha: p.fecha, km: p.km!, prof: p.prof }))
+  const ajuste = pendienteDesgaste(tramoPuntos)
+  // mm del tramo según la recta, que es de donde sale la tasa.
+  const mmGastados =
+    ajuste != null ? Math.round(ajuste.mmPorKm * kmMedidos * 100) / 100 : mmObservados
 
   const base: Partial<DesgasteNeumatico> = {
     puntos: conKm.length,
     kmMedidos,
     mmGastados,
+    mmObservados,
+    r2: ajuste?.r2 ?? null,
     desde: a.fecha,
     hasta: b.fecha,
+    tramoPuntos,
   }
 
   if (kmMedidos < MIN_KM_TRAMO) return vacio("tramo_corto", base)
-  if (mmGastados < MIN_DELTA_MM) return vacio("sin_desgaste", base)
+  if (ajuste == null || mmGastados < MIN_DELTA_MM) return vacio("sin_desgaste", base)
 
-  const mmPorMilKm = Math.round((mmGastados / kmMedidos) * 1_000 * 1000) / 1000
+  const mmPorMilKm = Math.round(ajuste.mmPorKm * 1_000 * 1000) / 1000
   const kmPorMm = Math.round(kmMedidos / mmGastados)
 
   // Proyección hasta el límite de circulación. Se apoya en la profundidad
@@ -367,9 +467,12 @@ export function desgasteNeumatico(
     kmPorMm,
     kmMedidos,
     mmGastados,
+    mmObservados,
+    r2: ajuste.r2,
     desde: a.fecha,
     hasta: b.fecha,
     puntos: conKm.length,
+    tramoPuntos,
     kmHastaCambio,
     diasHastaCambio,
     fechaCambio,
@@ -386,27 +489,81 @@ export interface FilaDesgaste extends DesgasteNeumatico {
 export interface PromedioDesgaste {
   clave: string
   mmPorMilKm: number
-  /** Cubiertas que aportaron al promedio. */
+  /** Cubiertas que aportaron puntos al ajuste. */
   cubiertas: number
-  /** Km medidos sumados: el peso del promedio y la confianza que merece. */
+  /** Km medidos sumados: el peso del número y la confianza que merece. */
   kmMedidos: number
+  /** Mediciones que entraron en el ajuste (la suma de las de cada cubierta). */
+  puntos: number
+  /** R² del ajuste conjunto. NULL con menos de tres puntos. */
+  r2: number | null
 }
 
 /**
- * Promedio ponderado por km medidos. Ponderado y no simple a propósito: una
- * cubierta con 22.000 km de historia sabe más del desgaste real que otra con
- * 3.100, y un promedio simple las hace pesar igual.
+ * Tasa agregada: una sola recta ajustada sobre los puntos de TODAS las
+ * cubiertas del grupo.
+ *
+ * 🚨 Esto no es el promedio de las tasas individuales, y la diferencia es la
+ * razón de ser del cálculo. Promediar tasas ya calculadas dejaba afuera a toda
+ * cubierta que no llegaba al piso individual de `MIN_KM_TRAMO` — que al
+ * 25/08/2026 son casi todas: con dos rondas a 15–23 días de distancia, una
+ * cubierta sola no junta 3.000 km. El eje entero sí: seis cubiertas recorriendo
+ * los mismos km aportan seis veces los puntos, el ruido del calibre cae con
+ * √6 y el número se vuelve usable meses antes.
+ *
+ * Cada cubierta entra normalizada a su propio arranque (km y mm consumidos
+ * desde su primer punto del tramo) y la recta se fuerza por el origen: son
+ * gomas distintas con espesores distintos, lo que comparten es el ritmo.
  */
-export function promedioPonderado(filas: FilaDesgaste[]): number | null {
-  let mm = 0
-  let km = 0
+function tasaAgregada(filas: FilaDesgaste[]): Omit<PromedioDesgaste, "clave"> | null {
+  let sxy = 0
+  let sxx = 0
+  let kmTotal = 0
+  let puntos = 0
+  let cubiertas = 0
+  const nube: Array<{ x: number; y: number }> = []
+
   for (const f of filas) {
-    if (f.mmPorMilKm == null || f.kmMedidos == null || f.mmGastados == null) continue
-    mm += f.mmGastados
-    km += f.kmMedidos
+    const ps = f.tramoPuntos
+    if (ps.length < 2) continue
+    const km0 = ps[0].km
+    const prof0 = ps[0].prof
+    cubiertas++
+    puntos += ps.length
+    kmTotal += ps[ps.length - 1].km - km0
+    for (const p of ps) {
+      const x = p.km - km0
+      const y = prof0 - p.prof
+      nube.push({ x, y })
+      sxy += x * y
+      sxx += x * x
+    }
   }
-  if (km <= 0) return null
-  return Math.round((mm / km) * 1_000 * 1000) / 1000
+
+  if (cubiertas === 0 || sxx <= 0 || kmTotal < MIN_KM_TRAMO) return null
+  const mmPorKm = sxy / sxx
+  const mmPorMilKm = Math.round(mmPorKm * 1_000 * 1000) / 1000
+  if (mmPorMilKm <= 0) return null
+
+  // R² de la recta por el origen sobre la nube normalizada.
+  let r2: number | null = null
+  if (nube.length >= 3) {
+    const my = nube.reduce((s, p) => s + p.y, 0) / nube.length
+    let ssTot = 0
+    let ssRes = 0
+    for (const p of nube) {
+      ssTot += (p.y - my) * (p.y - my)
+      ssRes += (p.y - mmPorKm * p.x) * (p.y - mmPorKm * p.x)
+    }
+    r2 = ssTot > 0 ? Math.max(0, Math.min(1, 1 - ssRes / ssTot)) : null
+  }
+
+  return { mmPorMilKm, cubiertas, kmMedidos: Math.round(kmTotal), puntos, r2 }
+}
+
+/** Tasa de toda la flota, con el mismo criterio agregado. */
+export function promedioPonderado(filas: FilaDesgaste[]): number | null {
+  return tasaAgregada(filas)?.mmPorMilKm ?? null
 }
 
 function agrupar(
@@ -415,7 +572,9 @@ function agrupar(
 ): PromedioDesgaste[] {
   const grupos = new Map<string, FilaDesgaste[]>()
   for (const f of filas) {
-    if (f.mmPorMilKm == null) continue
+    // Ya no se pide `mmPorMilKm != null`: justamente las cubiertas sin tasa
+    // propia son las que el agregado rescata.
+    if (f.tramoPuntos.length < 2) continue
     const k = clave(f)
     if (!k) continue
     const arr = grupos.get(k) ?? []
@@ -424,14 +583,9 @@ function agrupar(
   }
   const out: PromedioDesgaste[] = []
   for (const [k, arr] of grupos) {
-    const prom = promedioPonderado(arr)
-    if (prom == null) continue
-    out.push({
-      clave: k,
-      mmPorMilKm: prom,
-      cubiertas: arr.length,
-      kmMedidos: arr.reduce((s, f) => s + (f.kmMedidos ?? 0), 0),
-    })
+    const t = tasaAgregada(arr)
+    if (t == null) continue
+    out.push({ clave: k, ...t })
   }
   return out.sort((a, b) => b.mmPorMilKm - a.mmPorMilKm)
 }

@@ -88,11 +88,15 @@ export function DesgastePorKmCard({
 
   const filas = useMemo(() => data.periodos[periodo] ?? [], [data.periodos, periodo])
   const conTasa = useMemo(() => filas.filter((f) => f.mmPorMilKm != null), [filas])
-  const promedios = useMemo(() => porUnidad(conTasa), [conTasa])
+  // 🚨 Los agrupados van sobre TODAS las filas, no sobre `conTasa`: la tasa de
+  // un grupo se ajusta juntando los puntos de sus cubiertas, y las que no
+  // llegan al piso individual son justamente las que el agregado rescata. Con
+  // `conTasa` el eje mostraba el promedio de las 1 o 2 cubiertas que zafaban.
+  const promedios = useMemo(() => porUnidad(filas), [filas])
   // Referencia para el desvío: los pares de la misma unidad Y el mismo eje.
-  const pares = useMemo(() => paresPorUnidadEje(conTasa), [conTasa])
+  const pares = useMemo(() => paresPorUnidadEje(filas), [filas])
 
-  const promFlota = useMemo(() => promedioPonderado(conTasa), [conTasa])
+  const promFlota = useMemo(() => promedioPonderado(filas), [filas])
   const kmPorMmFlota =
     promFlota != null && promFlota > 0 ? Math.round(1_000 / promFlota) : null
 
@@ -349,9 +353,9 @@ export function DesgastePorKmCard({
             {vista === "ejes" && (
               <TablaGrupo
                 titulo="Eje"
-                filas={porEje(conTasa).map((g) => ({ ...g, clave: EJE_LABEL[g.clave] ?? g.clave }))}
+                filas={porEje(filas).map((g) => ({ ...g, clave: EJE_LABEL[g.clave] ?? g.clave }))}
                 promFlota={promFlota}
-                extra={porTipo(conTasa).map((g) => ({
+                extra={porTipo(filas).map((g) => ({
                   ...g,
                   clave: TIPO_LABEL[g.clave] ?? g.clave,
                 }))}
@@ -368,7 +372,7 @@ export function DesgastePorKmCard({
             )}
 
             {vista === "marcas" && (
-              <TablaGrupo titulo="Marca" filas={porMarca(conTasa)} promFlota={promFlota} />
+              <TablaGrupo titulo="Marca" filas={porMarca(filas)} promFlota={promFlota} />
             )}
 
             {/* Próximos cambios según el ritmo medido, no según el km teórico */}
@@ -627,9 +631,15 @@ function Barras({
             </span>
             <span
               className="w-28 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground"
-              title="Cubiertas que entraron en el promedio y km medidos sumados"
+              title={
+                "Cubiertas y km que entraron en el ajuste" +
+                (f.r2 != null
+                  ? ` · R² ${f.r2.toFixed(2)} (qué tan bien la recta explica las mediciones)`
+                  : " · hacen falta 3 mediciones para saber si la tendencia es real")
+              }
             >
               {f.cubiertas} cub. · {fmt(f.kmMedidos)} km
+              {f.r2 != null && ` · R² ${f.r2.toFixed(2)}`}
             </span>
           </div>
         )

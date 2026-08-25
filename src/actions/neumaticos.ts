@@ -305,6 +305,9 @@ async function registrarMedicionInicial(
       presion_psi: med.presion_psi ?? null,
       nota: med.nota ?? null,
       created_by: med.created_by ?? null,
+      // El dibujo del alta es el declarado del modelo, no una medición: no
+      // puede ser el punto de arranque de un tramo de desgaste.
+      origen: "alta",
     })
   } catch (e) {
     console.error("Medición inicial de neumático:", e)
@@ -1058,7 +1061,7 @@ export async function getDesgasteNeumaticos(): Promise<{ data: DesgasteFlota }> 
     const [medRes, movRes, vehRes] = await Promise.all([
       supabase
         .from("mantenimiento_neumatico_mediciones")
-        .select("neumatico_id, fecha, profundidad_mm, km")
+        .select("neumatico_id, fecha, profundidad_mm, km, origen")
         .in("neumatico_id", ids),
       supabase
         .from("mantenimiento_neumatico_movimientos")
@@ -1077,7 +1080,12 @@ export async function getDesgasteNeumaticos(): Promise<{ data: DesgasteFlota }> 
     const medPorNeum = new Map<string, PuntoMedicion[]>()
     for (const m of medRes.data || []) {
       const arr = medPorNeum.get(m.neumatico_id) ?? []
-      arr.push({ fecha: m.fecha, profundidad_mm: m.profundidad_mm, km: m.km })
+      arr.push({
+        fecha: m.fecha,
+        profundidad_mm: m.profundidad_mm,
+        km: m.km,
+        origen: m.origen ?? null,
+      })
       medPorNeum.set(m.neumatico_id, arr)
     }
     const movPorNeum = new Map<string, MovimientoCubierta[]>()

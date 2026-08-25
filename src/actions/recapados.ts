@@ -387,6 +387,8 @@ export async function registrarRecepcionRecapado(input: {
             neumatico_id: it.neumatico_id,
             fecha,
             profundidad_mm: prof,
+            // Dibujo declarado por el recapador, no medido con calibre.
+            origen: "alta",
             nota: `Volvió del recapado (${remito.proveedor})`,
             created_by: profile.id,
           })
