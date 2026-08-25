@@ -122,7 +122,19 @@ async function puedeIntervenirEnReporte(
   }
 }
 
-// Despacha al chequeo que corresponda según cuál de los tres targets tenga
+// Los dos targets de flota (OT y plan del KPI) los cargan los mismos que
+// pueden cargar una OT: admin/supervisor. No existe un responsable por OT.
+function puedeIntervenirEnFlota(
+  profileRole: string,
+): { ok: true } | { ok: false; error: string } {
+  if (isEditorRole(profileRole)) return { ok: true }
+  return {
+    ok: false,
+    error: "Solo editores pueden aplicar herramientas sobre flota",
+  }
+}
+
+// Despacha al chequeo que corresponda según cuál de los cinco targets tenga
 // la herramienta.
 async function puedeIntervenirEnTarget(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -132,8 +144,13 @@ async function puedeIntervenirEnTarget(
     plan_id: string | null
     reunion_actividad_id: string | null
     reporte_seguridad_id: string | null
+    mantenimiento_id?: string | null
+    flota_plan_accion_id?: string | null
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (tgt.mantenimiento_id || tgt.flota_plan_accion_id) {
+    return puedeIntervenirEnFlota(profileRole)
+  }
   if (tgt.plan_id) {
     return puedeIntervenirEnPlan(supabase, profileId, profileRole, tgt.plan_id)
   }
@@ -169,6 +186,11 @@ interface Contexto {
   actividad_descripcion: string | null
   reporte_tipo: string | null
   reporte_descripcion: string | null
+  ot_numero: string | null
+  ot_dominio: string | null
+  ot_tipo: string | null
+  flota_kpi: string | null
+  flota_plan_periodo: string | null
 }
 
 const CONTEXTO_VACIO: Contexto = {
@@ -180,6 +202,11 @@ const CONTEXTO_VACIO: Contexto = {
   actividad_descripcion: null,
   reporte_tipo: null,
   reporte_descripcion: null,
+  ot_numero: null,
+  ot_dominio: null,
+  ot_tipo: null,
+  flota_kpi: null,
+  flota_plan_periodo: null,
 }
 
 // Cadena plan → pregunta → bloque → pilar. Falla suave (null) en cada eslabón.
@@ -268,12 +295,55 @@ async function getReporteContexto(
   }
 }
 
+async function getOtContexto(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  mantenimientoId: string,
+): Promise<Contexto> {
+  const { data: ot } = await supabase
+    .from("mantenimiento_realizados")
+    .select("numero_ot, dominio, tipo")
+    .eq("id", mantenimientoId)
+    .single()
+  if (!ot) return { ...CONTEXTO_VACIO }
+  const o = ot as { numero_ot: string | null; dominio: string; tipo: string }
+  return {
+    ...CONTEXTO_VACIO,
+    ot_numero: o.numero_ot ?? null,
+    ot_dominio: o.dominio ?? null,
+    ot_tipo: o.tipo ?? null,
+  }
+}
+
+async function getFlotaPlanContexto(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  planId: string,
+): Promise<Contexto> {
+  const { data: plan } = await supabase
+    .from("flota_plan_accion")
+    .select("kpi, mes, year")
+    .eq("id", planId)
+    .single()
+  if (!plan) return { ...CONTEXTO_VACIO }
+  const p = plan as { kpi: string | null; mes: number | null; year: number | null }
+  const periodo =
+    p.mes != null && p.year != null
+      ? String(p.mes).padStart(2, "0") + "/" + String(p.year)
+      : null
+  return {
+    ...CONTEXTO_VACIO,
+    flota_kpi: p.kpi ?? null,
+    flota_plan_periodo: periodo,
+  }
+}
+
 async function getContexto(
   supabase: Awaited<ReturnType<typeof createClient>>,
   row: {
     plan_id: string | null
     reunion_actividad_id: string | null
     reporte_seguridad_id: string | null
+    mantenimiento_id?: string | null
+    flota_plan_accion_id?: string | null
   },
 ): Promise<Contexto> {
   if (row.plan_id) return getPlanContexto(supabase, row.plan_id)
@@ -281,6 +351,9 @@ async function getContexto(
     return getActividadContexto(supabase, row.reunion_actividad_id)
   if (row.reporte_seguridad_id)
     return getReporteContexto(supabase, row.reporte_seguridad_id)
+  if (row.mantenimiento_id) return getOtContexto(supabase, row.mantenimiento_id)
+  if (row.flota_plan_accion_id)
+    return getFlotaPlanContexto(supabase, row.flota_plan_accion_id)
   return { ...CONTEXTO_VACIO }
 }
 
@@ -295,6 +368,8 @@ function mapRow(row: any, ctx: Contexto, autorNombre: string | null): Herramient
     plan_id: row.plan_id ?? null,
     reunion_actividad_id: row.reunion_actividad_id ?? null,
     reporte_seguridad_id: row.reporte_seguridad_id ?? null,
+    mantenimiento_id: row.mantenimiento_id ?? null,
+    flota_plan_accion_id: row.flota_plan_accion_id ?? null,
     tipo: row.tipo as HerramientaGestionTipo,
     titulo: row.titulo ?? "",
     contenido: row.contenido as HerramientaGestionContenido,
@@ -312,17 +387,28 @@ function mapRow(row: any, ctx: Contexto, autorNombre: string | null): Herramient
     actividad_descripcion: ctx.actividad_descripcion,
     reporte_tipo: ctx.reporte_tipo,
     reporte_descripcion: ctx.reporte_descripcion,
+    ot_numero: ctx.ot_numero,
+    ot_dominio: ctx.ot_dominio,
+    ot_tipo: ctx.ot_tipo,
+    flota_kpi: ctx.flota_kpi,
+    flota_plan_periodo: ctx.flota_plan_periodo,
   }
 }
 
 // Path a revalidar según el target.
 function targetPath(
   ctx: Contexto,
-  row: { plan_id: string | null; reporte_seguridad_id: string | null },
+  row: {
+    plan_id: string | null
+    reporte_seguridad_id: string | null
+    mantenimiento_id?: string | null
+    flota_plan_accion_id?: string | null
+  },
 ): string | null {
   if (row.plan_id) return `/planes/${row.plan_id}`
   if (ctx.reunion_id) return `/reuniones/${ctx.reunion_id}`
   if (row.reporte_seguridad_id) return "/reportes-seguridad"
+  if (row.mantenimiento_id || row.flota_plan_accion_id) return "/vehiculos/mantenimiento"
   return null
 }
 
@@ -337,6 +423,8 @@ async function generarYGuardarPdf(
       herramienta.plan_id ??
       herramienta.reunion_actividad_id ??
       herramienta.reporte_seguridad_id ??
+      herramienta.mantenimiento_id ??
+      herramienta.flota_plan_accion_id ??
       "otros"
     const path = `${carpeta}/${herramienta.id}.pdf`
     const { error: upErr } = await supabase.storage
@@ -390,6 +478,8 @@ async function insertarHerramienta(
       plan_id: row.plan_id ?? null,
       reunion_actividad_id: row.reunion_actividad_id ?? null,
       reporte_seguridad_id: row.reporte_seguridad_id ?? null,
+      mantenimiento_id: row.mantenimiento_id ?? null,
+      flota_plan_accion_id: row.flota_plan_accion_id ?? null,
       tipo: row.tipo as HerramientaGestionTipo,
       titulo: row.titulo ?? "",
       contenido: row.contenido as HerramientaGestionContenido,
@@ -671,6 +761,8 @@ export async function actualizarHerramientaGestion(
         plan_id: row.plan_id ?? null,
         reunion_actividad_id: row.reunion_actividad_id ?? null,
         reporte_seguridad_id: row.reporte_seguridad_id ?? null,
+        mantenimiento_id: row.mantenimiento_id ?? null,
+        flota_plan_accion_id: row.flota_plan_accion_id ?? null,
         tipo: row.tipo as HerramientaGestionTipo,
         titulo: row.titulo ?? "",
         contenido: row.contenido as HerramientaGestionContenido,
@@ -949,6 +1041,128 @@ export async function listarHerramientasReporte(
     return { data: items }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error cargando herramientas del reporte" }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Targets de flota (25/08/2026)
+//
+// La OT correctiva y el plan de acción del KPI de flota son los dos lugares
+// donde antes la causa raíz se escribía como texto suelto —o no se escribía.
+// Mismo criterio que los otros targets: sólo editores.
+// ---------------------------------------------------------------------------
+
+export async function crearHerramientaOt(
+  mantenimientoId: string,
+  tipo: HerramientaGestionTipo,
+  titulo: string,
+  contenido: HerramientaGestionContenido,
+): Promise<Result<HerramientaGestion>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+    if (!mantenimientoId) return { error: "ID de OT inválido" }
+
+    const permiso = puedeIntervenirEnFlota(profile.role)
+    if (!permiso.ok) return { error: permiso.error }
+
+    return insertarHerramienta(
+      supabase,
+      {
+        mantenimiento_id: mantenimientoId,
+        tipo,
+        titulo: titulo.trim() || null,
+        contenido,
+        autor_id: profile.id,
+      },
+      getNombre(profile),
+    )
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error creando la herramienta" }
+  }
+}
+
+export async function crearHerramientaPlanFlota(
+  flotaPlanId: string,
+  tipo: HerramientaGestionTipo,
+  titulo: string,
+  contenido: HerramientaGestionContenido,
+): Promise<Result<HerramientaGestion>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+    if (!flotaPlanId) return { error: "ID de plan de flota inválido" }
+
+    const permiso = puedeIntervenirEnFlota(profile.role)
+    if (!permiso.ok) return { error: permiso.error }
+
+    return insertarHerramienta(
+      supabase,
+      {
+        flota_plan_accion_id: flotaPlanId,
+        tipo,
+        titulo: titulo.trim() || null,
+        contenido,
+        autor_id: profile.id,
+      },
+      getNombre(profile),
+    )
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error creando la herramienta" }
+  }
+}
+
+export async function listarHerramientasOt(
+  mantenimientoId: string,
+): Promise<Result<HerramientaGestionConContexto[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    if (!mantenimientoId) return { error: "ID de OT inválido" }
+
+    const { data, error } = await supabase
+      .from("plan_herramientas_gestion")
+      .select(SELECT_CON_AUTOR)
+      .eq("mantenimiento_id", mantenimientoId)
+      .order("created_at", { ascending: false })
+    if (error) return { error: error.message }
+
+    const ctx = await getOtContexto(supabase, mantenimientoId)
+    const items = ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = row as any
+      return mapRow(r, ctx, r.autor?.nombre ?? null)
+    })
+    return { data: items }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando herramientas de la OT" }
+  }
+}
+
+export async function listarHerramientasPlanFlota(
+  flotaPlanId: string,
+): Promise<Result<HerramientaGestionConContexto[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    if (!flotaPlanId) return { error: "ID de plan de flota inválido" }
+
+    const { data, error } = await supabase
+      .from("plan_herramientas_gestion")
+      .select(SELECT_CON_AUTOR)
+      .eq("flota_plan_accion_id", flotaPlanId)
+      .order("created_at", { ascending: false })
+    if (error) return { error: error.message }
+
+    const ctx = await getFlotaPlanContexto(supabase, flotaPlanId)
+    const items = ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = row as any
+      return mapRow(r, ctx, r.autor?.nombre ?? null)
+    })
+    return { data: items }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando herramientas del plan de flota" }
   }
 }
 

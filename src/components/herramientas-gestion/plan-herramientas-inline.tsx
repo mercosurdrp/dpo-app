@@ -13,6 +13,8 @@ import { IS_MISIONES } from "@/lib/empresa"
 import {
   listarHerramientasPlan,
   listarHerramientasActividad,
+  listarHerramientasOt,
+  listarHerramientasPlanFlota,
 } from "@/actions/herramientas-gestion"
 import { HERRAMIENTA_GESTION_LABELS } from "@/lib/herramientas-gestion"
 import { HerramientaGestionDialog } from "./herramienta-gestion-dialog"
@@ -20,17 +22,24 @@ import { HerramientaGestionView } from "./herramienta-gestion-view"
 import type { HerramientaGestionConContexto } from "@/types/database"
 
 /**
- * Tira compacta para ver/aplicar herramientas de gestión sobre un plan o una
- * actividad de reunión. Pasar `planId` O `reunionActividadId`. Solo Pampeana.
+ * Tira compacta para ver/aplicar herramientas de gestión sobre un plan, una
+ * actividad de reunión, una OT de flota o el plan de acción de un KPI de flota.
+ * Pasar exactamente UNO de los cuatro ids. Solo Pampeana.
  */
 export function PlanHerramientasInline({
   planId,
   reunionActividadId,
+  mantenimientoId,
+  flotaPlanId,
   tituloSugerido,
   puedeAplicar = true,
 }: {
   planId?: string
   reunionActividadId?: string
+  /** OT de flota: acá se busca la causa raíz del correctivo que se repite. */
+  mantenimientoId?: string
+  /** Plan de acción de un KPI de flota en rojo. */
+  flotaPlanId?: string
   tituloSugerido?: string
   puedeAplicar?: boolean
 }) {
@@ -43,16 +52,22 @@ export function PlanHerramientasInline({
       ? listarHerramientasPlan(planId)
       : reunionActividadId
         ? listarHerramientasActividad(reunionActividadId)
-        : null
+        : mantenimientoId
+          ? listarHerramientasOt(mantenimientoId)
+          : flotaPlanId
+            ? listarHerramientasPlanFlota(flotaPlanId)
+            : null
     p?.then((r) => {
       if ("data" in r) setItems(r.data)
     })
   }
 
   useEffect(() => {
-    if (!IS_MISIONES && (planId || reunionActividadId)) recargar()
+    if (!IS_MISIONES && (planId || reunionActividadId || mantenimientoId || flotaPlanId)) {
+      recargar()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planId, reunionActividadId])
+  }, [planId, reunionActividadId, mantenimientoId, flotaPlanId])
 
   if (IS_MISIONES) return null
 
@@ -94,6 +109,8 @@ export function PlanHerramientasInline({
       <HerramientaGestionDialog
         planId={planId}
         reunionActividadId={reunionActividadId}
+        mantenimientoId={mantenimientoId}
+        flotaPlanId={flotaPlanId}
         tituloSugerido={tituloSugerido}
         open={aplicar}
         onOpenChange={setAplicar}

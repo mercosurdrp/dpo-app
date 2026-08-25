@@ -62,6 +62,7 @@ import type {
   ServiceGeneralUnidad,
 } from "@/lib/vehiculos/service-general"
 import { conformidadDocumental } from "@/lib/vehiculos/documentos-conformidad"
+import { PlanHerramientasInline } from "@/components/herramientas-gestion/plan-herramientas-inline"
 
 const MESES_CORTO = [
   "ene", "feb", "mar", "abr", "may", "jun",
@@ -1359,6 +1360,16 @@ function DetallePlanDialog({
           <div>
             <p className="text-xs font-medium uppercase text-muted-foreground">Causa raíz</p>
             <p className="mt-0.5 text-sm text-foreground">{plan.causa_raiz}</p>
+            {/*
+              La causa raíz era un párrafo escrito a mano. Desde acá se le puede
+              aplicar el método: 5 Porqués, Causa-Efecto o PDCA, con el mismo
+              formato que en el resto de la app y con PDF para la auditoría.
+            */}
+            <PlanHerramientasInline
+              flotaPlanId={plan.id}
+              tituloSugerido={def ? def.label : "Plan de acción de flota"}
+              puedeAplicar={puedeEditar && !cerrado}
+            />
           </div>
 
           <div>

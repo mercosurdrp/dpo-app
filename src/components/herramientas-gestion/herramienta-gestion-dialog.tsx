@@ -37,6 +37,8 @@ import {
   actualizarHerramientaGestion,
   crearHerramientaActividad,
   crearHerramientaReporte,
+  crearHerramientaOt,
+  crearHerramientaPlanFlota,
 } from "@/actions/herramientas-gestion"
 import { CincoPorquesForm, cincoPorquesVacio } from "./cinco-porques-form"
 import { CausaEfectoForm, causaEfectoVacio } from "./causa-efecto-form"
@@ -74,12 +76,16 @@ function contenidoVacioPorTipo(t: HerramientaGestionTipo): HerramientaGestionCon
 }
 
 export interface HerramientaGestionDialogProps {
-  /** Target = plan. Pasar exactamente uno de planId / reunionActividadId / reporteId. */
+  /** Target = plan. Pasar exactamente UNO de los cinco. */
   planId?: string
   /** Target = actividad de reunión. */
   reunionActividadId?: string
   /** Target = reporte de seguridad. */
   reporteId?: string
+  /** Target = OT de flota (la causa raíz del correctivo). */
+  mantenimientoId?: string
+  /** Target = plan de acción de un KPI de flota. */
+  flotaPlanId?: string
   /** Título prellenado al crear (nombre del plan / actividad / descripción del reporte). */
   tituloSugerido?: string
   open: boolean
@@ -92,6 +98,8 @@ export function HerramientaGestionDialog({
   planId,
   reunionActividadId,
   reporteId,
+  mantenimientoId,
+  flotaPlanId,
   tituloSugerido,
   open,
   onOpenChange,
@@ -180,10 +188,14 @@ export function HerramientaGestionDialog({
           contenido,
           contramedidaCompletada,
         )
+      } else if (mantenimientoId) {
+        res = await crearHerramientaOt(mantenimientoId, tipo, titulo.trim(), contenido)
+      } else if (flotaPlanId) {
+        res = await crearHerramientaPlanFlota(flotaPlanId, tipo, titulo.trim(), contenido)
       } else if (planId) {
         res = await crearHerramientaGestion(planId, tipo, titulo.trim(), contenido)
       } else {
-        toast.error("Falta el destino (plan, actividad o reporte)")
+        toast.error("Falta el destino (plan, actividad, reporte, OT o plan de flota)")
         return
       }
 

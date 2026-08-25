@@ -4006,10 +4006,16 @@ export type HerramientaGestionContenido =
 
 export interface HerramientaGestion {
   id: string
-  // Target: exactamente uno de plan_id / reunion_actividad_id / reporte_seguridad_id.
+  // Target: exactamente UNO de los cinco. Los dos últimos son de flota, y
+  // existen desde el 25/08/2026: hasta entonces el pilar que más correctivo
+  // genera no tenía desde dónde abrir un 5 Porqués.
   plan_id: string | null
   reunion_actividad_id: string | null
   reporte_seguridad_id: string | null
+  /** OT sobre la que se busca la causa raíz (normalmente correctiva). */
+  mantenimiento_id: string | null
+  /** Plan de acción del KPI de flota en rojo. */
+  flota_plan_accion_id: string | null
   tipo: HerramientaGestionTipo
   titulo: string
   contenido: HerramientaGestionContenido
@@ -4035,6 +4041,13 @@ export interface HerramientaGestionConContexto extends HerramientaGestion {
   // Contexto cuando el target es un reporte de seguridad
   reporte_tipo: string | null
   reporte_descripcion: string | null
+  // Contexto cuando el target es una OT de flota
+  ot_numero: string | null
+  ot_dominio: string | null
+  ot_tipo: string | null
+  // Contexto cuando el target es el plan de acción de un KPI de flota
+  flota_kpi: string | null
+  flota_plan_periodo: string | null
 }
 
 // ===== Ausentismo (Pampeana) =====

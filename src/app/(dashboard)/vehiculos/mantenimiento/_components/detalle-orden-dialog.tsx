@@ -21,6 +21,7 @@ import {
   Wrench,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { PlanHerramientasInline } from "@/components/herramientas-gestion/plan-herramientas-inline"
 import { MANTENIMIENTO_ESTADO_LABELS } from "@/types/database"
 import type {
   MantenimientoPlanTarea,
@@ -373,6 +374,19 @@ export function DetalleOrdenDialog({
               </div>
             </div>
           )}
+
+          {/*
+            Ciclo de gestión sobre la OT (DPO 4.2). El correctivo que se repite
+            en la misma unidad no tenía dónde analizarse: la causa raíz quedaba
+            en el campo de observaciones, si alguien la escribía. Desde acá se
+            aplica un 5 Porqués, un Causa-Efecto o un PDCA, con el mismo formato
+            que el resto de la app.
+          */}
+          <PlanHerramientasInline
+            mantenimientoId={m.id}
+            tituloSugerido={`OT ${m.numero_ot || ""} · ${m.dominio} · ${TIPO_MANT_LABEL[m.tipo]}`.trim()}
+            puedeAplicar={puedeEditar}
+          />
         </div>
 
         <DialogFooter className="flex-wrap gap-2">
