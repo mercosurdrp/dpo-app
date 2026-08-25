@@ -62,7 +62,7 @@ export function DiasPicoClient({
   // pruebas, la idea es poder mover los números y ver qué pasa.
   const [camiones, setCamiones] = useState(10)
   const [hlCamion, setHlCamion] = useState(72)
-  const [ocupacion, setOcupacion] = useState(90)
+  const [ocupacion, setOcupacion] = useState(80)
   // "flota"  = techo físico fijo, igual todo el año (camiones × HL × ocupación).
   // "mensual"= referencia relativa: el promedio diario del presupuesto de cada
   //            mes. No mide flota, mide concentración dentro del propio mes, y
