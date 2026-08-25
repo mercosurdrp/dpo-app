@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Truck, CalendarDays, TableIcon, AlertTriangle } from "lucide-react"
+import { Truck, CalendarDays, TableIcon, AlertTriangle, CalendarRange } from "lucide-react"
 
 export type MesProyectado = { mes: number; hl: number }
 export type DiaReal = { fecha: string; hl: number }
@@ -238,6 +238,7 @@ export function DiasPicoClient({
         <TabsList>
           <TabsTrigger value="mes" className="gap-1"><TableIcon className="size-4" />Mes a mes</TabsTrigger>
           <TabsTrigger value="dias" className="gap-1"><CalendarDays className="size-4" />Días pico</TabsTrigger>
+          <TabsTrigger value="cal" className="gap-1"><CalendarRange className="size-4" />Calendario</TabsTrigger>
         </TabsList>
 
         <TabsContent value="mes" className="mt-3">
@@ -356,7 +357,84 @@ export function DiasPicoClient({
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="cal" className="mt-3 space-y-3">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+            <span className="font-medium">Referencia:</span>
+            <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-red-600" /> PICO &gt;120%</span>
+            <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-amber-400" /> MEDIA 100–120%</span>
+            <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-emerald-500/80" /> BAJA</span>
+            <span className="ml-2 text-slate-500">
+              Cada celda: <b>plan</b> arriba (presupuesto repartido) · <b>real</b> abajo.
+            </span>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <MesGrilla key={m} anio={anio} mes={m} dias={dias} />
+            ))}
+          </div>
+        </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+
+/** Grilla mensual estilo Excel: una fila por semana, D-L-M-M-J-V-S. */
+function MesGrilla({
+  anio, mes, dias,
+}: {
+  anio: number
+  mes: number
+  dias: { fecha: string; mes: number; dow: number; cap: number; hlProy: number; hlReal: number | null; nivelProy: Nivel; nivelReal: Nivel | null }[]
+}) {
+  const delMes = dias.filter((d) => d.mes === mes)
+  const porDia = new Map(delMes.map((d) => [Number(d.fecha.slice(8, 10)), d]))
+  const ultimo = new Date(anio, mes, 0).getDate()
+  const offset = new Date(anio, mes - 1, 1).getDay() // 0 = domingo
+
+  const celdas: (number | null)[] = Array(offset).fill(null)
+  for (let d = 1; d <= ultimo; d++) celdas.push(d)
+  while (celdas.length % 7 !== 0) celdas.push(null)
+
+  const picos = delMes.filter((d) => (d.nivelReal ?? d.nivelProy) === "PICO").length
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between py-2">
+        <CardTitle className="text-sm font-semibold">{MESES[mes]}</CardTitle>
+        {picos > 0 && (
+          <Badge className="bg-red-600 text-[10px] text-white hover:bg-red-600">{picos} pico</Badge>
+        )}
+      </CardHeader>
+      <CardContent className="p-2">
+        <div className="grid grid-cols-7 gap-0.5 text-center">
+          {["D", "L", "M", "M", "J", "V", "S"].map((d, i) => (
+            <div key={i} className="pb-1 text-[10px] font-medium text-slate-400">{d}</div>
+          ))}
+          {celdas.map((num, i) => {
+            if (num == null) return <div key={i} />
+            const d = porDia.get(num)
+            if (!d) {
+              return (
+                <div key={i} className="rounded bg-slate-100 py-1 text-[10px] text-slate-400">
+                  {num}
+                </div>
+              )
+            }
+            const niv = d.nivelReal ?? d.nivelProy
+            return (
+              <div key={i} className={`rounded px-0.5 py-1 leading-tight ${COLOR[niv]}`}>
+                <div className="text-[10px] font-semibold opacity-80">{num}</div>
+                <div className="text-[11px] font-bold tabular-nums">{n0(d.hlProy)}</div>
+                <div className="text-[10px] tabular-nums opacity-90">
+                  {d.hlReal != null ? n0(d.hlReal) : "·"}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
