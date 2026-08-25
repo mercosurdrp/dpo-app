@@ -1,14 +1,16 @@
 "use server"
 /**
  * Detalle de Ocupación de Bodega de un día específico (drill-down del tablero
- * de reuniones). Devuelve cada viaje (patente) con CEq, % del target, bultos, etc.
+ * de reuniones). Devuelve cada viaje (patente) con CEq, % de ocupación, bultos, etc.
  */
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
-
-// Mismo target que la columna generada `ob_pct_target` (migración 093) y que
-// el sync — antes decía 600 y el resto del sistema 525.
-const TARGET_CEQ = 525
+import {
+  CAPACIDAD_CEQ,
+  MINIMO_CEQ,
+  alcanzaMinimo,
+  obPct,
+} from "@/lib/ocupacion-bodega"
 
 export interface ViajeDelDia {
   patente: string
@@ -23,12 +25,15 @@ export interface ViajeDelDia {
 
 export interface OBResumenDia {
   fecha: string
-  target: number
+  /** CEq que entran en el camión: el 100% de ocupación. */
+  capacidad: number
+  /** Carga mínima esperada por viaje. */
+  minimo: number
   total_viajes: number
   ceq_total: number
   ceq_promedio: number
-  pct_promedio: number   // promedio simple de OB% por viaje
-  en_meta: number        // viajes con CEq ≥ target
+  pct_promedio: number   // promedio simple de OB% por viaje (sobre la capacidad)
+  en_meta: number        // viajes que alcanzan la carga mínima
   patente_top: string | null
   ceq_max: number
   ceq_min: number
@@ -44,7 +49,7 @@ export async function getOcupacionBodegaResumenDia(
     const sb = await createClient()
     const { data, error } = await sb
       .from("ocupacion_bodega_diaria")
-      .select("patente, ceq_total, bultos_total, hl_total, peso_total, lineas, skus_distintos, ob_pct_target")
+      .select("patente, ceq_total, bultos_total, hl_total, peso_total, lineas, skus_distintos")
       .eq("fecha", fecha)
       .gt("ceq_total", 0)
       .order("ceq_total", { ascending: false })
@@ -57,12 +62,12 @@ export async function getOcupacionBodegaResumenDia(
       peso_total: number | null
       lineas: number
       skus_distintos: number
-      ob_pct_target: number
     }>
     if (rows.length === 0) {
       return {
         data: {
-          fecha, target: TARGET_CEQ, total_viajes: 0, ceq_total: 0, ceq_promedio: 0,
+          fecha, capacidad: CAPACIDAD_CEQ, minimo: MINIMO_CEQ,
+          total_viajes: 0, ceq_total: 0, ceq_promedio: 0,
           pct_promedio: 0, en_meta: 0, patente_top: null, ceq_max: 0, ceq_min: 0,
           viajes: [],
         },
@@ -76,17 +81,20 @@ export async function getOcupacionBodegaResumenDia(
       peso_total: Number(r.peso_total ?? 0),
       lineas: r.lineas,
       skus_distintos: r.skus_distintos,
-      ob_pct: Number(r.ob_pct_target),
+      // El % se calcula acá contra la capacidad real: la columna generada de la
+      // base divide por el target viejo.
+      ob_pct: obPct(r.ceq_total),
     }))
     const ceqs = viajes.map(v => v.ceq_total)
     const ceqTotal = ceqs.reduce((a, b) => a + b, 0)
     const ceqProm = ceqTotal / ceqs.length
     const pctProm = viajes.reduce((a, v) => a + v.ob_pct, 0) / viajes.length
-    const enMeta = viajes.filter(v => v.ceq_total >= TARGET_CEQ).length
+    const enMeta = viajes.filter(v => alcanzaMinimo(v.ceq_total)).length
     return {
       data: {
         fecha,
-        target: TARGET_CEQ,
+        capacidad: CAPACIDAD_CEQ,
+        minimo: MINIMO_CEQ,
         total_viajes: viajes.length,
         ceq_total: Math.round(ceqTotal * 10) / 10,
         ceq_promedio: Math.round(ceqProm * 10) / 10,

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react"
 import { toast } from "sonner"
+import { MINIMO_CEQ, MINIMO_PCT } from "@/lib/ocupacion-bodega"
 import {
   Loader2,
   Play,
@@ -848,12 +849,13 @@ function KpiDia({
   )
 }
 
-// Badge de % de ocupación de bodega contra el target (100% = 525 CEq).
+// Badge de ocupación de bodega: el 100% es el camión lleno (1.440 CEq), así que
+// el verde se pinta contra el mínimo de carga (600 CEq = 41,7% de la bodega).
 function OcupBadge({ pct }: { pct: number }) {
   const cls =
-    pct >= 100
+    pct >= MINIMO_PCT
       ? "bg-emerald-100 text-emerald-700"
-      : pct >= 80
+      : pct >= MINIMO_PCT * 0.8
         ? "bg-amber-100 text-amber-700"
         : "bg-rose-100 text-rose-700"
   return (
@@ -957,7 +959,7 @@ function PanelDetalleDia({
           icon={<Gauge className="size-3.5" />}
           label="CEq prom."
           value={ocup ? nf(ocup.ceq_promedio, 1) : "—"}
-          sub={ocup ? `target ${nf(525)}` : undefined}
+          sub={ocup ? `mínimo ${nf(MINIMO_CEQ)}` : undefined}
         />
         <KpiDia
           icon={<Target className="size-3.5" />}

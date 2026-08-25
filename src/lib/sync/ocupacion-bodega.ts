@@ -13,11 +13,14 @@
 import { chessLogin, type ChessCredentials } from "./rechazos-sync"
 import { cargaGescomPorViaje } from "@/lib/gescom/carga-viaje"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { MINIMO_CEQ } from "@/lib/ocupacion-bodega"
 
 // La pregunta 1.2 EN RUTA tiene key estable '5_1_23_74' en master_seed.
 const PREGUNTA_KEY_1_2 = "5_1_23_74"
 const INDICADOR_NOMBRE = "Ocupación de Bodega (OB)"
-const TARGET_CEQ = 525
+// Este indicador se publica en CEq (no en %), así que su meta es el mínimo de
+// carga por viaje, no la capacidad de la bodega.
+const TARGET_CEQ = MINIMO_CEQ
 
 // ---------- helpers ----------
 
@@ -223,6 +226,9 @@ export async function recalcOcupacionBodegaDia(
   // 4) Upsert en ocupacion_bodega_diaria — SOLO la parte Chess. La parte de
   //    Gestión la escribe `recalcCargaGescomOB` en `*_gescom`; los totales
   //    (`ceq_total`, `bultos_total`, `hl_total`, `ob_pct_target`) son columnas
+  //    generadas. OJO: `ob_pct_target` divide por el target viejo y quedó sin
+  //    uso — la ocupación se calcula en la app con `@/lib/ocupacion-bodega`;
+  //    no volver a leerla para mostrar porcentajes. Las demás son columnas
   //    GENERADAS = chess + gescom (migración 20260810120000).
   let ceqTotal = 0
   const rows = [...agg.entries()].map(([patente, d]) => {
@@ -362,7 +368,7 @@ export async function updateIndicadorOB(supabase: SupabaseClient): Promise<{ upd
     actual: avgRounded,
     unidad: "CEq",
     meta: TARGET_CEQ,
-    notas: `Promedio CEq por viaje del mes (${arr.length} viajes). Target ${TARGET_CEQ} CEq por camión. Fórmula: CEq = 120/bultosPallet × bultos por línea (Chess + Gestión), agrupado por (patente, fecha).`,
+    notas: `Promedio CEq por viaje del mes (${arr.length} viajes). Mínimo ${TARGET_CEQ} CEq por camión. Fórmula: CEq = 120/bultosPallet × bultos por línea (Chess + Gestión), agrupado por (patente, fecha).`,
     updated_at: new Date().toISOString(),
   }).eq("id", ind.id)
   if (error) {

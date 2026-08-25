@@ -12,8 +12,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { Loader2, Package, Target, TrendingUp, Truck } from "lucide-react"
 import { getOBKpis, getOBViajes, getOBPorPatente, getOBPorDia, type ViajeOB, type PatenteSummary, type DiaSummary, type MesSummary, type OBKpis } from "@/actions/ocupacion-bodega"
+import { CAPACIDAD_CEQ, MINIMO_CEQ, obPct as calcularObPct } from "@/lib/ocupacion-bodega"
 
-const TARGET = 525
+// Capacidad de bodega (100%) y carga mínima esperada: los dos valores viven en
+// `@/lib/ocupacion-bodega` para que todas las pantallas muestren lo mismo.
+const TARGET = MINIMO_CEQ
 const GREEN = "#10B981"
 const AMBER = "#F59E0B"
 const RED = "#EF4444"
@@ -83,7 +86,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
   }
 
   const cumpleMeta = kpis.ceq_promedio >= TARGET
-  const obPct = kpis.target > 0 ? (kpis.ceq_promedio / kpis.target) * 100 : 0
+  const obPct = calcularObPct(kpis.ceq_promedio)
 
   return (
     <div className="space-y-5">
@@ -92,7 +95,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Ocupación de Bodega (CEq)</h1>
           <p className="text-sm text-muted-foreground">
-            Pilar Entrega 1.2 · Target {TARGET} CEq por viaje · Fórmula CEq = 120 / bultosPallet × cantidadesTotal
+            Pilar Entrega 1.2 · Bodega {fmtN(CAPACIDAD_CEQ)} CEq (100%) · Mínimo {fmtN(TARGET)} CEq por viaje · Fórmula CEq = 120 / bultosPallet × cantidadesTotal
           </p>
         </div>
       </div>
@@ -142,7 +145,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
                 <p className="text-3xl font-bold" style={{ color: cumpleMeta ? GREEN : obPct >= 70 ? AMBER : RED }}>
                   {fmtN(kpis.ceq_promedio, 1)}
                 </p>
-                <p className="text-xs text-muted-foreground">de {TARGET} CEq · {fmtN(obPct, 1)}% del target</p>
+                <p className="text-xs text-muted-foreground">mínimo {fmtN(TARGET)} CEq · {fmtN(obPct, 1)}% de la bodega</p>
               </div>
               <Target className="size-6 text-slate-400" />
             </div>
@@ -155,7 +158,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
               <div>
                 <p className="text-xs text-muted-foreground">Viajes</p>
                 <p className="text-3xl font-bold">{fmtN(kpis.viajes)}</p>
-                <p className="text-xs text-muted-foreground">{fmtN(kpis.pct_meta, 1)}% en meta ≥ {TARGET}</p>
+                <p className="text-xs text-muted-foreground">{fmtN(kpis.pct_meta, 1)}% llega al mínimo ≥ {fmtN(TARGET)}</p>
               </div>
               <Truck className="size-6 text-slate-400" />
             </div>
@@ -210,7 +213,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
                     <XAxis dataKey="fecha" fontSize={11} tickFormatter={f => f.slice(5)} />
                     <YAxis fontSize={11} />
                     <Tooltip formatter={(v) => fmtN(Number(v), 1)} />
-                    <ReferenceLine y={TARGET} stroke={GREEN} strokeDasharray="5 5" label={{ value: `Meta ${TARGET}`, position: "right", fontSize: 10 }} />
+                    <ReferenceLine y={TARGET} stroke={GREEN} strokeDasharray="5 5" label={{ value: `Mínimo ${TARGET}`, position: "right", fontSize: 10 }} />
                     <Bar dataKey="ceq_promedio" radius={[4, 4, 0, 0]}>
                       {porDia.map((d, i) => <Cell key={i} fill={colorFor(d.ceq_promedio)} />)}
                     </Bar>
@@ -231,14 +234,14 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
                       <TableHead className="text-right">Viajes</TableHead>
                       <TableHead className="text-right">CEq total</TableHead>
                       <TableHead className="text-right">CEq prom/viaje</TableHead>
-                      <TableHead className="text-right">% del target</TableHead>
+                      <TableHead className="text-right">% bodega</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {porDia.length === 0 ? (
                       <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">Sin datos en el rango</TableCell></TableRow>
                     ) : porDia.slice().reverse().map(d => {
-                      const pct = (d.ceq_promedio / TARGET) * 100
+                      const pct = calcularObPct(d.ceq_promedio)
                       return (
                         <TableRow key={d.fecha}>
                           <TableCell className="font-mono text-sm">{d.fecha}</TableCell>
@@ -338,7 +341,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
                     <YAxis fontSize={11} />
                     <Tooltip formatter={(v) => [fmtN(Number(v), 1), "CEq prom"]} />
                     <Legend />
-                    <ReferenceLine y={TARGET} stroke={GREEN} strokeDasharray="5 5" label={{ value: `Meta ${TARGET}`, position: "right", fontSize: 10 }} />
+                    <ReferenceLine y={TARGET} stroke={GREEN} strokeDasharray="5 5" label={{ value: `Mínimo ${TARGET}`, position: "right", fontSize: 10 }} />
                     <Line type="monotone" dataKey="ceq_promedio" name="CEq prom/viaje" stroke={BLUE} strokeWidth={2} dot={{ r: 4 }} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -397,7 +400,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
                       <TableHead className="text-right">HL</TableHead>
                       <TableHead className="text-right">Líneas</TableHead>
                       <TableHead className="text-right">SKUs</TableHead>
-                      <TableHead className="text-right">% target</TableHead>
+                      <TableHead className="text-right">% bodega</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -416,7 +419,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
                         <TableCell className="text-right">{v.skus_distintos}</TableCell>
                         <TableCell className="text-right">
                           <Badge variant="outline" style={{ color: colorFor(v.ceq_total), borderColor: colorFor(v.ceq_total) }}>
-                            {fmtN(v.ob_pct_target, 1)}%
+                            {fmtN(v.ob_pct, 1)}%
                           </Badge>
                         </TableCell>
                       </TableRow>

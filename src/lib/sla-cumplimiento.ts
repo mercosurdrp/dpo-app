@@ -4,6 +4,7 @@
 // rechaza exportar constantes/tipos desde ahí, aunque tsc no lo marque).
 
 import { esFeriado, esPosteriorAFeriado } from "@/lib/feriados-ar"
+import { MINIMO_CEQ } from "@/lib/ocupacion-bodega"
 
 export const SLA_RUTEO_NOMBRE = "Tiempo de finalización del ruteo"
 export const SLA_RUTEO_TARGET = 95
@@ -364,11 +365,12 @@ export interface CasoSlaDetalle {
 
 // --- Umbrales DIARIOS configurables ------------------------------------------
 /**
- * Un día cumple capacidad si la ocupación promedio (CEq/TARGET_CEQ × 100) ≥
- * este valor. Con TARGET_CEQ = 525, un 100% equivale a "promedio de CEq ≥ 525"
- * (el mínimo de carga pactado en el SLA, sin máximo).
+ * Un día cumple capacidad si el promedio de CEq de los camiones alcanza el
+ * mínimo de carga pactado (sin máximo). Se compara en CEq y no en porcentaje:
+ * el % de ocupación mide cuánto se llenó la bodega (100% = camión lleno), que
+ * es otra cosa que el mínimo comercial.
  */
-export const CAPACIDAD_MIN_PCT = 100
+export const CAPACIDAD_MIN_CEQ = MINIMO_CEQ
 
 // Estado de un día para un SLA:
 //   "si" = cumple · "no" = no cumple · "na" = no aplica (ej. domingo) ·
