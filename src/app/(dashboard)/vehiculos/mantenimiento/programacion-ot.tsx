@@ -8,7 +8,7 @@
 // CALENDARIO del mes, que además proyecta el plan preventivo — es la vista que
 // pide el R2.2.3 (plan preventivo en herramienta digital).
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -521,7 +521,14 @@ function OtDialog({
         <div className="space-y-3">
           {/* Lo primero es cerrar la orden: cuando alguien la abre es para eso,
               no para corregirle el taller. Estaba abajo de todo y no se veía. */}
-          {ot && <TallerPanel ot={ot} datos={datosPlanDe(ot.dominio)} onHecho={onSaved} />}
+          {ot && (
+            <TallerPanel
+              ot={ot}
+              tallerActual={taller}
+              datos={datosPlanDe(ot.dominio)}
+              onHecho={onSaved}
+            />
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             {!ot && (
@@ -953,10 +960,13 @@ function VincularExistente({
  */
 function TallerPanel({
   ot,
+  tallerActual,
   datos,
   onHecho,
 }: {
   ot: OtProgramada
+  /** Taller tal como está escrito arriba, en este mismo diálogo. */
+  tallerActual: string
   datos: DatosPlanUnidad
   onHecho: () => void
 }) {
@@ -999,11 +1009,26 @@ function TallerPanel({
   /** Horas del taller: entrada y resolución. Vacías = se guarda sólo la fecha. */
   const [horaEntrada, setHoraEntrada] = useState("")
   const [horaSalida, setHoraSalida] = useState("")
-  // La primera fila viene con el taller de la orden puesto: casi siempre la
-  // factura es de él. Se cambia si la emitió otro (repuestos, gomería).
+  // La primera fila viene con el taller puesto: casi siempre la factura es de
+  // él. Se cambia si la emitió otro (repuestos, gomería).
+  const tallerSugerido = tallerActual.trim() || ot.taller || ""
   const [comprobantes, setComprobantes] = useState<ComprobanteForm[]>(() => [
-    nuevoComprobante(ot.taller ?? ""),
+    nuevoComprobante(tallerSugerido),
   ])
+  // El taller se escribe arriba, en el mismo diálogo. Si lo cambia después de
+  // abrirlo, la primera factura lo sigue mientras nadie la haya tocado a mano:
+  // es el mismo dato y no hay por qué tipearlo de nuevo acá abajo.
+  const sugeridoPrevio = useRef(tallerSugerido)
+  useEffect(() => {
+    const previo = sugeridoPrevio.current
+    if (tallerSugerido === previo) return
+    sugeridoPrevio.current = tallerSugerido
+    setComprobantes((filas) =>
+      filas.map((f, i) =>
+        i === 0 && f.proveedor === previo ? { ...f, proveedor: tallerSugerido } : f,
+      ),
+    )
+  }, [tallerSugerido])
   /**
    * Qué pasó con la orden. El caso de todos los días es que el trabajo ya está
    * hecho —la unidad va a la gomería y vuelve el mismo día—, así que arranca en
@@ -1036,6 +1061,7 @@ function TallerPanel({
       tareaIds: [...tildadas],
       nombresDelPlan: nombresTildados(),
       esServiceGeneral,
+      taller: tallerSugerido,
       ...medicionParaEnviar(),
     })
     setSaving(false)
@@ -1058,6 +1084,7 @@ function TallerPanel({
       tareaIds: [...tildadas],
       nombresDelPlan: nombresTildados(),
       esServiceGeneral,
+      taller: tallerSugerido,
       observaciones: obsCierre.trim() || undefined,
       facturas: comps,
       ...medicionParaEnviar(),

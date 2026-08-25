@@ -1596,7 +1596,6 @@ function NuevoMantenimientoDialog({
   })
   const [horometro, setHorometro] = useState("")
   const [taller, setTaller] = useState("")
-  const [factura, setFactura] = useState("")
   // N° de OT sugerido = último correlativo + 1 (editable).
   const [numeroOt, setNumeroOt] = useState(siguienteNumeroOt)
   const [obs, setObs] = useState("")
@@ -1688,9 +1687,9 @@ function NuevoMantenimientoDialog({
       odometro: parseNum(odometro),
       horometro: parseNum(horometro),
       taller,
-      // El costo total se arma solo: mano de obra + repuestos.
-      costo: totalOt(repuestos, costoMO),
-      numero_factura: factura,
+      // El costo y el N° de factura salen de los comprobantes; sin ellos, del
+      // desglose de mano de obra y repuestos.
+      ...plataDeLaOt(facturas, repuestos, costoMO),
       numero_ot: numeroOt,
       observaciones: obs,
       es_service_general: esServiceGeneral,
@@ -1878,10 +1877,6 @@ function NuevoMantenimientoDialog({
               </p>
             </div>
             <div>
-              <Label>N° factura</Label>
-              <Input value={factura} onChange={(e) => setFactura(e.target.value)} />
-            </div>
-            <div>
               <Label>Mano de obra ($)</Label>
               <Input
                 type="number"
@@ -1894,10 +1889,10 @@ function NuevoMantenimientoDialog({
           {/* Repuestos por un lado, mano de obra por el otro; el total se suma solo. */}
           <div className="space-y-3 rounded-md border border-border p-3">
             <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
-            <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} />
+            <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} facturas={facturas} />
           </div>
 
-          <FacturasEditor facturas={facturas} setFacturas={setFacturas} />
+          <FacturasEditor facturas={facturas} setFacturas={setFacturas} proveedorSugerido={taller} />
 
           <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3">
             <p className="text-sm font-medium text-amber-800">Entrada y salida del taller</p>
@@ -2450,8 +2445,8 @@ interface FacturaForm {
   archivo: File | null
 }
 
-function nuevaFactura(): FacturaForm {
-  return { proveedor: "", numero: "", monto: "", adjuntoUrl: null, archivo: null }
+function nuevaFactura(proveedor = ""): FacturaForm {
+  return { proveedor, numero: "", monto: "", adjuntoUrl: null, archivo: null }
 }
 
 /**
@@ -2521,9 +2516,12 @@ async function resolverFacturas(
 function FacturasEditor({
   facturas,
   setFacturas,
+  proveedorSugerido = "",
 }: {
   facturas: FacturaForm[]
   setFacturas: (f: FacturaForm[]) => void
+  /** Taller de la OT: viene puesto en la fila nueva, que casi siempre es su factura. */
+  proveedorSugerido?: string
 }) {
   const set = (i: number, patch: Partial<FacturaForm>) =>
     setFacturas(facturas.map((f, j) => (j === i ? { ...f, ...patch } : f)))
@@ -2541,7 +2539,7 @@ function FacturasEditor({
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => setFacturas([...facturas, nuevaFactura()])}
+          onClick={() => setFacturas([...facturas, nuevaFactura(proveedorSugerido)])}
         >
           <Plus className="mr-1 size-3.5" /> Agregar
         </Button>
@@ -2753,13 +2751,17 @@ function RepuestosEditor({
 function TotalOtLinea({
   repuestos,
   costoManoObra,
+  facturas,
 }: {
   repuestos: RepuestoForm[]
   costoManoObra: string
+  /** Comprobantes cargados: si tienen monto, ELLOS son el costo de la OT. */
+  facturas: FacturaForm[]
 }) {
   const mo = parseFloat(costoManoObra) || 0
   const rep = subtotalRepuestos(repuestos)
-  if (mo <= 0 && rep <= 0) return null
+  const fac = totalFacturas(facturas)
+  if (mo <= 0 && rep <= 0 && fac <= 0) return null
   return (
     <div className="space-y-0.5 rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
       <p className="flex justify-between">
@@ -2770,10 +2772,22 @@ function TotalOtLinea({
         <span>Repuestos</span>
         <span className="tabular-nums">{fmtMoney(rep)}</span>
       </p>
+      {fac > 0 && (
+        <p className="flex justify-between">
+          <span>Facturas cargadas</span>
+          <span className="tabular-nums">{fmtMoney(fac)}</span>
+        </p>
+      )}
       <p className="flex justify-between border-t border-border pt-0.5 text-sm font-semibold text-foreground">
-        <span>Total</span>
-        <span className="tabular-nums">{fmtMoney(mo + rep)}</span>
+        <span>Total de la OT</span>
+        <span className="tabular-nums">{fmtMoney(fac > 0 ? fac : mo + rep)}</span>
       </p>
+      {fac > 0 && mo + rep > 0 && Math.abs(fac - (mo + rep)) > 0.5 && (
+        <p className="pt-1 text-[11px] text-amber-600 dark:text-amber-500">
+          El total sale de las facturas. El desglose suma {fmtMoney(mo + rep)}: fijate si falta
+          un comprobante o si algo quedó cargado dos veces.
+        </p>
+      )}
     </div>
   )
 }
@@ -2783,6 +2797,28 @@ function totalOt(repuestos: RepuestoForm[], costoManoObra: string): number | nul
   const mo = parseFloat(costoManoObra) || 0
   const total = mo + subtotalRepuestos(repuestos)
   return total > 0 ? total : null
+}
+
+/**
+ * La plata de la OT según lo cargado, con la MISMA regla que el cierre de una
+ * OT programada: si hay comprobantes, el costo es la suma de sus montos y el N°
+ * de factura sale del primero que lo traiga; sin comprobantes vale el desglose
+ * (mano de obra + repuestos).
+ *
+ * 🚨 Antes el costo salía SÓLO del desglose y el N° de factura de un campo
+ * suelto arriba: cargar la factura obligaba a repetir el mismo total en "Mano de
+ * obra" y el mismo número dos veces, o la OT quedaba en $0 para el costo de flota.
+ */
+function plataDeLaOt(
+  facturas: FacturaForm[],
+  repuestos: RepuestoForm[],
+  costoManoObra: string,
+): { costo: number | null; numero_factura: string } {
+  const suma = totalFacturas(facturas)
+  return {
+    costo: suma > 0 ? Math.round(suma * 100) / 100 : totalOt(repuestos, costoManoObra),
+    numero_factura: facturas.find((f) => f.numero.trim())?.numero.trim() ?? "",
+  }
 }
 
 // ==================== Dialog: editar mantenimiento ====================
@@ -2806,7 +2842,6 @@ function EditarMantenimientoDialog({
   const [odometro, setOdometro] = useState(m.odometro != null ? String(m.odometro) : "")
   const [horometro, setHorometro] = useState(m.horometro != null ? String(m.horometro) : "")
   const [taller, setTaller] = useState(m.taller ?? "")
-  const [factura, setFactura] = useState(m.numero_factura ?? "")
   const [numeroOt, setNumeroOt] = useState(m.numero_ot ?? "")
   const [obs, setObs] = useState(m.observaciones ?? "")
   const [esServiceGeneral, setEsServiceGeneral] = useState(m.es_service_general)
@@ -2846,9 +2881,9 @@ function EditarMantenimientoDialog({
       odometro: parseNum(odometro),
       horometro: parseNum(horometro),
       taller,
-      // El costo total se arma solo: mano de obra + repuestos.
-      costo: totalOt(repuestos, costoMO),
-      numero_factura: factura,
+      // El costo y el N° de factura salen de los comprobantes; sin ellos, del
+      // desglose de mano de obra y repuestos.
+      ...plataDeLaOt(facturas, repuestos, costoMO),
       numero_ot: numeroOt,
       observaciones: obs,
       es_service_general: esServiceGeneral,
@@ -2930,10 +2965,6 @@ function EditarMantenimientoDialog({
             />
           </div>
           <div>
-            <Label>N° factura</Label>
-            <Input value={factura} onChange={(e) => setFactura(e.target.value)} />
-          </div>
-          <div>
             <Label>N° de OT</Label>
             <Input
               value={numeroOt}
@@ -2944,7 +2975,7 @@ function EditarMantenimientoDialog({
           {/* Repuestos por un lado, mano de obra por el otro; el total se suma solo. */}
           <div className="col-span-2 space-y-3 rounded-md border border-border p-3">
             <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
-            <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} />
+            <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} facturas={facturas} />
           </div>
           <div className="col-span-2">
             <Label>Observaciones</Label>
@@ -3005,7 +3036,7 @@ function EditarMantenimientoDialog({
           </div>
 
           <div className="col-span-2">
-            <FacturasEditor facturas={facturas} setFacturas={setFacturas} />
+            <FacturasEditor facturas={facturas} setFacturas={setFacturas} proveedorSugerido={taller} />
           </div>
         </div>
         <DialogFooter>
