@@ -59,7 +59,18 @@ function DialogContent({
         data-slot="dialog-content"
         data-expanded={expanded ? "" : undefined}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // 🚨 El tope de alto y el scroll van en la BASE, no en cada modal.
+          // El diálogo es `fixed` y está centrado con -translate-y-1/2: sin tope
+          // crece para arriba y para abajo fuera de la pantalla, y como no es
+          // parte del flujo de la página no hay scroll que lo alcance — queda
+          // literalmente inusable. Pasó con "Finalizar OT" de las órdenes
+          // programadas: al elegir "Ya se resolvió" o "Está en el taller" se
+          // despliegan fecha, hora, medición, observaciones y comprobantes, y el
+          // modal se iba de pantalla sin poder cargar nada.
+          //
+          // Un modal que ya entraba no cambia. Los que definen su propio max-h
+          // tampoco: `className` viene después en el cn() y pisa esto.
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className,
           // Maximizado: casi pantalla completa, con scroll interno. Va al final
           // del cn() para que pise el max-w/max-h que cada modal define.
