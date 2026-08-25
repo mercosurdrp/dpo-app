@@ -1,15 +1,15 @@
 "use client"
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Maximize2, Minus, Plus } from "lucide-react"
 import {
-  ARBOL_RECHAZO,
   NIVELES_KPI_ORDEN,
   NIVEL_KPI_LABEL,
   NODOS_SIN_FUENTE,
-  RAIZ_RECHAZO,
-  hijosDe,
-  type NodoArbolKpi,
+  hijosResueltos,
+  resolverArbol,
+  type NodoConfigValores,
+  type NodoResuelto,
 } from "@/lib/arbol-kpi/rechazo"
 import type { ArbolKpiData, NodoValor } from "@/actions/arbol-kpi"
 import { NodoDetalleDialog } from "./_components/nodo-detalle-dialog"
@@ -17,6 +17,9 @@ import "./arbol-kpi.css"
 
 interface Props {
   data: ArbolKpiData
+  /** Metas, gatillos y responsables cargados para el año (tabla arbol_kpi_config). */
+  config: Record<string, NodoConfigValores>
+  puedeEditar: boolean
 }
 
 /** Ancho de nodo y corredor entre niveles: fijos, para que cada nivel caiga
@@ -40,14 +43,25 @@ function fmt(valor: number | null, unidad: string): string {
 
 type Estado = "bien" | "cerca" | "mal" | "neutro"
 
+/**
+ * Semáforo de 3 zonas, el mismo criterio que los indicadores de las reuniones:
+ * verde mejor que la meta · ámbar entre la meta y el gatillo · rojo pasado el
+ * gatillo. Sin gatillo cargado se cae a dos zonas con una tolerancia del 25%,
+ * para no dejar en rojo a un nodo al que nadie le definió el umbral todavía.
+ */
 function estadoDe(
   valor: number | null,
   meta: number | null,
-  mejorSi: NodoArbolKpi["mejorSi"],
+  gatillo: number | null,
+  mejorSi: NodoResuelto["mejorSi"],
 ): Estado {
   if (valor == null || meta == null || mejorSi === "sin") return "neutro"
   const cumple = mejorSi === "mayor" ? valor >= meta : valor <= meta
   if (cumple) return "bien"
+  if (gatillo != null) {
+    const cruzo = mejorSi === "mayor" ? valor < gatillo : valor > gatillo
+    return cruzo ? "mal" : "cerca"
+  }
   const lejos = mejorSi === "mayor" ? meta / valor : valor / meta
   return lejos <= 1.25 ? "cerca" : "mal"
 }
@@ -67,8 +81,10 @@ const COLOR_PUNTO: Record<Estado, string> = {
   neutro: "bg-slate-300",
 }
 
-export function ArbolKpiClient({ data }: Props) {
-  const [detalle, setDetalle] = useState<NodoArbolKpi | null>(null)
+export function ArbolKpiClient({ data, config, puedeEditar }: Props) {
+  const nodos = useMemo(() => resolverArbol(config), [config])
+  const raiz = nodos.find((n) => n.parentKey === null)!
+  const [detalle, setDetalle] = useState<NodoResuelto | null>(null)
   const [zoom, setZoom] = useState(1)
   const [auto, setAuto] = useState(true)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -102,12 +118,12 @@ export function ArbolKpiClient({ data }: Props) {
     return () => ro.disconnect()
   }, [auto, ajustar])
 
-  const nodo = (key: string) => ARBOL_RECHAZO.find((n) => n.key === key)
+  const nodo = (key: string) => nodos.find((n) => n.key === key)
   const valorDe = (key: string): NodoValor => data.valores[key] ?? { mth: null, ytd: null }
 
-  function Tarjeta({ n, raiz = false }: { n: NodoArbolKpi; raiz?: boolean }) {
+  function Tarjeta({ n, raiz = false }: { n: NodoResuelto; raiz?: boolean }) {
     const v = valorDe(n.key)
-    const est = estadoDe(v.mth, n.meta, n.mejorSi)
+    const est = estadoDe(v.mth, n.meta, n.gatillo, n.mejorSi)
     return (
       <button
         onClick={() => setDetalle(n)}
@@ -147,8 +163,8 @@ export function ArbolKpiClient({ data }: Props) {
   }
 
   /** Rama recursiva: <li>[nodo][hijos]</li>. El centrado lo hace el CSS. */
-  function Rama({ n, raiz = false }: { n: NodoArbolKpi; raiz?: boolean }) {
-    const hijos = hijosDe(n.key)
+  function Rama({ n, raiz = false }: { n: NodoResuelto; raiz?: boolean }) {
+    const hijos = hijosResueltos(nodos, n.key)
     return (
       <li>
         <Tarjeta n={n} raiz={raiz} />
@@ -268,7 +284,7 @@ export function ArbolKpiClient({ data }: Props) {
         >
           <div ref={lienzoRef} className="akpi-tree w-max">
             <ul>
-              <Rama n={RAIZ_RECHAZO} raiz />
+              <Rama n={raiz} raiz />
             </ul>
           </div>
         </div>
@@ -301,6 +317,8 @@ export function ArbolKpiClient({ data }: Props) {
         mth={detalle ? valorDe(detalle.key).mth : null}
         ytd={detalle ? valorDe(detalle.key).ytd : null}
         mesLabel={data.mesLabel}
+        anio={data.anio}
+        puedeEditar={puedeEditar}
         onClose={() => setDetalle(null)}
       />
     </div>

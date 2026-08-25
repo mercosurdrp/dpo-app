@@ -58,8 +58,11 @@ export interface NodoArbolKpi {
   parentKey: string | null
   unidad: string
   mejorSi: MejorSiKpi
-  /** Meta del nodo. null = informativo, sin semáforo. */
-  meta: number | null
+  /**
+   * Meta con la que se diseñó el nodo. Es sólo el FALLBACK: la vigente vive en
+   * `arbol_kpi_config` por año y se edita desde la pantalla. null = informativo.
+   */
+  metaDefault: number | null
   /** De dónde sale el número. Se muestra al abrir el nodo: sin trazabilidad el árbol no se discute. */
   fuente: string
   /** Ruta de la app donde se gestiona ese driver, si existe. */
@@ -82,7 +85,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: null,
     unidad: "%",
     mejorSi: "menor",
-    meta: 1.7,
+    metaDefault: 1.7,
     fuente:
       "HL rechazados ÷ HL distribuidos del período. Mismo cálculo que la fila % Rechazo del cuadro mensual (el nodo Rechazo del Árbol del Sueño usa bultos: da parecido, no idéntico).",
     href: "/rechazos",
@@ -96,7 +99,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "rechazo",
     unidad: "HL",
     mejorSi: "sin",
-    meta: null,
+    metaDefault: null,
     fuente: "HL distribuidos del período (ventas_diarias), el volumen que sí llegó al cliente.",
   },
   {
@@ -106,7 +109,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "rechazo",
     unidad: "HL",
     mejorSi: "sin",
-    meta: null,
+    metaDefault: null,
     fuente: "HL cargados en los camiones del período (ocupacion_bodega_diaria).",
     href: "/indicadores/ocupacion-bodega",
   },
@@ -119,7 +122,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "vol_entregado_pdv",
     unidad: "%",
     mejorSi: "menor",
-    meta: null,
+    metaDefault: null,
     fuente:
       "Pedidos con al menos un rechazo ÷ pedidos del período (cada cliente × fecha cuenta 1). Mide cuántas visitas se caen, no cuánto volumen.",
     href: "/rechazos",
@@ -131,7 +134,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "vol_entregado_pdv",
     unidad: "hs",
     mejorSi: "menor",
-    meta: 6.5,
+    metaDefault: 6.5,
     fuente:
       "Duración promedio de las rutas finalizadas (Foxtrot). Es el mismo dato del nodo Tiempo en Ruta del Árbol del Sueño.",
     href: "/indicadores/tiempo-ruta",
@@ -143,7 +146,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "vol_entregado_pdv",
     unidad: "PPM",
     mejorSi: "menor",
-    meta: null,
+    metaDefault: null,
     fuente:
       "Delivery Quality Index corregido: roturas en ruta + reempaque sobre el volumen entregado (auditoría H2, punto 1.4).",
     href: "/indicadores/dqi",
@@ -155,7 +158,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "vol_cargado_camion",
     unidad: "%",
     mejorSi: "mayor",
-    meta: 100,
+    metaDefault: 100,
     fuente:
       "Cumplimiento del objetivo de carga: CEq promedio por viaje sobre los 600 CEq objetivo (100% = objetivo alcanzado). Cuánto del camión se llenó sobre los 1.440 CEq de bodega se ve en el detalle del módulo.",
     href: "/indicadores/ocupacion-bodega",
@@ -169,7 +172,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "rechazo_pedidos",
     unidad: "PDV",
     mejorSi: "sin",
-    meta: null,
+    metaDefault: null,
     fuente: "Clientes visitados por ruta (Foxtrot). Cuántas bocas atiende cada camión por viaje.",
   },
   {
@@ -179,7 +182,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "tmr",
     unidad: "%",
     mejorSi: "mayor",
-    meta: null,
+    metaDefault: null,
     fuente:
       "Driver click score de Foxtrot: si el chofer marca la entrega en el momento en que la hace. Sin esto, ninguna medición de ruta es confiable.",
   },
@@ -190,7 +193,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "tmr",
     unidad: "%",
     mejorSi: "mayor",
-    meta: null,
+    metaDefault: null,
     fuente:
       "Cuánto respeta el chofer el orden de reparto planificado (Foxtrot). Salirse de la secuencia alarga la ruta y llega tarde al PDV.",
   },
@@ -201,7 +204,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "tmr",
     unidad: "%",
     mejorSi: "menor",
-    meta: null,
+    metaDefault: null,
     fuente: "Entregas hechas fuera de la ruta planificada del día.",
     href: "/planeamiento/priorizacion-entrega",
   },
@@ -212,7 +215,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "tmr",
     unidad: "%",
     mejorSi: "menor",
-    meta: 10,
+    metaDefault: 10,
     fuente:
       "Desvío del tiempo real de ruta contra el planificado por Foxtrot. Mismo indicador que la matinal (meta 10%, gatillo 30%).",
     href: "/indicadores/desvio-plan",
@@ -224,7 +227,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "ob",
     unidad: "CEq/km",
     mejorSi: "mayor",
-    meta: null,
+    metaDefault: null,
     fuente:
       "CEq cargadas ÷ km recorridos del período. Los km salen del odómetro del checklist (retorno − liberación), la misma fuente del indicador de km de las reuniones: los km de Foxtrot llegan inconsistentes y están dados de baja desde el 21/07/2026.",
   },
@@ -235,7 +238,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "ob",
     unidad: "HL/PDV",
     mejorSi: "mayor",
-    meta: null,
+    metaDefault: null,
     fuente:
       "HL entregados ÷ clientes visitados. Un drop chico obliga a más paradas para el mismo volumen.",
   },
@@ -248,7 +251,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "rechazo_pedidos",
     unidad: "%",
     mejorSi: "menor",
-    meta: 1.5,
+    metaDefault: 1.5,
     fuente:
       "% de pedidos rechazados por «SIN DINERO» (catalogo_rechazos). Mismo nodo del Árbol del Sueño.",
     href: "/sueno/radar-rechazos",
@@ -260,7 +263,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "rechazo_pedidos",
     unidad: "%",
     mejorSi: "menor",
-    meta: 0.5,
+    metaDefault: 0.5,
     fuente:
       "% de pedidos rechazados por «CERRADO» (catalogo_rechazos). Mismo nodo del Árbol del Sueño.",
     href: "/sueno/radar-rechazos",
@@ -272,7 +275,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "rechazo_pedidos",
     unidad: "%",
     mejorSi: "menor",
-    meta: null,
+    metaDefault: null,
     fuente:
       "% de pedidos rechazados por «PRODUCTO NO APTO». Es el segundo motivo del año y apunta a calidad y almacén, no al cliente.",
   },
@@ -283,7 +286,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "rechazo_pedidos",
     unidad: "%",
     mejorSi: "menor",
-    meta: null,
+    metaDefault: null,
     fuente:
       "% de pedidos rechazados por «SIN ENVASES». Lo maneja la operación: es de los PIs que el propio equipo puede mover.",
   },
@@ -294,15 +297,61 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "rechazo_pedidos",
     unidad: "%",
     mejorSi: "menor",
-    meta: null,
+    metaDefault: null,
     fuente:
       "% de pedidos rechazados por «ERROR DE DISTRIBUCIÓN» (se suman las dos variantes que trae el catálogo, con y sin tilde). Es 100% responsabilidad nuestra.",
   },
 ]
 
+/** Valores que la operación gestiona desde la pantalla (tabla arbol_kpi_config). */
+export interface NodoConfigValores {
+  meta?: number | null
+  gatillo?: number | null
+  responsableId?: string | null
+  responsableNombre?: string | null
+  nota?: string | null
+}
+
+/** Nodo con su meta, gatillo y responsable ya resueltos. */
+export interface NodoResuelto extends NodoArbolKpi {
+  /** Meta vigente: la cargada este año, o la del código si nadie la tocó. */
+  meta: number | null
+  /** Umbral rojo. Sólo existe si alguien lo definió. */
+  gatillo: number | null
+  responsableId: string | null
+  responsableNombre: string | null
+  /** Por qué ese objetivo. Es lo que el auditor pregunta al ver una meta. */
+  notaMeta: string | null
+}
+
+/** Aplica la config guardada sobre la topología del código. */
+export function resolverArbol(
+  config: Record<string, NodoConfigValores> = {},
+): NodoResuelto[] {
+  return ARBOL_RECHAZO.map((n) => {
+    const c = config[n.key]
+    return {
+      ...n,
+      meta: c?.meta ?? n.metaDefault,
+      gatillo: c?.gatillo ?? null,
+      responsableId: c?.responsableId ?? null,
+      responsableNombre: c?.responsableNombre ?? null,
+      notaMeta: c?.nota ?? null,
+    }
+  })
+}
+
 /** Nodos hijos directos de una key. */
 export function hijosDe(key: string | null): NodoArbolKpi[] {
   return ARBOL_RECHAZO.filter((n) => n.parentKey === key)
+}
+
+/** Igual que `hijosDe` pero sobre los nodos ya resueltos. */
+export function hijosResueltos(
+  nodos: NodoResuelto[],
+  key: string | null,
+): NodoResuelto[] {
+  return nodos.filter((n) => n.parentKey === key)
 }
 
 /** Nodo raíz del árbol. */

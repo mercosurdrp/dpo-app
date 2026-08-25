@@ -18,18 +18,18 @@ import {
 } from "@/components/ui/dialog"
 import { SerieMensualChart } from "@/components/arbol-kpi/serie-mensual-chart"
 import { getArbolKpiRechazoSeries, type ArbolKpiSeries } from "@/actions/arbol-kpi"
-import {
-  NIVEL_KPI_LABEL,
-  type NodoArbolKpi,
-} from "@/lib/arbol-kpi/rechazo"
+import { NIVEL_KPI_LABEL, type NodoResuelto } from "@/lib/arbol-kpi/rechazo"
+import { ObjetivoNodoForm } from "./objetivo-nodo-form"
 
 interface Props {
-  nodo: NodoArbolKpi | null
+  nodo: NodoResuelto | null
   /** Nombre del padre, para ubicar el nodo en el cascadeo. */
   padreLabel: string | null
   mth: number | null
   ytd: number | null
   mesLabel: string
+  anio: number
+  puedeEditar: boolean
   onClose: () => void
 }
 
@@ -66,6 +66,8 @@ export function NodoDetalleDialog({
   mth,
   ytd,
   mesLabel,
+  anio,
+  puedeEditar,
   onClose,
 }: Props) {
   const [series, setSeries] = useState<ArbolKpiSeries | null>(null)
@@ -181,11 +183,13 @@ export function NodoDetalleDialog({
                     {nodo.meta == null ? "—" : fmt(nodo.meta, nodo.unidad)}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    {nodo.meta == null
-                      ? "sin objetivo definido"
-                      : nodo.mejorSi === "mayor"
-                        ? "cuanto más alto, mejor"
-                        : "cuanto más bajo, mejor"}
+                    {nodo.gatillo != null
+                      ? `gatillo ${fmt(nodo.gatillo, nodo.unidad)}`
+                      : nodo.meta == null
+                        ? "sin objetivo definido"
+                        : nodo.mejorSi === "mayor"
+                          ? "cuanto más alto, mejor"
+                          : "cuanto más bajo, mejor"}
                   </p>
                 </div>
               </div>
@@ -216,10 +220,19 @@ export function NodoDetalleDialog({
                     valores={serie}
                     unidad={nodo.unidad}
                     meta={nodo.meta}
+                    gatillo={nodo.gatillo}
                     decimales={decimalesDe(nodo.unidad)}
                   />
                 )}
               </div>
+
+              {/* Objetivo y dueño del PI: lo primero que pregunta el auditor */}
+              <ObjetivoNodoForm
+                nodo={nodo}
+                anio={anio}
+                puedeEditar={puedeEditar}
+                unidadFmt={(v) => fmt(v, nodo.unidad)}
+              />
 
               {/* De dónde sale el número: sin esto el árbol no se discute */}
               <div className="rounded-lg bg-slate-50 p-3">
