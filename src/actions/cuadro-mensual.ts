@@ -30,7 +30,7 @@ import { SELECT_RUTA_LIMPIA, esRutaLimpia } from "@/lib/foxtrot/ruta-limpia"
 import { SEGUNDAS_VUELTAS } from "@/lib/tlp/segundas-vueltas"
 import { ceqGescomPorViaje } from "@/lib/tlp/ceq-gescom"
 import { normPatente } from "@/lib/tlp/calc"
-import { obPct } from "@/lib/ocupacion-bodega"
+import { cumplimientoPct } from "@/lib/ocupacion-bodega"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -657,8 +657,8 @@ export async function getCuadroMensualIndicadores(): Promise<
   }
 
   // ── ENTREGA: Ocupación de bodega ──
-  // Cuánto del camión se llenó: CEq promedio por viaje sobre la capacidad de
-  // bodega. Ponderado por viaje (Σ CEq / Σ viajes), igual que el MTD del
+  // Cumplimiento del objetivo de carga: CEq promedio por viaje sobre los 600
+  // CEq objetivo. Ponderado por viaje (Σ CEq / Σ viajes), igual que el MTD del
   // indicador de la matinal, para que los dos tableros digan lo mismo.
   const obPorMes: Record<string, { ceq: number; viajes: number }> = {}
   for (const r of obRows) {
@@ -672,7 +672,7 @@ export async function getCuadroMensualIndicadores(): Promise<
     const acc = obPorMes[mes]
     celdas.ocupacion_bodega[mes] = {
       mes,
-      valor: acc && acc.viajes > 0 ? obPct(acc.ceq / acc.viajes) : null,
+      valor: acc && acc.viajes > 0 ? cumplimientoPct(acc.ceq / acc.viajes) : null,
       parcial: mes === mesActual,
     }
   }

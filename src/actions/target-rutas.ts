@@ -13,12 +13,12 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth, requireRole } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
-import { MINIMO_CEQ } from "@/lib/ocupacion-bodega"
+import { OBJETIVO_CEQ } from "@/lib/ocupacion-bodega"
 
 const ROLES_EDICION = ["admin", "supervisor"] as const
 const SOLO_PAMPEANA = "El target por ruta solo está disponible en Pampeana."
 /** Carga mínima esperada por viaje: el fallback cuando la ruta no tiene target. */
-const TARGET_GLOBAL_CEQ = MINIMO_CEQ
+const TARGET_GLOBAL_CEQ = OBJETIVO_CEQ
 
 // ---------- Types ----------
 

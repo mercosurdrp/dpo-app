@@ -224,7 +224,7 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                     Ocupación de Bodega
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    CEq por viaje · Mínimo 600 de 1.440 de bodega — Pilar Entrega 1.2
+                    CEq por viaje · Objetivo 600 (bodega 1.440) — Pilar Entrega 1.2
                   </p>
                 </div>
               </CardContent>
