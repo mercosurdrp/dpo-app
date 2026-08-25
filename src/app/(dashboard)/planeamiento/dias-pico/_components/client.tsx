@@ -64,10 +64,9 @@ export function DiasPicoClient({
   const [hlCamion, setHlCamion] = useState(72)
   const [ocupacion, setOcupacion] = useState(90)
   // "flota"  = techo físico fijo, igual todo el año (camiones × HL × ocupación).
-  // "mensual"= el criterio del Excel de Casa Central. Su "capacidad diaria
-  //            simulada" es (paletas/día hábil) × (HL/paleta), donde las paletas
-  //            se cancelan: queda el PROMEDIO DIARIO DEL PRESUPUESTO del mes.
-  //            No mide flota, mide concentración dentro del propio mes.
+  // "mensual"= referencia relativa: el promedio diario del presupuesto de cada
+  //            mes. No mide flota, mide concentración dentro del propio mes, y
+  //            por eso cambia mes a mes siguiendo la estacionalidad.
   const [modo, setModo] = useState<"flota" | "mensual">("flota")
 
   const capFlota = camiones * hlCamion * (ocupacion / 100)
@@ -191,13 +190,13 @@ export function DiasPicoClient({
             </button>
             <button type="button" onClick={() => setModo("mensual")}
               className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${modo === "mensual" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-              Promedio del mes (modelo Casa Central)
+              Promedio del mes (relativo)
             </button>
           </div>
           <p className="text-xs text-slate-500">
             {modo === "flota"
               ? "Techo físico igual todo el año: lo que la flota puede repartir en una vuelta."
-              : "Referencia distinta cada mes: el promedio diario del presupuesto de ese mes. Es lo que hace el Excel de Casa Central — su “capacidad simulada” es (paletas/día hábil) × (HL/paleta), donde las paletas se cancelan. Mide concentración dentro del mes, no flota."}
+              : "Referencia distinta cada mes: el promedio diario del presupuesto de ese mes. Mide concentración dentro del mes —qué días se salen de lo normal para ese mes— y no la flota, así que siempre encuentra días pico, incluso en los meses flojos."}
           </p>
         <div className="flex flex-wrap items-end gap-4">
           <div className={`w-28 ${modo === "mensual" ? "opacity-40" : ""}`}>

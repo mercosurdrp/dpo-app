@@ -14,8 +14,8 @@ const ANIO_BASE = ANIO - 1
  *
  * Vive aparte de /planeamiento/periodos-criticos a propósito: aquel módulo es
  * el que se audita en DPO R3.4 y usa detección retrospectiva por 4 triggers.
- * Éste es el enfoque forward de Casa Central —presupuesto repartido por día vs
- * capacidad de flota— para poder comparar los dos sin tocar el que está en uso.
+ * Éste es el enfoque forward —presupuesto repartido por día vs capacidad de
+ * distribución— para poder comparar los dos sin tocar el que está en uso.
  *
  * Nada de esto se persiste: los parámetros viven en el cliente.
  */
