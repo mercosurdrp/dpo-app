@@ -59,12 +59,18 @@ export function DiasPicoClient({
   feriados: Feriado[]
 }) {
   // Parámetros de capacidad. Viven acá y no en la base: esto es un banco de
-  // pruebas, la idea es poder mover los tres números y ver qué pasa.
+  // pruebas, la idea es poder mover los números y ver qué pasa.
   const [camiones, setCamiones] = useState(10)
   const [hlCamion, setHlCamion] = useState(72)
-  const [ocupacion, setOcupacion] = useState(80)
+  const [ocupacion, setOcupacion] = useState(90)
+  // "flota"  = techo físico fijo, igual todo el año (camiones × HL × ocupación).
+  // "mensual"= el criterio del Excel de Casa Central. Su "capacidad diaria
+  //            simulada" es (paletas/día hábil) × (HL/paleta), donde las paletas
+  //            se cancelan: queda el PROMEDIO DIARIO DEL PRESUPUESTO del mes.
+  //            No mide flota, mide concentración dentro del propio mes.
+  const [modo, setModo] = useState<"flota" | "mensual">("flota")
 
-  const cap = camiones * hlCamion * (ocupacion / 100)
+  const capFlota = camiones * hlCamion * (ocupacion / 100)
   const setFer = useMemo(() => new Set(feriados.map((f) => f.fecha)), [feriados])
   const pptoPorMes = useMemo(
     () => Object.fromEntries(proyectado.map((p) => [p.mes, p.hl])) as Record<number, number>,
@@ -93,10 +99,22 @@ export function DiasPicoClient({
     return out
   }, [base])
 
+  // Capacidad de referencia de cada mes, según el modo elegido.
+  const capPorMes = useMemo(() => {
+    const out: Record<number, number> = {}
+    for (let m = 1; m <= 12; m++) {
+      const habiles = diasHabiles(anio, m, setFer).length
+      out[m] = modo === "flota"
+        ? capFlota
+        : habiles > 0 ? (pptoPorMes[m] ?? 0) / habiles : 0
+    }
+    return out
+  }, [anio, setFer, modo, capFlota, pptoPorMes])
+
   // Detalle diario del año: proyección y real, cada uno con su nivel.
   const dias = useMemo(() => {
     const out: {
-      fecha: string; mes: number; dow: number
+      fecha: string; mes: number; dow: number; cap: number
       hlProy: number; hlReal: number | null
       nivelProy: Nivel; nivelReal: Nivel | null
     }[] = []
@@ -106,19 +124,20 @@ export function DiasPicoClient({
       const pesos = fechas.map((_, i) => (w.length ? w[Math.min(i, w.length - 1)] : 1 / fechas.length))
       const suma = pesos.reduce((a, b) => a + b, 0) || 1
       const ppto = pptoPorMes[m] ?? 0
+      const capMes = capPorMes[m] ?? 0
       fechas.forEach((f, i) => {
         const hlProy = (ppto * pesos[i]) / suma
         const hlReal = realPorFecha[f] ?? null
         out.push({
-          fecha: f, mes: m, dow: new Date(f + "T12:00:00").getDay(),
+          fecha: f, mes: m, dow: new Date(f + "T12:00:00").getDay(), cap: capMes,
           hlProy, hlReal,
-          nivelProy: nivelDe(hlProy, cap),
-          nivelReal: hlReal == null ? null : nivelDe(hlReal, cap),
+          nivelProy: nivelDe(hlProy, capMes),
+          nivelReal: hlReal == null ? null : nivelDe(hlReal, capMes),
         })
       })
     }
     return out
-  }, [anio, setFer, pesosBase, pptoPorMes, realPorFecha, cap])
+  }, [anio, setFer, pesosBase, pptoPorMes, realPorFecha, capPorMes])
 
   // Resumen mes a mes: capacidad instalada contra presupuesto y contra real.
   const resumen = useMemo(() => {
@@ -126,7 +145,7 @@ export function DiasPicoClient({
       const m = i + 1
       const delMes = dias.filter((d) => d.mes === m)
       const conReal = delMes.filter((d) => d.hlReal != null)
-      const capMes = cap * delMes.length
+      const capMes = (capPorMes[m] ?? 0) * delMes.length
       const ppto = pptoPorMes[m] ?? 0
       const realMes = conReal.reduce((a, b) => a + (b.hlReal ?? 0), 0)
       return {
@@ -138,7 +157,7 @@ export function DiasPicoClient({
         diasProyPico: delMes.filter((d) => d.nivelProy === "PICO").length,
       }
     })
-  }, [dias, cap, pptoPorMes])
+  }, [dias, capPorMes, pptoPorMes])
 
   const totalCap = resumen.reduce((a, b) => a + b.capMes, 0)
   const totalPpto = resumen.reduce((a, b) => a + b.ppto, 0)
@@ -164,31 +183,54 @@ export function DiasPicoClient({
             <Truck className="size-4 text-slate-500" /> Capacidad de distribución
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-end gap-4">
-          <div className="w-28">
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setModo("flota")}
+              className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${modo === "flota" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+              Capacidad de flota (techo fijo)
+            </button>
+            <button type="button" onClick={() => setModo("mensual")}
+              className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${modo === "mensual" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+              Promedio del mes (modelo Casa Central)
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">
+            {modo === "flota"
+              ? "Techo físico igual todo el año: lo que la flota puede repartir en una vuelta."
+              : "Referencia distinta cada mes: el promedio diario del presupuesto de ese mes. Es lo que hace el Excel de Casa Central — su “capacidad simulada” es (paletas/día hábil) × (HL/paleta), donde las paletas se cancelan. Mide concentración dentro del mes, no flota."}
+          </p>
+        <div className="flex flex-wrap items-end gap-4">
+          <div className={`w-28 ${modo === "mensual" ? "opacity-40" : ""}`}>
             <Label className="text-xs text-slate-500">Camiones</Label>
             <Input type="number" min={1} value={camiones} className="h-8"
               onChange={(e) => setCamiones(Math.max(1, Number(e.target.value) || 0))} />
           </div>
-          <div className="w-28">
+          <div className={`w-28 ${modo === "mensual" ? "opacity-40" : ""}`}>
             <Label className="text-xs text-slate-500">HL por camión</Label>
             <Input type="number" min={1} value={hlCamion} className="h-8"
               onChange={(e) => setHlCamion(Math.max(1, Number(e.target.value) || 0))} />
           </div>
-          <div className="w-32">
+          <div className={`w-32 ${modo === "mensual" ? "opacity-40" : ""}`}>
             <Label className="text-xs text-slate-500">Ocupación de bodega %</Label>
             <Input type="number" min={1} max={100} value={ocupacion} className="h-8"
               onChange={(e) => setOcupacion(Math.min(100, Math.max(1, Number(e.target.value) || 0)))} />
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2">
-            <div className="text-xs text-slate-500">Capacidad diaria</div>
-            <div className="text-lg font-bold text-slate-900">{n0(cap)} HL</div>
+            <div className="text-xs text-slate-500">
+              {modo === "flota" ? "Capacidad diaria" : "Referencia (varía por mes)"}
+            </div>
+            <div className="text-lg font-bold text-slate-900">
+              {modo === "flota"
+                ? `${n0(capFlota)} HL`
+                : `${n0(Math.min(...Object.values(capPorMes)))} – ${n0(Math.max(...Object.values(capPorMes)))} HL`}
+            </div>
           </div>
           <div className="text-xs text-slate-600">
-            <div><b>PICO</b> &gt; 120% ({n0(cap * 1.2)} HL)</div>
+            <div><b>PICO</b> &gt; 120% de la referencia</div>
             <div><b>MEDIA</b> 100–120%</div>
             <div><b>BAJA</b> &lt; 100%</div>
           </div>
+        </div>
         </CardContent>
       </Card>
 
@@ -294,14 +336,14 @@ export function DiasPicoClient({
                         <td className="p-2 text-right tabular-nums">{n0(d.hlProy)}</td>
                         <td className="p-2 text-center">
                           <span className={`rounded px-2 py-0.5 text-xs font-semibold ${COLOR[d.nivelProy]}`}>
-                            {d.nivelProy} · {pct(d.hlProy / cap)}
+                            {d.nivelProy} · {pct(d.cap > 0 ? d.hlProy / d.cap : 0)}
                           </span>
                         </td>
                         <td className="p-2 text-right tabular-nums">{d.hlReal != null ? n0(d.hlReal) : "—"}</td>
                         <td className="p-2 text-center">
                           {d.nivelReal ? (
                             <span className={`rounded px-2 py-0.5 text-xs font-semibold ${COLOR[d.nivelReal]}`}>
-                              {d.nivelReal} · {pct((d.hlReal ?? 0) / cap)}
+                              {d.nivelReal} · {pct(d.cap > 0 ? (d.hlReal ?? 0) / d.cap : 0)}
                             </span>
                           ) : (
                             <span className="text-xs text-slate-400">—</span>
