@@ -1,13 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
 import {
+  addDays,
   addMonths,
   daysBetween,
   fetchLecturas,
   historialLecturasPorDominio,
   kmActualPorDominio,
+  kmDiaPorDominio,
   today,
   ultimasLecturasPorDominio,
+  VENTANA_KM_DIA_DIAS,
   type LecturaSugerida,
 } from "@/lib/vehiculos/lecturas"
 import type {
@@ -38,11 +41,30 @@ export interface UltimoRealizadoPorTarea {
 export interface LecturaActual {
   kmActual: number | null
   horasActuales: number | null
+  /** Ritmo medido de la unidad, para proyectar a días los km que faltan. */
+  kmDia?: number | null
 }
 
 const PROXIMO_PCT = 0.9
 const PROXIMO_KM = 1000
 const PROXIMO_DIAS = 15
+
+/**
+ * Aviso por km PROYECTADOS a días: una tarea entra en "próxima a vencer" cuando
+ * los km que le faltan, al ritmo de esa unidad, se consumen en este plazo.
+ *
+ * 🚨 Existe porque el tope fijo de PROXIMO_KM avisa tardísimo en las unidades
+ * que hacen muchos km. El AE908DH hace ~157 km/día: 1.000 km son SEIS días de
+ * aviso, que no alcanza ni para conseguir turno en el taller. El 25/08/2026 el
+ * DH figuraba a 23 días del service en el Tablero operativo y al mismo tiempo
+ * NO aparecía en "Próximas a vencer", porque llevaba el 80% del ciclo y le
+ * faltaban 4.081 km — arriba de los dos umbrales viejos.
+ *
+ * Son 30 días para que coincida con el amarillo de la tarjeta de Próximo
+ * service (UMBRAL_AMARILLO en service-general.ts): las dos cosas miran el mismo
+ * vencimiento y no pueden decir cosas distintas.
+ */
+const PROXIMO_DIAS_PROYECTADOS = 30
 
 function peor(a: EstadoTareaMantenimiento, b: EstadoTareaMantenimiento): EstadoTareaMantenimiento {
   const orden: Record<EstadoTareaMantenimiento, number> = {
@@ -73,6 +95,7 @@ function computeCelda(
     ultimoHorometro: ultimo?.horometro ?? null,
     proximoKm: null,
     proximaFecha: null,
+    diasProyectados: null,
     proximasHoras: null,
     pctConsumido: null,
     soloPorTiempo: false,
@@ -95,8 +118,21 @@ function computeCelda(
       pctMax = Math.max(pctMax ?? 0, pct)
       if (actual.kmActual >= celda.proximoKm) {
         estado = peor(estado, "vencido")
-      } else if (pct >= PROXIMO_PCT || celda.proximoKm - actual.kmActual <= PROXIMO_KM) {
-        estado = peor(estado, "proximo")
+      } else {
+        // Km que faltan llevados a días con el ritmo de la unidad: es lo que
+        // hace que un camión que hace 157 km/día avise con tiempo y no seis
+        // días antes (ver PROXIMO_DIAS_PROYECTADOS).
+        const faltan = celda.proximoKm - actual.kmActual
+        const diasProyectados =
+          actual.kmDia != null && actual.kmDia > 0 ? faltan / actual.kmDia : null
+        celda.diasProyectados = diasProyectados != null ? Math.round(diasProyectados) : null
+        if (
+          pct >= PROXIMO_PCT ||
+          faltan <= PROXIMO_KM ||
+          (diasProyectados != null && diasProyectados <= PROXIMO_DIAS_PROYECTADOS)
+        ) {
+          estado = peor(estado, "proximo")
+        }
       }
     }
   }
@@ -258,6 +294,11 @@ export async function loadEstadoPlan(client?: SupabaseClient): Promise<{
   }
 
   const kmActuales = kmActualPorDominio(lecturas)
+  // Ritmo reciente por unidad: convierte "faltan 4.081 km" en "faltan 26 días",
+  // que es lo que hace accionable el aviso (ver PROXIMO_DIAS_PROYECTADOS).
+  const kmDias = kmDiaPorDominio(lecturas, {
+    desde: addDays(today(), -VENTANA_KM_DIA_DIAS),
+  })
   const actuales = new Map<string, LecturaActual>()
   for (const v of vehiculos) {
     const lectura = kmActuales.get(v.dominio)?.odometro ?? null
@@ -274,7 +315,11 @@ export async function loadEstadoPlan(client?: SupabaseClient): Promise<{
       })
       continue
     }
-    actuales.set(v.dominio, { kmActual: lectura, horasActuales: horasOt })
+    actuales.set(v.dominio, {
+      kmActual: lectura,
+      horasActuales: horasOt,
+      kmDia: kmDias.get(v.dominio) ?? null,
+    })
   }
 
   const estados = computeEstadoPlan({ vehiculos, tareas, overrides, ultimos, actuales })

@@ -1613,6 +1613,9 @@ export interface EstadoPlanCelda {
   proximoKm: number | null
   proximaFecha: string | null
   proximasHoras: number | null
+  /** Días que faltan para el vencimiento por km, al ritmo medido de la unidad.
+   *  Null si la tarea no tiene eje km, ya venció, o no hay ritmo para proyectar. */
+  diasProyectados: number | null
   /** % de la frecuencia ya consumido (0-100+, el peor de los ejes con datos). */
   pctConsumido: number | null
   /** true cuando el estado se calculó solo por tiempo (sin lecturas km/horas). */

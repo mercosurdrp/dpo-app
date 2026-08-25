@@ -500,6 +500,59 @@ export function resumenHorasHorometro(
  * pasar a ser la referencia, o un dedazo bajo deja fuera todo lo que viene
  * después (ver el detalle del AE908DH en el cuerpo de la función).
  */
+/** Ventana por defecto para medir el ritmo: 4 meses. */
+export const VENTANA_KM_DIA_DIAS = 120
+
+/**
+ * Ritmo de uso por unidad (km/día), medido sobre la secuencia creciente limpia
+ * de una ventana reciente.
+ *
+ * 🚨 Descarta retrocesos Y saltos imposibles, igual que `kmActualPorDominio`.
+ * Sin el filtro de salto el ritmo se va a las nubes con un solo dedazo: el
+ * 25/08/2026 el AE908DH daba 256 km/día porque la serie terminaba en el 151.568
+ * del 10/08 (real 141.568, un 4 tecleado como 5). Con el filtro da 157, que es
+ * lo que también mide la tarjeta de service por su lado (154).
+ *
+ * Devuelve sólo las unidades con al menos dos lecturas útiles y avance positivo.
+ */
+export function kmDiaPorDominio(
+  lecturas: Lectura[],
+  opts?: { desde?: string }
+): Map<string, number> {
+  const porDominio = new Map<string, Lectura[]>()
+  for (const l of lecturas) {
+    if (opts?.desde && l.fecha < opts.desde) continue
+    if (!porDominio.has(l.dominio)) porDominio.set(l.dominio, [])
+    porDominio.get(l.dominio)!.push(l)
+  }
+  const out = new Map<string, number>()
+  for (const [dominio, arr] of porDominio) {
+    arr.sort((a, b) => {
+      if (a.fecha !== b.fecha) return a.fecha < b.fecha ? -1 : 1
+      return a.hora < b.hora ? -1 : 1
+    })
+    let primero: { fecha: string; odometro: number } | null = null
+    let ultimo: { fecha: string; odometro: number } | null = null
+    let prev: { fecha: string; odometro: number } | null = null
+    for (const l of arr) {
+      if (prev != null) {
+        if (l.odometro < prev.odometro) continue
+        const dias = Math.max(1, daysBetween(prev.fecha, l.fecha))
+        if ((l.odometro - prev.odometro) / dias > KM_DIA_MAX_PLAUSIBLE) continue
+      }
+      prev = { fecha: l.fecha, odometro: l.odometro }
+      if (primero == null) primero = prev
+      ultimo = prev
+    }
+    if (primero == null || ultimo == null) continue
+    const dias = daysBetween(primero.fecha, ultimo.fecha)
+    if (dias <= 0) continue
+    const tasa = (ultimo.odometro - primero.odometro) / dias
+    if (tasa > 0 && tasa <= KM_DIA_MAX_PLAUSIBLE) out.set(dominio, Math.round(tasa))
+  }
+  return out
+}
+
 export function kmActualPorDominio(
   lecturas: Lectura[]
 ): Map<string, { odometro: number; fecha: string }> {

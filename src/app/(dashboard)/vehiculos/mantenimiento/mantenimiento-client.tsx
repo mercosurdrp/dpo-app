@@ -211,6 +211,18 @@ function fmtFecha(f: string | null): string {
   return f.slice(0, 10).split("-").reverse().join("/")
 }
 
+/**
+ * Días desde hoy hasta una fecha ISO, para la columna "Faltan" de las tareas
+ * que vencen por tiempo (VTV, matafuego) y no tienen proyección por km.
+ */
+const diasHasta = (iso: string | null): string => {
+  if (!iso) return "—"
+  const d = Math.round(
+    (new Date(iso + "T12:00:00").getTime() - new Date().setHours(12, 0, 0, 0)) / 86_400_000
+  )
+  return d < 0 ? `${d} d` : `${d} d`
+}
+
 const fmtMoney = (v: number) =>
   new Intl.NumberFormat("es-AR", {
     style: "currency",
@@ -1321,6 +1333,9 @@ export function MantenimientoClient({
                       <TableHead>Tarea</TableHead>
                       <TableHead>Último</TableHead>
                       <TableHead>Próximo</TableHead>
+                      {/* Los km que faltan dicen poco solos: 4.000 km son 26 días
+                          en un camión de reparto y 90 en una camioneta. */}
+                      <TableHead className="text-right">Faltan</TableHead>
                       <TableHead className="text-right">Consumido</TableHead>
                       {puedeEditar && <TableHead className="w-24" />}
                     </TableRow>
@@ -1362,6 +1377,11 @@ export function MantenimientoClient({
                             {f.celda.soloPorTiempo && (
                               <span className="ml-1 text-xs">(por tiempo)</span>
                             )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {f.celda.diasProyectados != null
+                              ? `~${f.celda.diasProyectados} d`
+                              : diasHasta(f.celda.proximaFecha)}
                           </TableCell>
                           <TableCell
                             className={cn(

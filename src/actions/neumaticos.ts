@@ -7,7 +7,8 @@ import type { VehiculoTipo } from "@/types/database"
 import {
   fetchLecturas,
   kmActualPorDominio,
-  daysBetween,
+  kmDiaPorDominio,
+  VENTANA_KM_DIA_DIAS,
   addDays,
   today,
 } from "@/lib/vehiculos/lecturas"
@@ -919,45 +920,22 @@ export async function getKmFlota(): Promise<{
 }> {
   try {
     await requireAuth()
-    // Ventana de ~120 días para medir la tasa km/día.
-    const desde = addDays(today(), -120)
+    const desde = addDays(today(), -VENTANA_KM_DIA_DIAS)
     const lecturas = await fetchLecturas({ fechaDesde: desde })
     const kmActualMap = kmActualPorDominio(lecturas)
+    // 🚨 El ritmo sale de `kmDiaPorDominio`, que descarta retrocesos y saltos
+    // imposibles. La versión que vivía acá sólo tomaba la secuencia creciente y
+    // un dedazo alto se le colaba entero: el AE908DH daba 256 km/día porque la
+    // serie terminaba en el 151.568 del 10/08 (real 141.568). Con esto da 157.
+    const kmDiaMap = kmDiaPorDominio(lecturas, { desde })
 
-    // Tasa km/día: por dominio, primera y última lectura "limpia" (creciente).
-    const porDominio = new Map<string, { fecha: string; hora: string; odometro: number }[]>()
-    for (const l of lecturas) {
-      if (!porDominio.has(l.dominio)) porDominio.set(l.dominio, [])
-      porDominio.get(l.dominio)!.push({ fecha: l.fecha, hora: l.hora, odometro: l.odometro })
-    }
-
+    const dominios = new Set([...kmActualMap.keys(), ...kmDiaMap.keys()])
     const out: Record<string, KmFlotaUnidad> = {}
-    for (const [dominio, arr] of porDominio) {
-      arr.sort((a, b) => (a.fecha !== b.fecha ? (a.fecha < b.fecha ? -1 : 1) : a.hora < b.hora ? -1 : 1))
-      // secuencia creciente limpia
-      let max = -Infinity
-      let primero: { fecha: string; odometro: number } | null = null
-      let ultimo: { fecha: string; odometro: number } | null = null
-      for (const l of arr) {
-        if (l.odometro >= max) {
-          max = l.odometro
-          if (!primero) primero = { fecha: l.fecha, odometro: l.odometro }
-          ultimo = { fecha: l.fecha, odometro: l.odometro }
-        }
-      }
-      let kmDia: number | null = null
-      if (primero && ultimo) {
-        const dias = daysBetween(primero.fecha, ultimo.fecha)
-        if (dias > 0) {
-          const tasa = (ultimo.odometro - primero.odometro) / dias
-          // descartar tasas absurdas (errores de carga)
-          if (tasa > 0 && tasa <= 1500) kmDia = Math.round(tasa)
-        }
-      }
+    for (const dominio of dominios) {
       const actual = kmActualMap.get(dominio)
       out[dominio] = {
         kmActual: actual?.odometro ?? null,
-        kmDia,
+        kmDia: kmDiaMap.get(dominio) ?? null,
         fecha: actual?.fecha ?? null,
       }
     }
