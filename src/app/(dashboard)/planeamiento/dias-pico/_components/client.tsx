@@ -364,11 +364,8 @@ export function DiasPicoClient({
             <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-red-600" /> PICO &gt;120%</span>
             <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-amber-400" /> MEDIA 100–120%</span>
             <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-emerald-500/80" /> BAJA</span>
-            <span className="ml-2 text-slate-500">
-              Cada celda: <b>plan</b> arriba (presupuesto repartido) · <b>real</b> abajo.
-            </span>
           </div>
-          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 2xl:grid-cols-2">
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
               <MesGrilla key={m} anio={anio} mes={m} dias={dias} />
             ))}
@@ -380,7 +377,13 @@ export function DiasPicoClient({
 }
 
 
-/** Grilla mensual estilo Excel: una fila por semana, D-L-M-M-J-V-S. */
+/**
+ * Grilla mensual estilo Excel. Cada día muestra las tres cifras rotuladas:
+ *   Proy = presupuesto del mes repartido por el peso del año anterior
+ *   Real = lo efectivamente facturado ese día (— si todavía no pasó)
+ *   Cap  = capacidad de referencia del día, y el % que se usa de ella
+ * La capacidad es la misma todo el mes, así que va también en el encabezado.
+ */
 function MesGrilla({
   anio, mes, dias,
 }: {
@@ -392,43 +395,71 @@ function MesGrilla({
   const porDia = new Map(delMes.map((d) => [Number(d.fecha.slice(8, 10)), d]))
   const ultimo = new Date(anio, mes, 0).getDate()
   const offset = new Date(anio, mes - 1, 1).getDay() // 0 = domingo
+  const capMes = delMes[0]?.cap ?? 0
 
   const celdas: (number | null)[] = Array(offset).fill(null)
   for (let d = 1; d <= ultimo; d++) celdas.push(d)
   while (celdas.length % 7 !== 0) celdas.push(null)
 
   const picos = delMes.filter((d) => (d.nivelReal ?? d.nivelProy) === "PICO").length
+  const medias = delMes.filter((d) => (d.nivelReal ?? d.nivelProy) === "MEDIA").length
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between py-2">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 py-2">
         <CardTitle className="text-sm font-semibold">{MESES[mes]}</CardTitle>
-        {picos > 0 && (
-          <Badge className="bg-red-600 text-[10px] text-white hover:bg-red-600">{picos} pico</Badge>
-        )}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500">
+            Capacidad <b className="text-slate-700">{n0(capMes)} HL/día</b>
+          </span>
+          {medias > 0 && (
+            <Badge className="bg-amber-400 text-[10px] text-amber-950 hover:bg-amber-400">{medias} media</Badge>
+          )}
+          {picos > 0 && (
+            <Badge className="bg-red-600 text-[10px] text-white hover:bg-red-600">{picos} pico</Badge>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="p-2">
-        <div className="grid grid-cols-7 gap-0.5 text-center">
+        <div className="grid grid-cols-7 gap-1 text-center">
           {["D", "L", "M", "M", "J", "V", "S"].map((d, i) => (
-            <div key={i} className="pb-1 text-[10px] font-medium text-slate-400">{d}</div>
+            <div key={i} className="pb-1 text-[11px] font-medium text-slate-400">{d}</div>
           ))}
           {celdas.map((num, i) => {
             if (num == null) return <div key={i} />
             const d = porDia.get(num)
             if (!d) {
               return (
-                <div key={i} className="rounded bg-slate-100 py-1 text-[10px] text-slate-400">
+                <div key={i} className="rounded border border-slate-100 bg-slate-50 p-1 text-[11px] text-slate-300">
                   {num}
                 </div>
               )
             }
             const niv = d.nivelReal ?? d.nivelProy
+            const usado = d.hlReal ?? d.hlProy
             return (
-              <div key={i} className={`rounded px-0.5 py-1 leading-tight ${COLOR[niv]}`}>
-                <div className="text-[10px] font-semibold opacity-80">{num}</div>
-                <div className="text-[11px] font-bold tabular-nums">{n0(d.hlProy)}</div>
-                <div className="text-[10px] tabular-nums opacity-90">
-                  {d.hlReal != null ? n0(d.hlReal) : "·"}
+              <div key={i} className={`rounded p-1 text-left leading-tight ${COLOR[niv]}`}>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[11px] font-bold opacity-90">{num}</span>
+                  <span className="text-[10px] font-semibold opacity-90">
+                    {d.cap > 0 ? pct(usado / d.cap) : "—"}
+                  </span>
+                </div>
+                <div className="mt-0.5 space-y-0.5 text-[10px]">
+                  <div className="flex justify-between gap-1">
+                    <span className="opacity-70">Proy</span>
+                    <span className="font-semibold tabular-nums">{n0(d.hlProy)}</span>
+                  </div>
+                  <div className="flex justify-between gap-1">
+                    <span className="opacity-70">Real</span>
+                    <span className="font-semibold tabular-nums">
+                      {d.hlReal != null ? n0(d.hlReal) : "—"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-1 border-t border-white/25 pt-0.5">
+                    <span className="opacity-70">Cap</span>
+                    <span className="tabular-nums opacity-80">{n0(d.cap)}</span>
+                  </div>
                 </div>
               </div>
             )
