@@ -65,7 +65,7 @@ export function DiasPicoClient({
   // pruebas, la idea es poder mover los números y ver qué pasa.
   const [camiones, setCamiones] = useState(10)
   const [hlCamion, setHlCamion] = useState(72)
-  const [ocupacion, setOcupacion] = useState(80)
+  const [ocupacion, setOcupacion] = useState(100)
   // Target de rechazo, el mismo umbral que usa el módulo de Períodos Críticos.
   const [rechazoMax, setRechazoMax] = useState(3)
   // "flota"  = techo físico fijo, igual todo el año (camiones × HL × ocupación).
