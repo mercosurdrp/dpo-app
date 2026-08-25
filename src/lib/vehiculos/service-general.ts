@@ -299,9 +299,10 @@ export function computeServiceGeneral(params: {
  * Km actual ROBUSTO por dominio: replica el criterio de "últ. registro" de la
  * planilla = la lectura MÁS RECIENTE por fecha que sea plausible respecto del
  * último service (odómetro ≥ km del service y km/día implícito desde el service
- * ≤ KM_DIA_MAX_PLAUSIBLE). A diferencia de `kmActualPorDominio` (que toma el
- * odómetro máximo), no se deja engañar por outliers altos puntuales (p. ej. un
- * 10.000.000 o un 75.905 viejo cuando la unidad hoy marca 71.404).
+ * ≤ KM_DIA_MAX_PLAUSIBLE) y que no retroceda contra la anterior aceptada.
+ * El ancla del service pone el piso, así que un registro viejo y alto anterior
+ * al service no arrastra a la unidad (el caso del 75.905 cuando hoy marca
+ * 71.404); dentro del ciclo vigente, en cambio, el odómetro sólo sube.
  */
 export function kmActualRobustoPorDominio(
   lecturas: Lectura[],
@@ -336,16 +337,30 @@ export function kmActualRobustoPorDominio(
         const dias = Math.max(1, daysBetween(ancla.fecha, l.fecha))
         if ((l.odometro - ancla.odometro) / dias > KM_DIA_MAX_PLAUSIBLE) continue // outlier vs service
       }
-      // Salto imposible respecto de la última lectura aceptada: típico tipeo de
-      // un dígito de más (p. ej. 136.084 → 186.084 en un día). Se descarta para
-      // que un error de carga no dispare un "service vencido" falso.
+      // 🚨 EL ODÓMETRO NO RETROCEDE. Una lectura menor a la última aceptada es
+      // un error de carga y NO puede pasar a ser la referencia.
       //
-      // Acá el retroceso SÍ se acepta como referencia, al revés que en
-      // `kmActualPorDominio`: esta función se queda con la lectura más reciente
-      // plausible, no con el máximo, justamente para el caso del odómetro que
-      // hoy marca menos que un registro viejo. El ancla del service es la que
-      // pone el piso.
-      if (prev != null && l.odometro >= prev.odometro) {
+      // Hasta el 25/08/2026 acá el retroceso sí se aceptaba —a propósito, para
+      // el caso del odómetro que hoy marca menos que un registro viejo—, y ese
+      // permiso era el que rompía el cronograma: la OT 1758 del AE908DH cargó
+      // 131.940 km el 19/08 (real 142.790), pasó a ser la referencia y a partir
+      // de ahí TODAS las lecturas buenas parecían saltos imposibles contra ella
+      // (142.795 el 20/08 = 10.855 km/día, 143.098 el 22/08 = 3.719 km/día). La
+      // unidad quedó clavada en 133.097 km, o sea 10.000 km por debajo: el
+      // service pasó de faltarle 4.081 km a 14.082, y de 23 días a 243. El DH
+      // desaparecía de la lista de próximos a servicio teniendo MENOS días que
+      // el AF664NY, que sí aparecía.
+      //
+      // Es el mismo criterio que ya aplica `kmActualPorDominio` desde el
+      // 22/08/2026 y que `validarLectura` aplica al cargar. Que las tres
+      // coincidan es el punto: lo que se rechaza al cargar tiene que ser lo
+      // mismo que se descarta al leer.
+      //
+      // Contracara asumida: una lectura ALTA errónea que pase el filtro de salto
+      // ya no se corrige sola con las lecturas posteriores. La salida para eso
+      // es corregir el dato —`odometro-lecturas.ts`—, no dejar entrar retrocesos.
+      if (prev != null) {
+        if (l.odometro < prev.odometro) continue
         const dias = Math.max(1, daysBetween(prev.fecha, l.fecha))
         if ((l.odometro - prev.odometro) / dias > KM_DIA_MAX_PLAUSIBLE) continue
       }
