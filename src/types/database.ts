@@ -1510,6 +1510,13 @@ export interface MantenimientoRealizadoRepuesto {
   cantidad: number
   costo_unitario: number | null
   created_at: string
+  /**
+   * Ítem del pañol del que salió la pieza (DPO Flota 2.3). NULL = se compró
+   * para esta OT y nunca entró al stock, así que no descuenta nada.
+   */
+  repuesto_id: string | null
+  /** Egreso de stock que generó esta fila. Lo escribe un trigger de la base. */
+  movimiento_id: string | null
 }
 
 /**

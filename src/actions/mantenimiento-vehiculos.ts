@@ -675,6 +675,12 @@ interface MantenimientoRepuestoInput {
   descripcion: string
   cantidad?: number
   costoUnitario?: number | null
+  /**
+   * Ítem del pañol del que sale la pieza. Si viene, la base descuenta el stock
+   * sola (trigger `trg_ot_repuesto_stock_ins`) y deja el movimiento enganchado.
+   * Si no viene, es un repuesto comprado para la OT: no toca el inventario.
+   */
+  repuestoId?: string | null
 }
 
 /**
@@ -1054,6 +1060,7 @@ export async function createMantenimiento(
           descripcion: r.descripcion.trim(),
           cantidad: r.cantidad && r.cantidad > 0 ? r.cantidad : 1,
           costo_unitario: r.costoUnitario ?? null,
+          repuesto_id: r.repuestoId || null,
         }))
       )
       if (repError) {
@@ -1251,6 +1258,7 @@ export async function updateMantenimiento(
               descripcion: r.descripcion.trim(),
               cantidad: r.cantidad && r.cantidad > 0 ? r.cantidad : 1,
               costo_unitario: r.costoUnitario ?? null,
+              repuesto_id: r.repuestoId || null,
             }))
           )
         if (insRepError) return { error: insRepError.message }

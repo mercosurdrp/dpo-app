@@ -1422,6 +1422,7 @@ export function MantenimientoClient({
 
       {nuevoOpen && (
         <NuevoMantenimientoDialog
+          inventario={gestion.repuestos}
           estados={estados}
           tareasPorTipo={tareasPorTipo}
           tareasById={tareasById}
@@ -1457,6 +1458,7 @@ export function MantenimientoClient({
 
       {editMant && (
         <EditarMantenimientoDialog
+          inventario={gestion.repuestos}
           mantenimiento={editMant}
           proveedores={provList}
           onProveedorCreado={agregarProveedor}
@@ -1589,6 +1591,7 @@ function NuevoMantenimientoDialog({
   siguienteNumeroOt,
   proveedores,
   onProveedorCreado,
+  inventario,
   prefill,
   onClose,
   onSaved,
@@ -1602,6 +1605,8 @@ function NuevoMantenimientoDialog({
   siguienteNumeroOt: string
   proveedores: MantenimientoProveedor[]
   onProveedorCreado: (p: MantenimientoProveedor) => void
+  /** Ítems del pañol, para vincular los repuestos de la OT y descontar stock. */
+  inventario: Repuesto[]
   prefill: { dominio?: string; tareaId?: string }
   onClose: () => void
   onSaved: () => void
@@ -1909,7 +1914,11 @@ function NuevoMantenimientoDialog({
 
           {/* Repuestos por un lado, mano de obra por el otro; el total se suma solo. */}
           <div className="space-y-3 rounded-md border border-border p-3">
-            <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
+            <RepuestosEditor
+              repuestos={repuestos}
+              setRepuestos={setRepuestos}
+              inventario={inventario}
+            />
             <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} facturas={facturas} />
           </div>
 
@@ -2663,10 +2672,12 @@ interface RepuestoForm {
   descripcion: string
   cantidad: string
   costoUnitario: string
+  /** Ítem del pañol del que sale la pieza. "" = comprada para esta OT. */
+  repuestoId: string
 }
 
 function nuevoRepuesto(): RepuestoForm {
-  return { descripcion: "", cantidad: "1", costoUnitario: "" }
+  return { descripcion: "", cantidad: "1", costoUnitario: "", repuestoId: "" }
 }
 
 // Subtotal de repuestos = Σ (cantidad × costo unitario) de las filas con datos.
@@ -2684,6 +2695,7 @@ function repuestosDesde(m: MantenimientoRealizado): RepuestoForm[] {
     descripcion: r.descripcion,
     cantidad: r.cantidad != null ? String(r.cantidad) : "1",
     costoUnitario: r.costo_unitario != null ? String(r.costo_unitario) : "",
+    repuestoId: r.repuesto_id ?? "",
   }))
 }
 
@@ -2695,59 +2707,122 @@ function repuestosPayload(reps: RepuestoForm[]) {
       descripcion: r.descripcion.trim(),
       cantidad: parseFloat(r.cantidad) || 1,
       costoUnitario: r.costoUnitario.trim() ? parseFloat(r.costoUnitario) : null,
+      repuestoId: r.repuestoId || null,
     }))
 }
 
-// Editor de la lista de repuestos (descripción + cantidad + costo unitario).
+/** Valor del selector cuando la pieza NO sale del pañol (Radix no acepta ""). */
+const REPUESTO_SIN_PANOL = "__comprado__"
+
+// Editor de la lista de repuestos (descripción + cantidad + costo unitario) y,
+// desde el 25/08/2026, el vínculo con el ítem del pañol.
+//
+// Antes de esto la descripción era texto libre y el egreso de stock se cargaba
+// aparte, a mano: un foco cambiado en depósito no descontaba de ningún lado y
+// el desvío recién aparecía en el conteo físico del mes, sin causa. Ahora la
+// fila puede apuntar al inventario y la base descuenta sola.
+//
+// El vínculo es OPCIONAL: el repuesto que se compró para esta OT y fue directo
+// al camión nunca entró al pañol y no tiene por qué descontar.
 function RepuestosEditor({
   repuestos,
   setRepuestos,
+  inventario,
 }: {
   repuestos: RepuestoForm[]
   setRepuestos: (r: RepuestoForm[]) => void
+  /** Ítems del pañol, para vincular la fila y descontar el stock. */
+  inventario: Repuesto[]
 }) {
   const update = (i: number, patch: Partial<RepuestoForm>) =>
     setRepuestos(repuestos.map((r, j) => (j === i ? { ...r, ...patch } : r)))
   const remove = (i: number) => setRepuestos(repuestos.filter((_, j) => j !== i))
+  const itemPorId = useMemo(() => new Map(inventario.map((r) => [r.id, r])), [inventario])
+
+  // Al elegir el ítem del pañol se completa la descripción si estaba vacía: es
+  // el nombre que después sale impreso en la OT.
+  const elegirItem = (i: number, valor: string) => {
+    if (valor === REPUESTO_SIN_PANOL) return update(i, { repuestoId: "" })
+    const item = itemPorId.get(valor)
+    const fila = repuestos[i]
+    update(i, {
+      repuestoId: valor,
+      descripcion: fila.descripcion.trim() ? fila.descripcion : (item?.nombre ?? ""),
+    })
+  }
+
   return (
     <div>
       <Label>Repuestos</Label>
       <p className="mb-1 text-xs text-muted-foreground">
-        Los repuestos comprados aparte, para que queden separados de la mano de obra.
+        Los repuestos comprados aparte, para que queden separados de la mano de obra. Si la
+        pieza sale del pañol, elegila del inventario y el stock se descuenta solo.
       </p>
       {repuestos.length > 0 && (
         <div className="mt-1.5 space-y-2">
-          {repuestos.map((r, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <Input
-                value={r.descripcion}
-                onChange={(e) => update(i, { descripcion: e.target.value })}
-                placeholder="Repuesto"
-                className="flex-1"
-              />
-              <Input
-                type="number"
-                value={r.cantidad}
-                onChange={(e) => update(i, { cantidad: e.target.value })}
-                placeholder="Cant."
-                className="w-16"
-              />
-              <Input
-                type="number"
-                value={r.costoUnitario}
-                onChange={(e) => update(i, { costoUnitario: e.target.value })}
-                placeholder="$ c/u"
-                className="w-24"
-              />
-              <button
-                type="button"
-                onClick={() => remove(i)}
-                className="shrink-0 text-muted-foreground/70 hover:text-red-500"
+          {repuestos.map((r, i) => {
+            const item = r.repuestoId ? itemPorId.get(r.repuestoId) : undefined
+            const pedido = parseFloat(r.cantidad) || 0
+            const faltaStock = item != null && pedido > Number(item.stock_actual)
+            return (
+            <div key={i} className="space-y-1.5 rounded-md border border-border p-2">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={r.descripcion}
+                  onChange={(e) => update(i, { descripcion: e.target.value })}
+                  placeholder="Repuesto"
+                  className="flex-1"
+                />
+                <Input
+                  type="number"
+                  value={r.cantidad}
+                  onChange={(e) => update(i, { cantidad: e.target.value })}
+                  placeholder="Cant."
+                  className="w-16"
+                />
+                <Input
+                  type="number"
+                  value={r.costoUnitario}
+                  onChange={(e) => update(i, { costoUnitario: e.target.value })}
+                  placeholder="$ c/u"
+                  className="w-24"
+                />
+                <button
+                  type="button"
+                  onClick={() => remove(i)}
+                  className="shrink-0 text-muted-foreground/70 hover:text-red-500"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+              <Select
+                value={r.repuestoId || REPUESTO_SIN_PANOL}
+                onValueChange={(v) => elegirItem(i, v ?? REPUESTO_SIN_PANOL)}
               >
-                <X className="size-4" />
-              </button>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={REPUESTO_SIN_PANOL}>
+                    Comprado para esta OT — no descuenta stock
+                  </SelectItem>
+                  {inventario.map((it) => (
+                    <SelectItem key={it.id} value={it.id}>
+                      Del pañol: {it.nombre} — hay {Number(it.stock_actual)} {it.unidad}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {faltaStock && (
+                <p className="text-xs text-amber-600 dark:text-amber-500">
+                  El pañol tiene {Number(item!.stock_actual)} {item!.unidad} y la OT descuenta{" "}
+                  {pedido}. Cargá primero el ingreso en Repuestos, o dejala como comprada para
+                  esta OT.
+                </p>
+              )}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
       <Button
@@ -2848,12 +2923,15 @@ function EditarMantenimientoDialog({
   mantenimiento,
   proveedores,
   onProveedorCreado,
+  inventario,
   onClose,
   onSaved,
 }: {
   mantenimiento: MantenimientoRealizado
   proveedores: MantenimientoProveedor[]
   onProveedorCreado: (p: MantenimientoProveedor) => void
+  /** Ítems del pañol, para vincular los repuestos de la OT y descontar stock. */
+  inventario: Repuesto[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -2995,7 +3073,11 @@ function EditarMantenimientoDialog({
           </div>
           {/* Repuestos por un lado, mano de obra por el otro; el total se suma solo. */}
           <div className="col-span-2 space-y-3 rounded-md border border-border p-3">
-            <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
+            <RepuestosEditor
+              repuestos={repuestos}
+              setRepuestos={setRepuestos}
+              inventario={inventario}
+            />
             <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} facturas={facturas} />
           </div>
           <div className="col-span-2">
