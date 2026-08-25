@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react"
 import { toast } from "sonner"
-import { MINIMO_CEQ, MINIMO_PCT } from "@/lib/ocupacion-bodega"
+import { OBJETIVO_CEQ } from "@/lib/ocupacion-bodega"
 import {
   Loader2,
   Play,
@@ -849,13 +849,13 @@ function KpiDia({
   )
 }
 
-// Badge de ocupación de bodega: el 100% es el camión lleno (1.440 CEq), así que
-// el verde se pinta contra el mínimo de carga (600 CEq = 41,7% de la bodega).
+// Badge de cumplimiento del objetivo de carga: 100% = los 600 CEq por viaje.
+// (La ocupación física sobre los 1.440 de bodega vive en el detalle del día.)
 function OcupBadge({ pct }: { pct: number }) {
   const cls =
-    pct >= MINIMO_PCT
+    pct >= 100
       ? "bg-emerald-100 text-emerald-700"
-      : pct >= MINIMO_PCT * 0.8
+      : pct >= 80
         ? "bg-amber-100 text-amber-700"
         : "bg-rose-100 text-rose-700"
   return (
@@ -959,7 +959,7 @@ function PanelDetalleDia({
           icon={<Gauge className="size-3.5" />}
           label="CEq prom."
           value={ocup ? nf(ocup.ceq_promedio, 1) : "—"}
-          sub={ocup ? `mínimo ${nf(MINIMO_CEQ)}` : undefined}
+          sub={ocup ? `objetivo ${nf(OBJETIVO_CEQ)}` : undefined}
         />
         <KpiDia
           icon={<Target className="size-3.5" />}
@@ -1044,7 +1044,7 @@ function PanelDetalleDia({
                       {nf(v.ceq_total, 1)}
                     </TableCell>
                     <TableCell className="text-center">
-                      <OcupBadge pct={v.ob_pct} />
+                      <OcupBadge pct={v.cumplimiento_pct} />
                     </TableCell>
                     <TableCell className="text-center tabular-nums">
                       {horas && horas.length > 0 ? (

@@ -13,14 +13,14 @@
 import { chessLogin, type ChessCredentials } from "./rechazos-sync"
 import { cargaGescomPorViaje } from "@/lib/gescom/carga-viaje"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { MINIMO_CEQ } from "@/lib/ocupacion-bodega"
+import { OBJETIVO_CEQ } from "@/lib/ocupacion-bodega"
 
 // La pregunta 1.2 EN RUTA tiene key estable '5_1_23_74' en master_seed.
 const PREGUNTA_KEY_1_2 = "5_1_23_74"
 const INDICADOR_NOMBRE = "Ocupación de Bodega (OB)"
 // Este indicador se publica en CEq (no en %), así que su meta es el mínimo de
 // carga por viaje, no la capacidad de la bodega.
-const TARGET_CEQ = MINIMO_CEQ
+const TARGET_CEQ = OBJETIVO_CEQ
 
 // ---------- helpers ----------
 

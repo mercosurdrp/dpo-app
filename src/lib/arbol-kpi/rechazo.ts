@@ -155,9 +155,9 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     parentKey: "vol_cargado_camion",
     unidad: "%",
     mejorSi: "mayor",
-    meta: 41.7,
+    meta: 100,
     fuente:
-      "CEq promedio por viaje sobre los 1.440 CEq de capacidad. La meta 41,7% son los 600 CEq de carga mínima.",
+      "Cumplimiento del objetivo de carga: CEq promedio por viaje sobre los 600 CEq objetivo (100% = objetivo alcanzado). Cuánto del camión se llenó sobre los 1.440 CEq de bodega se ve en el detalle del módulo.",
     href: "/indicadores/ocupacion-bodega",
   },
 

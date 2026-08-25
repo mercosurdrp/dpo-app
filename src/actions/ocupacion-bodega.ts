@@ -8,8 +8,9 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import {
   CAPACIDAD_CEQ,
-  MINIMO_CEQ,
-  alcanzaMinimo,
+  OBJETIVO_CEQ,
+  alcanzaObjetivo,
+  cumplimientoPct,
   obPct,
 } from "@/lib/ocupacion-bodega"
 
@@ -23,6 +24,8 @@ export interface ViajeOB {
   skus_distintos: number
   /** % de la bodega ocupado (sobre CAPACIDAD_CEQ), calculado en la app. */
   ob_pct: number
+  /** % del objetivo de carga alcanzado (sobre OBJETIVO_CEQ). */
+  cumplimiento_pct: number
 }
 
 export interface OBKpis {
@@ -97,18 +100,18 @@ export async function getOBKpis(filters?: { desde?: string; hasta?: string; pate
     if (error) return { error: error.message }
     const rows = data ?? []
     if (rows.length === 0) {
-      return { data: { desde, hasta, capacidad: CAPACIDAD_CEQ, minimo: MINIMO_CEQ, viajes: 0, ceq_promedio: 0, ceq_total: 0, pct_meta: 0, ceq_max: 0, ceq_min: 0, patente_top: null, hl_total: 0, bultos_total: 0 } }
+      return { data: { desde, hasta, capacidad: CAPACIDAD_CEQ, minimo: OBJETIVO_CEQ, viajes: 0, ceq_promedio: 0, ceq_total: 0, pct_meta: 0, ceq_max: 0, ceq_min: 0, patente_top: null, hl_total: 0, bultos_total: 0 } }
     }
     const ceqArr = rows.map(r => Number(r.ceq_total))
     const ceqTotal = ceqArr.reduce((a, b) => a + b, 0)
     const ceqProm = ceqTotal / ceqArr.length
-    const enMeta = ceqArr.filter(x => alcanzaMinimo(x)).length
+    const enMeta = ceqArr.filter(x => alcanzaObjetivo(x)).length
     const max = Math.max(...ceqArr)
     const min = Math.min(...ceqArr)
     const topRow = rows.find(r => Number(r.ceq_total) === max)
     return {
       data: {
-        desde, hasta, capacidad: CAPACIDAD_CEQ, minimo: MINIMO_CEQ,
+        desde, hasta, capacidad: CAPACIDAD_CEQ, minimo: OBJETIVO_CEQ,
         viajes: rows.length,
         ceq_promedio: Math.round(ceqProm * 10) / 10,
         ceq_total: Math.round(ceqTotal * 10) / 10,
@@ -141,9 +144,10 @@ export async function getOBViajes(filters?: { desde?: string; hasta?: string; pa
     if (error) return { error: error.message }
     // El % se calcula acá: la columna generada de la base divide por el target
     // viejo y mostraba una ocupación distinta a la del resto del sistema.
-    const viajes: ViajeOB[] = ((data ?? []) as Omit<ViajeOB, "ob_pct">[]).map((v) => ({
+    const viajes: ViajeOB[] = ((data ?? []) as Omit<ViajeOB, "ob_pct" | "cumplimiento_pct">[]).map((v) => ({
       ...v,
       ob_pct: obPct(v.ceq_total),
+      cumplimiento_pct: cumplimientoPct(v.ceq_total),
     }))
     return { data: viajes }
   } catch (e) { return { error: e instanceof Error ? e.message : "Error" } }
@@ -172,7 +176,7 @@ export async function getOBPorPatente(filters?: { desde?: string; hasta?: string
     for (const [patente, ceqs] of map.entries()) {
       const total = ceqs.reduce((a, b) => a + b, 0)
       const prom = total / ceqs.length
-      const enMeta = ceqs.filter(x => alcanzaMinimo(x)).length
+      const enMeta = ceqs.filter(x => alcanzaObjetivo(x)).length
       out.push({
         patente,
         viajes: ceqs.length,
@@ -246,7 +250,7 @@ export async function getOBPorMes(filters?: { meses?: number }): Promise<
     }
     const out: MesSummary[] = [...map.entries()].map(([mes, s]) => {
       const total = s.ceqs.reduce((a, b) => a + b, 0)
-      const enMeta = s.ceqs.filter(x => alcanzaMinimo(x)).length
+      const enMeta = s.ceqs.filter(x => alcanzaObjetivo(x)).length
       return {
         mes,
         viajes: s.ceqs.length,
