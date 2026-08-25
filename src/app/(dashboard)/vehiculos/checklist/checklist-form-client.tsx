@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -41,7 +41,19 @@ import {
   X,
   Truck,
 } from "lucide-react"
-import { createChecklist } from "@/actions/checklist-vehiculos"
+import {
+  createChecklist,
+  type ChecklistDelDia,
+  type ChecklistDuplicado,
+} from "@/actions/checklist-vehiculos"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { NovedadesUnidad } from "./novedades-unidad"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
 import { createClient } from "@/lib/supabase/client"
@@ -52,6 +64,8 @@ interface Props {
   choferes: CatalogoChofer[]
   /** Última lectura conocida por dominio, para validar el odómetro al tipearlo. */
   ultimasLecturas: Record<string, LecturaPrevia>
+  /** Checklists ya cargados hoy, para avisar antes de repetir el control. */
+  checklistsHoy: ChecklistDelDia[]
 }
 
 // Group items by category
@@ -131,11 +145,16 @@ const opcionesMap: Record<string, { value: string; label: string; color: string 
 // HORA_CORTE_LIBERACION del servidor (que es quien decide en firme).
 const HORA_CORTE_LIBERACION = 9
 
+// Hasta esta hora se ofrece registrar la salida aunque el corte diga entrada:
+// es el chofer que llegó tarde a hacer el checklist. Igual que en el servidor.
+const HORA_LIMITE_SALIDA_TARDIA = 11
+
 export function ChecklistFormClient({
   items,
   vehiculos,
   choferes,
   ultimasLecturas,
+  checklistsHoy,
 }: Props) {
   const router = useRouter()
   // El chofer ya no elige el tipo: se deriva de la hora actual. Mantenemos un
@@ -146,8 +165,12 @@ export function ChecklistFormClient({
     const id = setInterval(() => setAhora(new Date()), 30_000)
     return () => clearInterval(id)
   }, [])
-  const tipo: TipoChecklist =
+  const tipoPorHora: TipoChecklist =
     ahora.getHours() < HORA_CORTE_LIBERACION ? "liberacion" : "retorno"
+  // Salida hecha tarde: si el chofer cruzó las 09:00 el corte lo manda a
+  // "entrada" y el camión queda sin salida del día. Cuando el caso es plausible
+  // se le pregunta, y esta es su respuesta.
+  const [tipoElegido, setTipoElegido] = useState<TipoChecklist | null>(null)
   const [sectorFiltro, setSectorFiltro] = useState<VehiculoSector | "todos">(
     "todos"
   )
@@ -167,8 +190,40 @@ export function ChecklistFormClient({
   const esCamioneta = vehiculoSel?.tipo === "camioneta"
   const esControlUnico = esAutoelevador || esCamioneta
 
+  // ¿Esto puede ser la salida hecha tarde? Sólo si la hora ya dice entrada pero
+  // todavía es temprano y el camión no registró su salida en el día. En ese
+  // caso el form pregunta en vez de asumir (el servidor revalida lo mismo).
+  const sinLiberacionHoy =
+    !!dominio &&
+    !checklistsHoy.some((c) => c.dominio === dominio && c.tipo === "liberacion")
+  const puedeSerSalidaTardia =
+    !esControlUnico &&
+    tipoPorHora === "retorno" &&
+    ahora.getHours() < HORA_LIMITE_SALIDA_TARDIA &&
+    sinLiberacionHoy
+
+  const tipo: TipoChecklist =
+    puedeSerSalidaTardia && tipoElegido ? tipoElegido : tipoPorHora
+
   // Para mostrar/colorear el botón: el control único siempre es "liberación".
   const tipoVisual: TipoChecklist = esControlUnico ? "liberacion" : tipo
+
+  // 🚨 Control ya hecho hoy para esta unidad. Se avisa apenas se elige el
+  // vehículo para no hacerle completar 30 ítems al pepe. La salida del camión no
+  // se puede repetir (el servidor la rechaza); el retorno y el control único de
+  // otro turno sí, confirmando: pueden ser una segunda vuelta o el cambio de
+  // maquinista del autoelevador.
+  const yaCargadoHoy = dominio
+    ? checklistsHoy.find((c) => c.dominio === dominio && c.tipo === tipoVisual)
+    : undefined
+  const horaDeCarga = yaCargadoHoy
+    ? new Intl.DateTimeFormat("es-AR", {
+        timeZone: "America/Argentina/Buenos_Aires",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date(yaCargadoHoy.hora))
+    : ""
 
   // Ítems que aplican al vehículo elegido: los del autoelevador, los de la
   // camioneta, o los generales (camiones) cuando tipo_vehiculo es NULL.
@@ -191,6 +246,23 @@ export function ChecklistFormClient({
     ? MAQUINISTAS_AUTOELEVADOR.map((n) => ({ id: n, nombre: n }))
     : choferesHabilitados
   const [chofer, setChofer] = useState("")
+
+  // El autoelevador lo chequea cada maquinista al entrar de turno, así que un
+  // segundo control del día es legítimo si lo carga OTRA persona: ahí se pide
+  // confirmar en vez de rechazar. Repetirlo uno mismo sigue siendo un error.
+  const esOtroTurno =
+    !!yaCargadoHoy &&
+    esControlUnico &&
+    (yaCargadoHoy.chofer || "").trim().toUpperCase() !==
+      chofer.trim().toUpperCase()
+  const bloqueadoPorDuplicado =
+    !!yaCargadoHoy && tipoVisual === "liberacion" && !esOtroTurno
+
+  // Al cambiar de unidad se descarta la elección salida/entrada de la anterior.
+  useEffect(() => {
+    setTipoElegido(null)
+  }, [dominio])
+
   const [odometro, setOdometro] = useState("")
   const [observaciones, setObservaciones] = useState("")
   // 🚨 Aviso en vivo si la lectura no cierra contra la última de esa unidad: un
@@ -216,6 +288,11 @@ export function ChecklistFormClient({
   // medir cuánto tarda en completar el checklist. Mismo reloj que el envío, así
   // la duración no depende de la diferencia con el reloj del servidor.
   const [inicioMs] = useState(() => Date.now())
+  // Retorno repetido: el servidor lo devuelve SIN guardar y el chofer confirma
+  // si de verdad es una segunda vuelta. La foto ya subida se reusa en el
+  // reintento para no dejar copias huérfanas en el bucket.
+  const [duplicado, setDuplicado] = useState<ChecklistDuplicado | null>(null)
+  const fotoPathRef = useRef<string | undefined>(undefined)
 
   const groups = groupByCategoria(itemsAplicables)
 
@@ -260,9 +337,17 @@ export function ChecklistFormClient({
   const completados = itemsAplicables.filter((i) => respuestas[i.id]).length
   const todosCompletados = totalItems > 0 && completados === totalItems
 
-  async function handleSubmit() {
+  async function handleSubmit(confirmarDuplicado = false) {
     if (!dominio || !chofer) {
       toast.error("Seleccioná vehículo y chofer")
+      return
+    }
+    // Corte en el cliente para que el chofer no llegue ni a intentarlo; el
+    // servidor lo rechaza igual (esto es sólo para dar el aviso al toque).
+    if (bloqueadoPorDuplicado && yaCargadoHoy) {
+      toast.error(
+        `${dominio} ya tiene el checklist de hoy: lo cargó ${yaCargadoHoy.chofer} a las ${horaDeCarga}.`
+      )
       return
     }
     if (!todosCompletados) {
@@ -288,8 +373,10 @@ export function ChecklistFormClient({
     setSaving(true)
     const hoy = new Date().toISOString().slice(0, 10)
 
-    let fotoPath: string | undefined
-    if (foto) {
+    // Si ya se subió en un intento anterior (el que frenó por duplicado), se
+    // reusa el mismo path en vez de dejar otra copia en el bucket.
+    let fotoPath: string | undefined = fotoPathRef.current
+    if (foto && !fotoPath) {
       try {
         const comprimida = await comprimirImagen(foto)
         const path = `${hoy}/${dominio}-${crypto.randomUUID()}.jpg`
@@ -299,6 +386,7 @@ export function ChecklistFormClient({
           .upload(path, comprimida, { contentType: "image/jpeg", upsert: false })
         if (error) throw new Error(error.message)
         fotoPath = path
+        fotoPathRef.current = path
       } catch (e) {
         toast.error(
           `No se pudo subir la foto: ${e instanceof Error ? e.message : "error desconocido"}`
@@ -317,12 +405,24 @@ export function ChecklistFormClient({
       iniciadoEn: new Date(inicioMs).toISOString(),
       duracionSegundos: Math.max(0, Math.round((Date.now() - inicioMs) / 1000)),
       fotoPath,
+      confirmarDuplicado,
+      // Sólo viaja cuando el form efectivamente preguntó salida/entrada; el
+      // servidor lo acepta únicamente si el caso sigue siendo plausible.
+      tipoForzado: puedeSerSalidaTardia && tipoElegido ? tipoElegido : undefined,
       respuestas: itemsAplicables.map((item) => ({
         item_id: item.id,
         valor: respuestas[item.id],
         comentario: comentarios[item.id] || undefined,
       })),
     })
+
+    // El retorno repetido no se guarda hasta que el chofer confirme que es una
+    // segunda vuelta: el form queda intacto y se reenvía desde el diálogo.
+    if ("duplicado" in result) {
+      setDuplicado(result.duplicado)
+      setSaving(false)
+      return
+    }
 
     if ("error" in result) {
       toast.error(result.error)
@@ -587,6 +687,99 @@ export function ChecklistFormClient({
         </CardContent>
       </Card>
 
+      {/* Salida hecha tarde: el corte de las 09:00 mandaría esto a "entrada",
+          pero la unidad todavía no registró su salida del día. En vez de asumir
+          (y dejar el día sin salida y sin tiempo en ruta) se le pregunta. */}
+      {puedeSerSalidaTardia && (
+        <div className="space-y-3 rounded-xl border border-blue-300 bg-blue-50 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
+            <div className="space-y-1 text-sm">
+              <p className="font-semibold text-blue-900">
+                {dominio} todavía no tiene el checklist de salida de hoy
+              </p>
+              <p className="text-blue-700">
+                Como ya pasaron las 09:00, esto se guardaría como entrada al
+                depósito. ¿Qué estás registrando?
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTipoElegido("liberacion")}
+              className={`h-12 justify-center text-base font-semibold ${
+                tipo === "liberacion"
+                  ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700"
+                  : "border-blue-300 bg-white text-blue-800"
+              }`}
+            >
+              <LogOut className="mr-2 h-5 w-5" />
+              Salida del depósito
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTipoElegido("retorno")}
+              className={`h-12 justify-center text-base font-semibold ${
+                tipo === "retorno"
+                  ? "border-orange-500 bg-orange-500 text-white hover:bg-orange-600"
+                  : "border-orange-300 bg-white text-orange-800"
+              }`}
+            >
+              <LogIn className="mr-2 h-5 w-5" />
+              Entrada al depósito
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Control ya hecho hoy en esta unidad: se avisa acá arriba para que el
+          chofer no complete los ítems al pedo. Rojo = no se puede repetir. */}
+      {yaCargadoHoy && (
+        <div
+          className={`flex items-start gap-3 rounded-xl border p-4 ${
+            bloqueadoPorDuplicado
+              ? "border-red-300 bg-red-50"
+              : "border-amber-300 bg-amber-50"
+          }`}
+        >
+          {bloqueadoPorDuplicado ? (
+            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+          ) : (
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+          )}
+          <div className="space-y-1 text-sm">
+            <p
+              className={`font-semibold ${
+                bloqueadoPorDuplicado ? "text-red-800" : "text-amber-800"
+              }`}
+            >
+              {dominio} ya tiene el{" "}
+              {esControlUnico
+                ? "control de hoy"
+                : tipoVisual === "liberacion"
+                ? "checklist de salida de hoy"
+                : "checklist de entrada de hoy"}
+            </p>
+            <p
+              className={
+                bloqueadoPorDuplicado ? "text-red-700" : "text-amber-700"
+              }
+            >
+              Lo cargó <strong>{yaCargadoHoy.chofer || "otro chofer"}</strong> a
+              las {horaDeCarga}.{" "}
+              {bloqueadoPorDuplicado
+                ? "No hace falta hacerlo de nuevo. Si hay algo mal cargado, avisale a un supervisor para que lo corrija."
+                : esOtroTurno
+                ? "Si entrás de turno y querés dejar tu propio control, registralo; te lo vamos a pedir confirmar."
+                : "Registralo sólo si el camión hizo una segunda vuelta; te lo vamos a pedir confirmar."}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Qué pasó con lo que se reportó antes en esta unidad (resuelto / en gestión) */}
       {dominio && <NovedadesUnidad dominio={dominio} />}
 
@@ -820,8 +1013,14 @@ export function ChecklistFormClient({
             )}
           </div>
           <Button
-            onClick={handleSubmit}
-            disabled={saving || !todosCompletados || !dominio || !chofer}
+            onClick={() => handleSubmit()}
+            disabled={
+              saving ||
+              !todosCompletados ||
+              !dominio ||
+              !chofer ||
+              bloqueadoPorDuplicado
+            }
             className={`h-14 w-full text-base font-semibold text-white shadow-md transition-colors sm:w-auto sm:min-w-[260px] sm:text-lg ${
               hayRechazo && todosCompletados
                 ? "bg-red-600 hover:bg-red-700"
@@ -867,6 +1066,69 @@ export function ChecklistFormClient({
       </div>
       </>
       )}
+
+      {/* Entrada repetida: el servidor frenó el guardado y pregunta si de
+          verdad es una segunda vuelta del mismo camión. */}
+      <Dialog
+        open={!!duplicado}
+        onOpenChange={(open: boolean) => {
+          if (!open) setDuplicado(null)
+        }}
+      >
+        <DialogContent showExpandButton={false} className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              {duplicado?.motivo === "otro_turno"
+                ? "Esta máquina ya tiene el control de hoy"
+                : "Este camión ya tiene la entrada de hoy"}
+            </DialogTitle>
+            <DialogDescription>
+              {duplicado && (
+                <>
+                  {duplicado.dominio}{" "}
+                  {duplicado.motivo === "otro_turno"
+                    ? "ya fue controlada hoy: la cargó "
+                    : "ya registró la entrada al depósito hoy: la cargó "}
+                  <strong>{duplicado.chofer || "otro chofer"}</strong> a las{" "}
+                  {new Intl.DateTimeFormat("es-AR", {
+                    timeZone: "America/Argentina/Buenos_Aires",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                  }).format(new Date(duplicado.hora))}
+                  .{" "}
+                  {duplicado.motivo === "otro_turno"
+                    ? "Registrá el tuyo si estás entrando de turno."
+                    : "Registrá otra sólo si el camión hizo una segunda vuelta."}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDuplicado(null)}
+              disabled={saving}
+            >
+              No registrar
+            </Button>
+            <Button
+              className="bg-orange-500 text-white hover:bg-orange-600"
+              disabled={saving}
+              onClick={() => {
+                setDuplicado(null)
+                void handleSubmit(true)
+              }}
+            >
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {duplicado?.motivo === "otro_turno"
+                ? "Sí, entro de turno"
+                : "Sí, es otra vuelta"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

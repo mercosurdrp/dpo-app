@@ -30,6 +30,13 @@ const TIEMPO_RUTA_META_MINUTOS = 480 // 8 horas
 // el estado de la flota se calculen siempre con la clasificación correcta.
 const HORA_CORTE_LIBERACION = 9
 
+// Hasta esta hora (AR) un checklist de una unidad que todavía no salió del
+// depósito puede ser una salida hecha tarde, no una entrada. El chofer que
+// cruza las 09:00 llenando el form quedaba registrado como retorno: el camión
+// figuraba sin salida del día y sin tiempo en ruta. Pasada esta hora ya no se
+// ofrece la opción (una salida a las 11 sería un caso raro y a mano).
+const HORA_LIMITE_SALIDA_TARDIA = 11
+
 /** Hora del día (0-23) en zona horaria de Argentina para una fecha dada. */
 function horaArgentina(d: Date): number {
   const fmt = new Intl.DateTimeFormat("en-GB", {
@@ -44,6 +51,50 @@ function horaArgentina(d: Date): number {
 /** Tipo de checklist según la hora local AR del momento de registro. */
 function tipoChecklistPorHora(d: Date): TipoChecklist {
   return horaArgentina(d) < HORA_CORTE_LIBERACION ? "liberacion" : "retorno"
+}
+
+/** "HH:MM" en hora argentina, para los avisos al chofer. */
+function horaHHMM(iso: string): string {
+  return new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso))
+}
+
+/** Checklist ya cargado hoy para una unidad (para avisar antes de repetirlo). */
+export interface ChecklistDelDia {
+  id: string
+  dominio: string
+  tipo: TipoChecklist
+  chofer: string
+  hora: string
+}
+
+/**
+ * Checklists ya registrados en una fecha. El form los usa para avisar apenas se
+ * elige la unidad que el control ya está hecho, en vez de dejar que el chofer
+ * complete los 30 ítems y recién ahí frenarlo al guardar.
+ */
+export async function getChecklistsDeFecha(
+  fecha: string
+): Promise<ChecklistDelDia[]> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("checklist_vehiculos")
+      .select("id, dominio, tipo, chofer, hora")
+      .eq("fecha", fecha)
+      .order("hora", { ascending: false })
+    if (error) return []
+    return (data || []) as ChecklistDelDia[]
+  } catch {
+    // Query tolerante: si falla, el form se carga igual. La validación firme
+    // corre en el servidor al registrar.
+    return []
+  }
 }
 
 // ==================== ITEMS ====================
@@ -117,12 +168,42 @@ interface CreateChecklistInput {
   iniciadoEn?: string // ISO del momento en que se abrió el form
   duracionSegundos?: number // duración de llenado medida en el cliente
   fotoPath?: string // storage path en el bucket checklist-vehiculos (la sube el cliente)
+  /** El chofer confirmó que el control repetido es legítimo (segunda vuelta / cambio de turno). */
+  confirmarDuplicado?: boolean
+  /**
+   * El chofer eligió en el form que esto es la salida, aunque la hora ya diga
+   * retorno (salida hecha tarde). Sólo se respeta si es plausible: antes de las
+   * 11 y con la unidad sin liberación registrada ese día.
+   */
+  tipoForzado?: TipoChecklist
   respuestas: { item_id: string; valor: string; comentario?: string }[]
+}
+
+/**
+ * Por qué se frenó el registro:
+ * - `retorno_repetido`: la unidad ya volvió al depósito hoy (puede ser 2ª vuelta).
+ * - `otro_turno`: control único (autoelevador/camioneta) que ya cargó otra
+ *   persona — el cambio de turno del autoelevador es un caso real.
+ */
+export type MotivoDuplicado = "retorno_repetido" | "otro_turno"
+
+/** Checklist previo del día que choca con el que se está por registrar. */
+export interface ChecklistDuplicado {
+  id: string
+  dominio: string
+  tipo: TipoChecklist
+  chofer: string
+  hora: string
+  motivo: MotivoDuplicado
 }
 
 export async function createChecklist(
   input: CreateChecklistInput
-): Promise<{ data: ChecklistVehiculo } | { error: string }> {
+): Promise<
+  | { data: ChecklistVehiculo }
+  | { error: string }
+  | { duplicado: ChecklistDuplicado }
+> {
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
@@ -143,9 +224,80 @@ export async function createChecklist(
       .eq("dominio", dominioNorm)
       .maybeSingle()
     const esControlUnico = veh?.tipo === "autoelevador" || veh?.tipo === "camioneta"
-    const tipo: TipoChecklist = esControlUnico
+    let tipo: TipoChecklist = esControlUnico
       ? "liberacion"
       : tipoChecklistPorHora(now)
+
+    // Salida hecha tarde: el chofer arrancó el checklist antes de las 09:00 (o
+    // llegó tarde a hacerlo) y el corte horario se lo guardaba como entrada, con
+    // lo cual el camión quedaba sin salida del día y sin tiempo en ruta. El form
+    // le pregunta qué está registrando; acá se acepta la respuesta sólo si es
+    // plausible — todavía temprano y sin liberación cargada para esa unidad.
+    if (
+      !esControlUnico &&
+      tipo === "retorno" &&
+      input.tipoForzado === "liberacion" &&
+      horaArgentina(now) < HORA_LIMITE_SALIDA_TARDIA
+    ) {
+      const { count } = await supabase
+        .from("checklist_vehiculos")
+        .select("id", { count: "exact", head: true })
+        .eq("dominio", dominioNorm)
+        .eq("fecha", input.fecha)
+        .eq("tipo", "liberacion")
+      if (!count) tipo = "liberacion"
+      else {
+        // Alguien cargó la salida mientras este chofer llenaba el form. No se
+        // guarda como entrada porque los ítems contestados son los de la
+        // salida (la llave, por ejemplo, no se pregunta en el retorno).
+        return {
+          error: `${dominioNorm} ya tiene el checklist de salida de hoy, lo cargaron mientras completabas este. Si además volvió al depósito, entrá de nuevo y registrá la entrada.`,
+        }
+      }
+    }
+
+    // 🚨 Una unidad no puede tener dos veces el mismo checklist en el día. Pasó
+    // que un chofer volvió a entrar al form y lo cargó de nuevo: el duplicado
+    // infla la adherencia, mete km repetidos y descoloca el tiempo en ruta (que
+    // se mide contra la ÚLTIMA liberación del día). La salida se rechaza sin
+    // más — es imposible que un camión salga dos veces del depósito antes de
+    // las 09:00. El retorno puede ser una segunda vuelta real, así que se avisa
+    // y el chofer decide.
+    const { data: previos } = await supabase
+      .from("checklist_vehiculos")
+      .select("id, dominio, tipo, chofer, hora")
+      .eq("dominio", dominioNorm)
+      .eq("fecha", input.fecha)
+      .eq("tipo", tipo)
+      .order("hora", { ascending: false })
+      .limit(1)
+
+    const previo = (previos || [])[0] as Omit<ChecklistDuplicado, "motivo"> | undefined
+    if (previo) {
+      const quien = previo.chofer?.trim() || "otro chofer"
+      const choferNorm = input.chofer.trim().toUpperCase()
+      // En el autoelevador el control se repite de verdad: cada maquinista
+      // chequea la máquina al entrar de turno. Si el que carga es OTRO, se le
+      // pide confirmar; si es el mismo dos veces, es error y se rechaza.
+      const esOtroTurno =
+        esControlUnico && previo.chofer?.trim().toUpperCase() !== choferNorm
+
+      if (tipo === "liberacion" && !esOtroTurno) {
+        return {
+          error: esControlUnico
+            ? `${dominioNorm} ya tiene tu control de hoy: lo cargaste a las ${horaHHMM(previo.hora)}. Si hay algo mal, pedile a un supervisor que lo corrija.`
+            : `${dominioNorm} ya tiene el checklist de salida de hoy: lo cargó ${quien} a las ${horaHHMM(previo.hora)}. No hace falta hacerlo de nuevo.`,
+        }
+      }
+      if (!input.confirmarDuplicado) {
+        return {
+          duplicado: {
+            ...previo,
+            motivo: esOtroTurno ? "otro_turno" : "retorno_repetido",
+          },
+        }
+      }
+    }
 
     // El control único existe para registrar la lectura (horómetro en el
     // autoelevador, km en la camioneta): sin ella el vehículo figura "sin

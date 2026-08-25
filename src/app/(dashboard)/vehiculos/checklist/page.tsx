@@ -1,5 +1,6 @@
 import {
   getChecklistItems,
+  getChecklistsDeFecha,
   getUltimasLecturasFlota,
 } from "@/actions/checklist-vehiculos"
 import { getVehiculos, getChoferes } from "@/actions/registros-vehiculos"
@@ -8,12 +9,17 @@ import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
 export default async function ChecklistPage() {
-  const [itemsRes, vehiculosRes, choferesRes, ultimasLecturas] = await Promise.all([
-    getChecklistItems(),
-    getVehiculos(),
-    getChoferes(),
-    getUltimasLecturasFlota(),
-  ])
+  // Misma fecha con la que el form graba el checklist, para que el aviso de
+  // "ya está hecho" mire exactamente las filas contra las que valida el server.
+  const hoy = new Date().toISOString().slice(0, 10)
+  const [itemsRes, vehiculosRes, choferesRes, ultimasLecturas, checklistsHoy] =
+    await Promise.all([
+      getChecklistItems(),
+      getVehiculos(),
+      getChoferes(),
+      getUltimasLecturasFlota(),
+      getChecklistsDeFecha(hoy),
+    ])
 
   if ("error" in itemsRes) {
     return (
@@ -40,6 +46,7 @@ export default async function ChecklistPage() {
         vehiculos={vehiculos}
         choferes={choferes}
         ultimasLecturas={ultimasLecturas}
+        checklistsHoy={checklistsHoy}
       />
     </div>
   )
