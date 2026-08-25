@@ -70,11 +70,13 @@ export function DiasPicoClient({
   const [modo, setModo] = useState<"flota" | "mensual">("flota")
   // Cómo se reparte el presupuesto del mes entre sus días, siempre con datos
   // del año anterior:
-  //   "dow"      → promedio del MISMO DÍA DE SEMANA en ese mes del año base.
-  //                Respeta que viernes pesa más que lunes y no desalinea.
+  //   "anual"    → índice de día de semana de TODO el año base. Estable: cada
+  //                día de semana tiene ~50 observaciones detrás.
+  //   "dow"      → mismo día de semana pero calculado dentro de ese mes. Fiel
+  //                al mes, pero con 4-5 observaciones por día es ruidoso.
   //   "posicion" → día hábil N del año base presta su peso al día hábil N.
   //                Copia la forma exacta del mes, incluidos los días raros.
-  const [reparto, setReparto] = useState<"dow" | "posicion">("dow")
+  const [reparto, setReparto] = useState<"anual" | "dow" | "posicion">("anual")
 
   const capFlota = camiones * hlCamion * (ocupacion / 100)
   const setFer = useMemo(() => new Set(feriados.map((f) => f.fecha)), [feriados])
@@ -139,6 +141,25 @@ export function DiasPicoClient({
     return out
   }, [base])
 
+  // Índice de día de semana sobre el año base completo. 1,00 = día promedio.
+  const indiceAnual = useMemo(() => {
+    const porDow: Record<number, number[]> = {}
+    for (const d of base) {
+      const dow = new Date(d.fecha + "T12:00:00").getDay()
+      if (dow === 0) continue
+      ;(porDow[dow] ??= []).push(d.hl)
+    }
+    const medias: Record<number, number> = {}
+    for (const [dow, arr] of Object.entries(porDow)) {
+      medias[Number(dow)] = arr.reduce((a, b) => a + b, 0) / arr.length
+    }
+    const vals = Object.values(medias)
+    const gral = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 1
+    const out: Record<number, number> = {}
+    for (const [dow, media] of Object.entries(medias)) out[Number(dow)] = media / (gral || 1)
+    return out
+  }, [base])
+
   // Capacidad de referencia de cada mes, según el modo elegido.
   const capPorMes = useMemo(() => {
     const out: Record<number, number> = {}
@@ -164,6 +185,9 @@ export function DiasPicoClient({
       const w = pesosBase[m] ?? []
       const wd = pesosDow[m] ?? {}
       const pesos = fechas.map((f, i) => {
+        if (reparto === "anual") {
+          return indiceAnual[new Date(f + "T12:00:00").getDay()] ?? 1
+        }
         if (reparto === "dow") {
           const dow = new Date(f + "T12:00:00").getDay()
           return wd[dow] ?? 1
@@ -188,7 +212,7 @@ export function DiasPicoClient({
       })
     }
     return out
-  }, [anio, setFer, pesosBase, pesosDow, reparto, pptoPorMes, realPorFecha, cliPorFecha, cliBase, capPorMes])
+  }, [anio, setFer, pesosBase, pesosDow, indiceAnual, reparto, pptoPorMes, realPorFecha, cliPorFecha, cliBase, capPorMes])
 
   // Resumen mes a mes: capacidad instalada contra presupuesto y contra real.
   const resumen = useMemo(() => {
@@ -247,18 +271,24 @@ export function DiasPicoClient({
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
             <span className="text-xs font-medium text-slate-600">Reparto del presupuesto:</span>
+            <button type="button" onClick={() => setReparto("anual")}
+              className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${reparto === "anual" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+              Índice anual
+            </button>
             <button type="button" onClick={() => setReparto("dow")}
               className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${reparto === "dow" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-              Por día de semana
+              Día de semana por mes
             </button>
             <button type="button" onClick={() => setReparto("posicion")}
               className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${reparto === "posicion" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
               Por posición en el mes
             </button>
             <span className="text-xs text-slate-500">
-              {reparto === "dow"
-                ? `Promedio del mismo día de semana en ese mes de ${anioBase}. Respeta que viernes pesa más que lunes y no desalinea.`
-                : `El día hábil N de ${anioBase} le presta su peso al día hábil N. Copia la forma exacta del mes, arrastrando también sus días atípicos.`}
+              {reparto === "anual"
+                ? `Índice de día de semana sobre todo ${anioBase}: ${[1, 2, 3, 4, 5, 6].map((d) => `${DOW[d]} ${(indiceAnual[d] ?? 1).toFixed(2)}`).join(" · ")}`
+                : reparto === "dow"
+                  ? `Mismo día de semana pero calculado dentro de cada mes de ${anioBase}. Más fiel al mes, más ruidoso: hay 4 o 5 observaciones por día.`
+                  : `El día hábil N de ${anioBase} le presta su peso al día hábil N. Copia la forma exacta del mes, arrastrando también sus días atípicos.`}
             </span>
           </div>
           <p className="text-xs text-slate-500">
