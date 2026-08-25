@@ -1,9 +1,16 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Check, Loader2, Truck, X } from "lucide-react"
+import { Check, ChevronRight, Loader2, Truck, X } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Select,
   SelectContent,
@@ -17,6 +24,7 @@ import {
   getSerieCoberturaCil,
   type CoberturaCilMes,
   type PuntoSerieCil,
+  type UnidadCobertura,
 } from "@/actions/cil-cobertura"
 import { CICLO_CIL_MENSUAL, labelTareaCil } from "@/lib/flota/cil-tareas"
 
@@ -148,7 +156,10 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
           <p className="py-4 text-sm text-destructive">{error}</p>
         ) : !data ? null : (
           <>
-            {/* Los cuatro números de arriba, cada uno en su recuadro. */}
+            {/* Los cuatro números de arriba, cada uno en su recuadro. Los cuatro
+                se tocan: el número solo dice cuántos son, y lo que hace falta para
+                salir a corregir es CUÁLES son. Ese detalle está abajo en la grilla
+                de toda la flota, pero hay que ir a buscarlo unidad por unidad. */}
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Indicador
                 titulo="Unidades al día"
@@ -156,12 +167,24 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
                 deTotal={`de ${data.totalObligatorias}`}
                 tono={pct === 100 ? "bien" : pct != null && pct >= 70 ? "medio" : "mal"}
                 nota="cerraron las tres tareas"
+                detalle={{
+                  descripcion: `${data.completasObligatorias} de ${data.totalObligatorias} unidades cerraron las tres tareas del ciclo en ${fmtMes(ym)}.`,
+                  contenido: (
+                    <ListaUnidades unidades={obligatorias} ciclo={ciclo} orden="completas" />
+                  ),
+                }}
               />
               <Indicador
                 titulo="Cobertura"
                 valor={pct != null ? `${pct}%` : "—"}
                 tono={pct === 100 ? "bien" : pct != null && pct >= 70 ? "medio" : "mal"}
                 nota="es lo que mira el auditor"
+                detalle={{
+                  descripcion: `${data.completasObligatorias} de ${data.totalObligatorias} = ${pct ?? "—"} %. Para el 100 % faltan ${data.totalObligatorias - data.completasObligatorias} unidades; arriba están las que menos tareas deben.`,
+                  contenido: (
+                    <ListaUnidades unidades={obligatorias} ciclo={ciclo} orden="mas_cerca" />
+                  ),
+                }}
               />
               <Indicador
                 titulo="Tareas del mes"
@@ -169,6 +192,16 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
                 deTotal={`de ${data.metaMes}`}
                 tono={data.tareasMes >= data.metaMes ? "bien" : "neutro"}
                 nota="el KPI de actividad"
+                detalle={{
+                  descripcion: `${data.tareasMes} de ${data.metaMes} tareas cargadas en ${fmtMes(ym)}, de la más nueva a la más vieja.`,
+                  contenido: (
+                    <ListaTareas
+                      unidades={data.unidades}
+                      ciclo={ciclo}
+                      tareasMes={data.tareasMes}
+                    />
+                  ),
+                }}
               />
               {data.ritmo ? (
                 <Indicador
@@ -178,6 +211,15 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
                   }
                   tono={data.tareasMes >= data.ritmo.esperadoHoy ? "bien" : "mal"}
                   nota={`al día ${data.ritmo.diaDelMes} irían ${data.ritmo.esperadoHoy}`}
+                  detalle={{
+                    descripcion:
+                      data.tareasMes >= data.ritmo.esperadoHoy
+                        ? `Van ${data.tareasMes} tareas y al día ${data.ritmo.diaDelMes} irían ${data.ritmo.esperadoHoy}: el mes va en ritmo.`
+                        : `Van ${data.tareasMes} tareas y al día ${data.ritmo.diaDelMes} irían ${data.ritmo.esperadoHoy}: faltan ${data.ritmo.esperadoHoy - data.tareasMes} para ponerse al día. Empezá por las de arriba.`,
+                    contenido: (
+                      <ListaUnidades unidades={obligatorias} ciclo={ciclo} orden="mas_debe" />
+                    ),
+                  }}
                 />
               ) : (
                 <Indicador
@@ -185,6 +227,12 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
                   valor={data.tareasMes >= data.metaMes ? "Meta ok" : "Bajo meta"}
                   tono={data.tareasMes >= data.metaMes ? "bien" : "mal"}
                   nota="ya no se puede cargar hacia atrás"
+                  detalle={{
+                    descripcion: `${fmtMes(ym)} cerró con ${data.tareasMes} de ${data.metaMes} tareas. Quedó así y no se puede cargar hacia atrás.`,
+                    contenido: (
+                      <ListaUnidades unidades={obligatorias} ciclo={ciclo} orden="mas_debe" />
+                    ),
+                  }}
                 />
               )}
             </div>
@@ -242,22 +290,33 @@ const TONOS = {
   neutro: "text-foreground",
 } as const
 
-/** Un número grande con su rótulo y una línea que dice qué significa. */
+/**
+ * Un número grande con su rótulo y una línea que dice qué significa.
+ *
+ * Con `detalle` la caja pasa a ser un botón que abre CUÁLES son las unidades o
+ * las tareas detrás del número: "5 de 13" no dice a quién hay que ir a buscar,
+ * que es lo único que se hace después de mirarlo.
+ */
 function Indicador({
   titulo,
   valor,
   deTotal,
   tono,
   nota,
+  detalle,
 }: {
   titulo: string
   valor: string
   deTotal?: string
   tono: keyof typeof TONOS
   nota: string
+  /** Qué hay detrás del número. Sin esto la caja no se toca. */
+  detalle?: { descripcion: string; contenido: React.ReactNode }
 }) {
-  return (
-    <div className="rounded-lg border bg-muted/40 p-3">
+  const [abierto, setAbierto] = useState(false)
+
+  const cuerpo = (
+    <>
       <p className="text-xs text-muted-foreground">{titulo}</p>
       <p className={`mt-0.5 text-2xl leading-tight font-bold ${TONOS[tono]}`}>
         {valor}
@@ -266,6 +325,193 @@ function Indicador({
         )}
       </p>
       <p className="mt-1 text-[11px] leading-tight text-muted-foreground">{nota}</p>
+    </>
+  )
+
+  if (!detalle) {
+    return <div className="rounded-lg border bg-muted/40 p-3">{cuerpo}</div>
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setAbierto(true)}
+        title={`Ver qué hay detrás de “${titulo}”`}
+        className="rounded-lg border bg-muted/40 p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        {cuerpo}
+        <span className="mt-1.5 flex items-center gap-0.5 text-[11px] font-medium text-primary">
+          Ver el detalle <ChevronRight className="size-3" aria-hidden />
+        </span>
+      </button>
+
+      {abierto && (
+        <Dialog open onOpenChange={(o: boolean) => !o && setAbierto(false)}>
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{titulo}</DialogTitle>
+              <DialogDescription>{detalle.descripcion}</DialogDescription>
+            </DialogHeader>
+            {detalle.contenido}
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  )
+}
+
+/**
+ * Las unidades del mes, una por renglón, con las tres letras del ciclo: verde
+ * la que cerró (con el día) y roja la que falta.
+ *
+ * El orden es lo que cambia según de qué número se abre:
+ *   completas  → primero las que ya cerraron (es lo que cuenta ese número)
+ *   mas_cerca  → primero las que están a una sola tarea de cerrar
+ *   mas_debe   → primero las que más deben
+ */
+function ListaUnidades({
+  unidades,
+  ciclo,
+  orden,
+}: {
+  unidades: UnidadCobertura[]
+  ciclo: readonly string[]
+  orden: "completas" | "mas_cerca" | "mas_debe"
+}) {
+  if (unidades.length === 0) {
+    return <p className="py-4 text-center text-sm text-muted-foreground">Sin unidades.</p>
+  }
+
+  const faltan = (u: UnidadCobertura) => ciclo.filter((t) => !u.hechas[t]).length
+  const ordenadas = [...unidades].sort((a, b) => {
+    const fa = faltan(a)
+    const fb = faltan(b)
+    if (fa !== fb) {
+      if (orden === "mas_debe") return fb - fa
+      // completas y mas_cerca comparten criterio: primero lo que menos debe.
+      return fa - fb
+    }
+    return a.dominio.localeCompare(b.dominio, "es")
+  })
+
+  return (
+    <ul className="divide-y divide-border rounded-md border">
+      {ordenadas.map((u) => {
+        const debe = faltan(u)
+        return (
+          <li key={u.dominio} className="space-y-1.5 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium text-foreground">{u.dominio}</span>
+              {u.numero && (
+                <span className="text-xs text-muted-foreground">N° {u.numero}</span>
+              )}
+              <Badge
+                variant="outline"
+                className={
+                  debe === 0
+                    ? "ml-auto border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                    : "ml-auto border-destructive/30 bg-destructive/10 text-destructive"
+                }
+              >
+                {debe === 0 ? "Al día" : `Le falta${debe > 1 ? "n" : ""} ${debe}`}
+              </Badge>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {ciclo.map((t) => {
+                const hecha = u.hechas[t]
+                return (
+                  <span
+                    key={t}
+                    title={
+                      hecha
+                        ? `${labelTareaCil(t)} · ${fmtDia(hecha.fecha)} · ${hecha.operario}`
+                        : `${labelTareaCil(t)}: falta este mes`
+                    }
+                    className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] ${
+                      hecha
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                        : "border-destructive/30 bg-destructive/10 text-destructive"
+                    }`}
+                  >
+                    {hecha ? <Check className="size-3" /> : <X className="size-3" />}
+                    {labelCorto(t)}
+                    {hecha && (
+                      <span className="text-muted-foreground">{fmtDia(hecha.fecha)}</span>
+                    )}
+                  </span>
+                )
+              })}
+            </div>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/**
+ * Las tareas cargadas en el mes, de la más nueva a la más vieja.
+ *
+ * 🚨 Es una fila por unidad y tarea con el ÚLTIMO registro del mes, que es lo
+ * que trae la cobertura. Si una unidad cargó dos veces la misma tarea, el
+ * contador de arriba las cuenta a las dos y acá aparece una sola: por eso la
+ * diferencia se avisa en vez de dejar que los números no cierren.
+ */
+function ListaTareas({
+  unidades,
+  ciclo,
+  tareasMes,
+}: {
+  unidades: UnidadCobertura[]
+  ciclo: readonly string[]
+  tareasMes: number
+}) {
+  const filas = unidades
+    .flatMap((u) =>
+      ciclo
+        .map((t) => {
+          const hecha = u.hechas[t]
+          return hecha ? { dominio: u.dominio, tarea: t, ...hecha } : null
+        })
+        .filter((f): f is NonNullable<typeof f> => f != null),
+    )
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))
+
+  if (filas.length === 0) {
+    return (
+      <p className="py-4 text-center text-sm text-muted-foreground">
+        Todavía no se cargó ninguna tarea en el mes.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <ul className="divide-y divide-border rounded-md border">
+        {filas.map((f) => (
+          <li
+            key={`${f.dominio}-${f.tarea}-${f.fecha}`}
+            className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm"
+          >
+            <span className="w-20 shrink-0 font-medium text-foreground">{f.dominio}</span>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">
+              {labelTareaCil(f.tarea)}
+            </span>
+            <span className="text-xs text-muted-foreground">{f.operario}</span>
+            <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+              {fmtDia(f.fecha)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {tareasMes > filas.length && (
+        <p className="text-[11px] text-muted-foreground">
+          El contador dice {tareasMes} y acá hay {filas.length} renglones: la diferencia
+          son tareas cargadas más de una vez sobre la misma unidad. Se muestra el
+          último registro de cada una.
+        </p>
+      )}
     </div>
   )
 }
