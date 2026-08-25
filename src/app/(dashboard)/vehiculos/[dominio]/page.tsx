@@ -8,6 +8,7 @@ import { getProfile } from "@/lib/session"
 import { VehiculoDetalleClient } from "./vehiculo-detalle-client"
 import { FichaVehiculo } from "./ficha-vehiculo"
 import { ChecklistsUnidad } from "./checklists-unidad"
+import { OplUnidad } from "./opl-unidad"
 
 export default async function VehiculoDetallePage({
   params,
@@ -53,6 +54,8 @@ export default async function VehiculoDetallePage({
           canEdit={canEdit}
         />
         <ChecklistsUnidad checklists={checklists} />
+        {/* Lo primero que busca el que llegó acá escaneando el QR de la cabina. */}
+        <OplUnidad tipo={res.data.vehiculo.tipo ?? null} />
       </VehiculoDetalleClient>
     </div>
   )

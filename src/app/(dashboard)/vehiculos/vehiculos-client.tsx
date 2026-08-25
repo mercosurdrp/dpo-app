@@ -49,6 +49,7 @@ import {
   Clock,
   Fuel,
   Droplets,
+  QrCode,
   Gauge,
   Bell,
   Info,
@@ -365,6 +366,12 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
           <Link href="/mi-cil">
             <Button variant="outline">
               <Droplets className="mr-2 h-4 w-4" /> Registrar CIL
+            </Button>
+          </Link>
+          {/* OPL + la planilla de QR que se pega en cada unidad. */}
+          <Link href="/vehiculos/opl">
+            <Button variant="outline">
+              <QrCode className="mr-2 h-4 w-4" /> OPL y QR
             </Button>
           </Link>
           <Link href="/vehiculos/combustible">

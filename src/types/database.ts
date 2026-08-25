@@ -4731,3 +4731,22 @@ export const ENTREGA_EPP_ESTADO_COLORS: Record<EntregaEppEstado, string> = {
   reclamada: "#EF4444",
   resuelta: "#6B7280",
 }
+
+// ===== OPL de flota (lecciones de un punto, alcanzadas por el QR de la unidad) =====
+export interface FlotaOpl {
+  id: string
+  titulo: string
+  descripcion: string | null
+  /** Tipos de unidad a los que aplica. Vacío = todas. */
+  tipos: string[]
+  /** Punto del pilar Flota que evidencia (ej. "1.3"). */
+  punto_dpo: string | null
+  archivo_path: string | null
+  archivo_url: string | null
+  archivo_nombre: string | null
+  activo: boolean
+  orden: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
