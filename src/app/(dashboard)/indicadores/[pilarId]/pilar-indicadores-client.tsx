@@ -33,6 +33,7 @@ import {
   Package,
   Gauge,
   Map as MapIcon,
+  FlaskConical,
   type LucideIcon,
 } from "lucide-react"
 import type { Pilar, Indicador } from "@/types/database"
@@ -329,6 +330,43 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
                 href="/planeamiento/periodos-criticos"
                 className={buttonVariants({ size: "lg" })}
                 style={{ backgroundColor: pilar.color, color: "#fff" }}
+              >
+                Abrir <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Acceso a Días Pico — banco de pruebas del criterio por capacidad.
+          Va aparte de Períodos Críticos a propósito: aquél es el módulo que se
+          audita, éste sirve para comparar criterios sin tocarlo. */}
+      {pilar.nombre === "Planeamiento" && (
+        <Card className="border-l-4 border-dashed" style={{ borderLeftColor: pilar.color }}>
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="rounded-xl p-3"
+                  style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                >
+                  <FlaskConical className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Días Pico por capacidad{" "}
+                    <span className="ml-1 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-600">
+                      banco de pruebas
+                    </span>
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Presupuesto repartido por día vs capacidad de flota · no afecta a 3.4
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/planeamiento/dias-pico"
+                className={buttonVariants({ size: "lg", variant: "outline" })}
               >
                 Abrir <ChevronRight className="h-4 w-4" />
               </Link>
