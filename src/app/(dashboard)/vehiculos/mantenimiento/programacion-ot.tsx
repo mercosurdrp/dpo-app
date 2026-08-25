@@ -39,6 +39,7 @@ import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { fmtMoneyOt } from "./_components/ot-formato"
 import { CalendarioPreventivo } from "./_components/calendario-preventivo"
 import { OtAbiertasCard, type OTPendiente } from "./_components/ot-abiertas-card"
+import { ServicePendientesCard } from "./_components/service-pendientes-card"
 import type { LecturaDia } from "@/lib/flota/calendario-preventivo"
 import {
   cerrarOtProgramada,
@@ -271,8 +272,14 @@ export function ProgramacionOt({
             onAbrirOt={(o) => setDialog({ ot: o, fecha: o.fecha_programada })}
           />
 
-          {/* Lo abierto, debajo del calendario: se programa la semana mirando
-              lo que todavía está en taller o pendiente. */}
+          {/* Lo que hay que programar y lo que ya está abierto, debajo del
+              calendario: se arma la semana mirando las dos cosas juntas. */}
+          <ServicePendientesCard
+            programacion={programacion}
+            puedeEditar={puedeEditar}
+            onProgramar={(dominio, fecha) => setDialog({ ot: null, fecha, dominio })}
+          />
+
           <OtAbiertasCard otPendientes={otPendientes} onVerHistorial={onVerHistorial} />
         </TabsContent>
 

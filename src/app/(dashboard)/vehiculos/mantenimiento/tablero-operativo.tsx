@@ -29,12 +29,18 @@ import {
   Archive,
   ClipboardList,
   FileWarning,
-  Gauge,
   Loader2,
   Plus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
+import {
+  Dot,
+  ESTADO_SG,
+  ORDEN_ESTADO,
+  fmtFecha,
+  fmtNum,
+} from "./_components/service-estado"
 import { registrarLecturaVehiculo } from "@/actions/mantenimiento-vehiculos"
 import type {
   DocumentoVencimiento,
@@ -43,77 +49,9 @@ import type {
 } from "@/lib/vehiculos/service-general"
 import type { UnidadBaja } from "@/actions/mantenimiento-vehiculos"
 
-const ESTADO_SG: Record<
-  EstadoServiceGeneral,
-  { label: string; dot: string; badge: string }
-> = {
-  vencido: {
-    label: "Vencido",
-    dot: "bg-destructive",
-    badge: "border-destructive/30 bg-destructive/10 text-destructive",
-  },
-  rojo: {
-    label: "≤10 días",
-    dot: "bg-destructive/70",
-    badge: "border-destructive/30 bg-destructive/10 text-destructive",
-  },
-  naranja: {
-    label: "≤15 días",
-    dot: "bg-orange-500",
-    badge: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-400",
-  },
-  amarillo: {
-    label: "≤30 días",
-    dot: "bg-amber-500",
-    badge: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  },
-  ok: {
-    label: "Al día",
-    dot: "bg-emerald-500",
-    badge: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  },
-  sin_datos: {
-    label: "Sin datos",
-    dot: "bg-muted-foreground/40",
-    badge: "border-border bg-muted text-muted-foreground",
-  },
-  no_aplica: {
-    label: "No lleva service",
-    dot: "bg-border",
-    badge: "border-border bg-muted/50 text-muted-foreground/70",
-  },
-}
-
-const ORDEN_ESTADO: Record<EstadoServiceGeneral, number> = {
-  vencido: 0,
-  rojo: 1,
-  naranja: 2,
-  amarillo: 3,
-  ok: 4,
-  sin_datos: 5,
-  no_aplica: 6,
-}
-
 /** El tipo se re-exporta desde acá porque el resto del módulo lo importaba
  *  de este archivo; su definición vive con la tarjeta que lo usa. */
 export type { OTPendiente } from "./_components/ot-abiertas-card"
-
-const fmtNum = (v: number | null) =>
-  v == null ? "—" : new Intl.NumberFormat("es-AR").format(v)
-
-const fmtFecha = (f: string | null) =>
-  !f ? "—" : f.slice(0, 10).split("-").reverse().join("/")
-
-function diasTexto(dias: number | null): string {
-  if (dias == null) return "—"
-  if (dias < 0) return `hace ${Math.abs(dias)} d`
-  if (dias === 0) return "hoy"
-  return `en ${dias} d`
-}
-
-function Dot({ estado }: { estado: EstadoServiceGeneral }) {
-  return <span className={cn("inline-block size-2.5 rounded-full", ESTADO_SG[estado].dot)} />
-}
 
 /**
  * Contador del encabezado de una tarjeta. Antes era un `<Badge>` suelto: decía
@@ -244,36 +182,14 @@ interface Props {
 }
 
 export function TableroOperativo({ programacion, documentos, unidadesBaja, puedeEditar, onNavigate }: Props) {
-  const [resaltado, setResaltado] = useState<string | null>(null)
   const [lecturaDe, setLecturaDe] = useState<ServiceGeneralUnidad | null>(null)
-  /** Los contadores de arriba de cada tabla ahora la filtran (eran adorno). */
-  const [filtroService, setFiltroService] = useState<"vencidos" | "por_vencer" | null>(null)
   const [verDocs, setVerDocs] = useState(true)
-
-  const esAlerta = (e: EstadoServiceGeneral) =>
-    e === "vencido" || e === "rojo" || e === "naranja" || e === "amarillo"
 
   const progOrdenada = [...programacion].sort((a, b) => {
     const oe = ORDEN_ESTADO[a.estado] - ORDEN_ESTADO[b.estado]
     if (oe !== 0) return oe
     return (a.diasRestantes ?? Infinity) - (b.diasRestantes ?? Infinity)
   })
-
-  const servicePendientes = progOrdenada.filter((p) => esAlerta(p.estado))
-  const serviceVencidos = servicePendientes.filter((p) => p.estado === "vencido").length
-  const servicePorVencer = servicePendientes.length - serviceVencidos
-  const serviceEnPantalla =
-    filtroService == null
-      ? servicePendientes
-      : filtroService === "vencidos"
-        ? servicePendientes.filter((p) => p.estado === "vencido")
-        : servicePendientes.filter((p) => p.estado !== "vencido")
-
-  const irAProgramacion = (dominio: string) => {
-    setResaltado(dominio)
-    const el = document.getElementById(`svc-${dominio}`)
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" })
-  }
 
   // Documentación vencida por unidad: la unidad queda fuera de servicio hasta
   // regularizar (DPO Flota R1.1.4). Ordenado por el vencimiento más viejo.
@@ -330,104 +246,6 @@ export function TableroOperativo({ programacion, documentos, unidadesBaja, puede
         </Card>
       )}
 
-      {/* ===== Alertas: Service pendientes =====
-          "Órdenes de trabajo" se mudó a Programación OT, debajo del calendario:
-          quien programa la semana necesita verlas ahí, no acá. */}
-      <div className="grid gap-4">
-        {/* Service pendientes */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Gauge className="size-4 text-muted-foreground" /> Service pendientes
-            </CardTitle>
-            <div className="flex gap-1.5">
-              <BadgeFiltro
-                activo={filtroService === "vencidos"}
-                onClick={() =>
-                  setFiltroService((f) => (f === "vencidos" ? null : "vencidos"))
-                }
-                cls="border-destructive/30 bg-destructive/10 text-destructive"
-              >
-                Vencidos: {serviceVencidos}
-              </BadgeFiltro>
-              <BadgeFiltro
-                activo={filtroService === "por_vencer"}
-                onClick={() =>
-                  setFiltroService((f) => (f === "por_vencer" ? null : "por_vencer"))
-                }
-                cls="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-              >
-                Por vencer: {servicePorVencer}
-              </BadgeFiltro>
-            </div>
-          </CardHeader>
-          <CardContent className="overflow-x-auto pt-0">
-            {filtroService && (
-              <p className="pb-2 text-xs text-muted-foreground">
-                Mostrando {serviceEnPantalla.length} de {servicePendientes.length}.{" "}
-                <button
-                  type="button"
-                  className="underline underline-offset-2 hover:text-foreground"
-                  onClick={() => setFiltroService(null)}
-                >
-                  Ver todos
-                </button>
-              </p>
-            )}
-            {serviceEnPantalla.length === 0 ? (
-              <p className="py-3 text-sm text-muted-foreground">No hay services vencidos ni próximos.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Unidad</TableHead>
-                    <TableHead>Próx. service</TableHead>
-                    <TableHead>Vence</TableHead>
-                    <TableHead>Estado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {serviceEnPantalla.map((p) => {
-                    const u = p.mide === "horas" ? "hs" : "km"
-                    const prox =
-                      p.proximaFecha == null
-                        ? "—"
-                        : `${fmtFecha(p.proximaFecha)}${
-                            p.motivo !== "tiempo" && p.proximoKm != null ? ` · ${fmtNum(p.proximoKm)} ${u}` : ""
-                          }`
-                    return (
-                      <TableRow
-                        key={p.dominio}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => irAProgramacion(p.dominio)}
-                      >
-                        <TableCell className="font-medium">{p.dominio}</TableCell>
-                        <TableCell className="text-muted-foreground">{prox}</TableCell>
-                        <TableCell
-                          className={cn(
-                            "font-medium",
-                            p.estado === "vencido" || p.estado === "rojo"
-                              ? "text-destructive"
-                              : "text-foreground"
-                          )}
-                        >
-                          {diasTexto(p.diasRestantes)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={ESTADO_SG[p.estado].badge}>
-                            {ESTADO_SG[p.estado].label}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Leyenda del semáforo de service */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         {(["vencido", "rojo", "naranja", "amarillo", "ok", "sin_datos", "no_aplica"] as EstadoServiceGeneral[]).map((k) => (
@@ -474,11 +292,7 @@ export function TableroOperativo({ programacion, documentos, unidadesBaja, puede
                     ? "—"
                     : `${fmtFecha(p.proximaFecha)}${p.motivo !== "tiempo" && p.proximoKm != null ? ` · ${fmtNum(p.proximoKm)} ${u}` : ""}`
                 return (
-                  <TableRow
-                    key={p.dominio}
-                    id={`svc-${p.dominio}`}
-                    className={cn(resaltado === p.dominio && "bg-amber-500/10 ring-1 ring-amber-500/40")}
-                  >
+                  <TableRow key={p.dominio}>
                     <TableCell>
                       <Dot estado={p.estado} />
                     </TableCell>
