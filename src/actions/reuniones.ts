@@ -37,6 +37,7 @@ import {
 import { buildPampeanaFoxtrotSerie } from "@/lib/foxtrot/auto-indicadores-pampeana"
 import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
+import { MINIMO_PCT, obPct as obPctBodega } from "@/lib/ocupacion-bodega"
 import { getMetaSueno } from "@/lib/sueno/meta"
 import { getDqiDiarioMes, getDqiPpmMes } from "@/actions/dqi"
 import { getAusentismoSerieEventos } from "@/actions/ausentismo"
@@ -3586,14 +3587,14 @@ async function getIndicadoresMesCore(
 
     // 7d-bis. Indicador AUTO "Ocupación de Bodega" — todos los tipos salvo warehouse.
     //   Lee ocupacion_bodega_diaria (alimentado por el cron de rechazos).
-    //   Valor diario = AVG(ceq_total/600 × 100) de los viajes del día — % del target.
-    //   MTD = (Σ ceq / (600 × Σ viajes)) × 100 (% promedio ponderado por viaje).
-    //   Unidad: % · Meta: 100 · mejor_si=mayor.
+    //   Valor diario = AVG(ceq_total) / CAPACIDAD_CEQ × 100 — cuánto de la
+    //   bodega se llenó (100% = camión lleno, 1440 CEq).
+    //   MTD = (Σ ceq / (CAPACIDAD_CEQ × Σ viajes)) × 100 (ponderado por viaje).
+    //   Unidad: % · Meta: MINIMO_PCT (los 600 CEq mínimos) · mejor_si=mayor.
     if (tipo !== "warehouse" && tipo !== "presupuesto") {
       const { data: obRaw, error: errOB } = await (pOcupacionBodega ??
         qOcupacionBodega())
       if (!errOB) {
-        const TARGET_OB = 600
         const sumPorFecha: Record<string, number> = {}
         const countPorFecha: Record<string, number> = {}
         for (const r of (obRaw ?? []) as Array<{ fecha: string; ceq_total: number | null }>) {
@@ -3610,21 +3611,23 @@ async function getIndicadoresMesCore(
           if (cnt === 0) {
             valoresOB[f] = null
           } else {
-            const pctDia = (sumPorFecha[f] / cnt / TARGET_OB) * 100
+            const pctDia = obPctBodega(sumPorFecha[f] / cnt)
             valoresOB[f] = { reunion_id: "", valor: Math.round(pctDia * 10) / 10, observacion: null }
             sumCeqMtd += sumPorFecha[f]
             countMtd += cnt
           }
         }
         const mtdOB = countMtd > 0
-          ? Math.round((sumCeqMtd / countMtd / TARGET_OB) * 1000) / 10
+          ? Math.round(obPctBodega(sumCeqMtd / countMtd) * 10) / 10
           : null
 
         indicadoresAuto.push({
           id: "auto_ocupacion_bodega",
           nombre: "Ocupación de Bodega",
           unidad: "%",
-          meta: 100,
+          // El 100% es el camión lleno, así que la meta es el mínimo de carga
+          // expresado en % de la bodega (600 CEq = 41,7%).
+          meta: Math.round(MINIMO_PCT * 10) / 10,
           orden: -1,
           agregacion: "promedio",
           valores: valoresOB,

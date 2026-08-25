@@ -5,6 +5,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
+import { obPct } from "@/lib/ocupacion-bodega"
 import {
   SLA_RUTEO_NOMBRE,
   SLA_RUTEO_TARGET,
@@ -23,7 +24,7 @@ import {
   SLA_CARGA_NOMBRE,
   SLA_CARGA_TARGET,
   CARGA_LIMITE_HORA,
-  CAPACIDAD_MIN_PCT,
+  CAPACIDAD_MIN_CEQ,
   SLA_EDF_NOMBRE,
   SLA_EDF_MIDE_DESDE,
   SLA_EDF_TARGET,
@@ -588,7 +589,7 @@ async function filaSyop(
 /**
  * Fila del SLA de capacidad del camión (`plan_ruteo_capacidad`), medido por el
  * % de ocupación promedio del día desde ocupacion_bodega_diaria (CEq/450*100).
- * Un día cumple si el promedio de las patentes ≥ CAPACIDAD_MIN_PCT.
+ * Un día cumple si el promedio de CEq de las patentes ≥ CAPACIDAD_MIN_CEQ.
  */
 async function filaCapacidad(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -604,17 +605,17 @@ async function filaCapacidad(
 
   const { data } = await supabase
     .from("ocupacion_bodega_diaria")
-    .select("fecha, ob_pct_target")
+    .select("fecha, ceq_total")
     .gte("fecha", desde)
     .lt("fecha", hastaExcl)
 
-  // día → acumulador para promediar ob_pct_target de las patentes del día
+  // día → acumulador para promediar los CEq de las patentes del día
   const acc = new Map<number, { suma: number; n: number }>()
   for (const row of (data ?? []) as any[]) {
     const dia = Number((row.fecha as string).slice(8, 10))
-    const pct = Number(row.ob_pct_target ?? 0)
+    const ceq = Number(row.ceq_total ?? 0)
     const a = acc.get(dia) ?? { suma: 0, n: 0 }
-    a.suma += pct
+    a.suma += ceq
     a.n += 1
     acc.set(dia, a)
   }
@@ -634,7 +635,7 @@ async function filaCapacidad(
       dias.push("sd")
       continue
     }
-    const cumple = a.suma / a.n >= CAPACIDAD_MIN_PCT
+    const cumple = a.suma / a.n >= CAPACIDAD_MIN_CEQ
     totalAplica++
     if (cumple) cumplidos++
     dias.push(cumple ? "si" : "no")
@@ -2132,13 +2133,12 @@ export async function getDetalleDiaSla(
     if (codigo === "plan_ruteo_capacidad") {
       const { data } = await supabase
         .from("ocupacion_bodega_diaria")
-        .select("patente, ceq_total, ob_pct_target")
+        .select("patente, ceq_total")
         .eq("fecha", fecha)
         .order("ceq_total", { ascending: false })
 
       const rows = (data ?? []) as any[]
-      // CAPACIDAD_MIN_PCT = 100 sobre base 525 ⇒ "promedio de CEq ≥ 525".
-      const metaLabel = `Promedio ≥ ${CAPACIDAD_MIN_PCT}% del mínimo de carga`
+      const metaLabel = `Promedio ≥ ${CAPACIDAD_MIN_CEQ} CEq por camión`
 
       let estado: EstadoCumplimiento = "sd"
       let nota: string | undefined
@@ -2152,16 +2152,16 @@ export async function getDetalleDiaSla(
         estado = "sd"
         nota = "Sin ocupación de bodega registrada este día (depende del sync de Chess)."
       } else {
-        const prom =
-          rows.reduce((a, r) => a + Number(r.ob_pct_target ?? 0), 0) / rows.length
         const promCeq =
           rows.reduce((a, r) => a + Number(r.ceq_total ?? 0), 0) / rows.length
-        estado = prom >= CAPACIDAD_MIN_PCT ? "si" : "no"
-        valorLabel = `${promCeq.toFixed(0)} CEq · ${fmtPct(prom)}`
+        estado = promCeq >= CAPACIDAD_MIN_CEQ ? "si" : "no"
+        // El % que se muestra es ocupación de bodega (100% = camión lleno); el
+        // cumplimiento se decide por los CEq contra el mínimo pactado.
+        valorLabel = `${promCeq.toFixed(0)} CEq · ${fmtPct(obPct(promCeq))} de bodega`
         for (const r of rows) {
           filas.push({
             label: String(r.patente ?? "—"),
-            valor: `${Number(r.ceq_total ?? 0).toFixed(0)} CEq · ${fmtPct(Number(r.ob_pct_target ?? 0))}`,
+            valor: `${Number(r.ceq_total ?? 0).toFixed(0)} CEq · ${fmtPct(obPct(r.ceq_total))}`,
           })
         }
       }

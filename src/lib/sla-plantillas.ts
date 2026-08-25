@@ -144,16 +144,16 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
     objeto:
       "Ruteo se compromete a asignar a cada camión una carga que alcance, como mínimo, la capacidad de carga pactada, de modo que Entrega opere con camiones aprovechados y se optimice el costo por viaje. El parámetro es un piso de carga: no existe un máximo.",
     nivelServicio: [
-      "Mínimo de carga por camión: 525 CEq (cajas equivalentes).",
+      "Mínimo de carga por camión: 600 CEq (cajas equivalentes).",
       "El cumplimiento se evalúa por el promedio de CEq de todos los camiones del día (mismo criterio que el indicador de Ocupación de Bodega).",
-      "Un día cumple si el promedio de CEq de los camiones del día alcanza el mínimo de 525 CEq.",
+      "Un día cumple si el promedio de CEq de los camiones del día alcanza el mínimo de 600 CEq.",
       "No se fija un máximo de carga.",
       "Objetivo de cumplimiento mensual: ≥ 95 % de los días.",
     ],
     medicion: [
       "La medición es automática a partir de la Ocupación de Bodega de la plataforma DPO (CEq por camión, calculado desde la facturación de Chess).",
       "Se promedia el CEq de todos los camiones de cada día.",
-      "Un día cumple si ese promedio es mayor o igual al mínimo pactado (525 CEq).",
+      "Un día cumple si ese promedio es mayor o igual al mínimo pactado (600 CEq).",
       "El indicador mensual se calcula como: días cumplidos ÷ días con reparto registrado.",
     ],
     roles: [

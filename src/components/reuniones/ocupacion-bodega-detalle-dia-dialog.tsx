@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { AlertTriangle, CheckCircle2, Loader2, Package, Target, Truck } from "lucide-react"
 import { pesoLimiteKg } from "@/lib/sla-cumplimiento"
+import { CAPACIDAD_CEQ, MINIMO_CEQ } from "@/lib/ocupacion-bodega"
 import {
   Dialog,
   DialogContent,
@@ -49,9 +50,11 @@ function fmtN(n: number, dec = 0): string {
   return Number(n).toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec })
 }
 
-function colorPct(pct: number): { text: string; bg: string; hex: string } {
-  if (pct >= 100) return { text: "text-emerald-700", bg: "bg-emerald-50", hex: "#059669" }
-  if (pct >= 70) return { text: "text-amber-700", bg: "bg-amber-50", hex: "#b45309" }
+// El 100% es el camión lleno (1440 CEq), así que el verde no puede pedir 100%:
+// se pinta contra el mínimo de carga (600 CEq = 41,7% de la bodega).
+function colorCeq(ceq: number): { text: string; bg: string; hex: string } {
+  if (ceq >= MINIMO_CEQ) return { text: "text-emerald-700", bg: "bg-emerald-50", hex: "#059669" }
+  if (ceq >= MINIMO_CEQ * 0.8) return { text: "text-amber-700", bg: "bg-amber-50", hex: "#b45309" }
   return { text: "text-red-700", bg: "bg-red-50", hex: "#b91c1c" }
 }
 
@@ -94,7 +97,9 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
             )}
           </DialogTitle>
           <DialogDescription>
-            Detalle por camión del día: cuántas CEq cargó cada uno y su % respecto al target de {data?.target ?? 600} CEq.
+            Detalle por camión del día: cuántas CEq cargó cada uno y cuánto ocupó de la
+            bodega. El 100% son {fmtN(data?.capacidad ?? CAPACIDAD_CEQ)} CEq (camión lleno);
+            la carga mínima esperada por viaje es de {fmtN(data?.minimo ?? MINIMO_CEQ)} CEq.
           </DialogDescription>
         </DialogHeader>
 
@@ -118,11 +123,11 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                 <CardContent className="pt-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-muted-foreground">% promedio del día</p>
-                      <p className={`text-2xl font-bold ${colorPct(data.pct_promedio).text}`}>
+                      <p className="text-xs text-muted-foreground">Ocupación promedio</p>
+                      <p className={`text-2xl font-bold ${colorCeq(data.ceq_promedio).text}`}>
                         {fmtN(data.pct_promedio, 1)}%
                       </p>
-                      <p className="text-xs text-muted-foreground">de target {data.target} CEq</p>
+                      <p className="text-xs text-muted-foreground">de {fmtN(data.capacidad)} CEq de bodega</p>
                     </div>
                     <Target className="size-5 text-slate-400" />
                   </div>
@@ -134,7 +139,9 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                     <div>
                       <p className="text-xs text-muted-foreground">Viajes</p>
                       <p className="text-2xl font-bold">{data.total_viajes}</p>
-                      <p className="text-xs text-muted-foreground">{data.en_meta} en meta (≥ {data.target})</p>
+                      <p className="text-xs text-muted-foreground">
+                        {data.en_meta} llegan al mínimo (≥ {fmtN(data.minimo)} CEq)
+                      </p>
                     </div>
                     <Truck className="size-5 text-slate-400" />
                   </div>
@@ -173,7 +180,7 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                     <TableHead className="w-10">#</TableHead>
                     <TableHead>Patente</TableHead>
                     <TableHead className="text-right">CEq</TableHead>
-                    <TableHead className="text-right">% target</TableHead>
+                    <TableHead className="text-right">% bodega</TableHead>
                     <TableHead className="text-right">Bultos</TableHead>
                     <TableHead className="text-right">HL</TableHead>
                     <TableHead className="text-right">Peso (kg)</TableHead>
@@ -189,7 +196,7 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                       </TableCell>
                     </TableRow>
                   ) : data.viajes.map((v, i) => {
-                    const c = colorPct(v.ob_pct)
+                    const c = colorCeq(v.ceq_total)
                     return (
                       <TableRow key={v.patente}>
                         <TableCell className="text-sm text-muted-foreground">{i + 1}</TableCell>

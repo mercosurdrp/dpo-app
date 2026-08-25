@@ -13,11 +13,12 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth, requireRole } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
+import { MINIMO_CEQ } from "@/lib/ocupacion-bodega"
 
 const ROLES_EDICION = ["admin", "supervisor"] as const
 const SOLO_PAMPEANA = "El target por ruta solo está disponible en Pampeana."
-/** Mismo target global que ob_pct_target (mig 093), fallback para "sin ruta". */
-const TARGET_GLOBAL_CEQ = 525
+/** Carga mínima esperada por viaje: el fallback cuando la ruta no tiene target. */
+const TARGET_GLOBAL_CEQ = MINIMO_CEQ
 
 // ---------- Types ----------
 
@@ -53,7 +54,7 @@ export interface CamionDiaRuta {
   ruta_id: string | null
   ceq_total: number
   bultos_total: number
-  /** Target aplicado: el de la ruta si existe, si no el global 525. */
+  /** Target aplicado: el de la ruta si existe, si no el mínimo global. */
   target: number
   target_es_de_ruta: boolean
   pct: number
