@@ -1,0 +1,131 @@
+/* Árbol de KPI — org-chart HORIZONTAL en CSS puro, sin medición JS.
+   Hermano del árbol vertical del Sueño (`components/sueno/arbol-tree.css`):
+   mismo grosor de línea y mismo radio de codo, rotado 90° para leer de
+   izquierda a derecha como el árbol corporativo (KPI → … → Tarea).
+
+   La estructura es <ul><li>[nodo][ul hijos]</li></ul> anidada: el centrado
+   vertical de cada grupo lo resuelve flex, así ningún nodo necesita saber
+   dónde está. */
+
+.akpi-tree {
+  --akpi-line: rgba(191, 219, 254, 0.28); /* blue-200/28 sobre navy */
+  --akpi-gap: 22px; /* mitad del corredor entre niveles */
+  --akpi-row: 5px; /* aire entre hermanos */
+}
+
+.akpi-tree ul {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0;
+  padding: 0 0 0 var(--akpi-gap);
+  list-style: none;
+}
+
+.akpi-tree li {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: var(--akpi-row) 0 var(--akpi-row) var(--akpi-gap);
+  list-style: none;
+}
+
+/* Tramo horizontal que entra a cada nodo hijo. */
+.akpi-tree li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: var(--akpi-gap);
+  border-top: 2px solid var(--akpi-line);
+}
+
+/* Eje vertical que hermana a los hijos de un mismo padre. */
+.akpi-tree li::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--akpi-line);
+}
+
+/* El primero sólo baja y el último sólo sube: así el eje no sobresale del
+   grupo. Los codos redondeados son los mismos 6px del árbol del Sueño. */
+.akpi-tree li:first-child::after {
+  top: 50%;
+  border-radius: 6px 0 0 0;
+}
+.akpi-tree li:last-child::after {
+  top: 0;
+  bottom: 50%;
+  border-radius: 0 0 0 6px;
+}
+/* Hijo único: la horizontal alcanza, el eje sería un muñón. */
+.akpi-tree li:only-child::after {
+  display: none;
+}
+
+/* Tramo que sale del padre hacia el eje de sus hijos. */
+.akpi-tree ul::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: var(--akpi-gap);
+  border-top: 2px solid var(--akpi-line);
+}
+/* La raíz no cuelga de nadie. */
+.akpi-tree > ul {
+  padding-left: 0;
+}
+.akpi-tree > ul::before {
+  display: none;
+}
+.akpi-tree > ul > li {
+  padding-left: 0;
+}
+.akpi-tree > ul > li::before,
+.akpi-tree > ul > li::after {
+  display: none;
+}
+
+/* ── Mobile: el árbol horizontal no entra, pero la jerarquía sí ──────────
+   Mismo DOM, otra topología: el nodo arriba y sus hijos indentados debajo,
+   como un árbol de carpetas. Los conectores siguen siendo los mismos. */
+@media (max-width: 1023px) {
+  .akpi-tree {
+    --akpi-gap: 16px;
+  }
+  .akpi-tree li {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  /* Con el nodo arriba, la horizontal apunta a su centro, no al del grupo. */
+  .akpi-tree li::before {
+    top: 30px;
+  }
+  .akpi-tree li:first-child::after {
+    top: 30px;
+  }
+  .akpi-tree li:last-child::after {
+    top: 0;
+    bottom: auto;
+    height: 30px;
+  }
+  .akpi-tree ul::before {
+    display: none;
+  }
+  .akpi-tree ul {
+    justify-content: flex-start;
+  }
+}
+
+/* Respeta a quien pidió menos movimiento: el zoom deja de animarse. */
+@media (prefers-reduced-motion: reduce) {
+  .akpi-zoom {
+    transition: none !important;
+  }
+}
