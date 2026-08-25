@@ -9,13 +9,12 @@ import {
   kmActualPorDominio,
   daysBetween,
   addDays,
-  addMonths,
   today,
 } from "@/lib/vehiculos/lecturas"
 import {
   desgasteNeumatico,
+  INICIO_MEDICIONES,
   PERIODOS_DESGASTE,
-  PERIODO_DESGASTE_MESES,
   TOLERANCIA_ODOMETRO_DIAS,
   type CubiertaDesgaste,
   type FilaDesgaste,
@@ -1037,8 +1036,6 @@ export async function eliminarRotacion(input: {
 
 // ==================== DESGASTE POR KM ====================
 
-/** Hasta dónde atrás se traen lecturas de odómetro para fechar las mediciones. */
-const VENTANA_ODOMETRO_MESES = 24
 
 /**
  * Desgaste real de las cubiertas: mm de dibujo por cada 1.000 km, a partir del
@@ -1054,15 +1051,15 @@ const VENTANA_ODOMETRO_MESES = 24
  * dependencias de servidor, para poder razonarla y probarla aparte.
  */
 export interface DesgasteFlota {
-  /** La misma cuenta hecha sobre tres ventanas, para poder acotar la tasa a lo
-   *  reciente sin volver al server. */
+  /** La cuenta por ventana. Hoy hay una sola —desde que arrancaron las rondas—,
+   *  pero la forma queda lista para volver a acotar sin ir al server. */
   periodos: Record<PeriodoDesgaste, FilaDesgaste[]>
   /** Profundidades medidas ronda por ronda: la lectura mensual del desgaste. */
   evolucion: PuntoEvolucion[]
 }
 
 const VACIO: DesgasteFlota = {
-  periodos: { todo: [], m12: [], m6: [] },
+  periodos: { todo: [] },
   evolucion: [],
 }
 
@@ -1113,19 +1110,21 @@ export async function getDesgasteNeumaticos(): Promise<{ data: DesgasteFlota }> 
     }
 
     // Odómetro de la ventana de mediciones: sin esto, las mediciones que se
-    // cargaron sin km quedarían fuera del cálculo (82 de 236 al 21/08/2026).
+    // cargaron sin km quedarían fuera del cálculo (la ronda de agosto/2026
+    // entró entera sin km: 68 de 68).
     //
-    // La ventana se acota a VENTANA_ODOMETRO_MESES: hay una medición suelta de
-    // 2022 que, sin tope, hacía traer cuatro años de lecturas de las tres
-    // fuentes en cada carga de la página. Ningún tramo de vida útil llega a
-    // tanto — el más largo de la flota va de julio/2025 a julio/2026.
-    const fechas = (medRes.data || []).map((m) => m.fecha).filter(Boolean).sort()
+    // La ventana arranca en INICIO_MEDICIONES porque es el piso del cálculo:
+    // traer lecturas más viejas es cargar tres fuentes de km para fechar
+    // mediciones que el cálculo ya descarta. Antes se arrancaba en la medición
+    // más vieja de la tabla y una fila suelta de 2022 hacía traer cuatro años.
+    const fechas = (medRes.data || [])
+      .map((m) => m.fecha)
+      .filter((f) => f && f >= INICIO_MEDICIONES)
+      .sort()
     const lecturasPorDominio = new Map<string, LecturaOdometro[]>()
     if (fechas.length > 0) {
-      const tope = addMonths(hoyArgentina(), -VENTANA_ODOMETRO_MESES)
-      const inicio = addDays(fechas[0], -TOLERANCIA_ODOMETRO_DIAS)
       const lecturas = await fetchLecturas({
-        fechaDesde: inicio > tope ? inicio : tope,
+        fechaDesde: addDays(fechas[0], -TOLERANCIA_ODOMETRO_DIAS),
       })
       for (const l of lecturas) {
         const arr = lecturasPorDominio.get(l.dominio) ?? []
@@ -1157,20 +1156,18 @@ export async function getDesgasteNeumaticos(): Promise<{ data: DesgasteFlota }> 
       })
     }
 
-    // La misma cuenta sobre tres ventanas. Se resuelven acá y no en el cliente
-    // porque el costo real ya se pagó (traer mediciones, movimientos y
-    // odómetro): recortar por fecha y recalcular es aritmética sobre datos que
-    // ya están en memoria.
+    // Una sola ventana desde que existen las rondas (ver `PeriodoDesgaste`). La
+    // estructura por período se mantiene: cuando haya más de un año de
+    // mediciones vuelven "últimos 6" y "últimos 12", y recortar por fecha acá
+    // es aritmética sobre datos que ya están en memoria.
     const periodos = {} as Record<PeriodoDesgaste, FilaDesgaste[]>
     for (const periodo of PERIODOS_DESGASTE) {
-      const meses = PERIODO_DESGASTE_MESES[periodo]
-      const desde = meses != null ? addMonths(hoy, -meses) : null
       periodos[periodo] = cubiertas.map((c) => {
         const cubierta = identidad.get(c.id)!
         const meds = medPorNeum.get(c.id) ?? []
         const d = desgasteNeumatico(
           cubierta,
-          desde ? meds.filter((m) => m.fecha >= desde) : meds,
+          meds,
           movPorNeum.get(c.id) ?? [],
           c.dominio ? lecturasPorDominio.get(c.dominio) : undefined,
           c.dominio ? (kmFlota[c.dominio]?.kmDia ?? null) : null,

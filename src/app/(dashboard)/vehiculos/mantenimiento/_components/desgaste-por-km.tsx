@@ -59,6 +59,14 @@ const TIPO_LABEL: Record<string, string> = {
 
 type Vista = "cubiertas" | "unidades" | "ejes" | "marcas" | "evolucion"
 
+/**
+ * Debajo de esta cantidad de cubiertas con tasa, el promedio de la flota no es
+ * un promedio de la flota y el tablero lo dice. No es un número fino: es el
+ * orden de "más de dos unidades completas", que es lo mínimo para que una
+ * cubierta rara no arrastre el total.
+ */
+const COBERTURA_MINIMA = 12
+
 export function DesgastePorKmCard({
   data,
   dominioSel,
@@ -136,35 +144,46 @@ export function DesgastePorKmCard({
             Milímetros de dibujo que se consumen cada 1.000 km, calculados con las
             mediciones de la ronda mensual. Cada cubierta se mide dentro de su tramo de
             vida: un recapado reinicia la cuenta, y el auxilio no entra porque no rueda.
+            Sólo cuentan las rondas con calibre (desde julio/2026): el dibujo que se
+            carga al dar de alta una cubierta es un valor nominal, no una medición.
           </p>
         </div>
-        {/* Acotar la ventana pierde cubiertas: cada opción dice cuántas quedan
-            con dato, para que achicar el período sea una decisión informada y no
-            una sorpresa. */}
-        <Select value={periodo} onValueChange={(v) => v && setPeriodo(v as PeriodoDesgaste)}>
-          <SelectTrigger className="w-56 shrink-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIODOS_DESGASTE.map((pp) => {
-              const n = (data.periodos[pp] ?? []).filter((f) => f.mmPorMilKm != null).length
-              return (
-                <SelectItem key={pp} value={pp}>
-                  {PERIODO_DESGASTE_LABEL[pp]} ({n})
-                </SelectItem>
-              )
-            })}
-          </SelectContent>
-        </Select>
+        {/* Con una sola ventana el selector ofrecería tres veces el mismo
+            número (ver `PeriodoDesgaste`): se muestra recién cuando haya más de
+            una, y cada opción dice cuántas cubiertas quedan con dato para que
+            achicar el período sea una decisión informada y no una sorpresa. */}
+        {PERIODOS_DESGASTE.length > 1 ? (
+          <Select value={periodo} onValueChange={(v) => v && setPeriodo(v as PeriodoDesgaste)}>
+            <SelectTrigger className="w-56 shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PERIODOS_DESGASTE.map((pp) => {
+                const n = (data.periodos[pp] ?? []).filter((f) => f.mmPorMilKm != null).length
+                return (
+                  <SelectItem key={pp} value={pp}>
+                    {PERIODO_DESGASTE_LABEL[pp]} ({n})
+                  </SelectItem>
+                )
+              })}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
+            {PERIODO_DESGASTE_LABEL[periodo]}
+          </Badge>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-4">
         {conTasa.length === 0 ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              {periodo === "todo"
-                ? "Todavía no hay dos mediciones separadas por suficientes km como para calcular el desgaste. Cargá la ronda mensual dos meses seguidos y el tablero se llena solo."
-                : "En esta ventana ninguna cubierta acumula km suficientes como para medir el desgaste. Ampliá el período: la goma se gasta más despacio de lo que un mes de rodaje puede mostrar."}
+              Todavía ninguna cubierta acumula km suficientes entre dos rondas como
+              para medir el desgaste, y no hay atajo: la goma se gasta más despacio de
+              lo que un mes de rodaje puede mostrar. Mientras tanto, la lectura buena
+              es la profundidad ronda por ronda de acá abajo. Se llena solo a medida
+              que se cargue la ronda mensual completa, con las 16 unidades.
             </p>
             {/* La evolución no depende de la tasa: son profundidades medidas. */}
             <EvolucionProfundidad
@@ -190,7 +209,8 @@ export function DesgastePorKmCard({
               <Dato
                 label="Cubiertas con dato"
                 valor={`${conTasa.length}/${filas.length}`}
-                sub="instaladas medidas dos veces"
+                sub="instaladas medidas en dos rondas"
+                alerta={conTasa.length < COBERTURA_MINIMA}
               />
               <Dato
                 label="Desgaste desparejo"
@@ -199,6 +219,21 @@ export function DesgastePorKmCard({
                 alerta={desviadas.length > 0}
               />
             </div>
+
+            {/* 🚨 El promedio de la flota es ponderado por km: con pocas cubiertas
+                medidas lo dictan una o dos, y se lee como si fuera de la flota
+                entera. Pasó al revés y por eso está este aviso: hasta el
+                25/08/2026 el tablero mostraba un promedio armado sobre 33
+                cubiertas que arrancaban de un valor nominal de alta. */}
+            {conTasa.length < COBERTURA_MINIMA && (
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+                Este promedio sale de {conTasa.length} de {filas.length} cubiertas: todavía
+                no es el desgaste de la flota. Hacen falta varias rondas seguidas con la
+                flota completa —entre dos rondas un camión hace ~2.000 km y el dibujo se
+                gasta menos de lo que dispersa el calibre—. Mientras tanto la lectura
+                buena es la profundidad ronda por ronda, en Evolución.
+              </p>
+            )}
 
             {/* Aviso accionable: estas no son un problema de goma */}
             {desviadas.length > 0 && (

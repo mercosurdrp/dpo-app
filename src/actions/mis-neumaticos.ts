@@ -29,6 +29,8 @@ import {
   PRESION_MIN_PSI,
   PRESION_MAX_PSI,
 } from "@/lib/flota/neumaticos-control"
+import { fetchLecturas, kmActualPorDominio, addDays, daysBetween } from "@/lib/vehiculos/lecturas"
+import { TOLERANCIA_ODOMETRO_DIAS } from "@/lib/vehiculos/desgaste-neumaticos"
 
 export interface CubiertaMedir {
   id: string
@@ -218,6 +220,39 @@ export interface MedicionInput {
 }
 
 /**
+ * Odómetro de la unidad al momento de la ronda, para estampar el km de la
+ * medición sin pedírselo a nadie.
+ *
+ * Sale de `kmActualPorDominio`, que es la misma fuente que usa el resto de la
+ * app —checklist, egresos, combustible, OT cerradas y lecturas manuales— y ya
+ * descarta retrocesos y saltos imposibles. NO se usa `vehiculos_ficha.cf_odometro`:
+ * es una foto de Cloudfleet congelada en mayo/2026.
+ *
+ * 🚨 Devuelve NULL si la última lectura buena tiene más de TOLERANCIA_ODOMETRO_DIAS:
+ * un km viejo estampado como si fuera del día es peor que ninguno, porque el
+ * cálculo de desgaste lo toma como cierto en vez de buscar la lectura más
+ * cercana por su cuenta. Mismo criterio que `odometroEnFecha`.
+ *
+ * Nunca lanza: la ronda se guarda igual sin km.
+ */
+async function odometroDeHoy(dominio: string, fecha: string): Promise<number | null> {
+  try {
+    const lecturas = await fetchLecturas(
+      { dominio, fechaDesde: addDays(fecha, -60), fechaHasta: fecha },
+      createAdminClient(),
+    )
+    const km = kmActualPorDominio(lecturas).get(dominio)
+    if (!km) return null
+    return Math.abs(daysBetween(km.fecha, fecha)) <= TOLERANCIA_ODOMETRO_DIAS
+      ? km.odometro
+      : null
+  } catch (e) {
+    console.error("Odómetro de la ronda de neumáticos:", e)
+    return null
+  }
+}
+
+/**
  * Guarda las mediciones de una unidad. Se cargan todas juntas porque el chofer
  * recorre el camión una sola vez, no cubierta por cubierta.
  *
@@ -284,13 +319,19 @@ export async function guardarMedicionesNeumaticos(
     const escritura = createAdminClient()
 
     const fecha = hoyArgentina()
+    // 🚨 El km de la medición no se le pide al que mide: sale del odómetro de
+    // las lecturas reales. La pantalla nunca tuvo campo de km y por eso la ronda
+    // de agosto/2026 entró entera sin km —68 de 68—, que es la mitad de lo que
+    // necesita el desgaste por km (mm de dibujo sobre km rodados). Pedirlo a
+    // mano tampoco servía: el chofer mide la goma parado al lado de la rueda.
+    const kmMedicion = km ?? (await odometroDeHoy(dom, fecha))
     const { error } = await escritura.from("mantenimiento_neumatico_mediciones").insert(
       filtradas.map((m) => ({
         neumatico_id: m.neumatico_id,
         fecha,
         profundidad_mm: m.profundidad_mm,
         presion_psi: m.presion_psi,
-        km: km ?? null,
+        km: kmMedicion,
         nota: "Control mensual cargado por el operador",
         created_by: profile.id,
       })),

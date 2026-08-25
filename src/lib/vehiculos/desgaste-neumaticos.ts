@@ -59,35 +59,55 @@ export const TOLERANCIA_ODOMETRO_DIAS = 7
 export const PROF_OBJETIVO_MM = PROF_MIN_MM
 
 /**
+ * Desde cuándo una fila de `mantenimiento_neumatico_mediciones` es una MEDICIÓN.
+ *
+ * 🚨 Lo anterior a esta fecha NO se midió con calibre: es el valor nominal que
+ * se carga al dar de alta la cubierta (`registrarMedicionInicial`). Está a la
+ * vista en los datos —revisadas las 243 filas el 25/08/2026—: antes de
+ * julio/2026 son números redondos y repetidos (2025-03 seis filas en 10;
+ * 2025-07 lotes de 10, 12,5, 15 y 20; 2025-12 nueve en 12; 2026-06 ocho en 13).
+ * Las mediciones de verdad arrancan el 10/07/2026 y se reconocen por los dos
+ * decimales del calibre: 4,68 / 5,15 / 10,84.
+ *
+ * Por qué importa: ese nominal trae ~1,5–2 mm de más contra lo que después mide
+ * el calibre, y como punto de arranque del tramo mete ese offset entero en el
+ * numerador. El sesgo quedaba a la vista: el AC165AJ 2IE perdía 1,90 mm en
+ * 34.047 km (0,056 mm/1.000 km) y el AF664NY 1D perdía 1,96 mm en 6.286 km
+ * (0,312) — la misma goma, cinco veces la tasa, según cuán vieja fuera el alta.
+ * Las 33 cubiertas que tenían tasa arrancaban TODAS de un nominal.
+ *
+ * El nominal sigue visible en la evolución: como profundidad registrada es un
+ * dato real; lo que no es es una medición contra la que restar.
+ *
+ * A futuro esto tiene que salir de una columna `origen` ('alta' | 'ronda') y no
+ * de una fecha, porque un alta cargada el mes que viene también va a ser
+ * nominal. La fecha es lo único que se puede aplicar sobre lo ya cargado.
+ */
+export const INICIO_MEDICIONES = "2026-07-01"
+
+/**
  * Ventana sobre la que se mide la tasa.
  *
- * 🚨 No hay opción "por día" ni "por mes suelto", y no es una omisión: el dibujo
- * se mide UNA VEZ POR MES (la ronda de DPO 3.4). En 17 meses de historia hay
- * mediciones en 23 días distintos, así que dos mediciones de la misma cubierta
- * nunca caen cerca en el tiempo. Entre dos rondas un camión hace de 1.800 km
- * (AF588SU, 60 km/día) a 4.700 km (AE908DH, 158 km/día) — abajo o al filo de
- * `MIN_KM_TRAMO`, que existe justamente porque con un calibre de 0,5 mm ese
- * tramo no distingue desgaste de error de lectura. Restringido a agosto/2026
- * el cálculo devuelve CERO cubiertas con tasa; a 3 meses, dos.
+ * 🚨 Quedó UNA sola, y no es una simplificación a medio hacer: con el piso de
+ * `INICIO_MEDICIONES` no hay historia anterior a julio/2026, así que "últimos 6
+ * meses" y "últimos 12" agarraban exactamente los mismos puntos que "todo" y el
+ * selector ofrecía tres veces el mismo número. Vuelve a tener sentido cuando
+ * haya más de un año de rondas.
  *
- * La lectura mensual honesta no es la tasa del mes sino la profundidad medida
- * ronda por ronda: eso es lo que muestra la evolución (`PuntoEvolucion`).
+ * Tampoco hay opción "por mes": el dibujo se mide una vez por mes (ronda de DPO
+ * 3.4) y entre dos rondas un camión hace ~2.000 km, donde el desgaste real
+ * (~0,3 mm) es MENOR que la dispersión del calibre. Medido sobre las rondas de
+ * julio y agosto de 2026: la mitad de los deltas dan negativo (AF028YB 2IE
+ * −2,94 mm, AF399KY 2DI −1,90 mm) y en el mismo eje del AF399KY una cubierta da
+ * +2,42 y la de al lado −1,90. La lectura mensual honesta no es la tasa sino la
+ * profundidad ronda por ronda: eso es `PuntoEvolucion`.
  */
-export type PeriodoDesgaste = "todo" | "m12" | "m6"
+export type PeriodoDesgaste = "todo"
 
-export const PERIODOS_DESGASTE: PeriodoDesgaste[] = ["todo", "m12", "m6"]
+export const PERIODOS_DESGASTE: PeriodoDesgaste[] = ["todo"]
 
 export const PERIODO_DESGASTE_LABEL: Record<PeriodoDesgaste, string> = {
-  todo: "Todo el tramo de vida",
-  m12: "Últimos 12 meses",
-  m6: "Últimos 6 meses",
-}
-
-/** Meses hacia atrás de cada período. NULL = sin recorte. */
-export const PERIODO_DESGASTE_MESES: Record<PeriodoDesgaste, number | null> = {
-  todo: null,
-  m12: 12,
-  m6: 6,
+  todo: "Desde el inicio de las rondas",
 }
 
 /**
@@ -116,9 +136,9 @@ export type MotivoSinTasa =
 
 export const MOTIVO_SIN_TASA_LABEL: Record<MotivoSinTasa, string> = {
   auxilio: "Auxilio (no rueda)",
-  sin_mediciones: "Sin mediciones",
-  un_solo_punto: "Una sola medición",
-  sin_km: "Mediciones sin km",
+  sin_mediciones: "Sin mediciones de ronda",
+  un_solo_punto: "Una sola ronda medida",
+  sin_km: "Mediciones de ronda sin km",
   tramo_corto: `Menos de ${MIN_KM_TRAMO.toLocaleString("es-AR")} km medidos`,
   sin_desgaste: "Todavía sin desgaste medible",
 }
@@ -289,8 +309,12 @@ export function desgasteNeumatico(
 
   if (n.posicion === POSICION_AUXILIO) return vacio("auxilio")
 
+  // 🚨 El piso de `INICIO_MEDICIONES` va acá y no en el llamador: cualquiera
+  // que use esta función tiene que quedar afuera del nominal del alta, o vuelve
+  // el sesgo que hacía que la misma goma diera 0,056 o 0,312 mm/1.000 km según
+  // la antigüedad del alta.
   const conProf = mediciones
-    .filter((m) => m.profundidad_mm != null)
+    .filter((m) => m.profundidad_mm != null && m.fecha >= INICIO_MEDICIONES)
     .map<PuntoResuelto>((m) => ({
       fecha: m.fecha,
       prof: Number(m.profundidad_mm),
