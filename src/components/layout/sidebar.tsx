@@ -40,6 +40,7 @@ import {
   Wallet,
   Presentation,
   Boxes,
+  Network,
   Wrench,
   Route,
   Handshake,
@@ -106,6 +107,12 @@ const navItemsFlat: NavItem[] = [
     label: "Acciones",
     href: "/acciones",
     icon: <ListTodo className="size-5" />,
+  },
+  {
+    label: "Árbol KPI",
+    href: "/arbol-kpi",
+    icon: <Network className="size-5" />,
+    pampeanaOnly: true,
   },
   {
     label: "Devolución H1",
@@ -376,6 +383,7 @@ export const navSections: NavGroup[] = [
   grupo("DPO", [
     "/auditorias",
     "/acciones",
+    "/arbol-kpi",
     "/devolucion",
     "/planes",
     "/indicadores",
