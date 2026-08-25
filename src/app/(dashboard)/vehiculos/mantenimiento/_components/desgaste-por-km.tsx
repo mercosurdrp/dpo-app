@@ -67,6 +67,9 @@ type Vista = "cubiertas" | "unidades" | "ejes" | "marcas" | "evolucion"
  */
 const COBERTURA_MINIMA = 12
 
+/** Valor del filtro de unidad cuando no se acota a ninguna. */
+const TODAS = "__todas__"
+
 export function DesgastePorKmCard({
   data,
   dominioSel,
@@ -78,6 +81,9 @@ export function DesgastePorKmCard({
   onIrAUnidad?: (dominio: string) => void
 }) {
   const [vista, setVista] = useState<Vista>("cubiertas")
+  /** Acota la tabla por cubierta a una unidad. No toca los promedios de arriba:
+   *  esos son de la flota y tienen que seguir siendo comparables. */
+  const [filtroUnidad, setFiltroUnidad] = useState<string>(TODAS)
   const [periodo, setPeriodo] = useState<PeriodoDesgaste>("todo")
 
   const filas = useMemo(() => data.periodos[periodo] ?? [], [data.periodos, periodo])
@@ -95,6 +101,24 @@ export function DesgastePorKmCard({
     () =>
       [...conTasa].sort((a, b) => (b.mmPorMilKm ?? 0) - (a.mmPorMilKm ?? 0)),
     [conTasa]
+  )
+
+  /** Unidades que HOY tienen alguna cubierta con tasa: no tiene sentido ofrecer
+   *  en el filtro una unidad que dejaría la tabla vacía. */
+  const unidadesConTasa = useMemo(
+    () =>
+      [...new Set(conTasa.map((f) => f.cubierta.dominio).filter((d): d is string => !!d))].sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [conTasa]
+  )
+
+  const rankingFiltrado = useMemo(
+    () =>
+      filtroUnidad === TODAS
+        ? ranking
+        : ranking.filter((f) => f.cubierta.dominio === filtroUnidad),
+    [ranking, filtroUnidad]
   )
 
   // Las que se gastan mucho más rápido que sus pares del mismo camión: el
@@ -284,9 +308,28 @@ export function DesgastePorKmCard({
               </TabsList>
             </Tabs>
 
+            {vista === "cubiertas" && unidadesConTasa.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Unidad</span>
+                <Select value={filtroUnidad} onValueChange={(v) => v && setFiltroUnidad(v)}>
+                  <SelectTrigger className="h-8 w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TODAS}>Todas ({ranking.length})</SelectItem>
+                    {unidadesConTasa.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {u} ({ranking.filter((f) => f.cubierta.dominio === u).length})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {vista === "cubiertas" && (
               <TablaCubiertas
-                filas={ranking}
+                filas={rankingFiltrado}
                 pares={pares}
                 dominioSel={dominioSel}
                 onIrAUnidad={onIrAUnidad}
