@@ -12,11 +12,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { Loader2, Package, Target, TrendingUp, Truck } from "lucide-react"
 import { getOBKpis, getOBViajes, getOBPorPatente, getOBPorDia, type ViajeOB, type PatenteSummary, type DiaSummary, type MesSummary, type OBKpis } from "@/actions/ocupacion-bodega"
-import { CAPACIDAD_CEQ, MINIMO_CEQ, obPct as calcularObPct } from "@/lib/ocupacion-bodega"
+import { CAPACIDAD_CEQ, OBJETIVO_CEQ, cumplimientoPct, obPct as calcularObPct } from "@/lib/ocupacion-bodega"
 
-// Capacidad de bodega (100%) y carga mínima esperada: los dos valores viven en
+// Objetivo de carga y capacidad de bodega: los dos valores viven en
 // `@/lib/ocupacion-bodega` para que todas las pantallas muestren lo mismo.
-const TARGET = MINIMO_CEQ
+const TARGET = OBJETIVO_CEQ
 const GREEN = "#10B981"
 const AMBER = "#F59E0B"
 const RED = "#EF4444"
@@ -95,7 +95,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Ocupación de Bodega (CEq)</h1>
           <p className="text-sm text-muted-foreground">
-            Pilar Entrega 1.2 · Bodega {fmtN(CAPACIDAD_CEQ)} CEq (100%) · Mínimo {fmtN(TARGET)} CEq por viaje · Fórmula CEq = 120 / bultosPallet × cantidadesTotal
+            Pilar Entrega 1.2 · Objetivo {fmtN(TARGET)} CEq por viaje · Bodega {fmtN(CAPACIDAD_CEQ)} CEq · Fórmula CEq = 120 / bultosPallet × cantidadesTotal
           </p>
         </div>
       </div>
@@ -145,7 +145,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
                 <p className="text-3xl font-bold" style={{ color: cumpleMeta ? GREEN : obPct >= 70 ? AMBER : RED }}>
                   {fmtN(kpis.ceq_promedio, 1)}
                 </p>
-                <p className="text-xs text-muted-foreground">mínimo {fmtN(TARGET)} CEq · {fmtN(obPct, 1)}% de la bodega</p>
+                <p className="text-xs text-muted-foreground">{fmtN(cumplimientoPct(kpis.ceq_promedio), 1)}% del objetivo · {fmtN(obPct, 1)}% de la bodega</p>
               </div>
               <Target className="size-6 text-slate-400" />
             </div>
@@ -158,7 +158,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
               <div>
                 <p className="text-xs text-muted-foreground">Viajes</p>
                 <p className="text-3xl font-bold">{fmtN(kpis.viajes)}</p>
-                <p className="text-xs text-muted-foreground">{fmtN(kpis.pct_meta, 1)}% llega al mínimo ≥ {fmtN(TARGET)}</p>
+                <p className="text-xs text-muted-foreground">{fmtN(kpis.pct_meta, 1)}% llega al objetivo ≥ {fmtN(TARGET)}</p>
               </div>
               <Truck className="size-6 text-slate-400" />
             </div>
@@ -213,7 +213,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
                     <XAxis dataKey="fecha" fontSize={11} tickFormatter={f => f.slice(5)} />
                     <YAxis fontSize={11} />
                     <Tooltip formatter={(v) => fmtN(Number(v), 1)} />
-                    <ReferenceLine y={TARGET} stroke={GREEN} strokeDasharray="5 5" label={{ value: `Mínimo ${TARGET}`, position: "right", fontSize: 10 }} />
+                    <ReferenceLine y={TARGET} stroke={GREEN} strokeDasharray="5 5" label={{ value: `Objetivo ${TARGET}`, position: "right", fontSize: 10 }} />
                     <Bar dataKey="ceq_promedio" radius={[4, 4, 0, 0]}>
                       {porDia.map((d, i) => <Cell key={i} fill={colorFor(d.ceq_promedio)} />)}
                     </Bar>
@@ -341,7 +341,7 @@ export function OcupacionBodegaClient({ kpis: kpisInit, viajes: viajesInit, porP
                     <YAxis fontSize={11} />
                     <Tooltip formatter={(v) => [fmtN(Number(v), 1), "CEq prom"]} />
                     <Legend />
-                    <ReferenceLine y={TARGET} stroke={GREEN} strokeDasharray="5 5" label={{ value: `Mínimo ${TARGET}`, position: "right", fontSize: 10 }} />
+                    <ReferenceLine y={TARGET} stroke={GREEN} strokeDasharray="5 5" label={{ value: `Objetivo ${TARGET}`, position: "right", fontSize: 10 }} />
                     <Line type="monotone" dataKey="ceq_promedio" name="CEq prom/viaje" stroke={BLUE} strokeWidth={2} dot={{ r: 4 }} />
                   </LineChart>
                 </ResponsiveContainer>

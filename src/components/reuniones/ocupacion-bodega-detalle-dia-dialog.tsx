@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { AlertTriangle, CheckCircle2, Loader2, Package, Target, Truck } from "lucide-react"
 import { pesoLimiteKg } from "@/lib/sla-cumplimiento"
-import { CAPACIDAD_CEQ, MINIMO_CEQ } from "@/lib/ocupacion-bodega"
+import { CAPACIDAD_CEQ, OBJETIVO_CEQ } from "@/lib/ocupacion-bodega"
 import {
   Dialog,
   DialogContent,
@@ -53,8 +53,8 @@ function fmtN(n: number, dec = 0): string {
 // El 100% es el camión lleno (1440 CEq), así que el verde no puede pedir 100%:
 // se pinta contra el mínimo de carga (600 CEq = 41,7% de la bodega).
 function colorCeq(ceq: number): { text: string; bg: string; hex: string } {
-  if (ceq >= MINIMO_CEQ) return { text: "text-emerald-700", bg: "bg-emerald-50", hex: "#059669" }
-  if (ceq >= MINIMO_CEQ * 0.8) return { text: "text-amber-700", bg: "bg-amber-50", hex: "#b45309" }
+  if (ceq >= OBJETIVO_CEQ) return { text: "text-emerald-700", bg: "bg-emerald-50", hex: "#059669" }
+  if (ceq >= OBJETIVO_CEQ * 0.8) return { text: "text-amber-700", bg: "bg-amber-50", hex: "#b45309" }
   return { text: "text-red-700", bg: "bg-red-50", hex: "#b91c1c" }
 }
 
@@ -97,9 +97,10 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
             )}
           </DialogTitle>
           <DialogDescription>
-            Detalle por camión del día: cuántas CEq cargó cada uno y cuánto ocupó de la
-            bodega. El 100% son {fmtN(data?.capacidad ?? CAPACIDAD_CEQ)} CEq (camión lleno);
-            la carga mínima esperada por viaje es de {fmtN(data?.minimo ?? MINIMO_CEQ)} CEq.
+            Detalle por camión del día. En el tablero el 100% es el objetivo de{" "}
+            {fmtN(data?.minimo ?? OBJETIVO_CEQ)} CEq por viaje; acá se ve además cuánto
+            del camión se llenó de verdad, sobre los{" "}
+            {fmtN(data?.capacidad ?? CAPACIDAD_CEQ)} CEq que entran en la bodega.
           </DialogDescription>
         </DialogHeader>
 
@@ -123,11 +124,13 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                 <CardContent className="pt-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-muted-foreground">Ocupación promedio</p>
+                      <p className="text-xs text-muted-foreground">Del objetivo</p>
                       <p className={`text-2xl font-bold ${colorCeq(data.ceq_promedio).text}`}>
-                        {fmtN(data.pct_promedio, 1)}%
+                        {fmtN(data.cumplimiento_promedio, 1)}%
                       </p>
-                      <p className="text-xs text-muted-foreground">de {fmtN(data.capacidad)} CEq de bodega</p>
+                      <p className="text-xs text-muted-foreground">
+                        {fmtN(data.pct_promedio, 1)}% de la bodega ({fmtN(data.capacidad)} CEq)
+                      </p>
                     </div>
                     <Target className="size-5 text-slate-400" />
                   </div>
@@ -140,7 +143,7 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                       <p className="text-xs text-muted-foreground">Viajes</p>
                       <p className="text-2xl font-bold">{data.total_viajes}</p>
                       <p className="text-xs text-muted-foreground">
-                        {data.en_meta} llegan al mínimo (≥ {fmtN(data.minimo)} CEq)
+                        {data.en_meta} llegan al objetivo (≥ {fmtN(data.minimo)} CEq)
                       </p>
                     </div>
                     <Truck className="size-5 text-slate-400" />
@@ -180,6 +183,7 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                     <TableHead className="w-10">#</TableHead>
                     <TableHead>Patente</TableHead>
                     <TableHead className="text-right">CEq</TableHead>
+                    <TableHead className="text-right">% objetivo</TableHead>
                     <TableHead className="text-right">% bodega</TableHead>
                     <TableHead className="text-right">Bultos</TableHead>
                     <TableHead className="text-right">HL</TableHead>
@@ -191,7 +195,7 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                 <TableBody>
                   {data.viajes.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center text-muted-foreground py-6">
+                      <TableCell colSpan={10} className="text-center text-muted-foreground py-6">
                         Sin viajes registrados este día
                       </TableCell>
                     </TableRow>
@@ -206,8 +210,11 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                         </TableCell>
                         <TableCell className="text-right">
                           <Badge variant="outline" className={c.text} style={{ borderColor: c.hex }}>
-                            {fmtN(v.ob_pct, 1)}%
+                            {fmtN(v.cumplimiento_pct, 1)}%
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-sm text-muted-foreground">
+                          {fmtN(v.ob_pct, 1)}%
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{fmtN(v.bultos_total, 1)}</TableCell>
                         <TableCell className="text-right tabular-nums">{fmtN(v.hl_total, 1)}</TableCell>

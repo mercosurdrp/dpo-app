@@ -37,7 +37,7 @@ import {
 import { buildPampeanaFoxtrotSerie } from "@/lib/foxtrot/auto-indicadores-pampeana"
 import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
-import { MINIMO_PCT, obPct as obPctBodega } from "@/lib/ocupacion-bodega"
+import { OBJETIVO_CEQ, cumplimientoPct } from "@/lib/ocupacion-bodega"
 import { getMetaSueno } from "@/lib/sueno/meta"
 import { getDqiDiarioMes, getDqiPpmMes } from "@/actions/dqi"
 import { getAusentismoSerieEventos } from "@/actions/ausentismo"
@@ -3587,10 +3587,13 @@ async function getIndicadoresMesCore(
 
     // 7d-bis. Indicador AUTO "Ocupación de Bodega" — todos los tipos salvo warehouse.
     //   Lee ocupacion_bodega_diaria (alimentado por el cron de rechazos).
-    //   Valor diario = AVG(ceq_total) / CAPACIDAD_CEQ × 100 — cuánto de la
-    //   bodega se llenó (100% = camión lleno, 1440 CEq).
-    //   MTD = (Σ ceq / (CAPACIDAD_CEQ × Σ viajes)) × 100 (ponderado por viaje).
-    //   Unidad: % · Meta: MINIMO_PCT (los 600 CEq mínimos) · mejor_si=mayor.
+    //   Valor diario = AVG(ceq_total) / OBJETIVO_CEQ × 100 — cuánto se cumplió
+    //   del objetivo de carga (100% = los 600 CEq del objetivo).
+    //   MTD = (Σ ceq / (OBJETIVO_CEQ × Σ viajes)) × 100 (ponderado por viaje).
+    //   Unidad: % · Meta: 100 · mejor_si=mayor.
+    //   🚨 Acá va el cumplimiento y NO la ocupación física sobre 1440: en un
+    //   tablero, un 35% se lee como "vamos mal" cuando en realidad ningún viaje
+    //   llena el camión. La ocupación real vive en el diálogo del día.
     if (tipo !== "warehouse" && tipo !== "presupuesto") {
       const { data: obRaw, error: errOB } = await (pOcupacionBodega ??
         qOcupacionBodega())
@@ -3611,23 +3614,22 @@ async function getIndicadoresMesCore(
           if (cnt === 0) {
             valoresOB[f] = null
           } else {
-            const pctDia = obPctBodega(sumPorFecha[f] / cnt)
+            const pctDia = cumplimientoPct(sumPorFecha[f] / cnt)
             valoresOB[f] = { reunion_id: "", valor: Math.round(pctDia * 10) / 10, observacion: null }
             sumCeqMtd += sumPorFecha[f]
             countMtd += cnt
           }
         }
         const mtdOB = countMtd > 0
-          ? Math.round(obPctBodega(sumCeqMtd / countMtd) * 10) / 10
+          ? Math.round(cumplimientoPct(sumCeqMtd / countMtd) * 10) / 10
           : null
 
         indicadoresAuto.push({
           id: "auto_ocupacion_bodega",
           nombre: "Ocupación de Bodega",
           unidad: "%",
-          // El 100% es el camión lleno, así que la meta es el mínimo de carga
-          // expresado en % de la bodega (600 CEq = 41,7%).
-          meta: Math.round(MINIMO_PCT * 10) / 10,
+          // El 100% es el objetivo cumplido: los OBJETIVO_CEQ por viaje.
+          meta: 100,
           orden: -1,
           agregacion: "promedio",
           valores: valoresOB,

@@ -15,7 +15,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
-import { obPct } from "@/lib/ocupacion-bodega"
+import { cumplimientoPct } from "@/lib/ocupacion-bodega"
 import { esRutaLimpia } from "@/lib/foxtrot/ruta-limpia"
 import { getFueraRutaMensual } from "@/actions/fuera-ruta"
 import { getDqi } from "@/actions/dqi"
@@ -273,7 +273,7 @@ export async function getArbolKpiRechazo(): Promise<
           return d == null ? null : d * 100
         })(),
         tmr: prom(rtLimpias.map((r) => r.minutos).filter((m): m is number => m != null && m > 0).map((m) => m / 60)),
-        ob: o.length > 0 ? obPct(ceqCargado / o.length) : null,
+        ob: o.length > 0 ? cumplimientoPct(ceqCargado / o.length) : null,
         pdv_camion: prom(rtLimpias.map((r) => r.visited).filter((n): n is number => n != null && n > 0)),
         click_score: prom(rt.map((r) => r.click).filter((n): n is number => n != null)),
         adherencia_secuencia: prom(rt.map((r) => r.adherencia).filter((n): n is number => n != null)),
