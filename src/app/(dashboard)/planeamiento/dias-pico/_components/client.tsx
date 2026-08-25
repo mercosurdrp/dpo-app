@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Truck, CalendarDays, TableIcon, AlertTriangle, CalendarRange } from "lucide-react"
 
 export type MesProyectado = { mes: number; hl: number }
-export type DiaReal = { fecha: string; hl: number }
+export type DiaReal = { fecha: string; hl: number; clientes: number }
 export type Feriado = { fecha: string; nombre: string }
 
 const MESES = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -79,6 +79,21 @@ export function DiasPicoClient({
     () => Object.fromEntries(real.map((d) => [d.fecha, d.hl])) as Record<string, number>,
     [real],
   )
+  const cliPorFecha = useMemo(
+    () => Object.fromEntries(real.map((d) => [d.fecha, d.clientes])) as Record<string, number>,
+    [real],
+  )
+  // Clientes del año anterior por mes y posición ordinal: sirven de referencia
+  // para los días que todavía no pasaron. No hay presupuesto de clientes, así
+  // que no se escala — se muestra tal cual atendimos ese día el año pasado.
+  const cliBase = useMemo(() => {
+    const out: Record<number, number[]> = {}
+    for (const d of base) {
+      if (new Date(d.fecha + "T12:00:00").getDay() === 0) continue
+      ;(out[Number(d.fecha.slice(5, 7))] ??= []).push(d.clientes)
+    }
+    return out
+  }, [base])
 
   // Peso de cada día hábil dentro de su mes, tomado del año anterior. Se aplica
   // por posición ordinal: el día hábil N de diciembre 2025 le presta su peso al
@@ -115,6 +130,7 @@ export function DiasPicoClient({
     const out: {
       fecha: string; mes: number; dow: number; cap: number
       hlProy: number; hlReal: number | null
+      cliRef: number | null; cliReal: number | null
       nivelProy: Nivel; nivelReal: Nivel | null
     }[] = []
     for (let m = 1; m <= 12; m++) {
@@ -124,19 +140,22 @@ export function DiasPicoClient({
       const suma = pesos.reduce((a, b) => a + b, 0) || 1
       const ppto = pptoPorMes[m] ?? 0
       const capMes = capPorMes[m] ?? 0
+      const cb = cliBase[m] ?? []
       fechas.forEach((f, i) => {
         const hlProy = (ppto * pesos[i]) / suma
         const hlReal = realPorFecha[f] ?? null
+        const cliReal = cliPorFecha[f] ?? null
+        const cliRef = cb.length ? cb[Math.min(i, cb.length - 1)] : null
         out.push({
           fecha: f, mes: m, dow: new Date(f + "T12:00:00").getDay(), cap: capMes,
-          hlProy, hlReal,
+          hlProy, hlReal, cliRef, cliReal,
           nivelProy: nivelDe(hlProy, capMes),
           nivelReal: hlReal == null ? null : nivelDe(hlReal, capMes),
         })
       })
     }
     return out
-  }, [anio, setFer, pesosBase, pptoPorMes, realPorFecha, capPorMes])
+  }, [anio, setFer, pesosBase, pptoPorMes, realPorFecha, cliPorFecha, cliBase, capPorMes])
 
   // Resumen mes a mes: capacidad instalada contra presupuesto y contra real.
   const resumen = useMemo(() => {
@@ -363,6 +382,9 @@ export function DiasPicoClient({
             <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-red-600" /> PICO &gt;120%</span>
             <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-amber-400" /> MEDIA 100–120%</span>
             <span className="flex items-center gap-1"><i className="inline-block size-3 rounded bg-emerald-500/80" /> BAJA</span>
+            <span className="text-slate-500">
+              <b>Cli</b> = clientes atendidos; con <b>~</b> es el dato del día equivalente del año anterior.
+            </span>
           </div>
           <div className="grid gap-3 2xl:grid-cols-2">
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -388,7 +410,7 @@ function MesGrilla({
 }: {
   anio: number
   mes: number
-  dias: { fecha: string; mes: number; dow: number; cap: number; hlProy: number; hlReal: number | null; nivelProy: Nivel; nivelReal: Nivel | null }[]
+  dias: { fecha: string; mes: number; dow: number; cap: number; hlProy: number; hlReal: number | null; cliRef: number | null; cliReal: number | null; nivelProy: Nivel; nivelReal: Nivel | null }[]
 }) {
   const delMes = dias.filter((d) => d.mes === mes)
   const porDia = new Map(delMes.map((d) => [Number(d.fecha.slice(8, 10)), d]))
@@ -453,6 +475,16 @@ function MesGrilla({
                     <span className="opacity-70">Real</span>
                     <span className="font-semibold tabular-nums">
                       {d.hlReal != null ? n0(d.hlReal) : "—"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-1">
+                    <span className="opacity-70">Cli</span>
+                    <span className="font-semibold tabular-nums">
+                      {d.cliReal != null && d.cliReal > 0
+                        ? n0(d.cliReal)
+                        : d.cliRef != null && d.cliRef > 0
+                          ? `~${n0(d.cliRef)}`
+                          : "—"}
                     </span>
                   </div>
                   <div className="flex justify-between gap-1 border-t border-white/25 pt-0.5">

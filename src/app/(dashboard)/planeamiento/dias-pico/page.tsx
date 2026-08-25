@@ -32,23 +32,29 @@ export default async function DiasPicoPage() {
         .order("mes", { ascending: true }),
       supabase
         .from("pc_volumen_diario")
-        .select("fecha, bultos_distribuidos")
+        .select("fecha, bultos_distribuidos, clientes_distribuidos")
         .gte("fecha", `${ANIO}-01-01`)
         .lte("fecha", `${ANIO}-12-31`)
         .order("fecha", { ascending: true }),
       // Año anterior: de acá sale el peso de cada día dentro de su mes.
       supabase
         .from("pc_volumen_diario")
-        .select("fecha, bultos_distribuidos")
+        .select("fecha, bultos_distribuidos, clientes_distribuidos")
         .gte("fecha", `${ANIO_BASE}-01-01`)
         .lte("fecha", `${ANIO_BASE}-12-31`)
         .order("fecha", { ascending: true }),
       supabase.from("pc_feriados").select("fecha, nombre").gte("fecha", `${ANIO}-01-01`),
     ])
 
-  const aDias = (rows: { fecha: string; bultos_distribuidos: number | null }[] | null): DiaReal[] =>
+  const aDias = (
+    rows: { fecha: string; bultos_distribuidos: number | null; clientes_distribuidos: number | null }[] | null,
+  ): DiaReal[] =>
     (rows ?? [])
-      .map((r) => ({ fecha: r.fecha, hl: Number(r.bultos_distribuidos ?? 0) }))
+      .map((r) => ({
+        fecha: r.fecha,
+        hl: Number(r.bultos_distribuidos ?? 0),
+        clientes: Number(r.clientes_distribuidos ?? 0),
+      }))
       .filter((d) => d.hl > 0)
 
   return (
