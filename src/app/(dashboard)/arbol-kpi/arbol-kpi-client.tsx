@@ -1,16 +1,7 @@
 "use client"
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
-import Link from "next/link"
-import { ArrowUpRight, Maximize2, Minus, Plus } from "lucide-react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Maximize2, Minus, Plus } from "lucide-react"
 import {
   ARBOL_RECHAZO,
   NIVELES_KPI_ORDEN,
@@ -21,6 +12,7 @@ import {
   type NodoArbolKpi,
 } from "@/lib/arbol-kpi/rechazo"
 import type { ArbolKpiData, NodoValor } from "@/actions/arbol-kpi"
+import { NodoDetalleDialog } from "./_components/nodo-detalle-dialog"
 import "./arbol-kpi.css"
 
 interface Props {
@@ -303,77 +295,14 @@ export function ArbolKpiClient({ data }: Props) {
         </ul>
       </details>
 
-      {/* Detalle del nodo: de dónde sale el número */}
-      <Dialog open={!!detalle} onOpenChange={(open: boolean) => !open && setDetalle(null)}>
-        <DialogContent showExpandButton={false} className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{detalle?.label}</DialogTitle>
-            <DialogDescription>
-              {detalle ? NIVEL_KPI_LABEL[detalle.nivel] : ""}
-              {detalle?.parentKey
-                ? ` · cuelga de ${nodo(detalle.parentKey)?.label ?? ""}`
-                : ""}
-            </DialogDescription>
-          </DialogHeader>
-          {detalle && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg border border-slate-200 p-3">
-                  <p className="text-xs text-muted-foreground">{data.mesLabel}</p>
-                  <p
-                    className={`text-2xl font-bold tabular-nums ${
-                      COLOR_VALOR[
-                        estadoDe(valorDe(detalle.key).mth, detalle.meta, detalle.mejorSi)
-                      ]
-                    }`}
-                  >
-                    {fmt(valorDe(detalle.key).mth, detalle.unidad)}{" "}
-                    <span className="text-sm font-medium text-slate-400">
-                      {detalle.unidad}
-                    </span>
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 p-3">
-                  <p className="text-xs text-muted-foreground">Año a la fecha</p>
-                  <p className="text-2xl font-bold tabular-nums text-slate-700">
-                    {fmt(valorDe(detalle.key).ytd, detalle.unidad)}{" "}
-                    <span className="text-sm font-medium text-slate-400">
-                      {detalle.unidad}
-                    </span>
-                  </p>
-                </div>
-              </div>
-              {detalle.meta != null && (
-                <p className="text-sm text-slate-600">
-                  Meta:{" "}
-                  <strong className="tabular-nums">
-                    {detalle.mejorSi === "mayor" ? "≥" : "≤"}{" "}
-                    {fmt(detalle.meta, detalle.unidad)} {detalle.unidad}
-                  </strong>
-                </p>
-              )}
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                  De dónde sale
-                </p>
-                <p className="mt-1 text-sm leading-relaxed text-slate-700">
-                  {detalle.fuente}
-                </p>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            {detalle?.href && (
-              <Link
-                href={detalle.href}
-                className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
-              >
-                Ir al módulo <ArrowUpRight className="size-4" />
-              </Link>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NodoDetalleDialog
+        nodo={detalle}
+        padreLabel={detalle?.parentKey ? (nodo(detalle.parentKey)?.label ?? null) : null}
+        mth={detalle ? valorDe(detalle.key).mth : null}
+        ytd={detalle ? valorDe(detalle.key).ytd : null}
+        mesLabel={data.mesLabel}
+        onClose={() => setDetalle(null)}
+      />
     </div>
   )
 }

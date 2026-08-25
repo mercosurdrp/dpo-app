@@ -25,6 +25,16 @@ export interface NodoValor {
   ytd: number | null
 }
 
+/** Serie mensual de cada nodo, para el histórico del diálogo. */
+export interface ArbolKpiSeries {
+  /** "YYYY-MM" de enero al mes en curso. */
+  meses: string[]
+  /** key de nodo → un valor por mes (null = sin dato ese mes). */
+  series: Record<string, (number | null)[]>
+  /** Nodos que no tienen serie, con el motivo (se muestra en pantalla). */
+  sinSerie: Record<string, string>
+}
+
 export interface ArbolKpiData {
   anio: number
   mes: number
@@ -74,141 +84,151 @@ async function traerTodo<T>(
   return out
 }
 
-export async function getArbolKpiRechazo(): Promise<
-  { data: ArbolKpiData } | { error: string }
-> {
-  try {
-    await requireAuth()
-    if (IS_MISIONES) {
-      return { error: "El árbol de KPI por ahora sólo está armado para Pampeana." }
-    }
+/**
+ * Carga TODO el año una sola vez y devuelve un calculador por rango de fechas.
+ *
+ * Es el corazón del módulo: las queries son las mismas para la tarjeta (mes y
+ * año) y para la serie histórica (un punto por mes), así que se piden una vez
+ * y después sólo se cambia qué fechas entran. Sin esto, el histórico costaría
+ * doce veces lo mismo.
+ */
+async function cargarCalculadora() {
+  const { anio, mes, iso: hoy } = hoyAR()
+  const desdeAnio = `${anio}-01-01`
+  const desdeMes = `${anio}-${String(mes).padStart(2, "0")}-01`
+  const sb = await createClient()
 
-    const { anio, mes, iso: hoy } = hoyAR()
-    const desdeAnio = `${anio}-01-01`
-    const desdeMes = `${anio}-${String(mes).padStart(2, "0")}-01`
-    const sb = await createClient()
+  const enMes = (fecha: string) => fecha >= desdeMes
 
-    const enMes = (fecha: string) => fecha >= desdeMes
-
-    // ── Ventas distribuidas (HL y bultos) ────────────────────────────────
-    const ventas = await traerTodo<{ fecha: string; total_hl: number | null; total_bultos: number | null }>(
-      (from, to) =>
-        sb
-          .from("ventas_diarias")
-          .select("fecha, total_hl, total_bultos")
-          .gte("fecha", desdeAnio)
-          .lte("fecha", hoy)
-          .order("id", { ascending: true })
-          .range(from, to),
-    )
-
-    // ── Rechazos (HL por motivo y pedidos afectados) ─────────────────────
-    const rechazos = await traerTodo<{
-      fecha_venta: string
-      hl_rechazados: number | null
-      id_rechazo: number | null
-      ds_rechazo: string | null
-      id_cliente: number | null
-    }>((from, to) =>
+  // ── Ventas distribuidas (HL y bultos) ────────────────────────────────
+  const ventas = await traerTodo<{ fecha: string; total_hl: number | null; total_bultos: number | null }>(
+    (from, to) =>
       sb
-        .from("rechazos")
-        .select("fecha_venta, hl_rechazados, id_rechazo, ds_rechazo, id_cliente")
-        .gte("fecha_venta", desdeAnio)
-        .lte("fecha_venta", hoy)
+        .from("ventas_diarias")
+        .select("fecha, total_hl, total_bultos")
+        .gte("fecha", desdeAnio)
+        .lte("fecha", hoy)
         .order("id", { ascending: true })
         .range(from, to),
-    )
+  )
 
-    // ── Ocupación de bodega (CEq y HL cargados) ──────────────────────────
-    const ob = await traerTodo<{ fecha: string; ceq_total: number | null; hl_total: number | null }>(
-      (from, to) =>
-        sb
-          .from("ocupacion_bodega_diaria")
-          .select("fecha, ceq_total, hl_total")
-          .gte("fecha", desdeAnio)
-          .lte("fecha", hoy)
-          .gt("ceq_total", 0)
-          .order("fecha", { ascending: true })
-          .order("patente", { ascending: true })
-          .range(from, to),
-    )
+  // ── Rechazos (HL por motivo y pedidos afectados) ─────────────────────
+  const rechazos = await traerTodo<{
+    fecha_venta: string
+    hl_rechazados: number | null
+    id_rechazo: number | null
+    ds_rechazo: string | null
+    id_cliente: number | null
+  }>((from, to) =>
+    sb
+      .from("rechazos")
+      .select("fecha_venta, hl_rechazados, id_rechazo, ds_rechazo, id_cliente")
+      .gte("fecha_venta", desdeAnio)
+      .lte("fecha_venta", hoy)
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
 
-    // ── Km recorridos: odómetro del checklist (retorno − liberación) ─────
-    // 🚨 NO se usa `raw_data.fx_driven_m`: llega inconsistente desde el CSV de
-    // ROUTE_ANALYTICS y por eso la operación dio de baja "Km recorridos" de la
-    // matinal el 21/07/2026. El odómetro es la misma fuente que ya alimenta el
-    // indicador de km del tablero de reuniones.
-    const KM_MAX_DIA = 2000
-    const checklists = await traerTodo<{
-      fecha: string
-      dominio: string
-      tipo: string
-      odometro: number | null
-    }>((from, to) =>
+  // ── Ocupación de bodega (CEq y HL cargados) ──────────────────────────
+  const ob = await traerTodo<{ fecha: string; ceq_total: number | null; hl_total: number | null }>(
+    (from, to) =>
       sb
-        .from("checklist_vehiculos")
-        .select("fecha, dominio, tipo, odometro")
+        .from("ocupacion_bodega_diaria")
+        .select("fecha, ceq_total, hl_total")
         .gte("fecha", desdeAnio)
         .lte("fecha", hoy)
-        .not("odometro", "is", null)
+        .gt("ceq_total", 0)
         .order("fecha", { ascending: true })
+        .order("patente", { ascending: true })
         .range(from, to),
-    )
+  )
 
-    /** Km por camión-día: retorno − liberación, descartando saltos absurdos. */
-    function kmDelPeriodo(soloMes: boolean): number {
-      const porDia = new Map<string, { lib: number[]; ret: number[] }>()
-      for (const c of checklists) {
-        if (soloMes && !enMes(c.fecha)) continue
-        const odo = Number(c.odometro ?? 0)
-        if (!Number.isFinite(odo) || odo <= 0) continue
-        const clave = `${c.fecha}|${(c.dominio || "").trim().toUpperCase()}`
-        const acc = porDia.get(clave) ?? { lib: [], ret: [] }
-        if (c.tipo === "liberacion") acc.lib.push(odo)
-        else if (c.tipo === "retorno") acc.ret.push(odo)
-        porDia.set(clave, acc)
-      }
-      let total = 0
-      for (const { lib, ret } of porDia.values()) {
-        if (lib.length === 0 || ret.length === 0) continue
-        const km = Math.max(...ret) - Math.min(...lib)
-        if (km > 0 && km <= KM_MAX_DIA) total += km
-      }
-      return total
-    }
+  // ── Km recorridos: odómetro del checklist (retorno − liberación) ─────
+  // 🚨 NO se usa `raw_data.fx_driven_m`: llega inconsistente desde el CSV de
+  // ROUTE_ANALYTICS y por eso la operación dio de baja "Km recorridos" de la
+  // matinal el 21/07/2026. El odómetro es la misma fuente que ya alimenta el
+  // indicador de km del tablero de reuniones.
+  const KM_MAX_DIA = 2000
+  const checklists = await traerTodo<{
+    fecha: string
+    dominio: string
+    tipo: string
+    odometro: number | null
+  }>((from, to) =>
+    sb
+      .from("checklist_vehiculos")
+      .select("fecha, dominio, tipo, odometro")
+      .gte("fecha", desdeAnio)
+      .lte("fecha", hoy)
+      .not("odometro", "is", null)
+      .order("fecha", { ascending: true })
+      .range(from, to),
+  )
 
-    // ── Foxtrot: una sola query con raw_data PROYECTADO ──────────────────
-    // 🚨 Traer raw_data entero mata la consulta (son documentos grandes): se
-    // piden sólo las claves necesarias con ->>, que llegan como texto.
-    const foxRaw = await traerTodo<Record<string, unknown>>((from, to) =>
-      sb
-        .from("foxtrot_routes")
-        .select(
-          "fecha, tiempo_ruta_minutos, total_deliveries, deliveries_successful, driver_click_score, adherencia_secuencia, is_finalized, " +
-            "ini:raw_data->>started_timestamp, fin:raw_data->>finalized_timestamp, " +
-            "visited:raw_data->>tml_visited_customers, plan_sec:raw_data->>fx_planned_journey_sec",
-        )
-        .gte("fecha", desdeAnio)
-        .lte("fecha", hoy)
-        .order("fecha", { ascending: true })
-        .range(from, to) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: unknown }>,
-    )
+  /** Km por camión-día: retorno − liberación, descartando saltos absurdos. */
+  function kmDelPeriodo(incluye: (fecha: string) => boolean): number {
+    const porDia = new Map<string, { lib: number[]; ret: number[] }>()
+    for (const c of checklists) {
+      if (!incluye(c.fecha)) continue
+      const odo = Number(c.odometro ?? 0)
+      if (!Number.isFinite(odo) || odo <= 0) continue
+      const clave = `${c.fecha}|${(c.dominio || "").trim().toUpperCase()}`
+      const acc = porDia.get(clave) ?? { lib: [], ret: [] }
+      if (c.tipo === "liberacion") acc.lib.push(odo)
+      else if (c.tipo === "retorno") acc.ret.push(odo)
+      porDia.set(clave, acc)
+    }
+    let total = 0
+    for (const { lib, ret } of porDia.values()) {
+      if (lib.length === 0 || ret.length === 0) continue
+      const km = Math.max(...ret) - Math.min(...lib)
+      if (km > 0 && km <= KM_MAX_DIA) total += km
+    }
+    return total
+  }
 
-    type Ruta = {
-      fecha: string
-      minutos: number | null
-      click: number | null
-      adherencia: number | null
-      visited: number | null
-      planSec: number | null
-      limpia: boolean
-    }
-    const num = (v: unknown): number | null => {
-      if (v == null || v === "") return null
-      const n = Number(v)
-      return Number.isFinite(n) ? n : null
-    }
-    const rutas: Ruta[] = foxRaw.map((r) => ({
+  // ── Foxtrot: una sola query con raw_data PROYECTADO ──────────────────
+  // 🚨 Traer raw_data entero mata la consulta (son documentos grandes): se
+  // piden sólo las claves necesarias con ->>, que llegan como texto.
+  const foxRaw = await traerTodo<Record<string, unknown>>((from, to) =>
+    sb
+      .from("foxtrot_routes")
+      .select(
+        "fecha, driver_name, tiempo_ruta_minutos, total_deliveries, deliveries_successful, driver_click_score, adherencia_secuencia, is_finalized, " +
+          "ini:raw_data->>started_timestamp, fin:raw_data->>finalized_timestamp, " +
+          "visited:raw_data->>tml_visited_customers, plan_sec:raw_data->>fx_planned_journey_sec, " +
+          "seq:raw_data->>fx_seq_enabled",
+      )
+      .gte("fecha", desdeAnio)
+      .lte("fecha", hoy)
+      .order("fecha", { ascending: true })
+      .range(from, to) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: unknown }>,
+  )
+
+  type Ruta = {
+    fecha: string
+    minutos: number | null
+    click: number | null
+    adherencia: number | null
+    visited: number | null
+    planSec: number | null
+    limpia: boolean
+    finalizada: boolean
+    /** Resecuenciado en tiempo real activo: sin esto la adherencia no aplica. */
+    seqActivo: boolean
+  }
+  const num = (v: unknown): number | null => {
+    if (v == null || v === "") return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  }
+  // 🚨 Mismos criterios que la matinal (`lib/foxtrot/auto-indicadores-pampeana`):
+  // se descartan las rutas sin chofer asignado, que son plantillas sin operar.
+  // Si el árbol promediara distinto que el tablero de reuniones, el mismo
+  // indicador mostraría dos números y ninguno sería defendible.
+  const rutas: Ruta[] = foxRaw
+    .filter((r) => String(r.driver_name ?? "").trim() !== "")
+    .map((r) => ({
       fecha: String(r.fecha),
       minutos: num(r.tiempo_ruta_minutos),
       click: num(r.driver_click_score),
@@ -219,81 +239,116 @@ export async function getArbolKpiRechazo(): Promise<
         r.ini == null ? null : String(r.ini),
         r.fin == null ? null : String(r.fin),
       ),
+      finalizada: r.is_finalized === true || r.is_finalized === "true",
+      seqActivo: r.seq === true || r.seq === "true",
     }))
 
-    // ── Armado de los dos períodos ───────────────────────────────────────
-    function calcular(soloMes: boolean): Record<string, number | null> {
-      const v = ventas.filter((r) => (soloMes ? enMes(r.fecha) : true))
-      const rech = rechazos.filter((r) => (soloMes ? enMes(r.fecha_venta) : true))
-      const o = ob.filter((r) => (soloMes ? enMes(r.fecha) : true))
-      const rt = rutas.filter((r) => (soloMes ? enMes(r.fecha) : true))
-      const rtLimpias = rt.filter((r) => r.limpia)
+  // ── Cálculo de un período cualquiera ─────────────────────────────────
+  // Recibe qué fechas entran, así el mismo cuerpo sirve para el mes, para el
+  // año y para cada mes de la serie histórica, sin repetir una sola query.
+  function calcular(incluye: (fecha: string) => boolean): Record<string, number | null> {
+    const v = ventas.filter((r) => incluye(r.fecha))
+    const rech = rechazos.filter((r) => incluye(r.fecha_venta))
+    const o = ob.filter((r) => incluye(r.fecha))
+    const rt = rutas.filter((r) => incluye(r.fecha))
+    const rtLimpias = rt.filter((r) => r.limpia)
 
-      const hlDistribuido = v.reduce((a, r) => a + Number(r.total_hl ?? 0), 0)
-      const hlRechazado = rech.reduce((a, r) => a + Number(r.hl_rechazados ?? 0), 0)
-      const hlCargado = o.reduce((a, r) => a + Number(r.hl_total ?? 0), 0)
-      const ceqCargado = o.reduce((a, r) => a + Number(r.ceq_total ?? 0), 0)
+    const hlDistribuido = v.reduce((a, r) => a + Number(r.total_hl ?? 0), 0)
+    const hlRechazado = rech.reduce((a, r) => a + Number(r.hl_rechazados ?? 0), 0)
+    const hlCargado = o.reduce((a, r) => a + Number(r.hl_total ?? 0), 0)
+    const ceqCargado = o.reduce((a, r) => a + Number(r.ceq_total ?? 0), 0)
 
-      // Pedidos = cliente × fecha distintos (mismo criterio que el Árbol del
-      // Sueño para Sin Dinero / Cerrado). Los pedidos totales salen de las
-      // ventas por cliente, que hoy no están en ventas_diarias: se usa como
-      // denominador la cantidad de clientes visitados por las rutas.
-      const pedidosVisitados = rtLimpias.reduce((a, r) => a + (r.visited ?? 0), 0)
-      const claveRech = (r: { fecha_venta: string; id_cliente: number | null }) =>
-        `${r.fecha_venta}|${r.id_cliente ?? "s/c"}`
-      const pedidosConRechazo = new Set(rech.map(claveRech)).size
+    // Pedidos = cliente × fecha distintos (mismo criterio que el Árbol del
+    // Sueño para Sin Dinero / Cerrado). Los pedidos totales salen de las
+    // ventas por cliente, que hoy no están en ventas_diarias: se usa como
+    // denominador la cantidad de clientes visitados por las rutas.
+    const pedidosVisitados = rtLimpias.reduce((a, r) => a + (r.visited ?? 0), 0)
+    const claveRech = (r: { fecha_venta: string; id_cliente: number | null }) =>
+      `${r.fecha_venta}|${r.id_cliente ?? "s/c"}`
+    const pedidosConRechazo = new Set(rech.map(claveRech)).size
 
-      const pctMotivo = (test: (ds: string, id: number | null) => boolean): number | null => {
-        const n = new Set(
-          rech.filter((r) => test((r.ds_rechazo ?? "").toUpperCase(), r.id_rechazo)).map(claveRech),
-        ).size
-        const d = div(n, pedidosVisitados)
-        return d == null ? null : d * 100
-      }
-
-      const kmRecorridos = kmDelPeriodo(soloMes)
-      const visitados = rtLimpias.reduce((a, r) => a + (r.visited ?? 0), 0)
-
-      const dispersionTiempo = (() => {
-        const conPlan = rtLimpias.filter((r) => (r.planSec ?? 0) > 0 && (r.minutos ?? 0) > 0)
-        const real = conPlan.reduce((a, r) => a + (r.minutos ?? 0) * 60, 0)
-        const plan = conPlan.reduce((a, r) => a + (r.planSec ?? 0), 0)
-        const d = div(real - plan, plan)
-        return d == null ? null : d * 100
-      })()
-
-      const rechazoPct = div(hlRechazado, hlDistribuido)
-
-      return {
-        rechazo: rechazoPct == null ? null : rechazoPct * 100,
-        vol_entregado_pdv: hlDistribuido > 0 ? hlDistribuido : null,
-        vol_cargado_camion: hlCargado > 0 ? hlCargado : null,
-        rechazo_pedidos: (() => {
-          const d = div(pedidosConRechazo, pedidosVisitados)
-          return d == null ? null : d * 100
-        })(),
-        tmr: prom(rtLimpias.map((r) => r.minutos).filter((m): m is number => m != null && m > 0).map((m) => m / 60)),
-        ob: o.length > 0 ? cumplimientoPct(ceqCargado / o.length) : null,
-        pdv_camion: prom(rtLimpias.map((r) => r.visited).filter((n): n is number => n != null && n > 0)),
-        click_score: prom(rt.map((r) => r.click).filter((n): n is number => n != null)),
-        adherencia_secuencia: prom(rt.map((r) => r.adherencia).filter((n): n is number => n != null)),
-        dispersion_tiempo: dispersionTiempo,
-        cajas_km: div(ceqCargado, kmRecorridos),
-        drop_size: div(hlDistribuido, visitados),
-        rech_sin_dinero: pctMotivo((ds, id) => id === 6 || ds.includes("SIN DINERO")),
-        rech_cerrado: pctMotivo((ds, id) => id === 1 || ds.includes("CERRADO")),
-        // "No pedido" del árbol de Tucumán no existe en nuestro catálogo: se
-        // reemplaza por los motivos que de verdad pesan acá, priorizando los
-        // que la operación puede cambiar (lo que pide la auditoría).
-        rech_producto_no_apto: pctMotivo((ds) => ds.includes("PRODUCTO NO APTO")),
-        rech_sin_envases: pctMotivo((ds) => ds.includes("SIN ENVASES")),
-        // El catálogo trae la variante con y sin tilde: se matchean las dos.
-        rech_error_distribucion: pctMotivo((ds) => ds.startsWith("ERROR DE DISTRIBUCI")),
-      }
+    const pctMotivo = (test: (ds: string, id: number | null) => boolean): number | null => {
+      const n = new Set(
+        rech.filter((r) => test((r.ds_rechazo ?? "").toUpperCase(), r.id_rechazo)).map(claveRech),
+      ).size
+      const d = div(n, pedidosVisitados)
+      return d == null ? null : d * 100
     }
 
-    const mth = calcular(true)
-    const ytd = calcular(false)
+    const kmRecorridos = kmDelPeriodo(incluye)
+    const visitados = rtLimpias.reduce((a, r) => a + (r.visited ?? 0), 0)
+
+    const dispersionTiempo = (() => {
+      const conPlan = rtLimpias.filter(
+        (r) => r.finalizada && (r.planSec ?? 0) > 0 && (r.minutos ?? 0) > 0,
+      )
+      const real = conPlan.reduce((a, r) => a + (r.minutos ?? 0) * 60, 0)
+      const plan = conPlan.reduce((a, r) => a + (r.planSec ?? 0), 0)
+      const d = div(real - plan, plan)
+      return d == null ? null : d * 100
+    })()
+
+    const rechazoPct = div(hlRechazado, hlDistribuido)
+
+    return {
+      rechazo: rechazoPct == null ? null : rechazoPct * 100,
+      vol_entregado_pdv: hlDistribuido > 0 ? hlDistribuido : null,
+      vol_cargado_camion: hlCargado > 0 ? hlCargado : null,
+      rechazo_pedidos: (() => {
+        const d = div(pedidosConRechazo, pedidosVisitados)
+        return d == null ? null : d * 100
+      })(),
+      tmr: prom(
+        rtLimpias
+          .filter((r) => r.finalizada)
+          .map((r) => r.minutos)
+          .filter((m): m is number => m != null && m > 0)
+          .map((m) => m / 60),
+      ),
+      ob: o.length > 0 ? cumplimientoPct(ceqCargado / o.length) : null,
+      pdv_camion: prom(rtLimpias.map((r) => r.visited).filter((n): n is number => n != null && n > 0)),
+      // Sólo rutas FINALIZADAS: una ruta sin cerrar trae el score a medio hacer.
+      click_score: prom(
+        rt.filter((r) => r.finalizada).map((r) => r.click).filter((n): n is number => n != null),
+      ),
+      // Sólo donde el resecuenciado está ACTIVO: con `fx_seq_enabled = false`
+      // Foxtrot devuelve 0, y ese 0 es "no aplica", no "adherencia nula".
+      adherencia_secuencia: prom(
+        rt
+          .filter((r) => r.finalizada && r.seqActivo)
+          .map((r) => r.adherencia)
+          .filter((n): n is number => n != null),
+      ),
+      dispersion_tiempo: dispersionTiempo,
+      cajas_km: div(ceqCargado, kmRecorridos),
+      drop_size: div(hlDistribuido, visitados),
+      rech_sin_dinero: pctMotivo((ds, id) => id === 6 || ds.includes("SIN DINERO")),
+      rech_cerrado: pctMotivo((ds, id) => id === 1 || ds.includes("CERRADO")),
+      // "No pedido" del árbol de Tucumán no existe en nuestro catálogo: se
+      // reemplaza por los motivos que de verdad pesan acá, priorizando los
+      // que la operación puede cambiar (lo que pide la auditoría).
+      rech_producto_no_apto: pctMotivo((ds) => ds.includes("PRODUCTO NO APTO")),
+      rech_sin_envases: pctMotivo((ds) => ds.includes("SIN ENVASES")),
+      // El catálogo trae la variante con y sin tilde: se matchean las dos.
+      rech_error_distribucion: pctMotivo((ds) => ds.startsWith("ERROR DE DISTRIBUCI")),
+    }
+  }
+
+  return { anio, mes, hoy, enMes, calcular }
+}
+
+export async function getArbolKpiRechazo(): Promise<
+  { data: ArbolKpiData } | { error: string }
+> {
+  try {
+    await requireAuth()
+    if (IS_MISIONES) {
+      return { error: "El árbol de KPI por ahora sólo está armado para Pampeana." }
+    }
+
+    const { anio, mes, enMes, calcular } = await cargarCalculadora()
+    const mth = calcular(enMes)
+    const ytd = calcular(() => true)
 
     // ── Fuera de ruta: ya tiene su propia action mensual ─────────────────
     try {
@@ -344,6 +399,63 @@ export async function getArbolKpiRechazo(): Promise<
         valores,
       },
     }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Serie mensual de cada nodo, de enero al mes en curso. Reusa exactamente el
+ * mismo cálculo que la tarjeta: el último punto de cada serie tiene que dar
+ * igual que el valor del mes, o el histórico contradice a lo que se ve.
+ */
+export async function getArbolKpiRechazoSeries(): Promise<
+  { data: ArbolKpiSeries } | { error: string }
+> {
+  try {
+    await requireAuth()
+    if (IS_MISIONES) {
+      return { error: "El árbol de KPI por ahora sólo está armado para Pampeana." }
+    }
+
+    const { anio, mes, calcular } = await cargarCalculadora()
+
+    const meses: string[] = []
+    for (let m = 1; m <= mes; m++) meses.push(`${anio}-${String(m).padStart(2, "0")}`)
+
+    const series: Record<string, (number | null)[]> = {}
+    for (const clave of meses) {
+      const valores = calcular((fecha) => fecha.startsWith(clave))
+      for (const [key, valor] of Object.entries(valores)) {
+        ;(series[key] ??= []).push(valor)
+      }
+    }
+
+    const sinSerie: Record<string, string> = {}
+
+    // ── Fuera de ruta: como % del volumen distribuido de cada mes ────────
+    try {
+      const fr = await getFueraRutaMensual(24)
+      if ("data" in fr) {
+        const hlPorMes = series.vol_entregado_pdv ?? []
+        series.fuera_ruta = meses.map((clave, i) => {
+          const hlFr = fr.data.find((m) => m.anio_mes === clave)?.hl ?? null
+          const hlMes = hlPorMes[i]
+          if (hlFr == null || !hlMes) return null
+          return (hlFr / hlMes) * 100
+        })
+      }
+    } catch {
+      sinSerie.fuera_ruta = "No se pudo leer la serie mensual de fuera de ruta."
+    }
+
+    // El DQI se calcula en el tablero del depósito con un fetch por mes: una
+    // serie anual serían doce llamadas y ese endpoint todavía no publica la
+    // versión corregida con reempaque (pendiente del punto 1.4 de la auditoría).
+    sinSerie.dqi =
+      "El DQI lo calcula el tablero del depósito mes a mes y todavía no publica la serie corregida con reempaque."
+
+    return { data: { meses, series, sinSerie } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
