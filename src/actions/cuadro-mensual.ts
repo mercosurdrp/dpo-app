@@ -30,6 +30,7 @@ import { SELECT_RUTA_LIMPIA, esRutaLimpia } from "@/lib/foxtrot/ruta-limpia"
 import { SEGUNDAS_VUELTAS } from "@/lib/tlp/segundas-vueltas"
 import { ceqGescomPorViaje } from "@/lib/tlp/ceq-gescom"
 import { normPatente } from "@/lib/tlp/calc"
+import { obPct } from "@/lib/ocupacion-bodega"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -118,6 +119,27 @@ export async function getCuadroMensualIndicadores(): Promise<
         .gte("fecha", desde)
         .lte("fecha", hasta)
         .order("id", { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      rows.push(...data)
+      if (data.length < PAGE) break
+    }
+    return rows
+  }
+  // ocupacion_bodega_diaria tiene una fila por (patente, fecha): ≈190
+  // viajes/mes, así que en el rango ene→hoy pasa las 1000 y hay que paginar.
+  async function ocupacionBodegaTodas() {
+    const PAGE = 1000
+    const rows: Array<{ fecha: string; ceq_total: number | null }> = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("ocupacion_bodega_diaria")
+        .select("fecha, ceq_total")
+        .gte("fecha", desde)
+        .lte("fecha", hasta)
+        .gt("ceq_total", 0)
+        .order("fecha", { ascending: true })
+        .order("patente", { ascending: true })
         .range(from, from + PAGE - 1)
       if (error || !data || data.length === 0) break
       rows.push(...data)
@@ -263,7 +285,7 @@ export async function getCuadroMensualIndicadores(): Promise<
   // ── Fetches de rango (en paralelo) ──
   // reportes_seguridad está muy por debajo de 1000 filas en el rango, así que
   // no necesita paginación.
-  const [repRes, ventasRows, mostradorRows, rechazosRows, foxRows, egresosRows, camionesPorMes] =
+  const [repRes, ventasRows, mostradorRows, rechazosRows, foxRows, egresosRows, camionesPorMes, obRows] =
     await Promise.all([
     // Seguridad: traigo TODO el histórico ≤ hasta (sin gte) para poder calcular
     // "días sin accidentes" mirando hacia atrás de cada mes.
@@ -278,6 +300,7 @@ export async function getCuadroMensualIndicadores(): Promise<
     foxtrotRoutesTodas(),
     egresosTodos(),
     camionesDiaPorMes(),
+    ocupacionBodegaTodas(),
   ])
 
   // ── SEGURIDAD ──
@@ -629,6 +652,27 @@ export async function getCuadroMensualIndicadores(): Promise<
     celdas.fte_prom[mes] = {
       mes,
       valor: acc && acc.viajes > 0 ? acc.personas / acc.viajes : null,
+      parcial: mes === mesActual,
+    }
+  }
+
+  // ── ENTREGA: Ocupación de bodega ──
+  // Cuánto del camión se llenó: CEq promedio por viaje sobre la capacidad de
+  // bodega. Ponderado por viaje (Σ CEq / Σ viajes), igual que el MTD del
+  // indicador de la matinal, para que los dos tableros digan lo mismo.
+  const obPorMes: Record<string, { ceq: number; viajes: number }> = {}
+  for (const r of obRows) {
+    const ceq = Number(r.ceq_total ?? 0)
+    if (!Number.isFinite(ceq) || ceq <= 0) continue
+    const acc = (obPorMes[r.fecha.slice(0, 7)] ??= { ceq: 0, viajes: 0 })
+    acc.ceq += ceq
+    acc.viajes += 1
+  }
+  for (const mes of meses) {
+    const acc = obPorMes[mes]
+    celdas.ocupacion_bodega[mes] = {
+      mes,
+      valor: acc && acc.viajes > 0 ? obPct(acc.ceq / acc.viajes) : null,
       parcial: mes === mesActual,
     }
   }
