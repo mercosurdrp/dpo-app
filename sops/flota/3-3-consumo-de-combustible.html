@@ -1,0 +1,113 @@
+<html><head><meta charset="utf-8"><title>SOP - Consumo de Combustible</title><style>
+body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#111}
+h1{font-size:16pt;border-bottom:2px solid #333;padding-bottom:4px}
+h2{font-size:12.5pt;margin-top:18px;text-transform:uppercase;color:#1f4e79}
+h3{font-size:11.5pt;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:10pt;margin-top:6px}
+th,td{border:1px solid #999;padding:4px 6px;vertical-align:top}
+th{background:#eef3f8}
+.nota{background:#fff8e1;border-left:3px solid #e0a800;padding:6px 10px;font-size:10pt}
+</style></head><body>
+
+<h1>SOP — Consumo de Combustible</h1>
+<p><b>Pilar:</b> Flota · <b>Punto DPO:</b> 3.3<br>
+<b>Estado:</b> BORRADOR para revisión · <b>Elaborado:</b> 25/08/2026 · <b>Revisión:</b> 0<br>
+<b>Nota:</b> existe una versión de este SOP para Misiones (“SOP Combustible Camiones” y “SOP Combustible Autoelevadores”). Este borrador es la adaptación a la operación de Pampeana y al registro en la app.</p>
+
+<h2>1. Objetivo</h2>
+<p>Controlar el reaprovisionamiento y el consumo de combustible de la flota: que cada carga quede registrada con litros, km y unidad; que el rendimiento de cada unidad se compare contra su referencia; y que todo desvío tenga causa y plan de acción.</p>
+
+<h2>2. Alcance</h2>
+<p>Todas las unidades que consumen combustible: camiones y utilitarios de distribución, unidades de Team Run y autoelevadores del depósito. Incluye el AdBlue/urea.</p>
+
+<h2>3. Definiciones</h2>
+<table>
+<tr><th>Término</th><th>Significado</th></tr>
+<tr><td>SDF</td><td>Supervisor de Flota</td></tr>
+<tr><td>Rendimiento</td><td>Km recorridos por litro consumido. En autoelevadores, litros por hora de uso.</td></tr>
+<tr><td>Carga con medición</td><td>Carga en la que se registró el odómetro y por lo tanto permite calcular km recorridos entre cargas. Es la única que entra al cálculo de rendimiento.</td></tr>
+<tr><td>Tanque lleno</td><td>Criterio de carga que hace comparable el consumo entre cargas: se carga hasta el corte del surtidor.</td></tr>
+<tr><td>Desvío</td><td>Rendimiento fuera del rango definido para el modelo de unidad.</td></tr>
+</table>
+
+<h2>4. RACI</h2>
+<table>
+<tr><th>Actividad</th><th>SDF</th><th>Chofer / Operario</th><th>JDL</th><th>Administración</th></tr>
+<tr><td>Capacitación sobre carga y registro</td><td>R</td><td>I</td><td>A</td><td>I</td></tr>
+<tr><td>Control de nivel antes de salir</td><td>C</td><td>R</td><td>A</td><td>—</td></tr>
+<tr><td>Carga de combustible</td><td>A</td><td>R</td><td>I</td><td>—</td></tr>
+<tr><td>Registro de la carga en la app</td><td>A</td><td>R</td><td>C</td><td>I</td></tr>
+<tr><td>Conciliación con la factura del proveedor</td><td>R</td><td>I</td><td>C</td><td>A</td></tr>
+<tr><td>Análisis de desvíos y plan de acción</td><td>R</td><td>I</td><td>A</td><td>I</td></tr>
+</table>
+<p style="font-size:10pt"><b>R</b> el que hace · <b>A</b> el dueño del indicador · <b>C</b> consultado · <b>I</b> informado.</p>
+
+<h2>5. Flujograma</h2>
+<ol>
+<li>El chofer controla el nivel del tanque. Por debajo del 25 % debe reaprovisionar.</li>
+<li>Carga en la boca habitual del CD o, si no hay disponibilidad, en estación externa autorizada.</li>
+<li>Se carga a tanque lleno y se anota el odómetro al momento de la carga.</li>
+<li>Se registra la carga en la app: unidad, fecha, litros, odómetro, tipo de combustible y comprobante.</li>
+<li>Cierre mensual: rendimiento por unidad y contra la referencia del modelo.</li>
+<li>¿Desvío? <b>Sí</b> → causa y plan de acción sobre esa unidad. <b>No</b> → se informa.</li>
+</ol>
+
+<h2>6. Campo de aplicación</h2>
+<p>CD y estaciones de servicio autorizadas. Cuando la carga se hace fuera del circuito habitual, el comprobante tiene que incluir dominio, fecha, litros y km, porque es lo único que después permite conciliar.</p>
+
+<h2>7. Desarrollo</h2>
+
+<h3>7.1 Reaprovisionamiento</h3>
+<p>El chofer reaprovisiona cuando el tanque llega al 25 % de su capacidad. Salir a ruta por debajo de ese nivel es un desvío del procedimiento, no una decisión del chofer.</p>
+
+<h3>7.2 Registro de la carga</h3>
+<p>La carga se registra en <b>Vehículos → Combustible</b>. Campos:</p>
+<ul>
+<li><b>Unidad</b> y <b>fecha</b>.</li>
+<li><b>Litros</b>. El sistema rechaza cargas por encima del máximo razonable (500 litros) para atajar el error de tipeo, que es la causa número uno de rendimientos absurdos.</li>
+<li><b>Odómetro</b> al momento de la carga —u <b>horómetro</b> en autoelevadores—. Sin este dato la carga se registra igual pero no entra al cálculo de rendimiento.</li>
+<li><b>Tipo de combustible</b> (gasoil o urea/AdBlue).</li>
+<li><b>Comprobante</b>: foto del ticket o factura.</li>
+</ul>
+<div class="nota"><b>Por qué el odómetro es obligatorio en la práctica:</b> el rendimiento se calcula como km recorridos entre dos cargas dividido los litros. Una carga sin odómetro no rompe el registro, pero deja un hueco que arrastra el error a la carga siguiente.</div>
+
+<h3>7.3 Urea / AdBlue</h3>
+<p>Se registra con el mismo formulario, indicando el tipo. El consumo de urea se sigue por separado: un consumo muy por debajo de lo esperado es señal de que el sistema de tratamiento fue anulado, lo cual es una falla ambiental y legal, no un ahorro.</p>
+
+<h3>7.4 Rangos de referencia</h3>
+<table>
+<tr><th>Tipo de unidad</th><th>Referencia</th><th>Fuente</th></tr>
+<tr><td>Camión de reparto (chasis)</td><td>A completar con el rango del fabricante</td><td>Manual del fabricante / promedio histórico</td></tr>
+<tr><td>Camión con balancín</td><td>A completar</td><td>Manual del fabricante / promedio histórico</td></tr>
+<tr><td>Utilitario / Team Run</td><td>A completar</td><td>Promedio histórico</td></tr>
+<tr><td>Autoelevador</td><td>A completar (litros/hora)</td><td>Promedio histórico</td></tr>
+</table>
+<p>Mientras no estén cerrados los rangos del fabricante, la referencia es el promedio móvil de los últimos 6 meses de la propia unidad, y el desvío se mide contra sí misma.</p>
+
+<h3>7.5 Tratamiento del desvío</h3>
+<p>Ante un rendimiento fuera de rango se revisa, en este orden: error de carga del dato, presión de neumáticos, filtro de aire, estilo de conducción, y recién después falla mecánica. Si el desvío se sostiene dos meses, se abre plan de acción con herramienta de gestión.</p>
+
+<h2>8. Control e indicadores</h2>
+<table>
+<tr><th>Indicador</th><th>Cálculo</th><th>Meta</th><th>Frecuencia</th></tr>
+<tr><td>Rendimiento de combustible</td><td>Σ km recorridos ÷ Σ litros de las cargas con medición del mes</td><td>A definir por tipo</td><td>Mensual</td></tr>
+<tr><td>Cargas con odómetro</td><td>Cargas con odómetro ÷ cargas del mes</td><td>100 %</td><td>Mensual</td></tr>
+<tr><td>Huella de CO₂ de flota</td><td>Litros cargados × factor de emisión</td><td>Según meta de sustentabilidad</td><td>Mensual</td></tr>
+<tr><td>Gasto de combustible vs. presupuesto</td><td>Real ÷ presupuesto del mes</td><td>≤ 100 %</td><td>Mensual</td></tr>
+</table>
+
+<h2>9. Registros</h2>
+<ul>
+<li>Registros de carga con comprobante (app, exportable a PDF).</li>
+<li>Facturas del proveedor conciliadas contra los registros (Administración).</li>
+<li>Planes de acción sobre unidades con desvío sostenido.</li>
+</ul>
+
+<h2>10. Control de revisiones</h2>
+<table>
+<tr><th>N.º</th><th>Responsable</th><th>Cargo</th><th>Descripción</th><th>Fecha</th></tr>
+<tr><td>0</td><td>&nbsp;</td><td>SDF</td><td>Elaboración del procedimiento para Pampeana (borrador)</td><td>25/08/2026</td></tr>
+<tr><td>1</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+
+</body></html>

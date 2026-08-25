@@ -1,0 +1,113 @@
+<html><head><meta charset="utf-8"><title>SOP - Presupuesto de Gastos de Flota</title><style>
+body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#111}
+h1{font-size:16pt;border-bottom:2px solid #333;padding-bottom:4px}
+h2{font-size:12.5pt;margin-top:18px;text-transform:uppercase;color:#1f4e79}
+h3{font-size:11.5pt;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:10pt;margin-top:6px}
+th,td{border:1px solid #999;padding:4px 6px;vertical-align:top}
+th{background:#eef3f8}
+.nota{background:#fff8e1;border-left:3px solid #e0a800;padding:6px 10px;font-size:10pt}
+</style></head><body>
+
+<h1>SOP — Presupuesto de Gastos de Flota</h1>
+<p><b>Pilar:</b> Flota · <b>Punto DPO:</b> 3.2 · <b>Requisitos:</b> R3.2.1, R3.2.2<br>
+<b>Estado:</b> BORRADOR para revisión · <b>Elaborado:</b> 25/08/2026 · <b>Revisión:</b> 0</p>
+
+<h2>1. Objetivo</h2>
+<p>Definir cómo se arma el presupuesto anual de gastos de flota, cómo se imputa el gasto real contra ese presupuesto, y cómo se explica el desvío por motivo y por unidad. El objetivo es que en cualquier momento del año se pueda responder tres preguntas: cuánto se gastó, en qué, y por qué difiere de lo previsto.</p>
+
+<h2>2. Alcance</h2>
+<p>Todo gasto imputable a la flota del CD: mantenimiento preventivo y correctivo, neumáticos, combustible, seguros, patentes, verificaciones y habilitaciones, lavado, y servicios de terceros sobre las unidades.</p>
+
+<h2>3. Definiciones</h2>
+<table>
+<tr><th>Término</th><th>Significado</th></tr>
+<tr><td>Motivo (rubro)</td><td>Concepto del gasto: mantenimiento, neumáticos, combustible, seguros, habilitaciones, otros. Es el eje de análisis que pide el R3.2.2.</td></tr>
+<tr><td>Imputación por unidad</td><td>Asignación del gasto al dominio que lo generó. Sin ella no hay costo por unidad ni comparación entre unidades.</td></tr>
+<tr><td>Desvío</td><td>Diferencia entre real y presupuesto del período, en pesos y en porcentaje.</td></tr>
+<tr><td>Gasto sin motivo</td><td>Gasto cargado sin rubro. Es deuda de calidad de dato: no se puede analizar ni explicar.</td></tr>
+</table>
+
+<h2>4. RACI</h2>
+<table>
+<tr><th>Actividad</th><th>SDF</th><th>JDL</th><th>Administración</th><th>Gerencia</th></tr>
+<tr><td>Armado del presupuesto anual por motivo</td><td>R</td><td>A</td><td>C</td><td>C</td></tr>
+<tr><td>Aprobación del presupuesto</td><td>I</td><td>R</td><td>I</td><td>A</td></tr>
+<tr><td>Imputación del gasto a la unidad y al motivo</td><td>R</td><td>A</td><td>C</td><td>I</td></tr>
+<tr><td>Control mensual real vs. presupuesto</td><td>R</td><td>A</td><td>C</td><td>I</td></tr>
+<tr><td>Explicación del desvío y plan de acción</td><td>R</td><td>A</td><td>I</td><td>I</td></tr>
+</table>
+<p style="font-size:10pt"><b>R</b> el que hace · <b>A</b> el dueño del indicador · <b>C</b> consultado · <b>I</b> informado.</p>
+
+<h2>5. Flujograma</h2>
+<ol>
+<li>Cierre del año anterior → base de gasto real por motivo y por unidad.</li>
+<li>Se proyecta el año siguiente: volumen de operación, plan preventivo, vencimientos de neumáticos, inflación y altas/bajas de flota.</li>
+<li>Aprobación del presupuesto por motivo y por mes.</li>
+<li>Durante el mes: cada gasto se imputa con su unidad, su motivo y su comprobante.</li>
+<li>Cierre mensual: real vs. presupuesto por motivo.</li>
+<li>¿Desvío por encima del umbral? <b>Sí</b> → causa escrita y plan de acción. <b>No</b> → se informa y sigue.</li>
+</ol>
+
+<h2>6. Campo de aplicación</h2>
+<p>CD, para el ejercicio en curso. Las inversiones (compra de unidades, reformas mayores) no entran en este presupuesto de gastos: van por el circuito de inversiones.</p>
+
+<h2>7. Desarrollo</h2>
+
+<h3>7.1 Armado del presupuesto</h3>
+<p>El presupuesto se arma por motivo y se abre por mes. Criterio de partida por motivo:</p>
+<table>
+<tr><th>Motivo</th><th>Base de cálculo</th></tr>
+<tr><td>Mantenimiento preventivo</td><td>Plan preventivo del año: tareas por unidad según ciclo de km/horas/tiempo, valorizadas a precio de lista del taller.</td></tr>
+<tr><td>Mantenimiento correctivo</td><td>Promedio de los últimos 12 meses, ajustado por el objetivo de reducción y por la edad de la flota.</td></tr>
+<tr><td>Neumáticos</td><td>Cubiertas a reemplazar según la proyección de desgaste, más recapados previstos.</td></tr>
+<tr><td>Combustible</td><td>Km proyectados ÷ rendimiento objetivo × precio proyectado del litro.</td></tr>
+<tr><td>Seguros, patentes y habilitaciones</td><td>Vencimientos del año, que salen de Requisitos Legales.</td></tr>
+</table>
+
+<h3>7.2 Imputación del gasto real</h3>
+<p>El gasto se carga en <b>Vehículos → Mantenimiento → solapa Gastos</b>, con unidad, proveedor, motivo, monto y comprobante. El gasto de una OT se imputa desde la propia OT, con sus comprobantes por proveedor; no se vuelve a cargar en Gastos, para no duplicar.</p>
+<div class="nota"><b>Regla:</b> un gasto sin motivo no es analizable. La pantalla los agrupa aparte como “Sin motivo” justamente para que se vean; cerrar el mes con gastos en esa bolsa es dejar el desvío sin explicación posible.</div>
+
+<h3>7.3 Análisis mensual</h3>
+<p>La solapa Gastos permite filtrar por motivo, por unidad, por proveedor y por período, y muestra el reparto del gasto por motivo, que es la lectura que pide el R3.2.2. El análisis mensual mínimo es:</p>
+<ul>
+<li>Real vs. presupuesto del mes y acumulado del año, por motivo.</li>
+<li>Los tres motivos con mayor desvío absoluto, con su causa escrita.</li>
+<li>Las tres unidades con mayor costo del mes, y si el costo se explica por su uso.</li>
+<li>Gastos sin motivo pendientes de imputar.</li>
+</ul>
+
+<h3>7.4 Tratamiento del desvío</h3>
+<table>
+<tr><th>Desvío del mes</th><th>Acción</th></tr>
+<tr><td>Hasta 5 %</td><td>Se informa en la reunión semanal, sin plan.</td></tr>
+<tr><td>De 5 % a 15 %</td><td>Causa escrita y acción correctiva con responsable y fecha.</td></tr>
+<tr><td>Más de 15 %, o dos meses seguidos por encima de 5 %</td><td>Plan de acción formal con herramienta de gestión (5 Porqués o PDCA) y revisión del presupuesto si corresponde.</td></tr>
+</table>
+
+<h2>8. Control e indicadores</h2>
+<table>
+<tr><th>Indicador</th><th>Cálculo</th><th>Meta</th><th>Frecuencia</th></tr>
+<tr><td>Costo de mantenimiento</td><td>Gasto de mantenimiento del mes, acumulado contra presupuesto</td><td>≤ presupuesto</td><td>Mensual</td></tr>
+<tr><td>% preventivo del costo</td><td>Costo preventivo ÷ costo total de mantenimiento</td><td>≥ 70 %</td><td>Mensual</td></tr>
+<tr><td>Costo por km</td><td>Gasto total de flota ÷ km recorridos del mes</td><td>A definir</td><td>Mensual</td></tr>
+<tr><td>Gastos sin motivo</td><td>Monto sin rubro ÷ monto total del mes</td><td>0 %</td><td>Mensual</td></tr>
+</table>
+
+<h2>9. Registros</h2>
+<ul>
+<li>Presupuesto anual aprobado, por motivo y por mes.</li>
+<li>Gastos imputados con comprobante (app, exportables a Excel y PDF).</li>
+<li>Actas de la reunión donde se trataron los desvíos.</li>
+<li>Planes de acción sobre desvíos, con su herramienta de gestión.</li>
+</ul>
+
+<h2>10. Control de revisiones</h2>
+<table>
+<tr><th>N.º</th><th>Responsable</th><th>Cargo</th><th>Descripción</th><th>Fecha</th></tr>
+<tr><td>0</td><td>&nbsp;</td><td>SDF</td><td>Elaboración del procedimiento (borrador)</td><td>25/08/2026</td></tr>
+<tr><td>1</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+
+</body></html>

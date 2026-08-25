@@ -1,0 +1,108 @@
+<html><head><meta charset="utf-8"><title>SOP - Disposicion de Residuos de Mantenimiento</title><style>
+body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#111}
+h1{font-size:16pt;border-bottom:2px solid #333;padding-bottom:4px}
+h2{font-size:12.5pt;margin-top:18px;text-transform:uppercase;color:#1f4e79}
+h3{font-size:11.5pt;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:10pt;margin-top:6px}
+th,td{border:1px solid #999;padding:4px 6px;vertical-align:top}
+th{background:#eef3f8}
+.nota{background:#fff8e1;border-left:3px solid #e0a800;padding:6px 10px;font-size:10pt}
+</style></head><body>
+
+<h1>SOP — Disposición de Residuos de Mantenimiento</h1>
+<p><b>Pilar:</b> Flota · <b>Punto DPO:</b> 1.4 · <b>Requisito:</b> R1.4.2<br>
+<b>Estado:</b> BORRADOR para revisión · <b>Elaborado:</b> 25/08/2026 · <b>Revisión:</b> 0</p>
+
+<h2>1. Objetivo</h2>
+<p>Asegurar que todo residuo generado por el mantenimiento de la flota —aceites usados, filtros, cubiertas fuera de uso, baterías, envases contaminados— salga del CD por un canal habilitado, con un certificado de disposición final emitido por el proveedor, y que ese certificado quede archivado y trazable hasta el residuo que lo originó.</p>
+
+<h2>2. Alcance</h2>
+<p>Aplica a todos los residuos generados por el mantenimiento de las unidades del CD: unidades de distribución, unidades de depósito (autoelevadores, zorras eléctricas) y unidades de Team Run.</p>
+
+<h2>3. Definiciones</h2>
+<table>
+<tr><th>Término</th><th>Significado</th></tr>
+<tr><td>SDF</td><td>Supervisor de Flota</td></tr>
+<tr><td>JDL</td><td>Jefe de Logística</td></tr>
+<tr><td>PM</td><td>Personal de mantenimiento</td></tr>
+<tr><td>Certificado de disposición final</td><td>Documento que emite el transportista u operador habilitado y acredita el destino del residuo. Es lo único que prueba la disposición: el remito de retiro no alcanza.</td></tr>
+<tr><td>Números de fuego</td><td>Identificación grabada en el flanco de la cubierta. Permite reconciliar la cubierta desechada con la que estaba instalada.</td></tr>
+<tr><td>Residuo especial</td><td>El que requiere manifiesto y operador habilitado por la autoridad ambiental (aceite usado, filtros impregnados, baterías).</td></tr>
+</table>
+
+<h2>4. RACI</h2>
+<table>
+<tr><th>Actividad</th><th>SDF</th><th>PM</th><th>JDL</th><th>Proveedor</th></tr>
+<tr><td>Segregación del residuo en el punto de generación</td><td>A</td><td>R</td><td>I</td><td>—</td></tr>
+<tr><td>Acopio en el sector identificado</td><td>A</td><td>R</td><td>I</td><td>—</td></tr>
+<tr><td>Contratación del operador habilitado</td><td>R</td><td>I</td><td>A</td><td>C</td></tr>
+<tr><td>Retiro y emisión del certificado</td><td>C</td><td>I</td><td>I</td><td>R</td></tr>
+<tr><td>Carga del retiro y del certificado en la app</td><td>R</td><td>C</td><td>A</td><td>—</td></tr>
+<tr><td>Revisión mensual de retiros sin certificado</td><td>R</td><td>I</td><td>A</td><td>—</td></tr>
+</table>
+<p style="font-size:10pt"><b>R</b> el que hace · <b>A</b> el dueño del indicador, último responsable · <b>C</b> consultado antes de decidir · <b>I</b> informado después.</p>
+
+<h2>5. Flujograma</h2>
+<ol>
+<li>Se genera el residuo en el taller o el pañol (cambio de aceite, cambio de filtro, baja de cubierta, baja de batería).</li>
+<li>El PM lo segrega por corriente y lo lleva al sector de acopio identificado.</li>
+<li>¿Es residuo especial? <b>Sí</b> → sólo puede retirarlo un operador habilitado, con manifiesto. <b>No</b> → sale por el circuito de residuos generales.</li>
+<li>Se alcanza el volumen de retiro o el plazo máximo de acopio → el SDF coordina el retiro.</li>
+<li>El proveedor retira y emite el certificado de disposición final.</li>
+<li>El SDF carga el retiro en la app y adjunta el certificado.</li>
+<li>Cierre del mes: revisión de retiros sin certificado. Cada uno queda como pendiente con responsable y fecha.</li>
+</ol>
+
+<h2>6. Campo de aplicación</h2>
+<p>Sector de acopio del CD y taller propio. Cuando el trabajo se hace en un taller externo, el residuo queda en poder del taller: lo que se archiva es el certificado que ese taller emita o el comprobante del trabajo que declara la disposición, y no se carga como retiro propio, para no contar dos veces la misma corriente.</p>
+
+<h2>7. Desarrollo</h2>
+
+<h3>7.1 Corrientes y destino</h3>
+<table>
+<tr><th>Corriente</th><th>Origen típico</th><th>Destino</th><th>Certificado</th></tr>
+<tr><td>Aceite usado</td><td>Service general, cambio de motor</td><td>Operador habilitado de residuos especiales</td><td>Obligatorio</td></tr>
+<tr><td>Filtros (aceite, aire, combustible)</td><td>Service general</td><td>Operador habilitado</td><td>Obligatorio</td></tr>
+<tr><td>Cubiertas fuera de uso</td><td>Baja por dibujo por debajo del mínimo (3 mm) o daño estructural</td><td>Recuperador o disposición final habilitada</td><td>Obligatorio, con números de fuego</td></tr>
+<tr><td>Baterías</td><td>Baja por fin de vida</td><td>Canje con el proveedor u operador habilitado</td><td>Obligatorio</td></tr>
+<tr><td>Envases contaminados, trapos</td><td>Taller y pañol</td><td>Operador habilitado</td><td>Obligatorio</td></tr>
+</table>
+
+<h3>7.2 Registro en la app</h3>
+<p>El registro se hace en <b>Vehículos → Mantenimiento → Repuestos → solapa Residuos</b>. Por cada retiro se carga:</p>
+<ul>
+<li><b>Fecha</b> del retiro, <b>material</b> (la corriente) y <b>proveedor</b> que retira. Los tres son obligatorios: sin proveedor el retiro no es auditable.</li>
+<li><b>Cantidad</b> y <b>unidad</b> (litros, kilos, unidades).</li>
+<li><b>Números de fuego</b> cuando la corriente son cubiertas.</li>
+<li><b>Certificado</b>: el archivo que emitió el proveedor. Queda adjunto a la fila y accesible desde la misma pantalla.</li>
+<li><b>Observaciones</b> para lo que no entre en los campos anteriores.</li>
+</ul>
+<div class="nota"><b>Regla de cierre:</b> un retiro cargado sin certificado adjunto es un pendiente, no un retiro cumplido. El seguimiento histórico que pide el punto 1.4 es la lista de retiros con su certificado; una fila sin adjunto rompe la cadena.</div>
+
+<h3>7.3 Baja de cubiertas: reconciliación</h3>
+<p>La baja de una cubierta se registra en el módulo de Neumáticos (cambio de estado a desechada, con su comprobante). El retiro físico se registra además como residuo, con los números de fuego de las cubiertas que salieron. Al cierre del mes la cantidad de cubiertas dadas de baja en Neumáticos tiene que coincidir con la cantidad retirada como residuo; cualquier diferencia se explica por escrito.</p>
+
+<h2>8. Control e indicadores</h2>
+<table>
+<tr><th>Indicador</th><th>Cálculo</th><th>Meta</th><th>Frecuencia</th></tr>
+<tr><td>Cobertura de certificados</td><td>Retiros con certificado adjunto ÷ retiros del mes</td><td>100 %</td><td>Mensual</td></tr>
+<tr><td>Reconciliación de cubiertas</td><td>Cubiertas retiradas como residuo ÷ cubiertas dadas de baja en el mes</td><td>100 %</td><td>Mensual</td></tr>
+<tr><td>Antigüedad del acopio</td><td>Días desde el ingreso más viejo pendiente de retiro, por corriente</td><td>A definir por corriente</td><td>Mensual</td></tr>
+</table>
+<p>Los desvíos se tratan en la reunión semanal de flota. Si el desvío se repite dos meses seguidos se le aplica una herramienta de gestión (5 Porqués o PDCA) desde el plan de acción del indicador.</p>
+
+<h2>9. Registros</h2>
+<ul>
+<li>Filas de la solapa Residuos con su certificado adjunto (app, retención permanente).</li>
+<li>Manifiestos de transporte de residuos especiales (carpeta física del CD y adjunto en la app).</li>
+<li>Habilitación vigente del operador, cargada en Requisitos Legales con su fecha de vencimiento.</li>
+</ul>
+
+<h2>10. Control de revisiones</h2>
+<table>
+<tr><th>N.º</th><th>Responsable</th><th>Cargo</th><th>Descripción</th><th>Fecha</th></tr>
+<tr><td>0</td><td>&nbsp;</td><td>SDF</td><td>Elaboración del procedimiento (borrador)</td><td>25/08/2026</td></tr>
+<tr><td>1</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+
+</body></html>

@@ -1,0 +1,121 @@
+<html><head><meta charset="utf-8"><title>SOP - Mejoras y Resultados de Mantenimiento</title><style>
+body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#111}
+h1{font-size:16pt;border-bottom:2px solid #333;padding-bottom:4px}
+h2{font-size:12.5pt;margin-top:18px;text-transform:uppercase;color:#1f4e79}
+h3{font-size:11.5pt;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:10pt;margin-top:6px}
+th,td{border:1px solid #999;padding:4px 6px;vertical-align:top}
+th{background:#eef3f8}
+.nota{background:#fff8e1;border-left:3px solid #e0a800;padding:6px 10px;font-size:10pt}
+</style></head><body>
+
+<h1>SOP — Mejoras y Resultados de Mantenimiento</h1>
+<p><b>Pilar:</b> Flota · <b>Punto DPO:</b> 4.2 · <b>Requisito:</b> R4.2.3<br>
+<b>Estado:</b> BORRADOR para revisión · <b>Elaborado:</b> 25/08/2026 · <b>Revisión:</b> 0</p>
+
+<h2>1. Objetivo</h2>
+<p>Definir el ciclo de gestión de flota: cómo se lee el desempeño, cómo se elige qué atacar, con qué método se busca la causa raíz, cómo se sigue la contramedida y cómo se verifica que el resultado mejoró. El objetivo es que la mejora sea un proceso con cadencia, no una reacción a la rotura del día.</p>
+
+<h2>2. Alcance</h2>
+<p>Todos los indicadores del pilar Flota y todas las fallas recurrentes de la flota del CD.</p>
+
+<h2>3. Definiciones</h2>
+<table>
+<tr><th>Término</th><th>Significado</th></tr>
+<tr><td>Pirámide de defectos</td><td>Lectura de conjunto: roturas arriba, desvíos detectados en el medio, preventivo abajo. Una base angosta con punta ancha significa que se repara lo que se debería anticipar.</td></tr>
+<tr><td>5 Porqués</td><td>Herramienta para llegar a la causa raíz encadenando preguntas desde el problema observado.</td></tr>
+<tr><td>Causa-Efecto</td><td>Espina de pescado: agrupa causas posibles por familia antes de elegir cuál verificar.</td></tr>
+<tr><td>PDCA</td><td>Ciclo planificar–hacer–verificar–actuar, con revisión mensual. Es la herramienta para las mejoras que llevan más de un mes.</td></tr>
+<tr><td>Contramedida</td><td>La acción que ataca la causa raíz. No es la reparación: la reparación resuelve el síntoma.</td></tr>
+</table>
+
+<h2>4. RACI</h2>
+<table>
+<tr><th>Actividad</th><th>SDF</th><th>PM</th><th>JDL</th><th>Equipo</th></tr>
+<tr><td>Lectura mensual de indicadores</td><td>R</td><td>C</td><td>A</td><td>I</td></tr>
+<tr><td>Selección de los temas a atacar</td><td>R</td><td>C</td><td>A</td><td>C</td></tr>
+<tr><td>Aplicación de la herramienta de gestión</td><td>R</td><td>C</td><td>A</td><td>C</td></tr>
+<tr><td>Ejecución de la contramedida</td><td>A</td><td>R</td><td>I</td><td>R</td></tr>
+<tr><td>Verificación del resultado</td><td>R</td><td>I</td><td>A</td><td>I</td></tr>
+<tr><td>Estandarización de lo que funcionó</td><td>R</td><td>C</td><td>A</td><td>I</td></tr>
+</table>
+<p style="font-size:10pt"><b>R</b> el que hace · <b>A</b> el dueño del indicador · <b>C</b> consultado · <b>I</b> informado.</p>
+
+<h2>5. Flujograma</h2>
+<ol>
+<li>Cierre del mes → se leen los PI de flota con su meta y su serie.</li>
+<li>¿Algún indicador por debajo de la meta, o alguna falla reincidente? <b>No</b> → se informa y sigue. <b>Sí</b> → sigue.</li>
+<li>Se abre plan de acción sobre ese indicador o esa OT.</li>
+<li>Se aplica la herramienta que corresponda (5 Porqués, Causa-Efecto o PDCA) y se define la contramedida.</li>
+<li>Se cargan las acciones con responsable y fecha de compromiso.</li>
+<li>Seguimiento semanal en la reunión de flota.</li>
+<li>Al mes siguiente se verifica el indicador. ¿Mejoró? <b>Sí</b> → se estandariza (cambio de SOP, de plan preventivo o de OPL) y se cierra. <b>No</b> → vuelve al paso 4 con la causa revisada.</li>
+</ol>
+
+<h2>6. Campo de aplicación</h2>
+<p>Reunión semanal de flota y cierre mensual de indicadores del CD.</p>
+
+<h2>7. Desarrollo</h2>
+
+<h3>7.1 Cadencia</h3>
+<table>
+<tr><th>Instancia</th><th>Frecuencia</th><th>Qué se mira</th><th>Qué sale</th></tr>
+<tr><td>Reunión de flota</td><td>Semanal</td><td>OT abiertas, unidades fuera de servicio, defectos de checklist sin cerrar, acciones vencidas</td><td>Acciones con responsable y fecha</td></tr>
+<tr><td>Cierre de indicadores</td><td>Mensual</td><td>PI de flota contra meta, pirámide de defectos, costo por motivo</td><td>Planes de acción sobre los indicadores en rojo</td></tr>
+<tr><td>Revisión de PDCA</td><td>Mensual</td><td>Avance de cada ciclo abierto</td><td>Ajuste o cierre del ciclo</td></tr>
+<tr><td>Revisión de SOP y plan preventivo</td><td>Anual</td><td>Todo lo que se estandarizó en el año</td><td>Nueva revisión de los documentos</td></tr>
+</table>
+
+<h3>7.2 Criterio para elegir qué atacar</h3>
+<p>No todo desvío merece un análisis formal. Se abre plan de acción con herramienta cuando se cumple alguna de estas condiciones:</p>
+<ul>
+<li>Un PI queda por debajo de su meta dos meses seguidos.</li>
+<li>La misma falla se repite en la misma unidad dentro de los 90 días.</li>
+<li>La misma falla aparece en tres o más unidades en el mes.</li>
+<li>Un correctivo dejó una unidad parada más de dos días.</li>
+<li>Falló un componente que tenía su preventivo al día: si el plan estaba cumplido y falló igual, el plan está mal.</li>
+</ul>
+
+<h3>7.3 Qué herramienta usar</h3>
+<table>
+<tr><th>Situación</th><th>Herramienta</th></tr>
+<tr><td>Problema puntual, causa probablemente única</td><td>5 Porqués</td></tr>
+<tr><td>Problema con varias causas posibles que hay que ordenar antes de verificar</td><td>Causa-Efecto</td></tr>
+<tr><td>Mejora que lleva más de un mes y necesita seguimiento</td><td>PDCA con revisión mensual</td></tr>
+</table>
+<p>La herramienta se abre desde el lugar donde vive el problema: desde la <b>OT</b> cuando es una falla, y desde el <b>plan de acción del indicador</b> cuando es un KPI en rojo. Queda asociada ahí, con su PDF, para que el auditor vea el análisis junto al hecho y no en una carpeta aparte.</p>
+
+<h3>7.4 De la contramedida al estándar</h3>
+<p>Una contramedida que funcionó y no se estandariza se pierde cuando cambia la persona. El cierre del análisis incluye definir qué documento cambia:</p>
+<ul>
+<li>Cambio en el <b>plan preventivo</b> (frecuencia, tarea nueva, tarea que se saca).</li>
+<li>Cambio en el <b>SOP</b> correspondiente.</li>
+<li><b>OPL nueva</b> para el que hace el trabajo, publicada y alcanzable por el QR de la unidad.</li>
+<li>Cambio en el <b>checklist</b> si hace falta detectar antes el desvío.</li>
+</ul>
+
+<h2>8. Control e indicadores</h2>
+<table>
+<tr><th>Indicador</th><th>Cálculo</th><th>Meta</th><th>Frecuencia</th></tr>
+<tr><td>Planes con causa raíz analizada</td><td>Planes con herramienta aplicada ÷ planes abiertos por indicador en rojo</td><td>100 %</td><td>Mensual</td></tr>
+<tr><td>Acciones cumplidas en fecha</td><td>Acciones completadas en o antes del compromiso ÷ acciones vencidas</td><td>≥ 90 %</td><td>Mensual</td></tr>
+<tr><td>Mejoras estandarizadas</td><td>Contramedidas que terminaron en un cambio de SOP, plan u OPL ÷ contramedidas cerradas</td><td>≥ 80 %</td><td>Trimestral</td></tr>
+<tr><td>Relación preventivo / correctivo</td><td>Base sobre punta de la pirámide de defectos</td><td>Creciente</td><td>Mensual</td></tr>
+</table>
+
+<h2>9. Registros</h2>
+<ul>
+<li>Planes de acción de flota con causa raíz y acciones (app).</li>
+<li>Herramientas de gestión aplicadas, con su PDF, asociadas a la OT o al plan (app).</li>
+<li>Actas de la reunión semanal de flota.</li>
+<li>Revisiones de SOP, plan preventivo y OPL generadas por las contramedidas.</li>
+</ul>
+
+<h2>10. Control de revisiones</h2>
+<table>
+<tr><th>N.º</th><th>Responsable</th><th>Cargo</th><th>Descripción</th><th>Fecha</th></tr>
+<tr><td>0</td><td>&nbsp;</td><td>SDF</td><td>Elaboración del procedimiento (borrador)</td><td>25/08/2026</td></tr>
+<tr><td>1</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+
+</body></html>

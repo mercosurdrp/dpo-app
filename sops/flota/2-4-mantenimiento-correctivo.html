@@ -1,0 +1,115 @@
+<html><head><meta charset="utf-8"><title>SOP - Mantenimiento Correctivo</title><style>
+body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#111}
+h1{font-size:16pt;border-bottom:2px solid #333;padding-bottom:4px}
+h2{font-size:12.5pt;margin-top:18px;text-transform:uppercase;color:#1f4e79}
+h3{font-size:11.5pt;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:10pt;margin-top:6px}
+th,td{border:1px solid #999;padding:4px 6px;vertical-align:top}
+th{background:#eef3f8}
+.nota{background:#fff8e1;border-left:3px solid #e0a800;padding:6px 10px;font-size:10pt}
+</style></head><body>
+
+<h1>SOP — Mantenimiento Correctivo</h1>
+<p><b>Pilar:</b> Flota · <b>Punto DPO:</b> 2.4 · <b>Requisitos:</b> R2.4.1, R2.4.2<br>
+<b>Estado:</b> BORRADOR para revisión · <b>Elaborado:</b> 25/08/2026 · <b>Revisión:</b> 0</p>
+
+<h2>1. Objetivo</h2>
+<p>Definir cómo se detecta, se ordena, se ejecuta y se cierra una reparación no programada, de forma que quede registrada con su costo, su tiempo fuera de servicio y su causa; y que el correctivo que se repite se ataque en la causa en vez de repararse otra vez.</p>
+
+<h2>2. Alcance</h2>
+<p>Toda intervención no programada sobre una unidad de la flota, hecha en taller propio o externo, con o sin salida de ruta. Incluye las fallas detectadas por el chofer en el checklist, las detectadas en el CIL, las que aparecen durante un preventivo y las roturas en ruta.</p>
+
+<h2>3. Definiciones</h2>
+<table>
+<tr><th>Término</th><th>Significado</th></tr>
+<tr><td>OT</td><td>Orden de trabajo. Todo trabajo tiene una, con número propio y correlativo.</td></tr>
+<tr><td>Correctivo</td><td>Reparación de una falla que ya ocurrió.</td></tr>
+<tr><td>Proactivo</td><td>Corrección de un desvío detectado antes de que se convierta en falla (típicamente por checklist o CIL).</td></tr>
+<tr><td>Fuera de servicio</td><td>Período en que la unidad no está disponible para operar. Se deriva de la entrada y la salida del taller.</td></tr>
+<tr><td>Reincidencia</td><td>Misma falla, misma unidad, dentro de un período definido. Es lo que dispara el análisis de causa.</td></tr>
+</table>
+
+<h2>4. RACI</h2>
+<table>
+<tr><th>Actividad</th><th>SDF</th><th>PM</th><th>Chofer</th><th>JDL</th></tr>
+<tr><td>Detección y reporte de la falla</td><td>A</td><td>C</td><td>R</td><td>I</td></tr>
+<tr><td>Decisión de sacar la unidad de ruta</td><td>R</td><td>C</td><td>I</td><td>A</td></tr>
+<tr><td>Apertura de la OT</td><td>R</td><td>C</td><td>I</td><td>I</td></tr>
+<tr><td>Ejecución de la reparación</td><td>A</td><td>R</td><td>I</td><td>I</td></tr>
+<tr><td>Cierre de la OT con costo y comprobantes</td><td>R</td><td>C</td><td>—</td><td>A</td></tr>
+<tr><td>Análisis de causa raíz de reincidencias</td><td>R</td><td>C</td><td>I</td><td>A</td></tr>
+</table>
+<p style="font-size:10pt"><b>R</b> el que hace · <b>A</b> el dueño del indicador · <b>C</b> consultado · <b>I</b> informado.</p>
+
+<h2>5. Flujograma</h2>
+<ol>
+<li>Aparece la falla: la reporta el chofer en el checklist, el operario en el CIL, o se detecta en el taller.</li>
+<li>¿Compromete la seguridad o impide operar? <b>Sí</b> → la unidad no sale y se marca fuera de servicio. <b>No</b> → se programa la reparación sin sacarla de ruta.</li>
+<li>Se abre la OT con la unidad, la fecha, el tipo (correctivo o proactivo) y la descripción del trabajo.</li>
+<li>Se ejecuta en taller propio o externo.</li>
+<li>Se cierra la OT: odómetro, entrada y salida del taller, mano de obra, repuestos (vinculados al pañol si salieron de ahí) y comprobantes.</li>
+<li>¿Es reincidencia? <b>Sí</b> → se le aplica un 5 Porqués o un PDCA desde la OT. <b>No</b> → cierra.</li>
+<li>Cierre semanal: las OT del período se revisan en la reunión de flota.</li>
+</ol>
+
+<h2>6. Campo de aplicación</h2>
+<p>CD y talleres externos habilitados. La rotura en ruta se resuelve por el procedimiento de auxilio, pero igual termina en una OT: el auxilio resuelve el evento, la OT registra la reparación.</p>
+
+<h2>7. Desarrollo</h2>
+
+<h3>7.1 Detección</h3>
+<p>Las tres puertas de entrada son el checklist de liberación y retorno, el CIL y el propio taller. Un ítem del checklist marcado No OK genera un plan de acción con responsable, y el reloj del tiempo de respuesta arranca en el momento en que el chofer cargó el checklist: cargar un plan ya resuelto no cuenta como cero días.</p>
+
+<h3>7.2 Decisión de disponibilidad</h3>
+<p>La falla que compromete la seguridad —frenos, dirección, luces reglamentarias, cubiertas por debajo del mínimo, pérdidas de fluidos— saca la unidad de ruta. Esa decisión es del SDF y no se delega al chofer ni al taller.</p>
+
+<h3>7.3 Apertura y carga de la OT</h3>
+<p>La OT se carga en <b>Vehículos → Mantenimiento → Órdenes de Trabajo</b>. El número lo sugiere la app como el siguiente correlativo y es editable. Campos que no pueden quedar vacíos:</p>
+<ul>
+<li><b>Unidad, fecha y tipo</b> (correctivo / proactivo / preventivo).</li>
+<li><b>Odómetro</b> u horómetro al momento del trabajo. Es lo que ancla el vencimiento de las tareas del plan.</li>
+<li><b>Entrada y salida del taller</b> con fecha y hora. De ahí sale el período fuera de servicio y los días parados. Si la unidad no salió de ruta, se deja la entrada vacía.</li>
+<li><b>Descripción del trabajo</b>, y las tareas del plan si el trabajo incluyó alguna.</li>
+<li><b>Mano de obra</b> y <b>repuestos</b>. El repuesto que salió del pañol se elige del inventario, y descuenta el stock solo.</li>
+<li><b>Comprobantes</b>: uno por proveedor. Es normal que los repuestos los facture uno y la mano de obra otro.</li>
+</ul>
+
+<h3>7.4 Tareas que quedaron sin hacer</h3>
+<p>Si en el trabajo quedó una tarea del plan sin ejecutar, se registra como reprogramada. No cuenta como realizada: el contador del plan sigue vencido hasta que se haga de verdad.</p>
+
+<h3>7.5 Análisis de causa raíz</h3>
+<p>Se aplica una herramienta de gestión desde la propia OT cuando se da alguna de estas condiciones:</p>
+<ul>
+<li>La misma falla en la misma unidad dentro de los 90 días.</li>
+<li>La misma falla en tres o más unidades dentro del mes.</li>
+<li>Un correctivo que dejó la unidad parada más de dos días.</li>
+<li>Un correctivo sobre un componente que tenía preventivo vigente: si el plan estaba al día y falló igual, el plan está mal.</li>
+</ul>
+<p>La herramienta se abre desde el detalle de la OT (5 Porqués, Causa-Efecto o PDCA) y queda con su PDF asociado a esa OT. La contramedida se convierte en acción con responsable y fecha.</p>
+
+<h2>8. Control e indicadores</h2>
+<table>
+<tr><th>Indicador</th><th>Cálculo</th><th>Meta</th><th>Frecuencia</th></tr>
+<tr><td>Días parado por correctivo</td><td>Suma de días fuera de servicio por OT correctiva del mes</td><td>A definir</td><td>Mensual</td></tr>
+<tr><td>% preventivo del costo</td><td>Costo de OT preventivas ÷ costo total de mantenimiento</td><td>≥ 70 %</td><td>Mensual</td></tr>
+<tr><td>Resolución de defectos de checklist</td><td>Días promedio entre la carga del defecto y el cierre del plan</td><td>A definir en el SLA</td><td>Mensual</td></tr>
+<tr><td>Reincidencias con causa analizada</td><td>Reincidencias con herramienta de gestión aplicada ÷ reincidencias del mes</td><td>100 %</td><td>Mensual</td></tr>
+</table>
+<p>La pirámide de defectos de flota es la lectura de conjunto: roturas arriba, preventivo abajo. Una base angosta con punta ancha significa que se está reparando lo que se debería estar anticipando.</p>
+
+<h2>9. Registros</h2>
+<ul>
+<li>OT con sus tareas, repuestos y comprobantes (app, permanente, exportable a Excel y PDF).</li>
+<li>Planes de acción de checklist con su fecha de resolución (app).</li>
+<li>Herramientas de gestión aplicadas a OT, con su PDF (app).</li>
+<li>Períodos fuera de servicio por unidad (app).</li>
+</ul>
+
+<h2>10. Control de revisiones</h2>
+<table>
+<tr><th>N.º</th><th>Responsable</th><th>Cargo</th><th>Descripción</th><th>Fecha</th></tr>
+<tr><td>0</td><td>&nbsp;</td><td>SDF</td><td>Elaboración del procedimiento (borrador)</td><td>25/08/2026</td></tr>
+<tr><td>1</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+
+</body></html>

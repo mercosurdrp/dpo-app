@@ -1,0 +1,114 @@
+<html><head><meta charset="utf-8"><title>SOP - Politicas y Gestion de Piezas de Inventario</title><style>
+body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#111}
+h1{font-size:16pt;border-bottom:2px solid #333;padding-bottom:4px}
+h2{font-size:12.5pt;margin-top:18px;text-transform:uppercase;color:#1f4e79}
+h3{font-size:11.5pt;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:10pt;margin-top:6px}
+th,td{border:1px solid #999;padding:4px 6px;vertical-align:top}
+th{background:#eef3f8}
+.nota{background:#fff8e1;border-left:3px solid #e0a800;padding:6px 10px;font-size:10pt}
+</style></head><body>
+
+<h1>SOP — Políticas y Gestión de Piezas de Inventario</h1>
+<p><b>Pilar:</b> Flota · <b>Punto DPO:</b> 2.3 · <b>Requisito:</b> R2.3.2<br>
+<b>Estado:</b> BORRADOR para revisión · <b>Elaborado:</b> 25/08/2026 · <b>Revisión:</b> 0</p>
+
+<h2>1. Objetivo</h2>
+<p>Definir cómo se decide qué repuesto se tiene en el pañol y en qué cantidad, cómo entra y cómo sale, y cómo se verifica que el stock del sistema sea el stock real. El objetivo operativo es que una unidad no quede parada esperando una pieza que debería haber estado, sin inmovilizar plata en piezas que no rotan.</p>
+
+<h2>2. Alcance</h2>
+<p>Todas las piezas y consumibles que se guardan en el pañol del CD para el mantenimiento de la flota: focos, micas, destelladores, filtros, correas, lubricantes, elementos de sujeción. No alcanza a las piezas que se compran contra una orden de trabajo puntual y van directo a la unidad sin pasar por el pañol.</p>
+
+<h2>3. Definiciones</h2>
+<table>
+<tr><th>Término</th><th>Significado</th></tr>
+<tr><td>SDF</td><td>Supervisor de Flota</td></tr>
+<tr><td>PM</td><td>Personal de mantenimiento</td></tr>
+<tr><td>Stock mínimo</td><td>Cantidad por debajo de la cual hay que reponer. Es el punto de pedido, no el stock de seguridad contable.</td></tr>
+<tr><td>Stock objetivo</td><td>Cantidad a la que se repone cuando se dispara el pedido.</td></tr>
+<tr><td>Stock máximo</td><td>Techo por encima del cual no se compra, salvo autorización.</td></tr>
+<tr><td>Clase ABC</td><td>Criticidad de la pieza. A: para la unidad si falta. B: degrada el servicio. C: consumible reemplazable.</td></tr>
+<tr><td>Movimiento</td><td>Ingreso o egreso de stock. Todo cambio de existencia es un movimiento; el stock no se edita a mano.</td></tr>
+<tr><td>Conteo físico</td><td>Recuento contra el sistema, con su diferencia por ítem.</td></tr>
+</table>
+
+<h2>4. RACI</h2>
+<table>
+<tr><th>Actividad</th><th>SDF</th><th>PM</th><th>JDL</th><th>Compras</th></tr>
+<tr><td>Definir el maestro de repuestos y su clase ABC</td><td>R</td><td>C</td><td>A</td><td>I</td></tr>
+<tr><td>Definir mínimo / objetivo / máximo por ítem</td><td>R</td><td>C</td><td>A</td><td>I</td></tr>
+<tr><td>Registrar el ingreso al pañol</td><td>A</td><td>R</td><td>I</td><td>C</td></tr>
+<tr><td>Registrar el egreso al usar la pieza</td><td>A</td><td>R</td><td>I</td><td>—</td></tr>
+<tr><td>Emitir la orden de compra al llegar al mínimo</td><td>R</td><td>I</td><td>A</td><td>C</td></tr>
+<tr><td>Conteo físico mensual</td><td>R</td><td>R</td><td>A</td><td>I</td></tr>
+<tr><td>Análisis de desvíos y plan de acción</td><td>R</td><td>C</td><td>A</td><td>I</td></tr>
+</table>
+<p style="font-size:10pt"><b>R</b> el que hace · <b>A</b> el dueño del indicador · <b>C</b> consultado · <b>I</b> informado.</p>
+
+<h2>5. Flujograma</h2>
+<ol>
+<li>El PM necesita una pieza para un trabajo.</li>
+<li>¿Está en el pañol? <b>No</b> → se compra contra la OT y va directo a la unidad (no entra al pañol). <b>Sí</b> → sigue.</li>
+<li>Se usa la pieza y se carga la OT con el repuesto <b>vinculado al ítem del pañol</b>: el egreso de stock lo hace la app en el mismo momento.</li>
+<li>El stock queda por debajo del mínimo → se emite la orden de compra hasta el stock objetivo.</li>
+<li>Llega la mercadería → se registra el ingreso, con el remito.</li>
+<li>Cierre del mes → conteo físico, diferencia por ítem, y plan de acción sobre las diferencias.</li>
+</ol>
+
+<h2>6. Campo de aplicación</h2>
+<p>Pañol del CD. Los trabajos hechos en taller externo con piezas del taller no mueven el pañol; los hechos en depósito con piezas del pañol, sí, y son justamente los que antes se perdían.</p>
+
+<h2>7. Desarrollo</h2>
+
+<h3>7.1 Maestro de repuestos</h3>
+<p>Cada ítem del pañol se carga en <b>Vehículos → Mantenimiento → Repuestos → solapa Inventario</b> con nombre, código si tiene, unidad de medida, ubicación física, clase ABC y su banda de mínimo / objetivo / máximo. Un ítem sin mínimo definido no tiene regla que cumplir y queda afuera del indicador de cumplimiento: definir el mínimo es parte de darlo de alta, no un paso opcional.</p>
+
+<h3>7.2 Criterio para fijar el mínimo</h3>
+<table>
+<tr><th>Clase</th><th>Criterio</th><th>Mínimo sugerido</th></tr>
+<tr><td>A — para la unidad</td><td>No puede faltar. Se cubre el plazo de reposición del proveedor más el consumo del período.</td><td>Consumo de 30 días, nunca menor a 1</td></tr>
+<tr><td>B — degrada el servicio</td><td>Se acepta esperar la reposición si hay alternativa.</td><td>Consumo de 15 días</td></tr>
+<tr><td>C — consumible</td><td>Se compra por lote, el costo de quiebre es bajo.</td><td>Consumo de 7 días</td></tr>
+</table>
+<p>El consumo se lee del historial de movimientos de egreso del ítem. Los primeros meses, mientras el historial es corto, el mínimo se fija por criterio del SDF y se revisa al trimestre.</p>
+
+<h3>7.3 Ingreso al pañol</h3>
+<p>Todo ingreso se registra como <b>movimiento de ingreso</b> sobre el ítem, con la cantidad, la fecha y el motivo (número de remito o de orden de compra). El stock nunca se corrige editando la existencia: se corrige con un movimiento, para que el historial explique cada cambio.</p>
+
+<h3>7.4 Egreso: la pieza sale contra un trabajo</h3>
+<p>Cuando la pieza se usa en un trabajo, el egreso sale de la <b>orden de trabajo</b>: al cargar el repuesto en la OT se elige el ítem del pañol y la app descuenta el stock en la misma transacción, dejando el movimiento enganchado con el número de OT y el dominio.</p>
+<div class="nota"><b>Por qué importa:</b> antes de esto la descripción del repuesto en la OT era texto libre y el egreso se cargaba aparte, a mano. Un foco cambiado en depósito no descontaba de ningún lado, y el desvío recién aparecía en el conteo físico del mes, sin causa. La trazabilidad que pide el R2.3.2 es exactamente esta: de la pieza al trabajo y del trabajo a la unidad.</div>
+<p>El egreso que no corresponde a una OT (por ejemplo una pieza que se rompe en el pañol, o un préstamo) se registra como movimiento de egreso con el motivo escrito.</p>
+
+<h3>7.5 Reposición</h3>
+<p>Cuando el stock queda por debajo del mínimo, el SDF emite la orden de compra en la solapa <b>Órdenes de compra</b> por la diferencia hasta el stock objetivo, con proveedor y fecha. La OC queda abierta hasta que se registra el ingreso.</p>
+
+<h3>7.6 Conteo físico mensual</h3>
+<p>Una vez por mes se cuenta el pañol completo en la solapa <b>Conteo de stock</b>. El sistema deja registrado, por ítem, el stock del sistema y el stock contado, y ajusta la existencia al valor contado. Cada diferencia se explica: no alcanza con ajustar. Las causas típicas son egreso no registrado, ingreso no registrado y error de conteo.</p>
+
+<h2>8. Control e indicadores</h2>
+<table>
+<tr><th>Indicador</th><th>Cálculo</th><th>Meta</th><th>Frecuencia</th></tr>
+<tr><td>Exactitud de inventario</td><td>Ítems sin diferencia en el conteo ÷ ítems contados</td><td>≥ 95 %</td><td>Mensual</td></tr>
+<tr><td>Cumplimiento del stock mínimo</td><td>Ítems en o por encima del mínimo ÷ ítems con mínimo definido</td><td>≥ 95 %</td><td>Mensual</td></tr>
+<tr><td>Trazabilidad de egresos</td><td>Repuestos de OT vinculados a un ítem del pañol ÷ repuestos de OT que salieron del pañol</td><td>100 %</td><td>Mensual</td></tr>
+<tr><td>Quiebres con unidad parada</td><td>Cantidad de trabajos demorados por falta de pieza en el mes</td><td>0</td><td>Mensual</td></tr>
+</table>
+<p>Los dos primeros están cargados como PI de flota en la app, con su serie histórica y su plan de acción. Un mes por debajo de la meta abre plan de acción con causa raíz; si se repite, se le aplica un 5 Porqués desde el mismo plan.</p>
+
+<h2>9. Registros</h2>
+<ul>
+<li>Maestro de repuestos con su banda y su clase ABC (app).</li>
+<li>Historial de movimientos por ítem, con motivo y stock resultante (app, permanente).</li>
+<li>Conteos físicos mensuales con la diferencia por ítem (app).</li>
+<li>Órdenes de compra y remitos de ingreso (app + carpeta de compras).</li>
+</ul>
+
+<h2>10. Control de revisiones</h2>
+<table>
+<tr><th>N.º</th><th>Responsable</th><th>Cargo</th><th>Descripción</th><th>Fecha</th></tr>
+<tr><td>0</td><td>&nbsp;</td><td>SDF</td><td>Elaboración del procedimiento (borrador)</td><td>25/08/2026</td></tr>
+<tr><td>1</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+
+</body></html>

@@ -1,0 +1,120 @@
+<html><head><meta charset="utf-8"><title>SOP - Politicas y Gestion de Neumaticos</title><style>
+body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#111}
+h1{font-size:16pt;border-bottom:2px solid #333;padding-bottom:4px}
+h2{font-size:12.5pt;margin-top:18px;text-transform:uppercase;color:#1f4e79}
+h3{font-size:11.5pt;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:10pt;margin-top:6px}
+th,td{border:1px solid #999;padding:4px 6px;vertical-align:top}
+th{background:#eef3f8}
+.nota{background:#fff8e1;border-left:3px solid #e0a800;padding:6px 10px;font-size:10pt}
+</style></head><body>
+
+<h1>SOP — Políticas y Gestión de Neumáticos</h1>
+<p><b>Pilar:</b> Flota · <b>Punto DPO:</b> 3.4 · <b>Requisitos:</b> R3.4.3, R3.4.4<br>
+<b>Estado:</b> BORRADOR para revisión · <b>Elaborado:</b> 25/08/2026 · <b>Revisión:</b> 0</p>
+
+<h2>1. Objetivo</h2>
+<p>Definir cómo se controla, se rota, se recapa y se da de baja cada cubierta de la flota, con medición mensual de profundidad y presión, para que el reemplazo se decida por el estado real de la goma y no por el km teórico, y para que un desgaste anormal se detecte como síntoma de alineación, presión o carga.</p>
+
+<h2>2. Alcance</h2>
+<p>Todas las cubiertas instaladas en unidades obligadas al control: camiones y autoelevadores. Las cubiertas de acoplado se controlan junto con el tractor. La rueda de auxilio se inventaría pero no entra en el cálculo de desgaste: viaja, no apoya.</p>
+
+<h2>3. Definiciones</h2>
+<table>
+<tr><th>Término</th><th>Significado</th></tr>
+<tr><td>Ronda</td><td>Medición mensual de toda la flota con calibre. Es la unidad de dato del programa.</td></tr>
+<tr><td>Profundidad de dibujo</td><td>Milímetros de goma remanente, medidos con calibre en el canal de referencia de la banda.</td></tr>
+<tr><td>Mínimo legal / de circulación</td><td>3 mm. Por debajo, la cubierta sale de circulación.</td></tr>
+<tr><td>Nivel de alerta</td><td>5 mm. A partir de acá se programa el reemplazo o el recapado.</td></tr>
+<tr><td>Recapado</td><td>Reconstrucción de la banda de rodamiento. La cubierta vuelve con más goma que la que tenía: corta el tramo de medición.</td></tr>
+<tr><td>Tasa de desgaste</td><td>Milímetros consumidos cada 1.000 km. Es lo que permite proyectar el cambio.</td></tr>
+<tr><td>Números de fuego</td><td>Identificación grabada en el flanco. Es la matrícula de la cubierta.</td></tr>
+</table>
+
+<h2>4. RACI</h2>
+<table>
+<tr><th>Actividad</th><th>SDF</th><th>PM / Operario</th><th>JDL</th><th>Proveedor</th></tr>
+<tr><td>Alta de la cubierta con sus números de fuego</td><td>R</td><td>C</td><td>A</td><td>I</td></tr>
+<tr><td>Ronda mensual de medición</td><td>A</td><td>R</td><td>I</td><td>—</td></tr>
+<tr><td>Control de presión</td><td>A</td><td>R</td><td>I</td><td>—</td></tr>
+<tr><td>Rotación y alineación</td><td>R</td><td>C</td><td>A</td><td>C</td></tr>
+<tr><td>Envío y recepción de recapados</td><td>R</td><td>C</td><td>A</td><td>R</td></tr>
+<tr><td>Baja y disposición final</td><td>R</td><td>C</td><td>A</td><td>R</td></tr>
+<tr><td>Análisis de desgaste y plan de acción</td><td>R</td><td>I</td><td>A</td><td>I</td></tr>
+</table>
+<p style="font-size:10pt"><b>R</b> el que hace · <b>A</b> el dueño del indicador · <b>C</b> consultado · <b>I</b> informado.</p>
+
+<h2>5. Flujograma</h2>
+<ol>
+<li>Alta de la cubierta: se registra con números de fuego, marca, medida, tipo (nueva o recapada) y su dibujo declarado.</li>
+<li>Montaje en una posición de una unidad.</li>
+<li>Ronda mensual: se mide profundidad y presión de cada posición.</li>
+<li>¿Profundidad menor a 5 mm? <b>Sí</b> → se programa reemplazo o recapado. <b>No</b> → sigue.</li>
+<li>¿Profundidad menor a 3 mm? <b>Sí</b> → la unidad no sale hasta reemplazarla.</li>
+<li>Al desmontar: recapado (vuelve al circuito) o baja (sale como residuo, con certificado).</li>
+<li>Cierre mensual: cobertura de la ronda, conformidad, desgaste por unidad y por eje, plan de acción sobre los desvíos.</li>
+</ol>
+
+<h2>6. Campo de aplicación</h2>
+<p>CD y taller. La medición la hace el operario en el playón, con calibre, unidad por unidad.</p>
+
+<h2>7. Desarrollo</h2>
+
+<h3>7.1 Alta e identificación</h3>
+<p>Cada cubierta se da de alta con sus números de fuego, marca, medida y tipo. El dibujo que se carga en el alta es el <b>declarado del modelo</b>, no una medición: sirve para saber con cuánta goma entró, pero no es un punto de medición contra el cual restar. La app lo distingue explícitamente.</p>
+
+<h3>7.2 Ronda mensual</h3>
+<p>Una vez por mes se mide <b>toda la flota obligada</b>, no una muestra. Por cada posición se registra profundidad y presión.</p>
+<ul>
+<li><b>Siempre el mismo canal</b> de la banda. Cambiar de canal entre rondas mete una diferencia que después se lee como desgaste.</li>
+<li><b>Calibre</b>, no regla ni estimación visual.</li>
+<li>El <b>km</b> de la medición no se le pide al que mide: lo estampa la app desde el odómetro de las lecturas reales de la unidad, si hay una lectura buena dentro de los 7 días.</li>
+<li>La ronda se carga desde <b>Mis neumáticos</b> (operario) o desde el módulo de Neumáticos (supervisión).</li>
+</ul>
+<div class="nota"><b>Cobertura completa o el dato no sirve:</b> en agosto de 2026 se midieron 5 unidades de 16. Sin la flota completa cada mes no hay con qué comparar, y el desgaste por km no converge nunca. La cobertura de la ronda es, por ahora, el indicador más importante del programa.</div>
+
+<h3>7.3 Presión</h3>
+<p>Rango de trabajo: <b>90 a 120 psi</b>. La presión se controla en frío. Una presión baja sostenida se ve después como desgaste en los hombros de la banda; una presión alta, como desgaste en el centro.</p>
+
+<h3>7.4 Rotación y alineación</h3>
+<p>La rotación se programa según el desgaste medido, no por calendario fijo. Se dispara cuando dos cubiertas del mismo eje muestran tasas de desgaste distintas entre sí por encima del 40 %: eso no es la goma, es alineación, presión o carga. La alineación se verifica al reemplazar cubiertas de dirección y ante cualquier desgaste irregular.</p>
+
+<h3>7.5 Recapado</h3>
+<p>Se envía a recapar la cubierta que llega al nivel de alerta con la carcasa en condiciones. Se registra el remito de envío, y al volver se registra el retorno con el dibujo declarado por el recapador. Ese valor también es nominal, no medido.</p>
+
+<h3>7.6 Baja y disposición</h3>
+<p>La cubierta que llega al mínimo o presenta daño estructural se da de baja con su comprobante y sale por el circuito de residuos, con certificado de disposición final y sus números de fuego. Ver el SOP de Disposición de Residuos de Mantenimiento (1.4).</p>
+
+<h3>7.7 Desgaste por km</h3>
+<p>La tasa se calcula sobre las mediciones de ronda, ajustando una recta sobre todos los puntos del tramo de vida vigente. Se lee a dos niveles:</p>
+<ul>
+<li><b>Por unidad y eje</b>: junta los puntos de las cubiertas del eje, converge antes y es el número que se usa para decidir.</li>
+<li><b>Por cubierta</b>: sirve para detectar la que se sale del promedio de sus pares.</li>
+</ul>
+<p>Con dos rondas la tasa todavía no significa nada: la dispersión del calibre es más grande que el desgaste de un mes. Se necesitan entre 5 y 8 rondas mensuales seguidas con la flota completa para que el número sea utilizable.</p>
+
+<h2>8. Control e indicadores</h2>
+<table>
+<tr><th>Indicador</th><th>Cálculo</th><th>Meta</th><th>Frecuencia</th></tr>
+<tr><td>Medición de neumáticos (cobertura)</td><td>Cubiertas medidas en el mes ÷ cubiertas instaladas obligadas</td><td>100 %</td><td>Mensual</td></tr>
+<tr><td>Conformidad de neumáticos</td><td>Cubiertas medidas dentro de norma ÷ cubiertas medidas</td><td>100 %</td><td>Mensual</td></tr>
+<tr><td>Desgaste por 1.000 km</td><td>Pendiente de la recta ajustada sobre las rondas, por unidad y eje</td><td>A definir cuando haya 5 rondas</td><td>Mensual</td></tr>
+<tr><td>Cubiertas fuera del promedio de sus pares</td><td>Cubiertas con desvío mayor a 40 % contra su unidad+eje</td><td>0</td><td>Mensual</td></tr>
+</table>
+
+<h2>9. Registros</h2>
+<ul>
+<li>Inventario de cubiertas con números de fuego, posición y estado (app).</li>
+<li>Mediciones por ronda, con profundidad, presión y km (app, permanente).</li>
+<li>Remitos de recapado y comprobantes de baja (app).</li>
+<li>Certificados de disposición final (app, solapa Residuos).</li>
+</ul>
+
+<h2>10. Control de revisiones</h2>
+<table>
+<tr><th>N.º</th><th>Responsable</th><th>Cargo</th><th>Descripción</th><th>Fecha</th></tr>
+<tr><td>0</td><td>&nbsp;</td><td>SDF</td><td>Elaboración del procedimiento (borrador)</td><td>25/08/2026</td></tr>
+<tr><td>1</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+
+</body></html>
