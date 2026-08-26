@@ -12,6 +12,8 @@ import {
   TIPOS_NEUMATICOS_OBLIGATORIOS,
 } from "@/lib/flota/neumaticos-control"
 import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
+import { tasaFlota } from "@/lib/vehiculos/desgaste-neumaticos"
+import { getDesgasteNeumaticos } from "@/actions/neumaticos"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 
 export type FlotaKpi =
@@ -29,6 +31,7 @@ export type FlotaKpi =
   | "estandares_excelencia"
   | "inventario_exactitud"
   | "repuestos_stock_minimo"
+  | "repuestos_trazabilidad"
   | "combustible_kml"
   | "co2_flota"
   | "cil_tareas"
@@ -36,6 +39,7 @@ export type FlotaKpi =
   | "correctivo_dias_parado"
   | "neumaticos_conformidad"
   | "neumaticos_medicion"
+  | "neumaticos_desgaste"
 
 export type PlanFlotaEstado = "abierto" | "en_progreso" | "cerrado"
 export type PlanFlotaItemEstado = "pendiente" | "en_progreso" | "completado"
@@ -298,7 +302,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .map((it) => it.id),
     )
 
-    const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes, vehRes] = await Promise.all([
+    const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes, vehRes, repOtRes] = await Promise.all([
       supabase
         .from("mantenimiento_realizados")
         .select("dominio, fecha, rubro")
@@ -351,6 +355,13 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       // Catálogo: hace falta para saber QUÉ unidad es cada dominio. Sin esto,
       // los días parado contaban equipos de depósito y unidades dadas de baja.
       supabase.from("catalogo_vehiculos").select("dominio, tipo, sector, active"),
+      // Trazabilidad de egresos (DPO 2.3): filas de repuesto de OT y si apuntan
+      // o no a un ítem del pañol. La fecha es la de la OT, no la de la fila.
+      supabase
+        .from("mantenimiento_realizado_repuestos")
+        .select("repuesto_id, ot:mantenimiento_realizados!inner(fecha, estado)")
+        .neq("ot.estado", "cancelado")
+        .gte("ot.fecha", inicioVentana),
     ])
     if (otRes.error) return { error: otRes.error.message }
     if (otParadaRes.error) return { error: otParadaRes.error.message }
@@ -361,6 +372,45 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     if (cargasRes.error) return { error: cargasRes.error.message }
     if (cilRes.error) return { error: cilRes.error.message }
     if (vehRes.error) return { error: vehRes.error.message }
+    if (repOtRes.error) return { error: repOtRes.error.message }
+
+    /**
+     * Trazabilidad de egresos de pañol (DPO 2.3, R2.3.2): de los repuestos que
+     * se cargan en una OT, cuántos apuntan al ítem del pañol y por lo tanto
+     * descuentan stock solos.
+     *
+     * 🚨 El denominador son TODAS las filas de repuesto de la OT, incluidas las
+     * compradas contra la OT que nunca entraron al pañol y que por diseño no
+     * deben vincular. Por eso la meta NO es 100 %: el número que se pone es la
+     * proporción de piezas que la operación espera sacar del pañol. La
+     * alternativa —preguntar en cada fila si salió del pañol— es autodeclarada
+     * y no sirve como control.
+     *
+     * Piso de fecha: antes del 25/08/2026 el vínculo no existía en la app, así
+     * que los meses anteriores dan `null` (sin dato) y no 0 %.
+     */
+    const INICIO_TRAZABILIDAD = "2026-08-25"
+    const trazaMes = new Map<string, { total: number; vinculados: number }>()
+    for (const r of (repOtRes.data || []) as unknown as Array<{
+      repuesto_id: string | null
+      ot: { fecha: string } | null
+    }>) {
+      const fecha = r.ot?.fecha
+      if (!fecha || fecha < INICIO_TRAZABILIDAD) continue
+      const ym = fecha.slice(0, 7)
+      const acc = trazaMes.get(ym) ?? { total: 0, vinculados: 0 }
+      acc.total++
+      if (r.repuesto_id) acc.vinculados++
+      trazaMes.set(ym, acc)
+    }
+
+    /**
+     * Desgaste real de cubiertas (DPO 3.4). Se reusa el mismo cálculo que el
+     * tablero de Neumáticos —una sola recta por toda la flota— en vez de
+     * recalcularlo acá: si mañana cambia el criterio, cambia en un solo lugar.
+     */
+    const desgaste = await getDesgasteNeumaticos()
+    const tasa = tasaFlota(desgaste.data.periodos.todo)
 
     /**
      * Unidades que cuentan para los PI de flota: camiones activos de
@@ -797,6 +847,33 @@ export async function getFlotaKpiSeriesExtra(): Promise<
             n: c?.medidas ?? 0,
           }
         }),
+        // Trazabilidad de egresos de pañol (DPO 2.3). Mes anterior al vínculo
+        // = null: no se puede exigir lo que la app no permitía hacer.
+        repuestos_trazabilidad: meses.map((ym) => {
+          const t = trazaMes.get(ym)
+          return {
+            ym,
+            valor: t && t.total > 0 ? (t.vinculados / t.total) * 100 : null,
+            n: t?.vinculados ?? 0,
+            nTotal: t?.total ?? 0,
+          }
+        }),
+        /**
+         * Desgaste de cubiertas en mm por cada 1.000 km (DPO 3.4).
+         *
+         * 🚨 NO es un número mensual y por eso va sólo en el mes en curso: sale
+         * de una recta ajustada sobre TODAS las rondas del programa. Con dos o
+         * tres rondas la pendiente todavía se mueve con el ruido del calibre,
+         * así que la serie mes a mes mostraría un zigzag que no es desgaste.
+         * `promedioPonderado` devuelve null hasta juntar `MIN_KM_TRAMO`, que es
+         * la forma honesta de decir "todavía no hay número".
+         */
+        neumaticos_desgaste: meses.map((ym) => ({
+          ym,
+          valor: ym === meses[meses.length - 1] ? (tasa?.mmPorMilKm ?? null) : null,
+          n: ym === meses[meses.length - 1] ? (tasa?.cubiertas ?? 0) : null,
+          nTotal: ym === meses[meses.length - 1] ? (tasa?.kmMedidos ?? null) : null,
+        })),
         // Cuánto de la rutina mensual se cumplió.
         neumaticos_medicion: meses.map((ym) => {
           const c = neumaticosMes.get(ym)

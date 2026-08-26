@@ -266,6 +266,16 @@ const KPI_DEFS: KpiDef[] = [
     nLabel: { sing: "repuesto con mínimo", plural: "repuestos con mínimo" },
   },
   {
+    kpi: "repuestos_trazabilidad",
+    label: "Trazabilidad de egresos",
+    descripcion:
+      "Repuestos cargados en una OT que apuntan al ítem del pañol (y por lo tanto descuentan stock solos) ÷ repuestos cargados en OT del mes. El denominador incluye las piezas compradas contra la OT, que por diseño no vinculan: la meta es la proporción que la operación espera sacar del pañol, no 100 %. Arranca el 25/08/2026, que es cuando el vínculo existe",
+    fmt: (v) => `${v.toFixed(0)}%`,
+    conSerie: true,
+    dpo: "2.3",
+    nLabel: { sing: "repuesto vinculado", plural: "repuestos vinculados" },
+  },
+  {
     kpi: "combustible_kml",
     label: "Rendimiento de combustible",
     descripcion:
@@ -340,6 +350,19 @@ const KPI_DEFS: KpiDef[] = [
     conSerie: true,
     dpo: "3.4",
     nLabel: { sing: "cubierta medida", plural: "cubiertas medidas" },
+  },
+  // 🚨 Este NO tiene serie mensual a propósito: la tasa sale de una recta
+  // ajustada sobre todas las rondas del programa, no de lo que pasó en el mes.
+  // Mostrarla mes a mes dibujaría el ruido del calibre como si fuera desgaste.
+  {
+    kpi: "neumaticos_desgaste",
+    label: "Desgaste de cubiertas",
+    descripcion:
+      "Milímetros de dibujo que se come la flota cada 1.000 km, de la recta ajustada sobre todas las rondas de medición (Neumáticos → Desgaste por km). Menos es mejor. Queda en «—» hasta que las rondas junten km suficientes: con dos rondas la pendiente todavía la mueve el calibre",
+    fmt: (v) => `${v.toFixed(2)} mm/1.000 km`,
+    conSerie: false,
+    dpo: "3.4",
+    nLabel: { sing: "cubierta en el ajuste", plural: "cubiertas en el ajuste" },
   },
 ]
 

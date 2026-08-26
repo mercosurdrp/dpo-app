@@ -566,6 +566,15 @@ export function promedioPonderado(filas: FilaDesgaste[]): number | null {
   return tasaAgregada(filas)?.mmPorMilKm ?? null
 }
 
+/**
+ * Igual que `promedioPonderado` pero con el tamaño de la muestra al lado.
+ * Lo usa el PI de flota: una tasa sin cuántas cubiertas y cuántos km la
+ * sostienen se lee como si fuera una medición firme, y hoy no lo es.
+ */
+export function tasaFlota(filas: FilaDesgaste[]): Omit<PromedioDesgaste, "clave"> | null {
+  return tasaAgregada(filas)
+}
+
 function agrupar(
   filas: FilaDesgaste[],
   clave: (f: FilaDesgaste) => string | null
