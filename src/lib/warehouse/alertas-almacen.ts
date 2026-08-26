@@ -319,12 +319,15 @@ async function chequeoRequisitosLegales(sb: Sb, ahora: Date): Promise<Alerta[]> 
   // Los 13 matafuegos del depósito vencen todos el mismo día: una alerta por
   // cada uno serían 13 tarjetas para un único trámite. Se agrupan por
   // categoría + fecha y los equipos se listan en el detalle.
-  const grupos = new Map<string, { cat: string; fecha: string; nombres: string[] }>()
+  // El tipo va a mano: sin él, el `nombres: []` del fallback infiere never[]
+  // y el .push() de abajo no compila.
+  type GrupoLegal = { cat: string; fecha: string; nombres: string[] }
+  const grupos = new Map<string, GrupoLegal>()
   for (const f of filas ?? []) {
     const cat = catById.get(f.categoria_id)
     if (!cat) continue
     const clave = `${f.categoria_id}|${f.fecha_vencimiento}`
-    const g = grupos.get(clave) ?? { cat, fecha: f.fecha_vencimiento, nombres: [] }
+    const g: GrupoLegal = grupos.get(clave) ?? { cat, fecha: f.fecha_vencimiento, nombres: [] }
     g.nombres.push(String(f.nombre ?? "sin nombre"))
     grupos.set(clave, g)
   }
@@ -478,7 +481,7 @@ async function chequeoChecklistAutoelevadores(sb: Sb, ahora: Date): Promise<Aler
     if (!diasConActividad.has(iso)) continue // ese día no operó nadie
     for (const dom of dominios) {
       if (hechos.has(`${iso}|${dom}`)) continue
-      const acum = faltantesPorDominio.get(dom) ?? []
+      const acum: string[] = faltantesPorDominio.get(dom) ?? []
       acum.push(iso)
       faltantesPorDominio.set(dom, acum)
     }
