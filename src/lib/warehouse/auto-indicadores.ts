@@ -1389,11 +1389,20 @@ function computeAperturaLegacy(
 // 🚨 MENOS ES MEJOR. Y las dos escalas NO son comparables entre sí: el camión
 // de reparto lleva 9 pallets y el de acarreo 25.
 //
-// 🚨 Descarga hecha "de a dos": a CADA maquinista se le imputan los minutos
-// que estuvo en el camión, pero el total del día lo cuenta en minutos-PERSONA
-// (el doble). Por eso el total no es el promedio de las filas por operario —
-// es lo que le costó al almacén, no lo que le costó a cada uno. En la carga no
-// pasa: el WMS registra un único usuario por viaje.
+// 🚨 Descarga hecha "de a dos": a CADA maquinista se le imputan los minutos que
+// estuvo en el camión. Eso da DOS lecturas distintas del día y hay que tener
+// clarísimo cuál es cuál:
+//   · RELOJ         = lo que tardó el muelle. Es el indicador: "minutos por
+//                     camión" significa eso, y es lo único comparable con las
+//                     filas por operario.
+//   · MINUTOS-PERSONA = reloj × maquinistas del camión. Es el COSTO en mano de
+//                     obra, no el tiempo del camión.
+// Hasta el 2026-08-26 la celda mostraba minutos-persona: el 25/08 Martínez hizo
+// 3 camiones en 36' (12 min/camión) y Cerbin lo acompañó en uno (13,4'), y el
+// total daba 49,4÷3 = 16,5 min/camión — más alto que CUALQUIERA de los dos, con
+// el mismo rótulo. Ahora la celda va en reloj (12,0) y los minutos-persona
+// quedan como dato secundario en el popover. En la carga no hay "de a dos": el
+// WMS registra un único usuario por viaje y las dos lecturas coinciden.
 //
 // El promedio (celda MTD) pondera por CAMIÓN, no por día: un día de un solo
 // camión no puede pesar lo mismo que uno de cinco. Mismo criterio que la
@@ -1454,11 +1463,14 @@ export interface MinutosCamionOperarioRow {
 
 export interface MinutosCamionTotalDia {
   camiones: number
-  /** Descarga: minutos-persona. Carga: reloj. */
+  /** Minutos de RELOJ del día: lo que estuvo ocupado el muelle. */
   minutos: number
+  /** Min/camión en reloj. Es el valor del indicador y el que va en la celda. */
   min_camion: number
-  /** Sólo descarga: el mismo total contado en reloj (sin duplicar el de a dos). */
-  min_camion_reloj: number | null
+  /** Costo en mano de obra: reloj × maquinistas. En carga = `minutos`. */
+  minutos_persona: number
+  /** Min/camión contando minutos-persona. Secundario: NO es el indicador. */
+  min_camion_persona: number
   pallets: number
   pal_h: number
 }
@@ -1513,10 +1525,27 @@ async function fetchMinutosCamion(
   )
 }
 
-/** Minutos-persona del día (descarga) o reloj (carga): lo que le costó al almacén. */
-function minutosDelTotal(t: MinutosTotalApi): number {
-  const v = t.minutos_persona ?? t.minutos
+function n(v: unknown): number {
   return Number.isFinite(Number(v)) ? Number(v) : 0
+}
+
+/**
+ * Minutos de RELOJ del día: lo que tardó el muelle, sin duplicar el camión
+ * hecho de a dos. En carga el endpoint no manda `minutos_reloj` porque no hace
+ * falta — ahí `minutos` YA es reloj.
+ */
+function minutosRelojDelTotal(t: MinutosTotalApi): number {
+  return n(t.minutos_reloj ?? t.minutos ?? t.minutos_persona)
+}
+
+/** Minutos-persona: el costo en mano de obra. En carga coincide con el reloj. */
+function minutosPersonaDelTotal(t: MinutosTotalApi): number {
+  return n(t.minutos_persona ?? t.minutos)
+}
+
+/** Min/camión en reloj: el valor del indicador. */
+function minCamionRelojDelTotal(t: MinutosTotalApi): number {
+  return n(t.min_camion_reloj ?? t.min_camion)
 }
 
 /**
@@ -1552,8 +1581,8 @@ export async function buildMinutosCamionSerie(
       mtd[f] = accCamiones > 0 ? Math.round((accMinutos / accCamiones) * 10) / 10 : null
       continue
     }
-    dia[f] = Math.round(Number(t.min_camion) * 10) / 10
-    accMinutos += minutosDelTotal(t)
+    dia[f] = Math.round(minCamionRelojDelTotal(t) * 10) / 10
+    accMinutos += minutosRelojDelTotal(t)
     accCamiones += Number(t.camiones) || 0
     mtd[f] = accCamiones > 0 ? Math.round((accMinutos / accCamiones) * 10) / 10 : null
   }
@@ -1585,12 +1614,10 @@ export async function buildAperturaMinutosCamionDelDia(
     t && Number(t.camiones) > 0
       ? {
           camiones: Number(t.camiones) || 0,
-          minutos: Math.round(minutosDelTotal(t) * 10) / 10,
-          min_camion: Math.round(Number(t.min_camion) * 10) / 10,
-          min_camion_reloj:
-            t.min_camion_reloj != null
-              ? Math.round(Number(t.min_camion_reloj) * 10) / 10
-              : null,
+          minutos: Math.round(minutosRelojDelTotal(t) * 10) / 10,
+          min_camion: Math.round(minCamionRelojDelTotal(t) * 10) / 10,
+          minutos_persona: Math.round(minutosPersonaDelTotal(t) * 10) / 10,
+          min_camion_persona: Math.round(n(t.min_camion) * 10) / 10,
           pallets: Number(t.pallets) || 0,
           pal_h: Number(t.pal_h) || 0,
         }

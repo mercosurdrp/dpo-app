@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic"
 // Vive acá y no en deposito-esteban porque las tablas que mira están detrás
 // de RLS y la anon key devuelve [] en todas: hace falta service role.
 //
-// Las notificaciones NO salen de acá: este endpoint sólo describe el estado.
-// Quién recibe qué lo decide el cron, y hoy va únicamente a Esteban.
+// Las notificaciones NO salen de acá y no salen de ningún lado: el 26-08-2026
+// se descartaron el mail y el WhatsApp. La pestaña es el único canal.
 
 export async function GET(request: NextRequest) {
   if (IS_MISIONES) {

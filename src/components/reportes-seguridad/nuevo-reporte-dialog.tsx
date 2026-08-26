@@ -28,14 +28,16 @@ import {
   REPORTE_SEGURIDAD_LOCALIDAD_LABELS,
   REPORTE_SEGURIDAD_AREA_LABELS,
   REPORTE_SEGURIDAD_PUESTO_LABELS,
-  REPORTE_SEGURIDAD_TIPO_SIF_LABELS,
+  REPORTE_SEGURIDAD_SIF_NO,
+  REPORTE_SEGURIDAD_SIF_SELECCION_LABELS,
   REPORTE_SEGURIDAD_TIPO_ACCIDENTE_LABELS,
+  sifSeleccionDeReporte,
   type ReporteSeguridad,
   type ReporteSeguridadTipo,
   type ReporteSeguridadLocalidad,
   type ReporteSeguridadArea,
   type ReporteSeguridadPuesto,
-  type ReporteSeguridadTipoSif,
+  type ReporteSeguridadSifSeleccion,
   type ReporteSeguridadTipoAccidente,
 } from "@/types/database"
 
@@ -75,10 +77,11 @@ const PUESTOS: ReporteSeguridadPuesto[] = [
   "otro",
 ]
 
-const TIPOS_SIF: ReporteSeguridadTipoSif[] = [
+const TIPOS_SIF: ReporteSeguridadSifSeleccion[] = [
   "sif_actual",
   "sif_potencial",
   "sif_precursor",
+  REPORTE_SEGURIDAD_SIF_NO,
 ]
 
 const TIPOS_ACCIDENTE: ReporteSeguridadTipoAccidente[] = [
@@ -145,7 +148,7 @@ export function NuevoReporteDialog({
     ReporteSeguridadPuesto | ""
   >("")
   const [dentroCD, setDentroCD] = useState<DentroCD>("")
-  const [tipoSif, setTipoSif] = useState<ReporteSeguridadTipoSif | "">("")
+  const [tipoSif, setTipoSif] = useState<ReporteSeguridadSifSeleccion | "">("")
   const [tipoAccidente, setTipoAccidente] = useState<
     ReporteSeguridadTipoAccidente | ""
   >("")
@@ -177,7 +180,7 @@ export function NuevoReporteDialog({
             ? "fuera"
             : ""
       )
-      setTipoSif(reporte.tipo_sif ?? "")
+      setTipoSif(sifSeleccionDeReporte(reporte) ?? "")
       setTipoAccidente(reporte.tipo_accidente ?? "")
       setQuienQue(reporte.quien_que ?? "")
       setFiles([])
@@ -305,7 +308,10 @@ export function NuevoReporteDialog({
             ? false
             : null
         : null,
-      tipo_sif: (tipoSif || null) as ReporteSeguridadTipoSif | null,
+      // "No es SIF" no existe en el enum de la base: viaja como sif=false.
+      sif: tipoSif ? tipoSif !== REPORTE_SEGURIDAD_SIF_NO : null,
+      tipo_sif:
+        tipoSif && tipoSif !== REPORTE_SEGURIDAD_SIF_NO ? tipoSif : null,
       tipo_accidente: (tipoAccidente || null) as ReporteSeguridadTipoAccidente | null,
       quien_que: !esAccIncid ? quienQue || null : null,
     }
@@ -496,7 +502,7 @@ export function NuevoReporteDialog({
                 <Select
                   value={tipoSif}
                   onValueChange={(v) =>
-                    setTipoSif((v ?? "") as ReporteSeguridadTipoSif | "")
+                    setTipoSif((v ?? "") as ReporteSeguridadSifSeleccion | "")
                   }
                 >
                   <SelectTrigger className="w-full">
@@ -505,7 +511,7 @@ export function NuevoReporteDialog({
                   <SelectContent>
                     {TIPOS_SIF.map((s) => (
                       <SelectItem key={s} value={s}>
-                        {REPORTE_SEGURIDAD_TIPO_SIF_LABELS[s]}
+                        {REPORTE_SEGURIDAD_SIF_SELECCION_LABELS[s]}
                       </SelectItem>
                     ))}
                   </SelectContent>

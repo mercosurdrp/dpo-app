@@ -99,7 +99,9 @@ function normalizeReporteFields(input: ReporteInput) {
     damnificado_nombre: esAccIncid ? input.damnificado_nombre?.trim() || null : null,
     damnificado_puesto: esAccIncid ? input.damnificado_puesto || null : null,
     dentro_cd: esAccIncid ? input.dentro_cd ?? null : null,
-    sif: esAccIncid ? input.sif ?? null : null,
+    // El selector de SIF está disponible para todos los tipos de reporte, así
+    // que `sif` (false = "No es SIF") no se limita a accidentes/incidentes.
+    sif: input.sif ?? null,
     tipo_sif: input.tipo_sif ?? null,
     tipo_accidente: input.tipo_accidente ?? null,
     quien_que: !esAccIncid ? input.quien_que?.trim() || null : null,
