@@ -2476,6 +2476,35 @@ export const REPORTE_SEGURIDAD_TIPO_SIF_LABELS: Record<
   sif_precursor: "SIF Precursor",
 }
 
+// Cuarta opción del selector "Tipo de SIF". NO es un valor del enum
+// `reporte_seguridad_tipo_sif` de la base: se guarda como `sif = false` con
+// `tipo_sif = null`, así el reporte queda marcado explícitamente como "no es
+// SIF" sin necesidad de un ALTER TYPE, y las pirámides y las reuniones —que
+// agrupan por `tipo_sif`— lo siguen ignorando igual que antes.
+export const REPORTE_SEGURIDAD_SIF_NO = "no_es_sif" as const
+
+export type ReporteSeguridadSifSeleccion =
+  | ReporteSeguridadTipoSif
+  | typeof REPORTE_SEGURIDAD_SIF_NO
+
+export const REPORTE_SEGURIDAD_SIF_SELECCION_LABELS: Record<
+  ReporteSeguridadSifSeleccion,
+  string
+> = {
+  ...REPORTE_SEGURIDAD_TIPO_SIF_LABELS,
+  no_es_sif: "No es SIF",
+}
+
+/** Qué mostrar/preseleccionar en el selector de SIF de un reporte guardado. */
+export function sifSeleccionDeReporte(r: {
+  sif: boolean | null
+  tipo_sif: ReporteSeguridadTipoSif | null
+}): ReporteSeguridadSifSeleccion | null {
+  if (r.tipo_sif) return r.tipo_sif
+  if (r.sif === false) return REPORTE_SEGURIDAD_SIF_NO
+  return null
+}
+
 export const REPORTE_SEGURIDAD_TIPO_ACCIDENTE_LABELS: Record<
   ReporteSeguridadTipoAccidente,
   string

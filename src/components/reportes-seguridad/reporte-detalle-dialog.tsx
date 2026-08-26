@@ -31,8 +31,10 @@ import {
   REPORTE_SEGURIDAD_LOCALIDAD_LABELS,
   REPORTE_SEGURIDAD_AREA_LABELS,
   REPORTE_SEGURIDAD_PUESTO_LABELS,
-  REPORTE_SEGURIDAD_TIPO_SIF_LABELS,
+  REPORTE_SEGURIDAD_SIF_NO,
+  REPORTE_SEGURIDAD_SIF_SELECCION_LABELS,
   REPORTE_SEGURIDAD_TIPO_ACCIDENTE_LABELS,
+  sifSeleccionDeReporte,
   type ReporteSeguridadDetalle,
   type UserRole,
 } from "@/types/database"
@@ -112,6 +114,8 @@ export function ReporteDetalleDialog({
   const esAccIncid =
     detalle?.tipo === "accidente" || detalle?.tipo === "incidente"
 
+  const sifSel = detalle ? sifSeleccionDeReporte(detalle) : null
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -148,13 +152,19 @@ export function ReporteDetalleDialog({
                     {REPORTE_SEGURIDAD_AREA_LABELS[detalle.area]}
                   </Badge>
                 )}
-                {detalle.tipo_sif && (
+                {sifSel && (
                   <Badge
                     variant="secondary"
-                    className="bg-red-100 text-red-700"
+                    className={
+                      sifSel === REPORTE_SEGURIDAD_SIF_NO
+                        ? "bg-slate-100 text-slate-600"
+                        : "bg-red-100 text-red-700"
+                    }
                   >
-                    <AlertTriangle className="mr-1 size-3" />
-                    {REPORTE_SEGURIDAD_TIPO_SIF_LABELS[detalle.tipo_sif]}
+                    {sifSel !== REPORTE_SEGURIDAD_SIF_NO && (
+                      <AlertTriangle className="mr-1 size-3" />
+                    )}
+                    {REPORTE_SEGURIDAD_SIF_SELECCION_LABELS[sifSel]}
                   </Badge>
                 )}
                 {detalle.tipo_accidente && (

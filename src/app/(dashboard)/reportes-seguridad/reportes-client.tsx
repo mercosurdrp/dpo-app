@@ -37,8 +37,10 @@ import {
   REPORTE_SEGURIDAD_TIPO_COLORS,
   REPORTE_SEGURIDAD_LOCALIDAD_LABELS,
   REPORTE_SEGURIDAD_AREA_LABELS,
-  REPORTE_SEGURIDAD_TIPO_SIF_LABELS,
+  REPORTE_SEGURIDAD_SIF_NO,
+  REPORTE_SEGURIDAD_SIF_SELECCION_LABELS,
   REPORTE_SEGURIDAD_TIPO_ACCIDENTE_LABELS,
+  sifSeleccionDeReporte,
   type ReporteSeguridadConAutor,
   type ReporteSeguridadTipo,
   type ReporteSeguridadLocalidad,
@@ -492,12 +494,20 @@ export function ReportesSeguridadClient({
                     {r.descripcion}
                   </TableCell>
                   <TableCell className="text-sm">
-                    {r.tipo_sif ? (
+                    {sifSeleccionDeReporte(r) ? (
                       <Badge
                         variant="secondary"
-                        className="bg-red-100 text-red-700"
+                        className={
+                          r.tipo_sif
+                            ? "bg-red-100 text-red-700"
+                            : "bg-slate-100 text-slate-600"
+                        }
                       >
-                        {REPORTE_SEGURIDAD_TIPO_SIF_LABELS[r.tipo_sif]}
+                        {
+                          REPORTE_SEGURIDAD_SIF_SELECCION_LABELS[
+                            r.tipo_sif ?? REPORTE_SEGURIDAD_SIF_NO
+                          ]
+                        }
                       </Badge>
                     ) : (
                       <span className="text-muted-foreground">—</span>
