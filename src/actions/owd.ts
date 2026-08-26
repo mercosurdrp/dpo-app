@@ -1006,7 +1006,8 @@ export async function getOwdKpis(
         ? null
         : Number(metaRaw)
     const metaCumplimiento = Number(tplRes.data?.meta_cumplimiento_pct ?? 90)
-    // Padrón a cubrir: roles SKAP si la plantilla los declara, si no el array manual.
+    // Padrón a cubrir: los agendados del año si la plantilla va por cobertura,
+    // si no el array manual. NO sale de SKAP (ver owd-padron.ts).
     const permitidos = await resolverPadron(supabase as never, tplRes.data)
 
     const observaciones = (obsRes.data || []) as OwdObservacion[]

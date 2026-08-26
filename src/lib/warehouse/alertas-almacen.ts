@@ -135,7 +135,9 @@ async function chequeoOwdCobertura(sb: Sb, ahora: Date): Promise<Alerta[]> {
 
   const out: Alerta[] = []
   for (const t of deAlmacen) {
-    const padron = await resolverPadron(sb as never, t)
+    // El padrón sale de la agenda del año, no de SKAP: SKAP dice quién está
+    // capacitado, la agenda dice quién hace la tarea. Ver owd-padron.ts.
+    const padron = await resolverPadron(sb, t, Number(desdeMes.slice(0, 4)))
     if (padron.length === 0) continue
 
     const vistos = new Set(
