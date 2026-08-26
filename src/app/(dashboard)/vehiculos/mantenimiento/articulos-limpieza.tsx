@@ -460,86 +460,80 @@ function CuadroArticulos({
 
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {filas.map((d) => {
-          const entregados = ARTICULOS_LIMPIEZA.filter((a) =>
-            ultima.has(`${d}|${a.id}`),
-          ).length
-          const completa = entregados === ARTICULOS_LIMPIEZA.length
-          return (
-            <div
-              key={d}
-              className={`rounded-lg border p-3 ${
-                completa
-                  ? "border-emerald-500/40 bg-emerald-500/5"
-                  : "bg-muted/30"
-              }`}
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="truncate font-medium">{d}</span>
-                <span
-                  className={`shrink-0 text-xs font-semibold ${
-                    completa
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  {entregados}/{ARTICULOS_LIMPIEZA.length}
-                </span>
-              </div>
-              <div className="mt-2 grid grid-cols-3 gap-1.5">
-                {ARTICULOS_LIMPIEZA.map((a) => {
-                  const clave = `${d}|${a.id}`
-                  const fecha = ultima.get(clave)
-                  const ocupado = guardando === clave
-                  return (
-                    <button
-                      key={a.id}
-                      type="button"
-                      aria-pressed={!!fecha}
-                      disabled={!puedeEditar || ocupado}
-                      title={
-                        !puedeEditar
-                          ? fecha
-                            ? `Entregada el ${fmtFecha(fecha)}`
-                            : "Sin entregar"
-                          : fecha
-                            ? `Entregada el ${fmtFecha(fecha)} — tocar para deshacer`
-                            : `Marcar ${a.label} entregada hoy a ${d}`
-                      }
-                      onClick={() =>
-                        fecha
-                          ? setADesmarcar({ dominio: d, articulo: a.id, fecha })
-                          : void marcar(d, a.id)
-                      }
-                      className={`flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-1.5 text-xs transition-colors disabled:opacity-60 ${
-                        fecha
-                          ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                          : "border-dashed border-muted-foreground/40 text-muted-foreground"
-                      } ${
-                        puedeEditar && !ocupado
-                          ? "hover:border-emerald-500 hover:bg-emerald-500/20"
-                          : "cursor-default"
-                      }`}
-                    >
-                      <span className="flex items-center gap-1 font-medium">
-                        {ocupado ? (
-                          <Loader2 className="size-3 animate-spin" />
-                        ) : fecha ? (
-                          <Check className="size-3" strokeWidth={3} />
-                        ) : null}
-                        {a.label}
-                      </span>
-                      <span className="text-[11px] leading-tight opacity-80">
-                        {fecha ? fmtFecha(fecha) : "sin entregar"}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })}
+      <div className="overflow-x-auto">
+        <Table className="min-w-[32rem]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Unidad</TableHead>
+              <TableHead className="whitespace-nowrap">Última entrega</TableHead>
+              <TableHead>Artículos</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filas.map((d) => {
+              // Las fechas son ISO: ordenan bien como texto, la última es la más nueva.
+              const fechas = ARTICULOS_LIMPIEZA.map((a) => ultima.get(`${d}|${a.id}`))
+                .filter((f): f is string => !!f)
+                .sort()
+              const ultimaDeLaUnidad = fechas[fechas.length - 1]
+              return (
+                <TableRow key={d}>
+                  <TableCell className="font-medium whitespace-nowrap">{d}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {ultimaDeLaUnidad ? fmtFecha(ultimaDeLaUnidad) : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {ARTICULOS_LIMPIEZA.map((a) => {
+                        const clave = `${d}|${a.id}`
+                        const fecha = ultima.get(clave)
+                        const ocupado = guardando === clave
+                        return (
+                          <button
+                            key={a.id}
+                            type="button"
+                            aria-pressed={!!fecha}
+                            disabled={!puedeEditar || ocupado}
+                            title={
+                              !puedeEditar
+                                ? fecha
+                                  ? `Entregada el ${fmtFecha(fecha)}`
+                                  : "Sin entregar"
+                                : fecha
+                                  ? `Entregada el ${fmtFecha(fecha)} — tocar para deshacer`
+                                  : `Marcar ${a.label} entregada hoy a ${d}`
+                            }
+                            onClick={() =>
+                              fecha
+                                ? setADesmarcar({ dominio: d, articulo: a.id, fecha })
+                                : void marcar(d, a.id)
+                            }
+                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors disabled:opacity-60 ${
+                              fecha
+                                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                : "border-muted-foreground/30 bg-background text-muted-foreground"
+                            } ${
+                              puedeEditar && !ocupado
+                                ? "hover:border-emerald-500 hover:bg-emerald-500/20"
+                                : "cursor-default"
+                            }`}
+                          >
+                            {ocupado ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : fecha ? (
+                              <Check className="size-3" strokeWidth={3} />
+                            ) : null}
+                            {a.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
       </div>
 
       <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -548,16 +542,17 @@ function CuadroArticulos({
             aria-hidden
             className="size-3 rounded-sm border border-emerald-500/50 bg-emerald-500/40"
           />{" "}
-          entregado — con la fecha de la última entrega
+          entregado
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span
             aria-hidden
-            className="size-3 rounded-sm border border-dashed border-muted-foreground/50"
+            className="size-3 rounded-sm border border-muted-foreground/40 bg-background"
           />{" "}
           sin entregar
         </span>
-        {puedeEditar && <span>El botón marca con la fecha de hoy.</span>}
+        <span>La fecha es la de la última entrega de la unidad.</span>
+        {puedeEditar && <span>Tocar un artículo lo marca con la fecha de hoy.</span>}
       </p>
 
       {aDesmarcar && (
