@@ -57,10 +57,10 @@ const TEXTOS: Record<
     titulo: "Descarga de acarreos",
     descripcion: "Minutos por camión de abastecimiento",
     pie:
-      "Cuando un camión se descarga entre dos, a cada maquinista se le imputan " +
-      "los minutos que estuvo en él, pero el Total del día lo cuenta en " +
-      "minutos-persona (el doble): por eso el total no es el promedio de las " +
-      "filas de arriba.",
+      "El Total va en RELOJ: lo que estuvo ocupado el muelle, que es el " +
+      "indicador. Cuando un camión se descarga entre dos, a cada maquinista se " +
+      "le imputan los minutos que estuvo en él, así que sumar las filas da más " +
+      "que el reloj: esa suma es el costo en mano de obra y va en la fila gris.",
   },
 }
 
@@ -202,33 +202,54 @@ export function MaquinistasMinutosDetalleDiaDialog({
                 </TableRow>
               ))}
               {data.total && (
-                <TableRow className="border-t-2">
-                  <TableCell className="font-semibold">
-                    Total día
-                    {tramo === "descarga" && (
+                <>
+                  <TableRow className="border-t-2">
+                    <TableCell className="font-semibold">
+                      Total día
                       <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                        (min-persona)
+                        (reloj)
                       </span>
-                    )}
-                  </TableCell>
-                  <TableCell
-                    className={`text-right font-semibold tabular-nums ${colorMinutos(data.total.min_camion, tramo)}`}
-                  >
-                    {fmt(data.total.min_camion)}
-                  </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {fmt(data.total.camiones, 0)}
-                  </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {fmt(data.total.minutos, 0)}
-                  </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {fmt(data.total.pallets, 0)}
-                  </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {fmt(data.total.pal_h)}
-                  </TableCell>
-                </TableRow>
+                    </TableCell>
+                    <TableCell
+                      className={`text-right font-semibold tabular-nums ${colorMinutos(data.total.min_camion, tramo)}`}
+                    >
+                      {fmt(data.total.min_camion)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {fmt(data.total.camiones, 0)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {fmt(data.total.minutos, 0)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {fmt(data.total.pallets, 0)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {fmt(data.total.pal_h)}
+                    </TableCell>
+                  </TableRow>
+                  {/* Sólo aporta algo si hubo algún camión de a dos: si no,
+                      repite la fila de arriba. */}
+                  {data.total.minutos_persona > data.total.minutos && (
+                    <TableRow className="text-muted-foreground">
+                      <TableCell className="text-[12px]">
+                        Costo en mano de obra
+                        <span className="ml-1 text-[11px]">(min-persona)</span>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmt(data.total.min_camion_persona)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmt(data.total.camiones, 0)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmt(data.total.minutos_persona, 0)}
+                      </TableCell>
+                      <TableCell />
+                      <TableCell />
+                    </TableRow>
+                  )}
+                </>
               )}
             </TableBody>
           </Table>
