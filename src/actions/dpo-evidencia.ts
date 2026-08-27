@@ -20,6 +20,39 @@ function extractExt(filename: string): string {
   return idx >= 0 ? filename.slice(idx + 1).toLowerCase() : ""
 }
 
+/**
+ * Nombre seguro para la CLAVE del bucket.
+ *
+ * 🚨 Supabase Storage rechaza la clave con `Invalid key` si trae tildes, guión
+ * largo o cualquier cosa fuera de [A-Za-z0-9._-]. El 27/08/2026 no dejaba subir
+ * la nueva versión de "Política de Revisión Estado de Lonas y Marcas —
+ * Pampeana.docx": el archivo no se guardaba y el error salía crudo en pantalla.
+ *
+ * El nombre lindo NO se pierde: se sigue guardando tal cual en
+ * `dpo_archivos.file_name` / `dpo_archivo_versiones.file_name`, que es el que
+ * ve el usuario y con el que se descarga. Esto sanea sólo la ruta del bucket.
+ *
+ * Misma regla que `sanitizeFilename` del cliente (evidencia-punto-client.tsx),
+ * que ya saneaba: el camino de archivos grandes andaba y el de archivos chicos
+ * —que arma la ruta acá— no.
+ */
+function claveSegura(filename: string): string {
+  const dotIdx = filename.lastIndexOf(".")
+  const base = dotIdx >= 0 ? filename.slice(0, dotIdx) : filename
+  const ext = dotIdx >= 0 ? filename.slice(dotIdx) : ""
+  const safeBase = base
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+  const safeExt = ext
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9.]+/g, "")
+  return (safeBase || "archivo") + safeExt.toLowerCase()
+}
+
 function tituloPunto(pilar: string, punto: string): string {
   if (pilar === "entrega" && punto === "1.1") return "Pre Ruta"
   if (pilar === "entrega" && punto === "1.2") return "En Ruta"
@@ -214,7 +247,7 @@ export async function uploadArchivo(formData: FormData): Promise<Result<DpoArchi
     const file_ext = extractExt(file_name)
     const mime_type = file.type || "application/octet-stream"
     const file_size = file.size
-    const path = `${pilar_codigo}/${punto_codigo}/${archivo_id}/v1-${file_name}`
+    const path = `${pilar_codigo}/${punto_codigo}/${archivo_id}/v1-${claveSegura(file_name)}`
 
     const arrayBuffer = await file.arrayBuffer()
     const { error: upErr } = await supabase.storage
@@ -302,7 +335,7 @@ async function guardarNuevaVersionDesdeBuffer(args: {
   const nextVersion = current.current_version + 1
   const file_ext = extractExt(file_name)
   const file_size = contenido.byteLength
-  const path = `${current.pilar_codigo}/${current.punto_codigo}/${archivo_id}/v${nextVersion}-${file_name}`
+  const path = `${current.pilar_codigo}/${current.punto_codigo}/${archivo_id}/v${nextVersion}-${claveSegura(file_name)}`
 
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
