@@ -1,7 +1,8 @@
 # Borradores de SOP del pilar Flota
 
 Ocho borradores escritos el 25/08/2026 para los puntos de DPO Flota que no
-tenian SOP cargado en la app. Estan en HTML (la fuente, editable y versionada)
+tenian SOP cargado en la app, mas el programa de reconocimiento ATO del punto
+4.1 (R4.2.3), escrito el 27/08/2026. Estan en HTML (la fuente, editable y versionada)
 y en .docx (generado desde el HTML con Word, para revisar y firmar).
 
 | Punto | Archivo | Estado |
@@ -14,6 +15,7 @@ y en .docx (generado desde el HTML con Word, para revisar y firmar).
 | 3.4 | 3-4-politicas-y-gestion-de-neumaticos | Borrador |
 | 4.2 | 4-2-mejoras-y-resultados-de-mantenimiento | Borrador |
 | 4.3 | 4-3-metas-de-sustentabilidad | Borrador |
+| 4.1 | 4-1-programa-de-reconocimiento-ato | Borrador · escrito el 27/08/2026 |
 
 Cada uno sigue la estructura de los SOP que ya usa la operacion: objetivo,
 alcance, definiciones, RACI, flujograma, campo de aplicacion, desarrollo,
