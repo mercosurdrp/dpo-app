@@ -39,17 +39,6 @@ import {
   type UserRole,
 } from "@/types/database"
 
-function formatDateTime(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleString("es-AR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
-
 function formatDate(iso: string): string {
   const [y, m, d] = iso.split("-")
   if (!y || !m || !d) return iso
@@ -182,10 +171,6 @@ export function ReporteDetalleDialog({
                 <span className="flex items-center gap-1">
                   <User className="size-3" />
                   {detalle.autor_nombre}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Clock className="size-3" />
-                  Reportado {formatDateTime(detalle.created_at)}
                 </span>
                 <span className="flex items-center gap-1">
                   <Clock className="size-3" />
