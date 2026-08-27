@@ -71,11 +71,13 @@ import { KpiCard } from "./_components/kpi-card"
 import {
   eliminarItemChecklist,
   eliminarPlanChecklist,
+  getRepuestosPanol,
   upsertPlanChecklist,
   type ChecklistComentario,
   type ChecklistItemNoOk,
   type ChecklistPlanEstado,
   type ChecklistPlanTipo,
+  type RepuestoPanol,
 } from "@/actions/mantenimiento-vehiculos"
 import {
   CLASE_TIEMPO,
@@ -1188,6 +1190,24 @@ function PlanDialog({
   const [descripcion, setDescripcion] = useState(plan?.descripcion ?? "")
   const [foto, setFoto] = useState<File | null>(null)
   const [eliminarFoto, setEliminarFoto] = useState(false)
+  const [repuestos, setRepuestos] = useState<RepuestoPanol[]>([])
+  const [repuestoId, setRepuestoId] = useState<string>(plan?.repuestoId ?? "")
+  const [repuestoCantidad, setRepuestoCantidad] = useState<string>(
+    plan?.repuestoCantidad != null ? String(plan.repuestoCantidad) : "1"
+  )
+  // El descuento ya se hizo: el selector queda a la vista pero bloqueado, para
+  // que se entienda que el stock ya bajó y que volver a guardar no lo baja otra vez.
+  const yaDescontado = Boolean(plan?.movimientoId)
+
+  useEffect(() => {
+    let vivo = true
+    getRepuestosPanol().then((res) => {
+      if (vivo && "data" in res) setRepuestos(res.data)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [])
 
   function guardar() {
     setError(null)
@@ -1200,6 +1220,10 @@ function PlanDialog({
     fd.set("tipo", tipo)
     fd.set("estado", estado)
     fd.set("descripcion", descripcion.trim())
+    if (repuestoId) {
+      fd.set("repuesto_id", repuestoId)
+      fd.set("repuesto_cantidad", repuestoCantidad || "1")
+    }
     // El resto de la serie recibe el mismo plan: es un defecto, no uno por día.
     const resto = ids.filter((id) => id !== item.id)
     if (resto.length > 0) fd.set("respuesta_ids_extra", resto.join(","))
@@ -1285,6 +1309,55 @@ function PlanDialog({
               rows={4}
               placeholder="Describí la reparación realizada sobre este ítem…"
             />
+          </div>
+
+          {/*
+            Repuesto del pañol. Acá no se hace mantenimiento propio salvo cambiar
+            un foco, una mica o un destellador, y eso nunca pasa por una OT: pasa
+            por este plan. Al cerrarlo con un repuesto elegido, el egreso se
+            registra solo y el stock baja, en vez de descontarse a mano aparte.
+          */}
+          <div className="rounded-md border border-dashed p-3">
+            <Label className="text-xs text-muted-foreground">
+              ¿Se usó algo del pañol? (opcional)
+            </Label>
+            <div className="mt-1 grid grid-cols-[1fr_5rem] gap-2">
+              <Select
+                value={repuestoId || "ninguno"}
+                onValueChange={(v: string | null) =>
+                  setRepuestoId(!v || v === "ninguno" ? "" : v)
+                }
+                disabled={yaDescontado}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="No salió nada del pañol" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ninguno">No salió nada del pañol</SelectItem>
+                  {repuestos.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.nombre} · quedan {r.stock}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={repuestoCantidad}
+                onChange={(e) => setRepuestoCantidad(e.target.value)}
+                disabled={yaDescontado || !repuestoId}
+                aria-label="Cantidad"
+              />
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {yaDescontado
+                ? "Ya descontado del pañol. Para corregirlo, ajustá el stock desde Repuestos."
+                : estado === "resuelto"
+                  ? "Al guardar como resuelto, el stock del pañol baja solo."
+                  : "El stock baja recién cuando el plan pase a resuelto."}
+            </p>
           </div>
 
           <div>

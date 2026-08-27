@@ -1432,6 +1432,11 @@ export interface ChecklistPlanAccion {
   fotoPath: string | null
   /** Momento en que el plan se cerró (lo sella la base). null = sigue abierto. */
   resueltoAt: string | null
+  /** Repuesto del pañol que se usó para resolverlo. null = no salió nada del pañol. */
+  repuestoId: string | null
+  repuestoCantidad: number | null
+  /** Egreso de pañol que este plan ya generó. Si está, no se vuelve a descontar. */
+  movimientoId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -1455,10 +1460,21 @@ export interface ChecklistItemNoOk {
   horasResolucion: number | null
 }
 
-/** Columnas del plan de acción. `resuelto_at` sella el fin del tiempo de respuesta. */
+/**
+ * Columnas del plan de acción, de lo más nuevo a lo más viejo.
+ *
+ * 🚨 Son tres selects en cascada a propósito: el código se deploya por push y
+ * el SQL lo corre otra persona después, así que entre un momento y el otro la
+ * base tiene menos columnas que las que el código pide. Si un select falla con
+ * `42703` (columna inexistente) se prueba el anterior, y así el módulo sigue
+ * andando sin la funcionalidad nueva en vez de romperse entero.
+ */
+const PLAN_COLUMNAS_FULL =
+  "id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, resuelto_at, repuesto_id, repuesto_cantidad, movimiento_id, created_at, updated_at"
+/** Sin el repuesto del pañol. `resuelto_at` sella el fin del tiempo de respuesta. */
 const PLAN_COLUMNAS =
   "id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, resuelto_at, created_at, updated_at"
-/** Mismo select sin `resuelto_at`, por si la migración todavía no se aplicó. */
+/** Mismo select sin `resuelto_at`, por si esa migración tampoco se aplicó. */
 const PLAN_COLUMNAS_LEGACY =
   "id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, created_at, updated_at"
 
@@ -1547,25 +1563,38 @@ export async function getChecklistsMtto(): Promise<
         foto_url: string | null
         foto_path: string | null
         resuelto_at?: string | null
+        repuesto_id?: string | null
+        repuesto_cantidad?: number | null
+        movimiento_id?: string | null
         created_at: string
         updated_at: string
       }
       let planesData: PlanRow[] = []
-      const { data, error: planesErr } = await supabase
+      // Cascada: repuesto → resuelto_at → legacy. 42703 = esa migración todavía
+      // no está aplicada en la base.
+      const full = await supabase
         .from("checklist_planes_accion")
-        .select(PLAN_COLUMNAS)
+        .select(PLAN_COLUMNAS_FULL)
         .in("respuesta_id", respuestaIds)
-      if (planesErr) {
-        // 42703 = todavía no está aplicada la migración de resuelto_at.
-        if (planesErr.code !== "42703") throw new Error(planesErr.message)
-        const legacy = await supabase
-          .from("checklist_planes_accion")
-          .select(PLAN_COLUMNAS_LEGACY)
-          .in("respuesta_id", respuestaIds)
-        if (legacy.error) throw new Error(legacy.error.message)
-        planesData = (legacy.data || []) as unknown as PlanRow[]
+      if (!full.error) {
+        planesData = (full.data || []) as unknown as PlanRow[]
       } else {
-        planesData = (data || []) as unknown as PlanRow[]
+        if (full.error.code !== "42703") throw new Error(full.error.message)
+        const { data, error: planesErr } = await supabase
+          .from("checklist_planes_accion")
+          .select(PLAN_COLUMNAS)
+          .in("respuesta_id", respuestaIds)
+        if (planesErr) {
+          if (planesErr.code !== "42703") throw new Error(planesErr.message)
+          const legacy = await supabase
+            .from("checklist_planes_accion")
+            .select(PLAN_COLUMNAS_LEGACY)
+            .in("respuesta_id", respuestaIds)
+          if (legacy.error) throw new Error(legacy.error.message)
+          planesData = (legacy.data || []) as unknown as PlanRow[]
+        } else {
+          planesData = (data || []) as unknown as PlanRow[]
+        }
       }
       for (const p of planesData) {
         planesById.set(p.respuesta_id, {
@@ -1578,6 +1607,9 @@ export async function getChecklistsMtto(): Promise<
           fotoPath: p.foto_path,
           resueltoAt:
             p.estado === "resuelto" ? (p.resuelto_at ?? p.updated_at ?? null) : null,
+          repuestoId: p.repuesto_id ?? null,
+          repuestoCantidad: p.repuesto_cantidad ?? null,
+          movimientoId: p.movimiento_id ?? null,
           createdAt: p.created_at,
           updatedAt: p.updated_at,
         })
@@ -1648,12 +1680,52 @@ export async function upsertPlanChecklist(
     if (!ESTADOS_PLAN_CHECK.has(estado)) return { error: "Estado inválido" }
     if (!descripcion) return { error: "Escribí qué se trabajó / reparó" }
 
+    // Repuesto del pañol usado para resolver el ítem (foco, mica, destellador,
+    // carro). Opcional: la enorme mayoría de los planes no consume nada.
+    const repuestoId = String(formData.get("repuesto_id") || "").trim() || null
+    const repuestoCantidadRaw = String(formData.get("repuesto_cantidad") || "").trim()
+    const repuestoCantidad = repuestoId
+      ? Number(repuestoCantidadRaw.replace(",", ".")) || 1
+      : null
+    if (repuestoId && !(repuestoCantidad! > 0))
+      return { error: "La cantidad del repuesto tiene que ser mayor a 0" }
+
     // Plan existente (para conservar foto / created_by si corresponde).
+    // 🚨 Este select NO pide las columnas del repuesto: si la migración todavía
+    // no corrió, fallaría con 42703, `existing` quedaría en null y el upsert se
+    // iría por la rama de INSERT contra un plan que ya existe, rompiendo el
+    // unique(respuesta_id). El movimiento se lee aparte, y ahí sí se puede
+    // tolerar el error.
     const { data: existing } = await supabase
       .from("checklist_planes_accion")
       .select("id, foto_url, foto_path, estado")
       .eq("respuesta_id", respuestaId)
       .maybeSingle()
+
+    // ¿Este plan ya descontó del pañol? Es el candado contra el doble egreso:
+    // el plan es editable y se guarda cada vez que se toca la descripción o la
+    // foto. `hayColumnas` en false = la migración no está aplicada todavía, así
+    // que el repuesto simplemente se ignora y el resto del plan se guarda igual.
+    const sonda = await supabase
+      .from("checklist_planes_accion")
+      .select("movimiento_id")
+      .limit(1)
+    let hayColumnas = true
+    if (sonda.error) {
+      if (sonda.error.code !== "42703") return { error: sonda.error.message }
+      hayColumnas = false
+    }
+
+    let movimientoPrevio: string | null = null
+    if (hayColumnas && existing) {
+      const mov = await supabase
+        .from("checklist_planes_accion")
+        .select("movimiento_id")
+        .eq("id", existing.id)
+        .maybeSingle()
+      if (mov.error) return { error: mov.error.message }
+      movimientoPrevio = (mov.data?.movimiento_id as string | null) ?? null
+    }
     // Un plan que ya estaba cerrado y sigue cerrado NO mueve `updated_at`:
     // mientras `resuelto_at` no exista en la base, esa fecha es el momento de
     // cierre que alimenta el tiempo de respuesta, y corregir la descripción o
@@ -1692,6 +1764,48 @@ export async function upsertPlanChecklist(
       fotoPath = path
     }
 
+    /**
+     * Egreso del pañol.
+     *
+     * Se hace ANTES de guardar el plan a propósito: si el stock no alcanza, el
+     * plan no se guarda y el usuario ve el error de la base ("Stock
+     * insuficiente: hay 2 y querés egresar 3"). Al revés quedaría el plan
+     * cerrado diciendo que se cambió un foco que el pañol no tenía.
+     *
+     * Descuenta una sola vez: sólo cuando el plan pasa a resuelto y todavía no
+     * tiene movimiento. Editar después la descripción o la foto no vuelve a
+     * mover stock. Cambiar el repuesto de un plan ya cerrado tampoco: eso se
+     * corrige a mano desde el pañol, que es donde se ve el historial.
+     */
+    let movimientoId: string | null = movimientoPrevio
+    if (hayColumnas && repuestoId && estado === "resuelto" && !movimientoPrevio) {
+      const { data: ctx } = await supabase
+        .from("checklist_respuestas")
+        .select("item:checklist_items(nombre), cv:checklist_vehiculos(fecha, dominio)")
+        .eq("id", respuestaId)
+        .maybeSingle()
+      const c = ctx as unknown as {
+        item: { nombre: string } | null
+        cv: { fecha: string; dominio: string } | null
+      } | null
+      const motivo = c?.cv
+        ? `Checklist ${c.cv.dominio} ${c.cv.fecha}${c.item ? ` — ${c.item.nombre}` : ""}`
+        : "Plan de acción de checklist"
+
+      const { data: mov, error: movErr } = await supabase.rpc(
+        "registrar_movimiento_repuesto",
+        {
+          p_repuesto_id: repuestoId,
+          p_tipo: "egreso",
+          p_cantidad: repuestoCantidad,
+          p_motivo: motivo,
+          p_fecha: c?.cv?.fecha ?? null,
+        }
+      )
+      if (movErr) return { error: movErr.message }
+      movimientoId = ((mov as { id?: string } | null)?.id as string) ?? null
+    }
+
     const payload = {
       respuesta_id: respuestaId,
       tipo,
@@ -1699,6 +1813,13 @@ export async function upsertPlanChecklist(
       descripcion,
       foto_url: fotoUrl,
       foto_path: fotoPath,
+      ...(hayColumnas
+        ? {
+            repuesto_id: repuestoId,
+            repuesto_cantidad: repuestoCantidad,
+            movimiento_id: movimientoId,
+          }
+        : {}),
       ...(sigueResuelto ? {} : { updated_at: new Date().toISOString() }),
     }
 
@@ -1755,23 +1876,34 @@ export async function upsertPlanChecklist(
       }
     }
 
+    // Misma cascada que en la lectura: repuesto → resuelto_at → legacy.
     let row: Record<string, unknown> | null = null
-    const releer = await supabase
-      .from("checklist_planes_accion")
-      .select(PLAN_COLUMNAS)
-      .eq("respuesta_id", respuestaId)
-      .single()
-    if (releer.error) {
-      if (releer.error.code !== "42703") return { error: releer.error.message }
-      const legacy = await supabase
+    if (hayColumnas) {
+      const full = await supabase
         .from("checklist_planes_accion")
-        .select(PLAN_COLUMNAS_LEGACY)
+        .select(PLAN_COLUMNAS_FULL)
         .eq("respuesta_id", respuestaId)
         .single()
-      if (legacy.error) return { error: legacy.error.message }
-      row = legacy.data as Record<string, unknown>
+      if (full.error) return { error: full.error.message }
+      row = full.data as unknown as Record<string, unknown>
     } else {
-      row = releer.data as Record<string, unknown>
+      const releer = await supabase
+        .from("checklist_planes_accion")
+        .select(PLAN_COLUMNAS)
+        .eq("respuesta_id", respuestaId)
+        .single()
+      if (releer.error) {
+        if (releer.error.code !== "42703") return { error: releer.error.message }
+        const legacy = await supabase
+          .from("checklist_planes_accion")
+          .select(PLAN_COLUMNAS_LEGACY)
+          .eq("respuesta_id", respuestaId)
+          .single()
+        if (legacy.error) return { error: legacy.error.message }
+        row = legacy.data as unknown as Record<string, unknown>
+      } else {
+        row = releer.data as unknown as Record<string, unknown>
+      }
     }
 
     const estadoRow = row.estado as ChecklistPlanEstado
@@ -1790,6 +1922,9 @@ export async function upsertPlanChecklist(
               (row.updated_at as string | null) ??
               null)
             : null,
+        repuestoId: (row.repuesto_id as string | null) ?? null,
+        repuestoCantidad: (row.repuesto_cantidad as number | null) ?? null,
+        movimientoId: (row.movimiento_id as string | null) ?? null,
         createdAt: row.created_at as string,
         updatedAt: row.updated_at as string,
       },
@@ -2555,6 +2690,41 @@ export async function registrarMovimientoRepuesto(input: {
     })
     if (error) return { error: error.message }
     return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export interface RepuestoPanol {
+  id: string
+  nombre: string
+  stock: number
+}
+
+/**
+ * Catálogo del pañol para elegir el repuesto en el plan de acción del
+ * checklist. Es un select liviano a propósito: `getGestionMtto` trae novedades,
+ * órdenes de compra, residuos y conteos, y el diálogo sólo necesita el nombre y
+ * cuánto queda.
+ */
+export async function getRepuestosPanol(): Promise<
+  { data: RepuestoPanol[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("mantenimiento_repuestos")
+      .select("id, nombre, stock_actual")
+      .order("nombre")
+    if (error) return { error: error.message }
+    return {
+      data: (data ?? []).map((r) => ({
+        id: r.id as string,
+        nombre: r.nombre as string,
+        stock: Number(r.stock_actual ?? 0),
+      })),
+    }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
