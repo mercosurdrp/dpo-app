@@ -6,9 +6,11 @@ export const dynamic = "force-dynamic"
 
 // PATCH /api/planeamiento/periodos-criticos/umbrales
 //
-// Actualiza los 6 umbrales del modelo Mercosur (volumen PICO/ALTO/MEDIO,
-// clientes, OTIF mínimo, ausentismo máximo) y el min_triggers que define
-// cuántas "A" hacen CRITICO. Solo admin/admin_rrhh/supervisor.
+// Actualiza los targets del calendario. El de volumen no se carga a mano: sale
+// de la flota (camiones × HL por camión × % ocupación de bodega) y la base lo
+// recalcula sola en `vol_pico`, que es columna generada. Los otros tres
+// (clientes, rechazo, ausentismo) sólo agravan la severidad del día crítico.
+// Solo admin/admin_rrhh/supervisor.
 export async function PATCH(req: NextRequest) {
   const profile = await getProfile()
   if (!profile) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
@@ -24,34 +26,31 @@ export async function PATCH(req: NextRequest) {
   }
 
   const patch: Record<string, number> = {}
-  for (const k of ["vol_pico", "vol_alto", "vol_medio", "clientes", "otif_min", "ausentismo_max", "min_triggers"]) {
+  for (const k of ["camiones", "hl_por_camion", "pct_ocupacion", "clientes", "otif_min", "ausentismo_max"]) {
     if (body[k] != null) patch[k] = Number(body[k])
   }
-
-  // Validar coherencia de volumen antes de mandarlo (el CHECK del schema da
-  // error genérico)
-  if (patch.vol_pico != null || patch.vol_alto != null || patch.vol_medio != null) {
-    const supabase = await createClient()
-    const { data: actual } = await supabase.from("pc_umbrales").select("*").eq("id", 1).single()
-    const vp = patch.vol_pico ?? Number(actual?.vol_pico)
-    const va = patch.vol_alto ?? Number(actual?.vol_alto)
-    const vm = patch.vol_medio ?? Number(actual?.vol_medio)
-    if (!(vp >= va && va >= vm)) {
-      return NextResponse.json(
-        { error: `Los umbrales de volumen deben cumplir PICO ≥ ALTO ≥ MEDIO (actual: ${vp}/${va}/${vm})` },
-        { status: 400 },
-      )
-    }
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "Nada para actualizar" }, { status: 400 })
+  }
+  for (const [k, v] of Object.entries(patch)) {
+    if (!Number.isFinite(v)) return NextResponse.json({ error: `${k} no es un número` }, { status: 400 })
   }
 
-  if (patch.min_triggers != null && (patch.min_triggers < 1 || patch.min_triggers > 4)) {
-    return NextResponse.json({ error: "min_triggers debe estar entre 1 y 4" }, { status: 400 })
+  // Rangos: los mismos CHECK del schema, pero con mensaje entendible.
+  if (patch.camiones != null && (patch.camiones < 1 || patch.camiones > 200)) {
+    return NextResponse.json({ error: "Los camiones deben estar entre 1 y 200" }, { status: 400 })
+  }
+  if (patch.hl_por_camion != null && (patch.hl_por_camion <= 0 || patch.hl_por_camion > 1000)) {
+    return NextResponse.json({ error: "Los HL por camión deben estar entre 1 y 1000" }, { status: 400 })
+  }
+  if (patch.pct_ocupacion != null && (patch.pct_ocupacion <= 0 || patch.pct_ocupacion > 3)) {
+    return NextResponse.json({ error: "La ocupación de bodega debe estar entre 0 y 3 (300%)" }, { status: 400 })
   }
   if (patch.otif_min != null && (patch.otif_min < 0 || patch.otif_min > 1)) {
-    return NextResponse.json({ error: "otif_min debe estar entre 0 y 1" }, { status: 400 })
+    return NextResponse.json({ error: "El rechazo máximo debe estar entre 0 y 1" }, { status: 400 })
   }
   if (patch.ausentismo_max != null && (patch.ausentismo_max < 0 || patch.ausentismo_max > 1)) {
-    return NextResponse.json({ error: "ausentismo_max debe estar entre 0 y 1" }, { status: 400 })
+    return NextResponse.json({ error: "El ausentismo máximo debe estar entre 0 y 1" }, { status: 400 })
   }
 
   const supabase = await createClient()
