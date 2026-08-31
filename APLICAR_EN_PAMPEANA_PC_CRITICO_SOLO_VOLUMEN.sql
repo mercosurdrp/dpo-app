@@ -21,7 +21,11 @@
 
 begin;
 
--- La vista depende de las columnas que se van a borrar.
+-- Las vistas dependen de las columnas que se van a borrar. `v_pc_calendario_dia`
+-- es la proyección del año vigente sobre la multi-año, así que cae primero y se
+-- vuelve a crear al final (sin CASCADE: queremos que falle si aparece otra
+-- dependencia que no conocemos).
+drop view if exists v_pc_calendario_dia;
 drop view if exists v_pc_calendario_dia_multianio;
 
 -- ── Umbrales: la capacidad reemplaza a la escalera de volumen ────────────────
@@ -161,5 +165,19 @@ select anio, fecha, dow,
 from scored order by anio, fecha;
 
 grant select on v_pc_calendario_dia_multianio to anon, authenticated, service_role;
+
+-- ── Vista del año vigente (la consume /api/.../calendario) ──────────────────
+-- Mismas columnas que antes + las tres nuevas: pct_capacidad, contexto_count y
+-- tipo_feriado (esta última ya existía en la multi-año pero nunca se proyectó).
+create or replace view v_pc_calendario_dia as
+select fecha, dow, dia_semana, mes, hl, hl_rechazo, camiones, clientes_dia,
+       pct_rechazo, otif_estimado, pct_ausentismo, clasif_vol, pct_capacidad,
+       es_feriado, nombre_feriado, tipo_feriado, score,
+       trigger_vol, trigger_cli, trigger_otif, trigger_aus,
+       trigger_count, contexto_count, codigo, estatus, nivel, anio
+from v_pc_calendario_dia_multianio
+where anio = (select anio_vigente from pc_config where id = 1);
+
+grant select on v_pc_calendario_dia to anon, authenticated, service_role;
 
 commit;
