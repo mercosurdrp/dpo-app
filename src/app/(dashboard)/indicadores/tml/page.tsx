@@ -1,17 +1,20 @@
 import { getTmlKpis, getRegistrosVehiculos, getChoferes, getVehiculos, getTmlMatinalDeRegistros } from "@/actions/registros-vehiculos"
 import { getTmlPlanesResumen } from "@/actions/tml-plan-accion"
+import { getTmlChoferesExcluidos } from "@/actions/tml-exclusiones"
 import { TmlClient } from "./tml-client"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
 export default async function TmlPage() {
-  const [kpisRes, registrosRes, choferesRes, vehiculosRes, planesRes] = await Promise.all([
-    getTmlKpis(),
-    getRegistrosVehiculos({ tipo: "egreso", limit: 50 }),
-    getChoferes(),
-    getVehiculos(),
-    getTmlPlanesResumen(),
-  ])
+  const [kpisRes, registrosRes, choferesRes, vehiculosRes, planesRes, excluidosRes] =
+    await Promise.all([
+      getTmlKpis(),
+      getRegistrosVehiculos({ tipo: "egreso", limit: 50 }),
+      getChoferes(),
+      getVehiculos(),
+      getTmlPlanesResumen(),
+      getTmlChoferesExcluidos(),
+    ])
 
   if ("error" in kpisRes) {
     return (
@@ -26,6 +29,7 @@ export default async function TmlPage() {
   const choferes = "data" in choferesRes ? choferesRes.data : []
   const vehiculos = "data" in vehiculosRes ? vehiculosRes.data : []
   const planesResumen = "data" in planesRes ? planesRes.data : []
+  const excluidos = "data" in excluidosRes ? excluidosRes.data : []
 
   const matinalRes =
     registros.length > 0 ? await getTmlMatinalDeRegistros(registros) : null
@@ -47,6 +51,7 @@ export default async function TmlPage() {
         vehiculos={vehiculos}
         planesResumen={planesResumen}
         tmlMatinalPorRegistro={tmlMatinalPorRegistro}
+        excluidos={excluidos}
       />
     </div>
   )

@@ -89,7 +89,15 @@ export function AnalisisCombustibleClient({ inicial }: { inicial: AnalisisCombus
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Kpi label="Camiones" valor={nf.format(data.total_camiones)} sub={`${nf.format(data.total_cargas)} cargas`} />
+        <Kpi
+          label="Camiones"
+          valor={nf.format(data.total_camiones)}
+          sub={
+            data.total_sin_registrar > 0
+              ? `${nf.format(data.total_cargas)} cargas · ${nf.format(data.total_sin_registrar)} sin registrar`
+              : `${nf.format(data.total_cargas)} cargas`
+          }
+        />
         <Kpi label="Litros cargados" valor={nf.format(data.total_litros)} sub="en el mes" />
         <Kpi label="Km recorridos" valor={nf.format(data.total_km)} sub="con medición" />
         <Kpi
@@ -124,6 +132,7 @@ export function AnalisisCombustibleClient({ inicial }: { inicial: AnalisisCombus
                   <th className="px-3 py-2 text-right font-medium">Rend. (km/l)</th>
                   <th className="px-3 py-2 text-right font-medium">L/100km</th>
                   <th className="px-3 py-2 text-right font-medium">vs Flota</th>
+                  <th className="px-3 py-2 text-right font-medium" title="Cargas con una carga sin registrar en el medio (rendimiento imposible): no entran al km/l">Sin registrar</th>
                   <th className="px-3 py-2 text-center font-medium">Estado</th>
                 </tr>
               </thead>
@@ -180,8 +189,24 @@ function Fila({ c }: { c: CombustibleCamion }) {
           "—"
         )}
       </td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        {c.cargas_sin_registrar > 0 ? (
+          <span
+            className="font-semibold text-rose-700"
+            title="Tramos con rendimiento imposible: hubo una carga que no se anotó en la app. Se excluyen del km/l."
+          >
+            {c.cargas_sin_registrar}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">0</span>
+        )}
+      </td>
       <td className="px-3 py-2 text-center">
-        <Badge className={`${s.cls} border-0`}>{s.label}</Badge>
+        {c.rendimiento == null && c.cargas_sin_registrar > 0 ? (
+          <Badge className="border-0 bg-rose-100 text-rose-700">Sin dato válido</Badge>
+        ) : (
+          <Badge className={`${s.cls} border-0`}>{s.label}</Badge>
+        )}
       </td>
     </tr>
   )

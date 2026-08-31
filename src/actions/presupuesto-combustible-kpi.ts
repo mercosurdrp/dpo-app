@@ -1,5 +1,6 @@
 "use server"
 
+import { esCargaSinRegistrar, medianasPorDominio } from "@/lib/vehiculos/combustible-limpio"
 import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
@@ -17,11 +18,12 @@ import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
  * como promedio de los rendimientos de cada carga: una carga corta con el
  * tanque a medio llenar pesaría igual que un viaje largo y distorsiona.
  *
- * 🚨 Se descartan las cargas con rendimiento fuera de [2, 6] km/l. En estos
- * camiones no son valores posibles: son cargas con el odómetro salteado (falta
- * registrar la carga anterior, da 10 km/l), cargas duplicadas el mismo día o
- * cargas a tanque no lleno (dan 0,06 km/l). Es el mismo criterio con el que se
- * calculó la línea base cargada en el seguimiento Q2-2026 de la iniciativa.
+ * 🚨 Se descartan las cargas con rendimiento implausible: por debajo de 2 km/l
+ * (cargas duplicadas el mismo día, tanque no lleno: dan 0,06 km/l) o por
+ * encima de 1,4× la mediana del camión (odómetro salteado porque falta
+ * registrar la carga anterior: da 5, 8 o 10 km/l). La línea base del
+ * seguimiento Q2-2026 se calculó con techo fijo de 6 km/l; el techo relativo
+ * es más estricto y se adoptó el 31/08/2026 (ver `combustible-limpio.ts`).
  */
 
 type Result<T> = { data: T } | { error: string }
@@ -64,9 +66,11 @@ const DOMINIOS_INTERVENIDOS_POR_KPI: Record<string, string[]> = {
   "RENDIMIENTO COMBUSTIBLE LARGA DISTANCIA": [],
 }
 
-/** Rango de rendimiento plausible para un camión de reparto/larga distancia. */
+/**
+ * Piso de rendimiento plausible para un camión de reparto/larga distancia. El
+ * techo no es fijo: es 1,4× la mediana del camión (`esCargaSinRegistrar`).
+ */
 const REND_MIN = 2
-const REND_MAX = 6
 
 /**
  * Ahorro en plata de la iniciativa, estimado desde el rendimiento físico.
@@ -217,6 +221,13 @@ export async function getKpiCombustible(
     const dominios = DOMINIOS_POR_KPI[kpi]
     const intervenidos = DOMINIOS_INTERVENIDOS_POR_KPI[kpi] ?? []
     const delGrupo = filas.filter((f) => dominios.includes(f.dominio))
+    // 🚨 El techo fijo de 6 km/l dejaba pasar tramos de 5,2-5,7 en camiones que
+    // rinden 3,5: son cargas sin registrar y en agosto de 2026 inflaban el KPI
+    // (3,76 en vez de 3,65 en larga distancia). Ahora el techo es 1,4× la
+    // mediana de cada camión sobre el año (ver `combustible-limpio.ts`).
+    const medianasGrupo = medianasPorDominio(delGrupo)
+    const esImplausible = (f: FilaCarga) =>
+      f.rendimiento === null || f.rendimiento < REND_MIN || esCargaSinRegistrar(f, medianasGrupo)
 
     // Acumuladores por mes (1-12) y por sub-grupo.
     const acum = new Map<
@@ -236,10 +247,9 @@ export async function getKpiCombustible(
     for (const f of delGrupo) {
       const km = f.km_recorridos
       const litros = f.litros
-      const rend = f.rendimiento
       // Sin delta de odómetro o sin litros no hay rendimiento que calcular.
       if (km === null || litros === null || litros <= 0) continue
-      if (rend === null || rend < REND_MIN || rend > REND_MAX) {
+      if (esImplausible(f)) {
         cargasDescartadas++
         continue
       }
@@ -312,9 +322,8 @@ export async function getKpiCombustible(
         if (f.fecha < desde) continue
         const km = f.km_recorridos
         const litros = f.litros
-        const rend = f.rendimiento
         if (km === null || litros === null || litros <= 0) continue
-        if (rend === null || rend < REND_MIN || rend > REND_MAX) continue
+        if (esImplausible(f)) continue
         const mes = Number(f.fecha.slice(5, 7))
         if (!Number.isFinite(mes) || mes < 1 || mes > 12) continue
         const a = porMes.get(mes) ?? { km: 0, litros: 0 }
