@@ -59,6 +59,8 @@ import type {
 } from "@/types/database"
 import { franjaPorHoraSalida } from "@/lib/tml/calculo"
 import { TmlPlanAccionSection } from "./tml-plan-accion-section"
+import { TmlExclusionesCard } from "./tml-exclusiones-card"
+import type { TmlChoferExcluido } from "@/actions/tml-exclusiones"
 import {
   Plus,
   Clock,
@@ -97,6 +99,8 @@ interface Props {
   planesResumen: TmlPlanResumen[]
   /** TML desde matinal por id de registro (solo los egresos apareados con check-in). */
   tmlMatinalPorRegistro: Record<string, { minutos: number; checkin: string }>
+  /** Choferes que no computan para el TML (sus egresos quedan sin tml_minutos). */
+  excluidos: TmlChoferExcluido[]
 }
 
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -131,7 +135,7 @@ function Tendencia({ mensual }: { mensual: TmlMensual[] }) {
   )
 }
 
-export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen, tmlMatinalPorRegistro }: Props) {
+export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen, tmlMatinalPorRegistro, excluidos }: Props) {
   const [tab, setTab] = useState("semanal")
 
   const semanalData = kpis.semanal.map((s) => ({
@@ -274,6 +278,9 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen,
           </CardContent>
         </Card>
       </div>
+
+      {/* Choferes que no computan para el TML (ej. entran antes de las 07:00) */}
+      <TmlExclusionesCard excluidos={excluidos} choferes={choferes} />
 
       {/* Serie paralela en evaluación H2: TML desde el check-in a la matinal */}
       {hayMatinal && kpis.matinal && (

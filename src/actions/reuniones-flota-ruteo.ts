@@ -24,8 +24,25 @@ import type {
   MantenimientoRealizado,
 } from "@/types/database"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
+import { separarCargasSinRegistrar } from "@/lib/vehiculos/combustible-limpio"
 
 type Result<T> = { data: T } | { error: string }
+
+interface CargaMes {
+  dominio: string
+  fecha: string
+  litros: number | null
+  km_recorridos: number | null
+}
+
+/** Días previos al mes que se usan como muestra para la mediana por camión. */
+const HISTORIAL_MEDIANA_DIAS = 90
+
+function restarDias(fechaISO: string, dias: number): string {
+  const d = new Date(`${fechaISO}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - dias)
+  return d.toISOString().slice(0, 10)
+}
 
 const SOLO_PAMPEANA =
   "El bloque de Flota y Ruteo solo está disponible en Pampeana."
@@ -43,6 +60,12 @@ export interface FlotaRuteoReunion {
     combustibleTarget: number | null
     combustibleLitros: number
     combustibleKm: number
+    /**
+     * Cargas del mes excluidas del km/l por tener una carga sin registrar en
+     * el medio (rendimiento imposible). Se muestran para que la reunión sepa
+     * que el número está calculado sobre menos tramos y que falta registro.
+     */
+    combustibleCargasSinRegistrar: number
     servicesVencidos: number
     servicesTarget: number | null
     proximosServices: ServiceGeneralUnidad[]
@@ -136,15 +159,17 @@ export async function getFlotaRuteoReunion(
           .range(desde, hasta)
       ),
       supabase.from("flota_metas").select("kpi, meta, comparador, unidad"),
-      traerTodo<{ litros: number | null; km_recorridos: number | null }>(
-        (desde, hasta) =>
-          supabase
-            .from("registro_combustible")
-            .select("litros, km_recorridos")
-            .eq("tipo_combustible", TIPO_CARGA_GASOIL)
-            .gte("fecha", inicioMes)
-            .lte("fecha", fechaReunion)
-            .range(desde, hasta)
+      // Se traen también los ~90 días previos: son la muestra para la mediana
+      // de rendimiento de cada camión, con la que se detectan las cargas sin
+      // registrar del mes (ver `combustible-limpio.ts`).
+      traerTodo<CargaMes>((desde, hasta) =>
+        supabase
+          .from("registro_combustible")
+          .select("dominio, fecha, litros, km_recorridos")
+          .eq("tipo_combustible", TIPO_CARGA_GASOIL)
+          .gte("fecha", restarDias(inicioMes, HISTORIAL_MEDIANA_DIAS))
+          .lte("fecha", fechaReunion)
+          .range(desde, hasta)
       ),
     ])
 
@@ -185,9 +210,19 @@ export async function getFlotaRuteoReunion(
   // ── Flota: combustible del mes ────────────────────────────────────────────
   // Rendimiento agregado Σkm/Σlitros, igual criterio que el tablero de flota:
   // sólo suman los litros de cargas que declararon km, si no el km/l se hunde.
-  const conKm = combRes.data.filter((c) => Number(c.km_recorridos) > 0)
+  // 🚨 Sólo flota de reparto: los autoelevadores cargan gasoil pero miden
+  // HORAS (5-30 "km" por 40 l), y hundían el km/l de la tarjeta.
+  // 🚨 Y sin las cargas que no se registraron (rendimiento > 1,4× la mediana
+  // del camión): ésas lo inflaban. Con la meta en 3,75 la tarjeta decía
+  // "cumplido" con el número crudo de agosto (3,80) cuando el real era 3,64.
+  const dominiosRuta = new Set(flota.map((u) => u.dominio))
+  const cargasRuta = combRes.data.filter((c) => dominiosRuta.has(c.dominio))
+  const cargasMes = cargasRuta.filter((c) => c.fecha >= inicioMes)
+  const { validas, sinRegistrar } = separarCargasSinRegistrar(cargasMes, cargasRuta)
+  const conKm = validas.filter((c) => Number(c.km_recorridos) > 0)
   const combustibleKm = sumar(conKm.map((c) => c.km_recorridos))
   const combustibleLitros = sumar(conKm.map((c) => c.litros))
+  const combustibleCargasSinRegistrar = sinRegistrar.length
   const combustibleKml =
     combustibleLitros > 0
       ? Math.round((combustibleKm / combustibleLitros) * 100) / 100
@@ -218,6 +253,7 @@ export async function getFlotaRuteoReunion(
         combustibleTarget: metaDe("combustible_kml"),
         combustibleLitros,
         combustibleKm,
+        combustibleCargasSinRegistrar,
         servicesVencidos: servicesVencidosDesdeProgramacion(programacion),
         servicesTarget: metaDe("services_vencidos"),
         proximosServices,

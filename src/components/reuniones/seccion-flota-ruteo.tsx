@@ -209,9 +209,16 @@ export function SeccionFlotaRuteo({
                   target={data.flota.combustibleTarget}
                   mejorSi="mayor"
                   detalle={
-                    data.flota.combustibleLitros > 0
-                      ? `${data.flota.combustibleKm.toLocaleString("es-AR")} km · ${data.flota.combustibleLitros.toLocaleString("es-AR", { maximumFractionDigits: 0 })} l`
-                      : "sin cargas registradas en el mes"
+                    [
+                      data.flota.combustibleLitros > 0
+                        ? `${data.flota.combustibleKm.toLocaleString("es-AR")} km · ${data.flota.combustibleLitros.toLocaleString("es-AR", { maximumFractionDigits: 0 })} l`
+                        : "sin cargas registradas en el mes",
+                      data.flota.combustibleCargasSinRegistrar > 0
+                        ? `${data.flota.combustibleCargasSinRegistrar} carga(s) sin registrar excluida(s)`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
                   }
                 />
                 <Kpi

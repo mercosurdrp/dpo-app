@@ -15,6 +15,10 @@ import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
 import { tasaFlota } from "@/lib/vehiculos/desgaste-neumaticos"
 import { getDesgasteNeumaticos } from "@/actions/neumaticos"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
+import {
+  esCargaSinRegistrar,
+  medianasPorDominio,
+} from "@/lib/vehiculos/combustible-limpio"
 
 export type FlotaKpi =
   | "disponibilidad"
@@ -596,23 +600,27 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       string,
       { km: number; litrosConKm: number; litros: number }
     >()
-    for (const c of (cargasRes.data || []) as Array<{
+    // 🚨 Sólo flota de reparto. Entraban las cargas de los autoelevadores y de
+    // una camioneta: para el CO2 sumaban litros ajenos, y para el km/l era peor
+    // todavía porque un autoelevador mide HORAS, no kilómetros.
+    const cargasRuta = ((cargasRes.data || []) as Array<{
       dominio: string
       fecha: string
       litros: number | null
       km_recorridos: number | null
-    }>) {
+    }>).filter((c) => esFlotaDeRuta.has(c.dominio))
+    // 🚨 Cargas sin registrar (rendimiento > 1,4× la mediana del camión sobre
+    // toda la ventana): sus litros son reales y cuentan para el CO2, pero el
+    // tramo no entra al km/l porque infla el indicador (ver combustible-limpio).
+    const medianasComb = medianasPorDominio(cargasRuta)
+    for (const c of cargasRuta) {
       const ym = String(c.fecha).slice(0, 7)
       if (!meses.includes(ym)) continue
-      // 🚨 Sólo flota de reparto. Entraban las cargas de los autoelevadores y de
-      // una camioneta: para el CO2 sumaban litros ajenos, y para el km/l era peor
-      // todavía porque un autoelevador mide HORAS, no kilómetros.
-      if (!esFlotaDeRuta.has(c.dominio)) continue
       const acc = combustible.get(ym) ?? { km: 0, litrosConKm: 0, litros: 0 }
       const litros = Number(c.litros ?? 0)
       const km = Number(c.km_recorridos ?? 0)
       acc.litros += litros
-      if (km > 0) {
+      if (km > 0 && !esCargaSinRegistrar(c, medianasComb)) {
         acc.km += km
         acc.litrosConKm += litros
       }
