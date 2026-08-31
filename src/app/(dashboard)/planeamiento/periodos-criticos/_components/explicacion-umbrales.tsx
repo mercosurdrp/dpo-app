@@ -35,12 +35,10 @@ interface Explicacion {
   diasBase: number
   volumen: {
     umbralPico: number
-    umbralAlto: number
-    umbralMedio: number
     percentiles: Percentiles
     percentilDelPico: number
     diasSuperanPico: number
-    derivados: { altoPctDelPico: number; medioPctDelPico: number }
+    capacidad: { camiones: number; hlPorCamion: number; pctOcupacion: number }
   }
   clientes: {
     umbral: number
@@ -60,7 +58,6 @@ interface Explicacion {
     promedioBase: number | null
     diasSuperan: number
   }
-  minTriggers: number
 }
 
 const hl = (n: number) => `${Math.round(n).toLocaleString("es-AR")} HL`
@@ -119,9 +116,12 @@ export function ExplicacionUmbrales() {
                 Volumen — {hl(data.volumen.umbralPico)}
               </h3>
               <p className="mb-2 text-xs text-slate-600">
-                Es un <b>percentil del año anterior</b>: el umbral cae en el{" "}
-                <b>percentil {data.volumen.percentilDelPico}</b> de los días
-                hábiles. Lo superaron{" "}
+                No es un percentil: es la <b>capacidad física de la flota</b> —{" "}
+                {data.volumen.capacidad.camiones} camiones ×{" "}
+                {data.volumen.capacidad.hlPorCamion} HL ×{" "}
+                {(data.volumen.capacidad.pctOcupacion * 100).toFixed(0)}% de ocupación de bodega.
+                Para referencia cae en el <b>percentil {data.volumen.percentilDelPico}</b> de
+                los días hábiles de {data.anioBase}, y lo superaron{" "}
                 <b>{data.volumen.diasSuperanPico} días</b> de {data.diasBase}.
               </p>
               <Fila label="p50 (día típico)" valor={hl(data.volumen.percentiles.p50)} />
@@ -130,12 +130,9 @@ export function ExplicacionUmbrales() {
               <Fila label="p95" valor={hl(data.volumen.percentiles.p95)} />
               <Fila label="Máximo del año" valor={hl(data.volumen.percentiles.max)} />
               <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">
-                <b>Ojo:</b> los umbrales ALTO ({hl(data.volumen.umbralAlto)}) y
-                MEDIO ({hl(data.volumen.umbralMedio)}) <b>no son percentiles
-                propios</b>: se derivaron del PICO ({data.volumen.derivados.altoPctDelPico}%
-                y {data.volumen.derivados.medioPctDelPico}% de su valor). Sólo el
-                PICO define días críticos, así que los otros dos son de
-                clasificación visual.
+                Hay <b>un solo escalón</b>: se supera la capacidad o no se supera.
+                Para exigir más o menos días críticos se mueve el % de ocupación
+                de bodega, no el umbral en HL.
               </p>
             </section>
 
@@ -201,11 +198,10 @@ export function ExplicacionUmbrales() {
             </section>
 
             <p className="rounded-md bg-slate-50 p-2.5 text-xs text-slate-600">
-              Un día es <b>crítico</b> cuando{" "}
-              <b>{data.minTriggers} o más</b> condicionantes están en alerta a la
-              vez. Con {data.minTriggers} se exige que la exigencia y el deterioro
-              del servicio coincidan, que es lo que define un período crítico
-              según el manual — no un día de mucha venta.
+              Un día es <b>crítico</b> cuando el volumen supera la capacidad de
+              distribución, y sólo por eso. Clientes, rechazo y ausentismo se
+              cruzan igual —el manual los pide en el calendario— pero funcionan
+              como contexto: agravan el día crítico, nunca lo crean.
             </p>
           </div>
         )}

@@ -8,7 +8,7 @@ import {
   ArrowRight, ChevronDown, ChevronRight, TrendingDown, TrendingUp, Minus, Clock,
 } from "lucide-react"
 import type { DiaCalendario } from "./client"
-import { intensidadDia, INTENSIDAD_BG } from "./client"
+import { intensidadDia, intensidadMax, INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
 import { detectarPeriodosCriticos, type PeriodoCritico } from "../_lib/detectar-periodos"
 
 // Las 4 variables que pueden gatillar, con su etiqueta corta.
@@ -39,7 +39,6 @@ export function CrucePeriodos({
   anioBase,
   anioComparar,
   soloNuevos = false,
-  minVars,
 }: {
   diasBase: DiaCalendario[]
   diasComparar: DiaCalendario[]
@@ -51,12 +50,6 @@ export function CrucePeriodos({
    * nueva). Si es false (default), muestra todos los críticos de `anioBase`.
    */
   soloNuevos?: boolean
-  /**
-   * Condicionantes simultáneos que exige un día crítico. Viene de
-   * `pc_umbrales.min_triggers`: si no se pasa, la detección cae a su default y
-   * muestra períodos que la configuración vigente NO considera críticos.
-   */
-  minVars?: number
 }) {
   // Índice del año a comparar por "mm-dd" para encontrar el día equivalente.
   const mapB = useMemo(() => {
@@ -66,7 +59,7 @@ export function CrucePeriodos({
   }, [diasComparar])
 
   const periodos = useMemo(() => {
-    const todos = detectarPeriodosCriticos(diasBase, minVars)
+    const todos = detectarPeriodosCriticos(diasBase)
     if (!soloNuevos) return todos
     return todos.filter((p) => {
       const diasEq = p.dias
@@ -75,7 +68,7 @@ export function CrucePeriodos({
       // "Nuevo" = ningún día equivalente del año a comparar fue crítico.
       return !diasEq.some((d) => d.estatus === "CRITICO")
     })
-  }, [diasBase, mapB, soloNuevos, minVars])
+  }, [diasBase, mapB, soloNuevos])
 
   if (periodos.length === 0) {
     return (
@@ -154,10 +147,9 @@ function CruceCard({
     .filter((d): d is DiaCalendario => Boolean(d))
   const hayDatosB = diasB.some((d) => Number(d.hl) > 0 || Number(d.pct_ausentismo) > 0)
 
-  const maxA = Math.max(0, ...p.dias.map((d) => d.trigger_count ?? 0))
-  const maxB = Math.max(0, ...diasB.map((d) => d.trigger_count ?? 0))
-  const iA = intensidadDia(maxA)
-  const iB = intensidadDia(maxB)
+  // El período se resume por su peor día en cada año.
+  const iA = intensidadMax(p.dias)
+  const iB = intensidadMax(diasB)
 
   const varsA = varsGatilladas(p.dias)
   const varsB = varsGatilladas(diasB)
@@ -182,12 +174,14 @@ function CruceCard({
       ? `${pctVol > 0 ? "+" : ""}${Math.round(pctVol)}%`
       : null
 
-  // Veredicto por CANTIDAD DE VARIABLES gatilladas (3 estados: mejoró/empeoró/
-  // igual), siempre mirando el año más nuevo respecto al más viejo:
-  //  - normal: base=viejo, comparar=nuevo → nuevo (maxB) vs viejo (maxA)
-  //  - inverso: base=nuevo (crítico), comparar=viejo → nuevo (maxA) vs viejo (maxB)
-  const nuevoVars = inverso ? maxA : maxB
-  const viejoVars = inverso ? maxB : maxA
+  // Veredicto por CANTIDAD DE DÍAS que superaron la capacidad (3 estados:
+  // mejoró/empeoró/igual), siempre mirando el año más nuevo respecto al más viejo:
+  //  - normal: base=viejo, comparar=nuevo → nuevo (critB) vs viejo (critA)
+  //  - inverso: base=nuevo (crítico), comparar=viejo → nuevo (critA) vs viejo (critB)
+  const critA = p.dias.filter((d) => d.trigger_vol).length
+  const critB = diasB.filter((d) => d.trigger_vol).length
+  const nuevoVars = inverso ? critA : critB
+  const viejoVars = inverso ? critB : critA
   const veredicto = !hayDatosB
     ? { txt: "Aún sin datos", cls: "bg-slate-100 text-slate-500", Icon: Clock }
     : nuevoVars > viejoVars
@@ -203,7 +197,7 @@ function CruceCard({
 
         <span className="flex items-center gap-1.5 text-xs">
           <span className="text-slate-500">{anioBase}</span>
-          <Badge className={`${INTENSIDAD_BG[iA]} text-[10px]`}>{iA}</Badge>
+          <Badge className={`${INTENSIDAD_BG[iA]} text-[10px]`}>{INTENSIDAD_LABEL[iA]}</Badge>
           <Chips vars={[...varsA]} tono="bg-slate-100 text-slate-700" />
         </span>
 
@@ -213,7 +207,7 @@ function CruceCard({
           <span className="text-slate-500">{anioComparar}</span>
           {hayDatosB ? (
             <>
-              <Badge className={`${INTENSIDAD_BG[iB]} text-[10px]`}>{iB}</Badge>
+              <Badge className={`${INTENSIDAD_BG[iB]} text-[10px]`}>{INTENSIDAD_LABEL[iB]}</Badge>
               <Chips vars={[...varsB]} tono="bg-slate-100 text-slate-700" />
             </>
           ) : (
@@ -266,20 +260,20 @@ function CruceCard({
             <tbody>
               {p.dias.map((dA) => {
                 const dB = mapB.get(dA.fecha.slice(5))
-                const iaDia = intensidadDia(dA.trigger_count ?? 0)
-                const ibDia = dB ? intensidadDia(dB.trigger_count ?? 0) : null
+                const iaDia = intensidadDia(dA)
+                const ibDia = dB ? intensidadDia(dB) : null
                 const vA = VARS.filter(([k]) => dA[k] === true).map(([, l]) => l)
                 const vB = dB ? VARS.filter(([k]) => dB[k] === true).map(([, l]) => l) : []
                 return (
                   <tr key={dA.fecha} className="border-t border-slate-100">
                     <td className="px-1 py-0.5 whitespace-nowrap">{fmtDM(dA.fecha)}</td>
                     <td className="px-1 py-0.5 text-center">
-                      <span className={`px-1 rounded text-[10px] ${INTENSIDAD_BG[iaDia]}`}>{iaDia}</span>
+                      <span className={`px-1 rounded text-[10px] ${INTENSIDAD_BG[iaDia]}`}>{INTENSIDAD_LABEL[iaDia]}</span>
                     </td>
                     <td className="px-1 py-0.5"><Chips vars={vA} tono="bg-slate-100 text-slate-700" /></td>
                     <td className="px-1 py-0.5 text-center">
                       {ibDia ? (
-                        <span className={`px-1 rounded text-[10px] ${INTENSIDAD_BG[ibDia]}`}>{ibDia}</span>
+                        <span className={`px-1 rounded text-[10px] ${INTENSIDAD_BG[ibDia]}`}>{INTENSIDAD_LABEL[ibDia]}</span>
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}

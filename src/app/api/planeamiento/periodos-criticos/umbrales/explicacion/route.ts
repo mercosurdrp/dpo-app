@@ -139,16 +139,14 @@ export async function GET() {
     diasBase: habiles.length,
     volumen: {
       umbralPico,
-      umbralAlto: num(umb.vol_alto),
-      umbralMedio: num(umb.vol_medio),
       percentiles: pHl,
       percentilDelPico: percentilDe(serieHl, umbralPico),
       diasSuperanPico: serieHl.filter((v) => v >= umbralPico).length,
-      // Los umbrales alto y medio se derivaron del pico, no de percentiles
-      // propios: se declara para que nadie los defienda como estadísticos.
-      derivados: {
-        altoPctDelPico: umbralPico > 0 ? Math.round((num(umb.vol_alto) / umbralPico) * 100) : 0,
-        medioPctDelPico: umbralPico > 0 ? Math.round((num(umb.vol_medio) / umbralPico) * 100) : 0,
+      // El umbral no sale de un percentil: es la capacidad física de la flota.
+      capacidad: {
+        camiones: num(umb.camiones),
+        hlPorCamion: num(umb.hl_por_camion),
+        pctOcupacion: num(umb.pct_ocupacion),
       },
     },
     clientes: {
@@ -172,6 +170,5 @@ export async function GET() {
           : null,
       diasSuperan: serieRech.filter((v) => v > umbralRechazo).length,
     },
-    minTriggers: num(umb.min_triggers),
   })
 }

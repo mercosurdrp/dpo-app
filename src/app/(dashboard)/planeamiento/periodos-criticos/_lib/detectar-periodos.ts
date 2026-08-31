@@ -1,26 +1,20 @@
 // Detección automática de períodos críticos a partir del calendario diario.
 //
 // R3.4.1: identificar períodos para anticipar. Un día integra un período cuando
-// su INTENSIDAD es relevante = al menos MIN_VARS_PERIODO de las 4 variables
-// cruzan su target (>= MEDIO). NO depende del umbral binario `min_triggers` de
-// la config (que solo define el "crítico" del calendario): así la detección
-// funciona aunque ese umbral esté en 4. Agrupamos esos días en bloques de 1-7
-// días (con gaps cortos) y los nombramos por feriado/temporada.
+// es CRÍTICO, y crítico es una sola cosa: el volumen del día supera la capacidad
+// de distribución (`trigger_vol`). Clientes, rechazo y ausentismo no abren
+// período por sí solos. Agrupamos esos días en bloques de 1-7 días (con gaps
+// cortos) y los nombramos por feriado/temporada.
 
 import type { DiaCalendario } from "../_components/client"
 
-// Un día cuenta para un período si tiene esta cantidad de variables en target
-// o más. 2 = MEDIO+ (descarta el ruido de los días con una sola variable).
-const MIN_VARS_PERIODO = 2
-
 // Un EVENTO DE EMPRESA (ej. Expoagro) queda FIJO: sus días siempre integran un
-// período sugerido aunque no crucen el umbral de variables, así no dependen del
-// filtro `minVars`. Se marcan con tipo='empresa' en pc_feriados.
+// período sugerido aunque el volumen no llegue a la capacidad. Se marcan con
+// tipo='empresa' en pc_feriados.
 const esEventoEmpresa = (d: DiaCalendario) => d.tipo_feriado === "empresa"
 
-// Un día "ancla" un período si cruza el umbral de variables O es evento de empresa.
-const esAncla = (d: DiaCalendario, minVars: number) =>
-  (d.trigger_count ?? 0) >= minVars || esEventoEmpresa(d)
+// Un día "ancla" un período si supera el volumen O es evento de empresa.
+const esAncla = (d: DiaCalendario) => d.trigger_vol === true || esEventoEmpresa(d)
 
 export type PeriodoCritico = {
   /** "{añoMM}-{idx}" para listar y trackear. */
@@ -139,13 +133,10 @@ function generarNombreYMotivo(
 
 /**
  * Devuelve los períodos críticos detectados (bloques de 1–7 días). Un día
- * integra un período si tiene `minVars` o más variables en target (1=BAJO+,
- * 2=MEDIO+, 3=ALTO+, 4=solo PICO). El usuario controla `minVars` desde el tab.
+ * integra un período si superó la capacidad de distribución (o es evento de
+ * empresa).
  */
-export function detectarPeriodosCriticos(
-  dias: DiaCalendario[],
-  minVars: number = MIN_VARS_PERIODO,
-): PeriodoCritico[] {
+export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[] {
   // Lista plana de feriados del rango — el tooltip ya viene marcado por día,
   // pero para "pre/post feriado" necesitamos saberlos en orden.
   const feriados = dias
@@ -157,7 +148,7 @@ export function detectarPeriodosCriticos(
   let gap = 0
 
   for (const d of dias) {
-    const esAlto = esAncla(d, minVars)
+    const esAlto = esAncla(d)
 
     if (esAlto) {
       // si hay gap acumulado pero estoy abriendo bloque, los días no-ALTO previos
@@ -179,7 +170,7 @@ export function detectarPeriodosCriticos(
         gap++
       } else {
         // cortar el bloque, descartar los gap finales para que arranque/cierre en ancla
-        while (actual.length > 0 && !esAncla(actual[actual.length - 1], minVars)) {
+        while (actual.length > 0 && !esAncla(actual[actual.length - 1])) {
           actual.pop()
         }
         if (actual.length > 0) bloques.push(actual)
@@ -189,7 +180,7 @@ export function detectarPeriodosCriticos(
     }
   }
   // Cerrar el último bloque si quedó abierto
-  while (actual.length > 0 && !esAncla(actual[actual.length - 1], minVars)) {
+  while (actual.length > 0 && !esAncla(actual[actual.length - 1])) {
     actual.pop()
   }
   if (actual.length > 0) bloques.push(actual)
@@ -203,7 +194,7 @@ export function detectarPeriodosCriticos(
     // Código predominante: el código más frecuente entre los días CRITICO del bloque
     const codigosCount: Record<string, number> = {}
     for (const d of bloque) {
-      if ((d.trigger_count ?? 0) >= minVars && d.codigo) {
+      if (esAncla(d) && d.codigo) {
         codigosCount[d.codigo] = (codigosCount[d.codigo] ?? 0) + 1
       }
     }
@@ -216,7 +207,7 @@ export function detectarPeriodosCriticos(
       fechaInicio: bloque[0].fecha,
       fechaFin: bloque[bloque.length - 1].fecha,
       cantDias: bloque.length,
-      cantDiasCriticos: bloque.filter((d) => (d.trigger_count ?? 0) >= minVars).length,
+      cantDiasCriticos: bloque.filter((d) => d.trigger_vol).length,
       codigoPredominante,
       hlMax: Math.max(...bloque.map((d) => Number(d.hl))),
       hlAcum: bloque.reduce((s, d) => s + Number(d.hl), 0),

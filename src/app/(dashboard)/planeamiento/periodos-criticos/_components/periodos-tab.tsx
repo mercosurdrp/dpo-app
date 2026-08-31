@@ -17,7 +17,7 @@ import {
 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import type { DiaCalendario, PlanAccion } from "./client"
-import { intensidadDia, INTENSIDAD_BG } from "./client"
+import { intensidadDia, intensidadMax, INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
 import { detectarPeriodosCriticos, type PeriodoCritico } from "../_lib/detectar-periodos"
 
 // Período de foco que define el equipo (tabla pc_periodos_foco)
@@ -52,16 +52,16 @@ type VarP = {
   valor: (d: DiaCalendario) => string
 }
 
-// Las 3 "P" que definen un período CRÍTICO en distribución: no cumple Volumen,
-// no cumple Clientes y se suma OTIF. Son las que mira el tooltip.
+// El Volumen es el único que define el período crítico; Clientes y Rechazo
+// acompañan como contexto. Son las que mira el tooltip.
 const VARIABLES_P: VarP[] = [
-  { label: "Volumen", trigger: "trigger_vol", valor: (d) => `${fmtHL(d.hl)} HL · ${d.clasif_vol}` },
+  { label: "Volumen", trigger: "trigger_vol", valor: (d) => `${fmtHL(d.hl)} HL · ${fmtPct(d.pct_capacidad)} de la capacidad` },
   { label: "Clientes", trigger: "trigger_cli", valor: (d) => String(d.clientes_dia) },
-  { label: "OTIF", trigger: "trigger_otif", valor: (d) => fmtPct(d.otif_estimado) },
+  { label: "Rechazo", trigger: "trigger_otif", valor: (d) => fmtPct(d.otif_estimado) },
 ]
 
-// El ausentismo es una variable secundaria (no define "crítico"): se muestra
-// como dato aparte porque suele estar activa casi todo el mes e infla el conteo.
+// El ausentismo también es contexto: se muestra como dato aparte porque suele
+// estar activo casi todo el mes.
 const VAR_AUSENTISMO: VarP = {
   label: "Ausentismo", trigger: "trigger_aus", valor: (d) => fmtPct(d.pct_ausentismo),
 }
@@ -78,14 +78,13 @@ function proyectarFecha(f: string, anioDestino: number): string {
   return `${anioDestino}-${mm}-${d}`
 }
 
-// Intensidad de un período = la de su día más fuerte (más variables en target).
-const intensidadPeriodo = (p: PeriodoCritico) =>
-  intensidadDia(Math.max(0, ...p.dias.map((d) => d.trigger_count ?? 0)))
+// Intensidad de un período = la de su día más exigente.
+const intensidadPeriodo = (p: PeriodoCritico) => intensidadMax(p.dias)
 
-// Prioridad del foco según la intensidad del período (los más intensos pesan más).
+// Prioridad del foco según la intensidad del período.
 function prioridadDeIntensidad(i: ReturnType<typeof intensidadDia>): PeriodoFoco["prioridad"] {
-  if (i === "PICO" || i === "ALTO") return "alta"
-  if (i === "MEDIO") return "media"
+  if (i === "CRITICO_ALTO") return "alta"
+  if (i === "CRITICO") return "media"
   return "baja"
 }
 
@@ -106,10 +105,7 @@ export function PeriodosTab({
   const anioBase = anioAnticipar - 1
   const diasBase = useMemo(() => diasPorAnio[anioBase] ?? [], [diasPorAnio, anioBase])
 
-  // Cuántas variables (1-4) debe cruzar un día para integrar un período. Filtro
-  // en vivo que controla el usuario: define qué días del año base se traen.
-  const [minVars, setMinVars] = useState(2)
-  const periodos = useMemo(() => detectarPeriodosCriticos(diasBase, minVars), [diasBase, minVars])
+  const periodos = useMemo(() => detectarPeriodosCriticos(diasBase), [diasBase])
   const hayBase = diasBase.some((d) => Number(d.hl) > 0 || Number(d.pct_ausentismo) > 0)
 
   const planByCodigo = useMemo(() => {
@@ -308,23 +304,9 @@ export function PeriodosTab({
           {/* Selector del umbral: cuántas variables debe cruzar un día para
               que el sistema lo arme como período. Ajusta en vivo lo que trae. */}
           <div className="flex flex-wrap items-center gap-2 border-t border-sky-200 pt-2">
-            <span className="text-xs font-semibold text-slate-700">Armar períodos con días de</span>
-            {([
-              [1, "≥1 · BAJO+"],
-              [2, "≥2 · MEDIO+"],
-              [3, "≥3 · ALTO+"],
-              [4, "4 · solo PICO"],
-            ] as const).map(([v, lbl]) => (
-              <Button
-                key={v}
-                size="sm"
-                variant={minVars === v ? "default" : "outline"}
-                onClick={() => setMinVars(v)}
-              >
-                {lbl}
-              </Button>
-            ))}
-            <span className="text-xs text-slate-500">variables en target · bloques de máx 7 días</span>
+            <span className="text-xs text-slate-500">
+              Los períodos se arman con los días que superaron la capacidad de distribución · bloques de máx 7 días
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -482,11 +464,11 @@ function PeriodoCard({
               <span
                 key={d.fecha}
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] ${
-                  d.trigger_count > 0
-                    ? INTENSIDAD_BG[intensidadDia(d.trigger_count)]
+                  intensidadDia(d) !== "NORMAL"
+                    ? INTENSIDAD_BG[intensidadDia(d)]
                     : "bg-slate-100 text-slate-500"
                 }`}
-                title={`${d.dia_semana} ${d.fecha} · ${fmtHL(d.hl)} HL · cli ${d.clientes_dia} · ${intensidadDia(d.trigger_count)} (${d.trigger_count}/4)`}
+                title={`${d.dia_semana} ${d.fecha} · ${fmtHL(d.hl)} HL · cli ${d.clientes_dia} · ${INTENSIDAD_LABEL[intensidadDia(d)]}`}
               >
                 {d.fecha === p.diaPico && <Star className="w-3 h-3" />}
                 {fmtFecha(d.fecha)}

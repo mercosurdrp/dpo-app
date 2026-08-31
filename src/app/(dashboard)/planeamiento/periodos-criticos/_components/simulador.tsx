@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { RotateCcw, Copy, Trash2, FolderOpen, Bookmark } from "lucide-react"
 import type { CfgPC, DiaCalendario, UmbralesPC } from "./client"
-import { intensidadDia, INTENSIDAD_BG } from "./client"
+import { intensidadDia, INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
 
 // Escenario tal como vuelve del GET /escenarios. Las 4 variables se persisten.
 type EscenarioGuardado = {
@@ -69,7 +69,7 @@ function recalcular(
   const nivel: "BAJO" | "MEDIO" | "ALTO" =
     score >= cfg.umbral_alto ? "ALTO" : score >= cfg.umbral_medio ? "MEDIO" : "BAJO"
 
-  // Triggers Mercosur (lo que define crítico)
+  // El volumen define crítico; los otros tres son contexto.
   const trigger_vol = hl >= umbrales.vol_pico
   const trigger_cli = clientes_dia > umbrales.clientes
   const trigger_otif = hl > 0 && otif_estimado > umbrales.otif_min
@@ -79,9 +79,7 @@ function recalcular(
     (trigger_vol ? "P" : "") +
     (trigger_cli ? "P" : "") +
     (trigger_aus ? "P" : "")
-  const triggerCount = codigo.length
-  const estatus: "CRITICO" | "NORMAL" =
-    triggerCount >= umbrales.min_triggers ? "CRITICO" : "NORMAL"
+  const estatus: "CRITICO" | "NORMAL" = trigger_vol ? "CRITICO" : "NORMAL"
 
   return {
     hl, pct_rechazo, otif_estimado, pct_ausentismo, clientes_dia,
@@ -118,7 +116,7 @@ export function SimuladorTab({
     () =>
       dias.filter((d) => d.hl > 0 || d.pct_ausentismo > 0 || d.es_feriado).map((d) => ({
         value: d.fecha,
-        label: `${d.fecha} · ${d.dia_semana} · ${fmtHL(d.hl)} HL · ${d.estatus}${d.trigger_count ? " · " + intensidadDia(d.trigger_count) : ""}`,
+        label: `${d.fecha} · ${d.dia_semana} · ${fmtHL(d.hl)} HL · ${INTENSIDAD_LABEL[intensidadDia(d)]}`,
       })),
     [dias],
   )
@@ -278,8 +276,6 @@ export function SimuladorTab({
           clientes_dia={base.clientes_dia}
           camiones={base.camiones}
           score={base.score}
-          codigo={base.codigo}
-          estatus={base.estatus}
           triggers={{
             vol: base.trigger_vol,
             cli: base.trigger_cli,
@@ -297,8 +293,6 @@ export function SimuladorTab({
             clientes_dia={sim.clientes_dia}
             camiones={base.camiones}
             score={sim.score}
-            codigo={sim.codigo}
-            estatus={sim.estatus}
             triggers={{
               vol: sim.trigger_vol,
               cli: sim.trigger_cli,
@@ -460,8 +454,6 @@ function EscenarioCard({
   clientes_dia,
   camiones,
   score,
-  codigo,
-  estatus,
   triggers,
 }: {
   titulo: string
@@ -472,18 +464,21 @@ function EscenarioCard({
   clientes_dia: number
   camiones: number
   score: number
-  codigo: string
-  estatus: "CRITICO" | "NORMAL"
   triggers: { vol: boolean; cli: boolean; otif: boolean; aus: boolean }
 }) {
-  const intensidad = intensidadDia(codigo.length)
+  const intensidad = intensidadDia({
+    trigger_vol: triggers.vol,
+    trigger_cli: triggers.cli,
+    trigger_otif: triggers.otif,
+    trigger_aus: triggers.aus,
+  })
   return (
     <Card className={destacado ? "border-2 border-slate-900" : ""}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center justify-between">
           {titulo}
           <Badge className={`${INTENSIDAD_BG[intensidad]} font-semibold`}>
-            {intensidad} · {estatus}
+            {INTENSIDAD_LABEL[intensidad]}
           </Badge>
         </CardTitle>
       </CardHeader>
