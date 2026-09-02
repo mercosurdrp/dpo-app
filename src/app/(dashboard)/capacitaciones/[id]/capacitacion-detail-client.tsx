@@ -57,9 +57,17 @@ import {
   RESULTADO_COLORS,
   RESULTADO_LABELS,
 } from "@/lib/constants"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import {
+  setEstadoManual,
   updateCapacitacion,
   toggleCapacitacionVisible,
   addAsistentes,
@@ -81,8 +89,9 @@ import type {
   ResultadoCapacitacion,
 } from "@/types/database"
 import {
+  ESTADOS_MANUALES,
   UMBRAL_CUMPLIDA_PCT,
-  esCierreManual,
+  esEstadoManual,
   estadoDerivado,
   formatDuracion,
 } from "@/lib/capacitacion-estado"
@@ -156,14 +165,32 @@ export function CapacitacionDetailClient({
   }, [cap.asistencias])
 
   // El estado que se muestra es el mismo que calcula el listado: lo manda el
-  // avance, salvo que esté cerrada a mano.
+  // avance, salvo que esté cargado a mano (cursos externos) o dada de baja.
   const entradaEstado = {
     estado: cap.estado,
     total_asistentes: stats.total,
     aprobados: stats.aprobados,
+    estado_manual: cap.estado_manual ?? null,
   }
   const estadoReal = estadoDerivado(entradaEstado)
-  const cierreManual = esCierreManual(entradaEstado)
+  const manual = esEstadoManual(entradaEstado)
+
+  /** Estado cargado a mano: `null` devuelve la capacitación al cálculo. */
+  async function handleEstadoManual(estado: EstadoCapacitacion | null) {
+    startTransition(async () => {
+      const result = await setEstadoManual(cap.id, estado)
+      if ("error" in result) {
+        toast.error(result.error)
+      } else {
+        setCap((prev) => ({ ...prev, estado_manual: estado }))
+        toast.success(
+          estado
+            ? `Estado manual: ${ESTADO_CAPACITACION_LABELS[estado]}`
+            : "Vuelve a calcularse por el avance"
+        )
+      }
+    })
+  }
 
   async function handleEstadoChange(estado: EstadoCapacitacion) {
     startTransition(async () => {
@@ -299,7 +326,9 @@ export function CapacitacionDetailClient({
               title={
                 cap.estado === "cancelada"
                   ? "Capacitación dada de baja"
-                  : `Se calcula solo: ${UMBRAL_CUMPLIDA_PCT} % de aprobados o más = Cumplida`
+                  : manual
+                    ? "Estado cargado a mano"
+                    : `Se calcula solo: ${UMBRAL_CUMPLIDA_PCT} % de aprobados o más = Cumplida`
               }
             >
               <span
@@ -308,37 +337,60 @@ export function CapacitacionDetailClient({
               >
                 {ESTADO_CAPACITACION_LABELS[estadoReal]}
               </span>
-              {cap.estado !== "cancelada" && (
+              {cap.estado !== "cancelada" && !manual && (
                 <span className="text-xs text-slate-500">
                   {stats.pctAprobados ?? 0} % aprobados
                 </span>
               )}
-              {cierreManual && (
-                <span
-                  className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600"
-                  title="Se da por cumplida a mano: el examen no llega al umbral"
-                >
-                  manual
-                </span>
-              )}
             </div>
-            {cap.estado !== "cancelada" && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isPending}
-                title={
-                  cap.estado === "completada"
-                    ? "Vuelve a calcularse por el avance"
-                    : `Darla por cumplida aunque no llegue al ${UMBRAL_CUMPLIDA_PCT} %`
-                }
-                onClick={() =>
-                  handleEstadoChange(cap.estado === "completada" ? "programada" : "completada")
-                }
-              >
-                {cap.estado === "completada" ? "Quitar cumplida a mano" : "Marcar cumplida"}
-              </Button>
-            )}
+            {/* Cursos externos: no se rinden en la app, así que el estado se
+                carga a mano. Con "Manual" apagado, lo calcula el avance. */}
+            {cap.estado !== "cancelada" &&
+              (manual ? (
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={cap.estado_manual ?? "programada"}
+                    onValueChange={(v) => handleEstadoManual(v as EstadoCapacitacion)}
+                  >
+                    <SelectTrigger className="w-40">
+                      {/* Sin children muestra el valor crudo ("en_curso"). */}
+                      <SelectValue>
+                        {(v: string | null) =>
+                          ESTADO_CAPACITACION_LABELS[
+                            (v ?? "programada") as EstadoCapacitacion
+                          ]
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ESTADOS_MANUALES.map((e) => (
+                        <SelectItem key={e} value={e}>
+                          {ESTADO_CAPACITACION_LABELS[e]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    title="Vuelve a calcularse por el avance de los exámenes"
+                    onClick={() => handleEstadoManual(null)}
+                  >
+                    Automático
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isPending}
+                  title="Cargar el estado a mano (cursos externos)"
+                  onClick={() => handleEstadoManual(estadoReal === "cancelada" ? "programada" : estadoReal)}
+                >
+                  Manual
+                </Button>
+              ))}
             <Button
               variant="outline"
               size="sm"

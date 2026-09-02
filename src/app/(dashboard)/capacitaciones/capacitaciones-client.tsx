@@ -46,7 +46,7 @@ import {
 } from "@/lib/constants"
 import { createCapacitacion, deleteCapacitacion, toggleCapacitacionVisible } from "@/actions/capacitaciones"
 import type { CapacitacionConResumen, EstadoCapacitacion } from "@/types/database"
-import { esCierreManual, estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
+import { esEstadoManual, estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
 import { CapacitacionesCalendario } from "./capacitaciones-calendario"
 import { CapacitacionesAdherencia } from "./capacitaciones-adherencia"
 
@@ -134,7 +134,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
       capacitaciones.map((c) => ({
         ...c,
         estadoReal: estadoDerivado(c),
-        cierreManual: esCierreManual(c),
+        estadoManual: esEstadoManual(c),
       })),
     [capacitaciones]
   )
@@ -669,13 +669,10 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                         color: ESTADO_CAPACITACION_COLORS[cap.estadoReal],
                       }}
                       title={
-                        cap.cierreManual
-                          ? "Cumplida a mano: el examen no llega al umbral"
-                          : undefined
+                        cap.estadoManual ? "Estado cargado a mano" : undefined
                       }
                     >
                       {ESTADO_CAPACITACION_LABELS[cap.estadoReal]}
-                      {cap.cierreManual && " · manual"}
                     </Badge>
                   </div>
                 </CardHeader>

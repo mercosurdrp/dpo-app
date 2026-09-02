@@ -659,6 +659,8 @@ export interface AsistenciaConEmpleado extends Asistencia {
 
 export interface CapacitacionFull extends Capacitacion {
   asistencias: AsistenciaConEmpleado[]
+  /** Estado puesto a mano (cursos externos). Null = lo calcula el avance. */
+  estado_manual?: EstadoCapacitacion | null
 }
 
 export interface CapacitacionConResumen extends Capacitacion {
@@ -667,6 +669,8 @@ export interface CapacitacionConResumen extends Capacitacion {
   rendidos: number
   pendientes: number
   aprobados: number
+  /** Estado puesto a mano (cursos externos). Null = lo calcula el avance. */
+  estado_manual?: EstadoCapacitacion | null
 }
 
 export interface CapacitacionPregunta {

@@ -4,6 +4,12 @@ export interface CapacitacionEstadoInput {
   estado: EstadoCapacitacion
   total_asistentes: number
   aprobados: number
+  /**
+   * Estado puesto a mano. Si viene cargado, manda sobre el cálculo: es el caso
+   * de los cursos externos, que no se rinden en la app y por eso nunca tendrían
+   * avance. Null / undefined = lo calcula el avance.
+   */
+  estado_manual?: EstadoCapacitacion | null
   /** Ya no entran en el estado; se dejan por compatibilidad con los llamadores. */
   fecha?: string | null
   presentes?: number
@@ -31,6 +37,32 @@ export const UMBRAL_CUMPLIDA = 0.9
 export const UMBRAL_CUMPLIDA_PCT = Math.round(UMBRAL_CUMPLIDA * 100)
 
 /**
+ * Dónde vive el override manual: `app_config`, en una sola fila con un mapa
+ * { capacitacionId: estado }. No hay columna propia y contra la base de
+ * Misiones no se puede correr DDL desde la VM.
+ */
+export const CLAVE_ESTADO_MANUAL = "capacitaciones:estado_manual"
+
+export function parseEstadosManuales(
+  valor: string | null | undefined
+): Record<string, EstadoCapacitacion> {
+  if (!valor) return {}
+  try {
+    const parsed = JSON.parse(valor)
+    return parsed && typeof parsed === "object" ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+/** Los estados que se pueden poner a mano. La baja va por su propio botón. */
+export const ESTADOS_MANUALES: EstadoCapacitacion[] = [
+  "programada",
+  "en_curso",
+  "completada",
+]
+
+/**
  * Avance de la capacitación, 0-100: qué porcentaje de sus asistentes aprobó.
  * Es el mismo número que muestra la tarjeta ("88 % aprobados 7/8").
  */
@@ -49,16 +81,15 @@ export function pctAvance(c: Pick<CapacitacionEstadoInput, "total_asistentes" | 
  *   fecha ya haya pasado: antes esas se mostraban "en curso" sólo por la
  *   fecha y tapaban que no las había arrancado nadie.
  *
- * Dos marcas cargadas a mano pisan ese cálculo:
- * - **Cancelada**: una capacitación dada de baja no vuelve sola.
- * - **Completada**: el **cierre manual** — se dictó y se da por cumplida
- *   aunque el examen no llegue al umbral (pedido del usuario, 2026-09-02).
- *   No es lo mismo que una cumplida por avance, así que la pantalla y el
- *   Excel la marcan como manual (`esCierreManual`).
+ * Dos cosas pisan ese cálculo:
+ * - **`estado_manual`**: el estado se cargó a mano. Es para los cursos
+ *   **externos**, que no se rinden en la app y por eso nunca tendrían avance.
+ * - **Cancelada** (`estado` de la tabla): una capacitación dada de baja no
+ *   vuelve sola.
  */
 export function estadoDerivado(c: CapacitacionEstadoInput): EstadoCapacitacion {
   if (c.estado === "cancelada") return "cancelada"
-  if (c.estado === "completada") return "completada"
+  if (c.estado_manual) return c.estado_manual
   // Se compara el porcentaje REDONDEADO, que es el que se ve en pantalla: si la
   // tarjeta dice "90 % aprobados" tiene que estar cumplida (44/49 = 89,8 % se
   // muestra como 90 %, y quedaba En curso).
@@ -67,11 +98,7 @@ export function estadoDerivado(c: CapacitacionEstadoInput): EstadoCapacitacion {
   return pct > 0 ? "en_curso" : "programada"
 }
 
-/**
- * Cumplida porque alguien la cerró a mano, no porque el avance llegue al
- * umbral. Si además llega al 90 % la marca no aporta nada, así que no se
- * muestra: sólo interesa señalar las que se dan por cumplidas sin llegar.
- */
-export function esCierreManual(c: CapacitacionEstadoInput): boolean {
-  return c.estado === "completada" && Math.round(pctAvance(c)) < UMBRAL_CUMPLIDA_PCT
+/** El estado lo puso una persona, no el avance. */
+export function esEstadoManual(c: CapacitacionEstadoInput): boolean {
+  return c.estado !== "cancelada" && !!c.estado_manual
 }

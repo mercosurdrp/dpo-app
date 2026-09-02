@@ -4,7 +4,13 @@ import { NextRequest, NextResponse } from "next/server"
 import * as XLSX from "xlsx"
 import { createClient } from "@/lib/supabase/server"
 import { ESTADO_CAPACITACION_LABELS } from "@/lib/constants"
-import { esCierreManual, estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
+import {
+  CLAVE_ESTADO_MANUAL,
+  esEstadoManual,
+  estadoDerivado,
+  formatDuracion,
+  parseEstadosManuales,
+} from "@/lib/capacitacion-estado"
 import { calcularAdherencia, type ItemAdherencia } from "@/lib/capacitacion-adherencia"
 import { HAY_PAC, META_CUMPLIMIENTO, PAC_2026_ORIGEN, PAC_2026_TOTAL } from "@/lib/pac-2026"
 import type {
@@ -146,6 +152,14 @@ export async function GET(_req: NextRequest) {
       }
     }
 
+    // Estados cargados a mano (cursos externos): mismo origen que la pantalla.
+    const { data: cfgManual } = await supabase
+      .from("app_config")
+      .select("valor")
+      .eq("clave", CLAVE_ESTADO_MANUAL)
+      .maybeSingle()
+    const manuales = parseEstadosManuales((cfgManual as { valor: string } | null)?.valor)
+
     type Row = Record<string, string | number | null>
     const rows: Row[] = []
     const itemsAdherencia: ItemAdherencia[] = []
@@ -158,9 +172,10 @@ export async function GET(_req: NextRequest) {
         estado: c.estado,
         total_asistentes: list.length,
         aprobados,
+        estado_manual: manuales[c.id] ?? null,
       }
       const estadoReal = estadoDerivado(entradaEstado)
-      const cierreManual = esCierreManual(entradaEstado)
+      const estadoManual = esEstadoManual(entradaEstado)
       const estadoLabel =
         ESTADO_CAPACITACION_LABELS[estadoReal] ?? estadoReal
       itemsAdherencia.push({
@@ -169,7 +184,7 @@ export async function GET(_req: NextRequest) {
         fecha: c.fecha,
         pilar: c.pilar,
         estadoReal,
-        cierreManual,
+        estadoManual,
       })
       const base = {
         Capacitación: c.titulo,
@@ -178,7 +193,7 @@ export async function GET(_req: NextRequest) {
         Fecha: fmtDate(c.fecha),
         Duración: formatDuracion(c.duracion_horas),
         Estado: estadoLabel,
-        Cierre: cierreManual ? "Manual" : "Automático",
+        "Estado cargado": estadoManual ? "Manual" : "Automático",
         Lugar: c.lugar ?? "",
         Descripción: c.descripcion ?? "",
         Visible: fmtBool(c.visible),
@@ -237,7 +252,7 @@ export async function GET(_req: NextRequest) {
         // columna vacía + otra "Duración" suelta al final.
         "Duración",
         "Estado",
-        "Cierre",
+        "Estado cargado",
         "Lugar",
         "Descripción",
         "Visible",
@@ -331,9 +346,9 @@ function hojaAdherencia(items: ItemAdherencia[], today: string) {
     ],
     ["Atrasadas", a.atrasadas.length, "Vencidas sin cerrar"],
     [
-      "Cumplidas a mano",
+      "Cumplidas con estado manual",
       a.cumplidasManuales,
-      `De las ${a.cumplidasAnual} cumplidas, cerradas a mano sin llegar al ${metaPct} % del examen`,
+      `De las ${a.cumplidasAnual} cumplidas, con el estado cargado a mano (cursos externos)`,
     ],
     [
       "Cumplimiento anual (%)",

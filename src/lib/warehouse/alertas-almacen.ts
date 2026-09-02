@@ -17,7 +17,11 @@
 
 import * as XLSX from "xlsx"
 import { resolverPadron, normalizarNombre } from "./owd-padron"
-import { estadoDerivado } from "@/lib/capacitacion-estado"
+import {
+  CLAVE_ESTADO_MANUAL,
+  estadoDerivado,
+  parseEstadosManuales,
+} from "@/lib/capacitacion-estado"
 import { normalizePilar } from "@/lib/capacitacion-adherencia"
 import { esFeriado } from "@/lib/feriados-ar"
 import { SLA_CARGA_TARGET } from "@/lib/sla-cumplimiento"
@@ -386,6 +390,15 @@ async function chequeoCapacitaciones(sb: Sb, ahora: Date): Promise<Alerta[]> {
       deAlmacen.map((c: any) => c.id),
     )
 
+  // Estado cargado a mano (cursos externos): si no se lee, una capacitación
+  // externa dada por cumplida seguiría figurando como atrasada acá.
+  const { data: cfgManual } = await sb
+    .from("app_config")
+    .select("valor")
+    .eq("clave", CLAVE_ESTADO_MANUAL)
+    .maybeSingle()
+  const manuales = parseEstadosManuales((cfgManual as { valor: string } | null)?.valor)
+
   type Resumen = {
     total: number
     presentes: number
@@ -418,6 +431,7 @@ async function chequeoCapacitaciones(sb: Sb, ahora: Date): Promise<Alerta[]> {
       estado: c.estado,
       total_asistentes: r.total,
       aprobados: r.aprobados,
+      estado_manual: manuales[c.id] ?? null,
     })
     if (estado === "completada" || estado === "cancelada") continue
     atrasadas.push({

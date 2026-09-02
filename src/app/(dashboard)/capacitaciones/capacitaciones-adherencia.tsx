@@ -291,8 +291,8 @@ export function CapacitacionesAdherencia({ capacitaciones, hoy }: Props) {
               {a.cumplidasManuales > 0 && (
                 <>
                   {" "}
-                  De las {a.cumplidasAnual} cumplidas, <b>{a.cumplidasManuales}</b> se dieron por
-                  cumplidas a mano sin llegar al {METAPCT} % del examen.
+                  De las {a.cumplidasAnual} cumplidas, <b>{a.cumplidasManuales}</b> tienen el
+                  estado cargado a mano (cursos externos).
                 </>
               )}
             </p>
