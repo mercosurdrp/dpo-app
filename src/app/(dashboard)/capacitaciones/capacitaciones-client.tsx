@@ -123,8 +123,8 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
   }, [])
 
   const withDerived = useMemo(
-    () => capacitaciones.map((c) => ({ ...c, estadoReal: estadoDerivado(c, hoy) })),
-    [capacitaciones, hoy]
+    () => capacitaciones.map((c) => ({ ...c, estadoReal: estadoDerivado(c) })),
+    [capacitaciones]
   )
 
   const filtered = useMemo(() => {

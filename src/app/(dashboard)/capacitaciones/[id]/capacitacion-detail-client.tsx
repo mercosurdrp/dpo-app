@@ -43,13 +43,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   Table,
   TableBody,
   TableCell,
@@ -87,7 +80,11 @@ import type {
   EstadoCapacitacion,
   ResultadoCapacitacion,
 } from "@/types/database"
-import { formatDuracion } from "@/lib/capacitacion-estado"
+import {
+  UMBRAL_CUMPLIDA_PCT,
+  estadoDerivado,
+  formatDuracion,
+} from "@/lib/capacitacion-estado"
 
 interface DpoHierarchyPilar {
   id: string
@@ -156,6 +153,13 @@ export function CapacitacionDetailClient({
     const pctAprobados = total > 0 ? Math.round((aprobados / total) * 100) : null
     return { total, presentes, aprobados, desaprobados, pctAprobados }
   }, [cap.asistencias])
+
+  // El estado que se muestra es el mismo que calcula el listado: lo manda el avance.
+  const estadoReal = estadoDerivado({
+    estado: cap.estado,
+    total_asistentes: stats.total,
+    aprobados: stats.aprobados,
+  })
 
   async function handleEstadoChange(estado: EstadoCapacitacion) {
     startTransition(async () => {
@@ -280,23 +284,42 @@ export function CapacitacionDetailClient({
               {cap.visible ? <Eye className="mr-2 size-4" /> : <EyeOff className="mr-2 size-4" />}
               {cap.visible ? "Visible" : "Oculta"}
             </Button>
-            <Select
-              value={cap.estado}
-              onValueChange={(v) => handleEstadoChange(v as EstadoCapacitacion)}
+            {/* El estado ya no se elige a mano: lo define el avance (≥ 90 % aprobados
+                = Cumplida). Lo único que se decide acá es dar de baja o reactivar. */}
+            <div
+              className="flex items-center gap-2 rounded-md border px-3 py-1.5"
+              style={{
+                borderColor: ESTADO_CAPACITACION_COLORS[estadoReal] + "55",
+                backgroundColor: ESTADO_CAPACITACION_COLORS[estadoReal] + "12",
+              }}
+              title={
+                cap.estado === "cancelada"
+                  ? "Capacitación dada de baja"
+                  : `Se calcula solo: ${UMBRAL_CUMPLIDA_PCT} % de aprobados o más = Cumplida`
+              }
             >
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(
-                  ["programada", "en_curso", "completada", "cancelada"] as const
-                ).map((e) => (
-                  <SelectItem key={e} value={e}>
-                    {ESTADO_CAPACITACION_LABELS[e]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <span
+                className="text-sm font-semibold"
+                style={{ color: ESTADO_CAPACITACION_COLORS[estadoReal] }}
+              >
+                {ESTADO_CAPACITACION_LABELS[estadoReal]}
+              </span>
+              {cap.estado !== "cancelada" && (
+                <span className="text-xs text-slate-500">
+                  {stats.pctAprobados ?? 0} % aprobados
+                </span>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isPending}
+              onClick={() =>
+                handleEstadoChange(cap.estado === "cancelada" ? "programada" : "cancelada")
+              }
+            >
+              {cap.estado === "cancelada" ? "Reactivar" : "Dar de baja"}
+            </Button>
           </div>
         )}
       </div>

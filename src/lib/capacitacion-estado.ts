@@ -2,11 +2,13 @@ import type { EstadoCapacitacion } from "@/types/database"
 
 export interface CapacitacionEstadoInput {
   estado: EstadoCapacitacion
-  fecha: string
   total_asistentes: number
-  presentes: number
-  rendidos: number
-  pendientes: number
+  aprobados: number
+  /** Ya no entran en el estado; se dejan por compatibilidad con los llamadores. */
+  fecha?: string | null
+  presentes?: number
+  rendidos?: number
+  pendientes?: number
 }
 
 /**
@@ -24,15 +26,40 @@ export function formatDuracion(duracionHoras: number | null | undefined): string
   return `${h} h ${min} min`
 }
 
-export function estadoDerivado(
-  c: CapacitacionEstadoInput,
-  today: string = new Date().toISOString().slice(0, 10)
-): EstadoCapacitacion {
-  if (c.estado === "cancelada" || c.estado === "completada") return c.estado
-  if (c.total_asistentes === 0) {
-    return c.fecha <= today ? "en_curso" : "programada"
-  }
-  if (c.pendientes === 0) return "completada"
-  if (c.presentes > 0 || c.rendidos > 0 || c.fecha <= today) return "en_curso"
-  return "programada"
+/** A partir de este avance la capacitación se da por cumplida. */
+export const UMBRAL_CUMPLIDA = 0.9
+export const UMBRAL_CUMPLIDA_PCT = Math.round(UMBRAL_CUMPLIDA * 100)
+
+/**
+ * Avance de la capacitación, 0-100: qué porcentaje de sus asistentes aprobó.
+ * Es el mismo número que muestra la tarjeta ("88 % aprobados 7/8").
+ */
+export function pctAvance(c: Pick<CapacitacionEstadoInput, "total_asistentes" | "aprobados">): number {
+  if (!c.total_asistentes) return 0
+  return (c.aprobados / c.total_asistentes) * 100
+}
+
+/**
+ * Estado real de una capacitación. Lo define el avance, no la carga manual
+ * (pedido del usuario, 2026-09-02):
+ *
+ * - **≥ 90 % aprobados → Completada.**
+ * - **entre 1 % y 89 % → En curso.**
+ * - **0 % (nadie aprobó todavía, o sin asistentes) → Pendiente**, aunque la
+ *   fecha ya haya pasado: antes esas se mostraban "en curso" sólo por la
+ *   fecha y tapaban que no las había arrancado nadie.
+ *
+ * 🚨 Lo único que sigue mandando por encima del cálculo es **Cancelada**: una
+ * capacitación que se dio de baja no vuelve sola. El resto de los estados
+ * cargados a mano se ignoran, así que nadie puede cerrar a mano una
+ * capacitación que nadie rindió.
+ */
+export function estadoDerivado(c: CapacitacionEstadoInput): EstadoCapacitacion {
+  if (c.estado === "cancelada") return "cancelada"
+  // Se compara el porcentaje REDONDEADO, que es el que se ve en pantalla: si la
+  // tarjeta dice "90 % aprobados" tiene que estar cumplida (44/49 = 89,8 % se
+  // muestra como 90 %, y quedaba En curso).
+  const pct = Math.round(pctAvance(c))
+  if (pct >= UMBRAL_CUMPLIDA_PCT) return "completada"
+  return pct > 0 ? "en_curso" : "programada"
 }

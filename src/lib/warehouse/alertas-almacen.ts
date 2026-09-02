@@ -386,8 +386,20 @@ async function chequeoCapacitaciones(sb: Sb, ahora: Date): Promise<Alerta[]> {
       deAlmacen.map((c: any) => c.id),
     )
 
-  type Resumen = { total: number; presentes: number; rendidos: number; pendientes: number }
-  const vacio = (): Resumen => ({ total: 0, presentes: 0, rendidos: 0, pendientes: 0 })
+  type Resumen = {
+    total: number
+    presentes: number
+    rendidos: number
+    pendientes: number
+    aprobados: number
+  }
+  const vacio = (): Resumen => ({
+    total: 0,
+    presentes: 0,
+    rendidos: 0,
+    pendientes: 0,
+    aprobados: 0,
+  })
   const resumen = new Map<string, Resumen>()
   for (const a of asis ?? []) {
     const r = resumen.get(a.capacitacion_id) ?? vacio()
@@ -395,23 +407,18 @@ async function chequeoCapacitaciones(sb: Sb, ahora: Date): Promise<Alerta[]> {
     if (a.presente) r.presentes++
     if (a.resultado === "pendiente") r.pendientes++
     else r.rendidos++
+    if (a.resultado === "aprobado") r.aprobados++
     resumen.set(a.capacitacion_id, r)
   }
 
   const atrasadas: Array<{ fecha: string; titulo: string; dias: number; porQue: string }> = []
   for (const c of deAlmacen) {
     const r = resumen.get(c.id) ?? vacio()
-    const estado = estadoDerivado(
-      {
-        estado: c.estado,
-        fecha: c.fecha,
-        total_asistentes: r.total,
-        presentes: r.presentes,
-        rendidos: r.rendidos,
-        pendientes: r.pendientes,
-      },
-      hoy,
-    )
+    const estado = estadoDerivado({
+      estado: c.estado,
+      total_asistentes: r.total,
+      aprobados: r.aprobados,
+    })
     if (estado === "completada" || estado === "cancelada") continue
     atrasadas.push({
       fecha: c.fecha,

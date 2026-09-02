@@ -153,20 +153,12 @@ export async function GET(_req: NextRequest) {
     const today = new Date().toISOString().slice(0, 10)
     for (const c of caps) {
       const list = asistByCap.get(c.id) ?? []
-      const presentes = list.filter((a) => a.presente).length
-      const rendidos = list.filter((a) => a.resultado && a.resultado !== "pendiente").length
-      const pendientes = list.filter((a) => !a.resultado || a.resultado === "pendiente").length
-      const estadoReal = estadoDerivado(
-        {
-          estado: c.estado,
-          fecha: c.fecha,
-          total_asistentes: list.length,
-          presentes,
-          rendidos,
-          pendientes,
-        },
-        today
-      )
+      const aprobados = list.filter((a) => a.resultado === "aprobado").length
+      const estadoReal = estadoDerivado({
+        estado: c.estado,
+        total_asistentes: list.length,
+        aprobados,
+      })
       const estadoLabel =
         ESTADO_CAPACITACION_LABELS[estadoReal] ?? estadoReal
       itemsAdherencia.push({
