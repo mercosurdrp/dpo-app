@@ -40,7 +40,7 @@ export function pctAvance(c: Pick<CapacitacionEstadoInput, "total_asistentes" | 
 }
 
 /**
- * Estado real de una capacitación. Lo define el avance, no la carga manual
+ * Estado real de una capacitación. Por defecto lo define el avance
  * (pedido del usuario, 2026-09-02):
  *
  * - **≥ 90 % aprobados → Completada.**
@@ -49,17 +49,29 @@ export function pctAvance(c: Pick<CapacitacionEstadoInput, "total_asistentes" | 
  *   fecha ya haya pasado: antes esas se mostraban "en curso" sólo por la
  *   fecha y tapaban que no las había arrancado nadie.
  *
- * 🚨 Lo único que sigue mandando por encima del cálculo es **Cancelada**: una
- * capacitación que se dio de baja no vuelve sola. El resto de los estados
- * cargados a mano se ignoran, así que nadie puede cerrar a mano una
- * capacitación que nadie rindió.
+ * Dos marcas cargadas a mano pisan ese cálculo:
+ * - **Cancelada**: una capacitación dada de baja no vuelve sola.
+ * - **Completada**: el **cierre manual** — se dictó y se da por cumplida
+ *   aunque el examen no llegue al umbral (pedido del usuario, 2026-09-02).
+ *   No es lo mismo que una cumplida por avance, así que la pantalla y el
+ *   Excel la marcan como manual (`esCierreManual`).
  */
 export function estadoDerivado(c: CapacitacionEstadoInput): EstadoCapacitacion {
   if (c.estado === "cancelada") return "cancelada"
+  if (c.estado === "completada") return "completada"
   // Se compara el porcentaje REDONDEADO, que es el que se ve en pantalla: si la
   // tarjeta dice "90 % aprobados" tiene que estar cumplida (44/49 = 89,8 % se
   // muestra como 90 %, y quedaba En curso).
   const pct = Math.round(pctAvance(c))
   if (pct >= UMBRAL_CUMPLIDA_PCT) return "completada"
   return pct > 0 ? "en_curso" : "programada"
+}
+
+/**
+ * Cumplida porque alguien la cerró a mano, no porque el avance llegue al
+ * umbral. Si además llega al 90 % la marca no aporta nada, así que no se
+ * muestra: sólo interesa señalar las que se dan por cumplidas sin llegar.
+ */
+export function esCierreManual(c: CapacitacionEstadoInput): boolean {
+  return c.estado === "completada" && Math.round(pctAvance(c)) < UMBRAL_CUMPLIDA_PCT
 }

@@ -82,6 +82,7 @@ import type {
 } from "@/types/database"
 import {
   UMBRAL_CUMPLIDA_PCT,
+  esCierreManual,
   estadoDerivado,
   formatDuracion,
 } from "@/lib/capacitacion-estado"
@@ -154,12 +155,15 @@ export function CapacitacionDetailClient({
     return { total, presentes, aprobados, desaprobados, pctAprobados }
   }, [cap.asistencias])
 
-  // El estado que se muestra es el mismo que calcula el listado: lo manda el avance.
-  const estadoReal = estadoDerivado({
+  // El estado que se muestra es el mismo que calcula el listado: lo manda el
+  // avance, salvo que esté cerrada a mano.
+  const entradaEstado = {
     estado: cap.estado,
     total_asistentes: stats.total,
     aprobados: stats.aprobados,
-  })
+  }
+  const estadoReal = estadoDerivado(entradaEstado)
+  const cierreManual = esCierreManual(entradaEstado)
 
   async function handleEstadoChange(estado: EstadoCapacitacion) {
     startTransition(async () => {
@@ -309,7 +313,32 @@ export function CapacitacionDetailClient({
                   {stats.pctAprobados ?? 0} % aprobados
                 </span>
               )}
+              {cierreManual && (
+                <span
+                  className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600"
+                  title="Se da por cumplida a mano: el examen no llega al umbral"
+                >
+                  manual
+                </span>
+              )}
             </div>
+            {cap.estado !== "cancelada" && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isPending}
+                title={
+                  cap.estado === "completada"
+                    ? "Vuelve a calcularse por el avance"
+                    : `Darla por cumplida aunque no llegue al ${UMBRAL_CUMPLIDA_PCT} %`
+                }
+                onClick={() =>
+                  handleEstadoChange(cap.estado === "completada" ? "programada" : "completada")
+                }
+              >
+                {cap.estado === "completada" ? "Quitar cumplida a mano" : "Marcar cumplida"}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

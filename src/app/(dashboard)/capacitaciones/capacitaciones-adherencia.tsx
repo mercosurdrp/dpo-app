@@ -288,6 +288,13 @@ export function CapacitacionesAdherencia({ capacitaciones, hoy }: Props) {
               La adherencia se mide contra el calendarizado del sistema, que es la evidencia
               auditable. En verde, las cumplidas antes de su fecha: suman al cumplimiento anual pero
               todavía no a la adherencia.
+              {a.cumplidasManuales > 0 && (
+                <>
+                  {" "}
+                  De las {a.cumplidasAnual} cumplidas, <b>{a.cumplidasManuales}</b> se dieron por
+                  cumplidas a mano sin llegar al {METAPCT} % del examen.
+                </>
+              )}
             </p>
           </div>
 
