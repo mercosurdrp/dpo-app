@@ -12,12 +12,12 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  CalendarRange, Star, AlertTriangle, CalendarClock, Copy, Check,
+  CalendarRange, Star, AlertTriangle, Copy, Check,
   Target, Plus, Pencil, Trash2, Sparkles,
 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import type { DiaCalendario, PlanAccion } from "./client"
-import { intensidadDia, intensidadMax, INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
+import type { DiaCalendario, PlanAccion, Intensidad } from "./client"
+import { intensidadDia, intensidadMax, INTENSIDAD_BG, INTENSIDAD_LABEL, PCT_LIMITE } from "./client"
 import { detectarPeriodosCriticos, type PeriodoCritico } from "../_lib/detectar-periodos"
 
 // Período de foco que define el equipo (tabla pc_periodos_foco)
@@ -66,7 +66,7 @@ const VAR_AUSENTISMO: VarP = {
   label: "Ausentismo", trigger: "trigger_aus", valor: (d) => fmtPct(d.pct_ausentismo),
 }
 
-// Proyecta una fecha 'YYYY-MM-DD' del año base al año a anticipar (mismo mes/día).
+// Proyecta una fecha 'YYYY-MM-DD' de un año a otro (mismo mes/día).
 // 29-feb cae a 28-feb si el año destino no es bisiesto.
 function proyectarFecha(f: string, anioDestino: number): string {
   const [, mm, dd] = f.split("-")
@@ -78,15 +78,59 @@ function proyectarFecha(f: string, anioDestino: number): string {
   return `${anioDestino}-${mm}-${d}`
 }
 
-// Intensidad de un período = la de su día más exigente.
-const intensidadPeriodo = (p: PeriodoCritico) => intensidadMax(p.dias)
-
 // Prioridad del foco según la intensidad del período.
-function prioridadDeIntensidad(i: ReturnType<typeof intensidadDia>): PeriodoFoco["prioridad"] {
+function prioridadDeIntensidad(i: Intensidad): PeriodoFoco["prioridad"] {
   if (i === "CRITICO") return "alta"
   if (i === "LIMITE") return "media"
   return "baja"
 }
+
+/**
+ * Una fila del listado: el período observado en el año base (sugerido por el
+ * sistema) y, si el equipo lo adoptó, su foco. Es UN solo formato: la
+ * sugerencia y el foco eran lo mismo visto desde dos lados.
+ */
+type Fila = {
+  key: string
+  periodo: PeriodoCritico
+  foco: PeriodoFoco | null
+  /** Ventana a anticipar en el año en curso. Si hay foco, manda la del foco. */
+  ini: string
+  fin: string
+  /** true cuando el período lo creó el equipo a mano y no salió de la detección. */
+  manual: boolean
+}
+
+// Arma un pseudo-período con los días del año base que caen en la ventana de un
+// foco creado a mano, para que la tarjeta muestre la misma información que las
+// sugeridas (HL, clientes, fichas por día).
+function periodoDesdeFoco(f: PeriodoFoco, diasBase: DiaCalendario[], anioBase: number): PeriodoCritico {
+  const ini = proyectarFecha(f.fecha_inicio, anioBase)
+  const fin = proyectarFecha(f.fecha_fin, anioBase)
+  const dias = diasBase.filter((d) => d.fecha >= ini && d.fecha <= fin)
+  const num = (xs: number[]) => (xs.length ? Math.max(...xs) : 0)
+  const pico = dias.reduce<DiaCalendario | null>((m, d) => (!m || Number(d.hl) > Number(m.hl) ? d : m), null)
+  return {
+    id: `foco-${f.id}`,
+    nombre: f.nombre,
+    motivo: "Definido por el equipo",
+    fechaInicio: ini,
+    fechaFin: fin,
+    cantDias: dias.length,
+    cantDiasCriticos: dias.filter((d) => d.trigger_vol).length,
+    cantDiasLimite: dias.filter((d) => intensidadDia(d) === "LIMITE").length,
+    intensidad: dias.length ? intensidadMax(dias) : "NORMAL",
+    hlMax: num(dias.map((d) => Number(d.hl))),
+    hlAcum: dias.reduce((s, d) => s + Number(d.hl), 0),
+    clientesMax: num(dias.map((d) => Number(d.clientes_dia ?? 0))),
+    pctCapacidadMax: num(dias.map((d) => Number(d.pct_capacidad))),
+    diaPico: pico?.fecha ?? ini,
+    feriadoCercano: null,
+    dias,
+  }
+}
+
+const solapan = (a1: string, a2: string, b1: string, b2: string) => a1 <= b2 && b1 <= a2
 
 export function PeriodosTab({
   diasPorAnio,
@@ -116,7 +160,7 @@ export function PeriodosTab({
 
   // --- Períodos de FOCO que define el equipo (pc_periodos_foco) ---
   const [focos, setFocos] = useState<PeriodoFoco[]>([])
-  const [editor, setEditor] = useState<PeriodoFoco | "nuevo" | null>(null)
+  const [editor, setEditor] = useState<{ foco: PeriodoFoco | null; base?: PeriodoCritico } | null>(null)
 
   const cargarFocos = useCallback(async () => {
     try {
@@ -132,7 +176,44 @@ export function PeriodosTab({
     cargarFocos()
   }, [cargarFocos])
 
-  async function borrarFoco(id: string) {
+  // Un solo listado: cada período sugerido con su foco (si el equipo lo adoptó),
+  // más los focos creados a mano que no coinciden con ninguna sugerencia.
+  const filas = useMemo<Fila[]>(() => {
+    const usados = new Set<string>()
+    const out: Fila[] = periodos.map((p) => {
+      const ini = proyectarFecha(p.fechaInicio, anioAnticipar)
+      const fin = proyectarFecha(p.fechaFin, anioAnticipar)
+      const foco =
+        focos.find((f) => !usados.has(f.id) && f.origen === `${p.nombre} (${anioBase})`) ??
+        focos.find((f) => !usados.has(f.id) && solapan(f.fecha_inicio, f.fecha_fin, ini, fin)) ??
+        null
+      if (foco) usados.add(foco.id)
+      return {
+        key: p.id,
+        periodo: p,
+        foco,
+        ini: foco?.fecha_inicio ?? ini,
+        fin: foco?.fecha_fin ?? fin,
+        manual: false,
+      }
+    })
+    for (const f of focos) {
+      if (usados.has(f.id)) continue
+      out.push({
+        key: `foco-${f.id}`,
+        periodo: periodoDesdeFoco(f, diasBase, anioBase),
+        foco: f,
+        ini: f.fecha_inicio,
+        fin: f.fecha_fin,
+        manual: true,
+      })
+    }
+    return out.sort((a, b) => a.ini.localeCompare(b.ini))
+  }, [periodos, focos, diasBase, anioAnticipar, anioBase])
+
+  const cantFocos = filas.filter((f) => f.foco).length
+
+  async function quitarFoco(id: string) {
     setFocos((prev) => prev.filter((f) => f.id !== id)) // optimista
     try {
       await fetch(`${FOCO_API}/${id}`, { method: "DELETE" })
@@ -149,13 +230,13 @@ export function PeriodosTab({
       fecha_inicio: proyectarFecha(p.fechaInicio, anioAnticipar),
       fecha_fin: proyectarFecha(p.fechaFin, anioAnticipar),
       foco: p.motivo,
-      prioridad: prioridadDeIntensidad(intensidadPeriodo(p)),
+      prioridad: prioridadDeIntensidad(p.intensidad),
       origen: `${p.nombre} (${anioBase})`,
     }),
     [anioAnticipar, anioBase],
   )
 
-  // "Marcar como foco" desde una sugerencia → crea el período ya precargado.
+  // "Marcar como foco" → crea el período ya precargado con lo observado.
   async function marcarComoFoco(p: PeriodoCritico) {
     try {
       const res = await fetch(FOCO_API, {
@@ -165,21 +246,19 @@ export function PeriodosTab({
       })
       const j = await res.json()
       if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
-      toast.success(`"${p.nombre}" agregado a tus períodos de foco`)
+      toast.success(`"${p.nombre}" marcado como foco`)
       cargarFocos()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "No se pudo agregar")
+      toast.error(e instanceof Error ? e.message : "No se pudo marcar")
     }
   }
 
-  // Auto-genera foco para TODAS las sugerencias que aún no estén cargadas
-  // (dedupe por `origen`). Prioridad según intensidad — los PICO/ALTO arriba.
+  // Marca como foco TODOS los sugeridos que aún no lo sean.
   const [generando, setGenerando] = useState(false)
-  async function generarFocoAuto() {
-    const yaCargados = new Set(focos.map((f) => f.origen).filter(Boolean))
-    const aCrear = periodos.filter((p) => !yaCargados.has(`${p.nombre} (${anioBase})`))
+  async function marcarTodos() {
+    const aCrear = filas.filter((f) => !f.manual && !f.foco).map((f) => f.periodo)
     if (aCrear.length === 0) {
-      toast.info("Ya están todos los períodos sugeridos cargados como foco")
+      toast.info("Todos los períodos sugeridos ya están marcados como foco")
       return
     }
     setGenerando(true)
@@ -191,10 +270,10 @@ export function PeriodosTab({
           body: JSON.stringify(focoDesdePeriodo(p)),
         })
       }
-      toast.success(`${aCrear.length} período${aCrear.length === 1 ? "" : "s"} cargado${aCrear.length === 1 ? "" : "s"} como foco`)
+      toast.success(`${aCrear.length} período${aCrear.length === 1 ? "" : "s"} marcado${aCrear.length === 1 ? "" : "s"} como foco`)
       cargarFocos()
     } catch {
-      toast.error("No se pudieron generar todos")
+      toast.error("No se pudieron marcar todos")
       cargarFocos()
     } finally {
       setGenerando(false)
@@ -224,112 +303,63 @@ export function PeriodosTab({
 
   return (
     <div className="space-y-4">
-      {/* ===== SECCIÓN 1 · Nuestros períodos de foco (los define el equipo) ===== */}
       <Card className="border-l-4 border-l-violet-600">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-2">
-              <Target className="w-4 h-4 text-violet-600" />
-              Nuestros períodos de foco {anioAnticipar}
-              {focos.length > 0 && (
-                <Badge variant="secondary" className="font-normal">{focos.length}</Badge>
-              )}
+              <CalendarRange className="w-4 h-4 text-violet-600" />
+              Períodos críticos {anioAnticipar}
+              <Badge variant="secondary" className="font-normal">
+                {filas.length} período{filas.length === 1 ? "" : "s"} · {cantFocos} en foco
+              </Badge>
             </span>
             <span className="flex items-center gap-2">
               <Button
                 size="sm"
                 variant="outline"
-                onClick={generarFocoAuto}
-                disabled={generando || periodos.length === 0}
-                title={`Crear foco automáticamente desde los ${periodos.length} sugeridos de ${anioBase}`}
+                onClick={marcarTodos}
+                disabled={generando || filas.every((f) => f.foco)}
+                title="Marcar como foco todos los sugeridos que todavía no lo son"
               >
                 <Sparkles className="w-4 h-4 mr-1" />
-                {generando ? "Generando…" : `Generar desde ${anioBase}`}
+                {generando ? "Marcando…" : "Marcar todos como foco"}
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setEditor("nuevo")}>
-                <Plus className="w-4 h-4 mr-1" /> Agregar
+              <Button size="sm" variant="outline" onClick={() => setEditor({ foco: null })}>
+                <Plus className="w-4 h-4 mr-1" /> Agregar a mano
               </Button>
             </span>
           </CardTitle>
           <p className="text-xs text-slate-500">
-            Los períodos que el equipo decide priorizar para anticipar la operación. Generalos
-            automáticamente desde los sugeridos de {anioBase} (prioridad según intensidad: CRÍTICO
-            → alta, AL LÍMITE → media, NORMAL → baja), creá uno a mano, o usá «Marcar como foco» en una
-            sugerencia puntual.
+            Salen de {anioBase}: bloques de días que superaron la capacidad de distribución (rojo) o
+            quedaron al límite, {Math.round(PCT_LIMITE * 100)}% o más (amarillo), de hasta una semana.
+            Cada tarjeta trae lo observado ese período y el plan de acción de su escalón. Marcá como{" "}
+            <b>foco</b> los que el equipo va a preparar: el foco guarda el nombre, la prioridad y
+            qué preparar, y es lo que se repasa en la reunión mensual Ventas-Logística.
           </p>
         </CardHeader>
-        <CardContent>
-          {focos.length === 0 ? (
-            <div className="space-y-2 text-sm text-slate-500">
-              <p>Todavía no definiste períodos de foco para {anioAnticipar}.</p>
-              {periodos.length > 0 && (
-                <Button size="sm" onClick={generarFocoAuto} disabled={generando}>
-                  <Sparkles className="w-4 h-4 mr-1" />
-                  Generar {periodos.length} foco{periodos.length === 1 ? "" : "s"} desde {anioBase}
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {focos.map((f) => (
-                <FocoCard
-                  key={f.id}
-                  foco={f}
-                  onEdit={() => setEditor(f)}
-                  onDelete={() => borrarFoco(f.id)}
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
       </Card>
 
-      {/* ===== SECCIÓN 2 · Sugeridos según el año anterior (propuesta del sistema) ===== */}
-      <Card className="border-l-4 border-l-sky-600 bg-sky-50/40">
-        <CardContent className="p-4 space-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <CalendarClock className="w-5 h-5 text-sky-700 shrink-0" />
-            <div className="flex-1 min-w-[260px]">
-              <p className="text-sm font-semibold text-slate-900">
-                Sugeridos según {anioBase}: {periodos.length} período
-                {periodos.length === 1 ? "" : "s"} para anticipar {anioAnticipar}
-              </p>
-              <p className="text-xs text-slate-600">
-                Propuesta del sistema según el comportamiento de {anioBase} (volumen, OTIF,
-                ausentismo y #clientes). Marcá los que quieras como foco. El manual sugiere ~3 o
-                más; no es una cantidad a cumplir.
-              </p>
-            </div>
-          </div>
-          {/* Selector del umbral: cuántas variables debe cruzar un día para
-              que el sistema lo arme como período. Ajusta en vivo lo que trae. */}
-          <div className="flex flex-wrap items-center gap-2 border-t border-sky-200 pt-2">
-            <span className="text-xs text-slate-500">
-              Los períodos se arman con los días que superaron la capacidad de distribución · bloques de máx 7 días
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {periodos.length === 0 ? (
+      {filas.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center text-sm text-slate-500">
-            No se identificaron períodos críticos en {anioBase} con los umbrales actuales. Ajustalos
-            en Configuración si querés un criterio más o menos sensible.
+            No se identificaron períodos críticos en {anioBase} con la capacidad actual. Ajustala en
+            el encabezado si querés un criterio más o menos sensible, o agregá un período a mano.
           </CardContent>
         </Card>
       ) : (
         <TooltipProvider delay={200}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {periodos.map((p, idx) => (
+            {filas.map((fila, idx) => (
               <PeriodoCard
-                key={p.id}
-                periodo={p}
+                key={fila.key}
+                fila={fila}
                 indice={idx + 1}
                 anioBase={anioBase}
                 anioAnticipar={anioAnticipar}
-                plan={planByCodigo[p.intensidad]}
-                onMarcarFoco={() => marcarComoFoco(p)}
+                plan={planByCodigo[fila.periodo.intensidad]}
+                onMarcarFoco={() => marcarComoFoco(fila.periodo)}
+                onEditarFoco={() => fila.foco && setEditor({ foco: fila.foco })}
+                onQuitarFoco={() => fila.foco && quitarFoco(fila.foco.id)}
               />
             ))}
           </div>
@@ -338,7 +368,7 @@ export function PeriodosTab({
 
       {editor && (
         <FocoEditor
-          foco={editor === "nuevo" ? null : editor}
+          foco={editor.foco}
           anio={anioAnticipar}
           onClose={() => setEditor(null)}
           onSaved={() => {
@@ -352,23 +382,27 @@ export function PeriodosTab({
 }
 
 function PeriodoCard({
-  periodo: p,
+  fila,
   indice,
   anioBase,
   anioAnticipar,
   plan,
   onMarcarFoco,
+  onEditarFoco,
+  onQuitarFoco,
 }: {
-  periodo: PeriodoCritico
+  fila: Fila
   indice: number
   anioBase: number
   anioAnticipar: number
   plan: PlanAccion | undefined
   onMarcarFoco: () => void
+  onEditarFoco: () => void
+  onQuitarFoco: () => void
 }) {
+  const { periodo: p, foco } = fila
   const [copiado, setCopiado] = useState(false)
-  const iniProy = proyectarFecha(p.fechaInicio, anioAnticipar)
-  const finProy = proyectarFecha(p.fechaFin, anioAnticipar)
+  const titulo = foco?.nombre ?? p.nombre
 
   // Día más exigente del período (el de más HL) → de ahí tomamos el valor
   // puntual de cada variable en el tooltip.
@@ -376,15 +410,15 @@ function PeriodoCard({
   // Para cada variable contamos en cuántos días del período cruzó su umbral.
   const diasCruzados = (v: VarP) => p.dias.filter((d) => d[v.trigger] === true).length
   const ausDias = p.dias.filter((d) => d.trigger_aus === true).length
-  const intensidad = intensidadPeriodo(p)
+  const intensidad = p.intensidad
 
   async function copiarPlan() {
-    if (!plan) return
     const texto =
-      `Período crítico ${indice} a anticipar en ${anioAnticipar}: ${p.nombre}\n` +
-      `Ventana estimada ${fmtFecha(iniProy)} → ${fmtFecha(finProy)} (observado en ${anioBase}: ${fmtFecha(p.fechaInicio)} → ${fmtFecha(p.fechaFin)})\n` +
-      `${INTENSIDAD_LABEL[p.intensidad]} · ${p.cantDiasCriticos} días sobre la capacidad · ${p.cantDiasLimite} al límite (pico ${fmtPct(p.pctCapacidadMax)})\n\n` +
-      `${plan.descripcion}\n\n${plan.plan_texto}`
+      `Período crítico ${indice} a anticipar en ${anioAnticipar}: ${titulo}\n` +
+      `Ventana ${fmtFecha(fila.ini)} → ${fmtFecha(fila.fin)} (observado en ${anioBase}: ${fmtFecha(p.fechaInicio)} → ${fmtFecha(p.fechaFin)})\n` +
+      `${INTENSIDAD_LABEL[intensidad]} · ${p.cantDiasCriticos} días sobre la capacidad · ${p.cantDiasLimite} al límite (pico ${fmtPct(p.pctCapacidadMax)})\n` +
+      (foco ? `Prioridad ${foco.prioridad}. Foco: ${foco.foco}\n` : "") +
+      (plan ? `\n${plan.descripcion}\n\n${plan.plan_texto}` : "")
     await navigator.clipboard.writeText(texto)
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
@@ -394,46 +428,82 @@ function PeriodoCard({
     <Tooltip>
       <TooltipTrigger
         render={
-    <Card className="cursor-help">
+    <Card className={`cursor-help ${foco ? "border-violet-300 shadow-sm" : ""}`}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-start justify-between gap-2">
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-2 min-w-0">
             <Badge variant="outline">#{indice}</Badge>
-            {p.nombre}
+            {foco && <Target className="w-4 h-4 text-violet-600 shrink-0" />}
+            <span className="truncate">{titulo}</span>
           </span>
           <span className="flex items-center gap-1.5 shrink-0">
-            <Badge className={`${INTENSIDAD_BG[intensidadPeriodo(p)]} font-semibold`}>
-              {intensidadPeriodo(p)}
+            <Badge className={`${INTENSIDAD_BG[intensidad]} font-semibold`}>
+              {INTENSIDAD_LABEL[intensidad]}
             </Badge>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onMarcarFoco}
-              className="h-6 text-xs gap-1 text-violet-700 hover:bg-violet-50"
-              title="Agregar a 'Nuestros períodos de foco'"
-            >
-              <Target className="w-3 h-3" /> Foco
-            </Button>
+            {foco ? (
+              <>
+                <Badge className={`${PRIORIDAD_BADGE[foco.prioridad]} text-[10px] capitalize`}>
+                  {foco.prioridad}
+                </Badge>
+                <Button size="sm" variant="ghost" onClick={onEditarFoco} className="h-6 w-6 p-0" title="Editar el foco">
+                  <Pencil className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={onQuitarFoco}
+                  className="h-6 w-6 p-0 text-red-600 hover:bg-red-50"
+                  title={fila.manual ? "Borrar este período" : "Quitar el foco (la sugerencia queda)"}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onMarcarFoco}
+                className="h-6 text-xs gap-1 text-violet-700 hover:bg-violet-50"
+                title="Marcar como período de foco del equipo"
+              >
+                <Target className="w-3 h-3" /> Marcar foco
+              </Button>
+            )}
           </span>
         </CardTitle>
         <p className="text-xs text-slate-500">{p.motivo}</p>
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
-          <div className="flex items-center gap-2 text-sm text-slate-700">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
             <CalendarRange className="w-4 h-4 text-slate-400" />
-            <span className="font-medium">{fmtFecha(iniProy)}</span>
+            <span className="font-medium">{fmtFecha(fila.ini)}</span>
             <span className="text-slate-400">→</span>
-            <span className="font-medium">{fmtFecha(finProy)}</span>
-            <Badge variant="outline" className="text-[10px] font-normal">a anticipar {anioAnticipar}</Badge>
+            <span className="font-medium">{fmtFecha(fila.fin)}</span>
+            <Badge variant="outline" className="text-[10px] font-normal">
+              {foco ? `foco ${anioAnticipar}` : `a anticipar ${anioAnticipar}`}
+            </Badge>
             <span className="text-xs text-slate-500">
               ({p.cantDias}d · {p.cantDiasCriticos} críticos{p.cantDiasLimite > 0 ? ` · ${p.cantDiasLimite} al límite` : ""})
             </span>
           </div>
           <p className="text-[11px] text-slate-400 pl-6">
-            Observado en {anioBase}: {fmtFecha(p.fechaInicio)} → {fmtFecha(p.fechaFin)}
+            Observado en {anioBase}: {p.dias.length > 0
+              ? `${fmtFecha(p.fechaInicio)} → ${fmtFecha(p.fechaFin)}`
+              : "sin datos en esas fechas"}
           </p>
         </div>
+
+        {foco && (
+          <div className="rounded border border-violet-200 bg-violet-50/60 px-2.5 py-2">
+            <p className="text-[11px] uppercase font-semibold tracking-wide text-violet-700 mb-0.5">
+              Dónde poner el foco
+            </p>
+            <p className="text-xs text-slate-700 whitespace-pre-wrap">
+              {foco.foco || <span className="text-slate-400">Sin texto. Editá el foco para cargar qué preparar.</span>}
+            </p>
+          </div>
+        )}
 
         <div className="grid grid-cols-4 gap-2 text-xs">
           <Stat k="HL pico" v={fmtHL(p.hlMax)} />
@@ -449,33 +519,35 @@ function PeriodoCard({
           </div>
         )}
 
-        <div>
-          <p className="text-[11px] uppercase font-semibold tracking-wide text-slate-500 mb-1">
-            Días del período (observados en {anioBase})
-          </p>
-          <div className="flex flex-wrap gap-1">
-            {p.dias.map((d) => (
-              <span
-                key={d.fecha}
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] ${
-                  intensidadDia(d) !== "NORMAL"
-                    ? INTENSIDAD_BG[intensidadDia(d)]
-                    : "bg-slate-100 text-slate-500"
-                }`}
-                title={`${d.dia_semana} ${d.fecha} · ${fmtHL(d.hl)} HL · cli ${d.clientes_dia} · ${INTENSIDAD_LABEL[intensidadDia(d)]}`}
-              >
-                {d.fecha === p.diaPico && <Star className="w-3 h-3" />}
-                {fmtFecha(d.fecha)}
-              </span>
-            ))}
+        {p.dias.length > 0 && (
+          <div>
+            <p className="text-[11px] uppercase font-semibold tracking-wide text-slate-500 mb-1">
+              Días del período (observados en {anioBase})
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {p.dias.map((d) => (
+                <span
+                  key={d.fecha}
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] ${
+                    intensidadDia(d) !== "NORMAL"
+                      ? INTENSIDAD_BG[intensidadDia(d)]
+                      : "bg-slate-100 text-slate-500"
+                  }`}
+                  title={`${d.dia_semana} ${d.fecha} · ${fmtHL(d.hl)} HL · ${fmtPct(d.pct_capacidad)} · cli ${d.clientes_dia} · ${INTENSIDAD_LABEL[intensidadDia(d)]}`}
+                >
+                  {d.fecha === p.diaPico && <Star className="w-3 h-3" />}
+                  {fmtFecha(d.fecha)}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {plan ? (
           <div className="border-t border-slate-200 pt-2">
             <div className="flex items-center justify-between mb-1">
               <p className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">
-                Plan de acción ({INTENSIDAD_LABEL[p.intensidad]})
+                Plan de acción ({INTENSIDAD_LABEL[intensidad]})
               </p>
               <Button variant="ghost" size="sm" onClick={copiarPlan} className="h-6 text-xs gap-1">
                 {copiado ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
@@ -489,8 +561,11 @@ function PeriodoCard({
           </div>
         ) : (
           <div className="border-t border-slate-200 pt-2 text-[11px] text-slate-400">
-            Sin plan de acción cargado para «{INTENSIDAD_LABEL[p.intensidad]}». Cargalo en Configuración.
+            Sin plan de acción cargado para «{INTENSIDAD_LABEL[intensidad]}». Cargalo en Configuración.
           </div>
+        )}
+        {foco?.origen && (
+          <p className="text-[10px] text-slate-400">Sugerido por: {foco.origen}</p>
         )}
       </CardContent>
     </Card>
@@ -528,7 +603,7 @@ function PeriodoCard({
             <span>{diaPico ? VAR_AUSENTISMO.valor(diaPico) : "—"}{ausDias > 0 && ` · ${ausDias}d`}</span>
           </div>
           <div className="text-[10px] opacity-60 pt-1 border-t border-white/15">
-            ✗ = cruzó su umbral. Crítico = el volumen supera la capacidad de distribución; al límite = llega al 90%. Clientes, rechazo y ausentismo son contexto.
+            ✗ = cruzó su umbral. Crítico = el volumen supera la capacidad de distribución; al límite = llega al {Math.round(PCT_LIMITE * 100)}%. Clientes, rechazo y ausentismo son contexto.
           </div>
         </div>
       </TooltipContent>
@@ -546,58 +621,8 @@ function Stat({ k, v }: { k: string; v: string }) {
 }
 
 // ============================================================================
-// Período de foco definido por el equipo: card + editor (dialog)
+// Editor del foco (dialog): nombre, ventana, prioridad y qué preparar
 // ============================================================================
-function FocoCard({
-  foco: f,
-  onEdit,
-  onDelete,
-}: {
-  foco: PeriodoFoco
-  onEdit: () => void
-  onDelete: () => void
-}) {
-  return (
-    <Card className="border-violet-200">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-start justify-between gap-2">
-          <span className="flex items-center gap-2">
-            <Target className="w-4 h-4 text-violet-600 shrink-0" />
-            {f.nombre}
-          </span>
-          <span className="flex items-center gap-1 shrink-0">
-            <Badge className={`${PRIORIDAD_BADGE[f.prioridad]} text-[10px] capitalize`}>
-              {f.prioridad}
-            </Badge>
-            <Button size="sm" variant="ghost" onClick={onEdit} className="h-6 w-6 p-0" title="Editar">
-              <Pencil className="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onDelete}
-              className="h-6 w-6 p-0 text-red-600 hover:bg-red-50"
-              title="Borrar"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </Button>
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <div className="flex items-center gap-2 text-sm text-slate-700">
-          <CalendarRange className="w-4 h-4 text-slate-400" />
-          <span className="font-medium">{fmtFecha(f.fecha_inicio)}</span>
-          <span className="text-slate-400">→</span>
-          <span className="font-medium">{fmtFecha(f.fecha_fin)}</span>
-        </div>
-        {f.foco && <p className="text-xs text-slate-600 whitespace-pre-wrap">{f.foco}</p>}
-        {f.origen && <p className="text-[11px] text-slate-400">Sugerido por: {f.origen}</p>}
-      </CardContent>
-    </Card>
-  )
-}
-
 function FocoEditor({
   foco,
   anio,
@@ -641,7 +666,7 @@ function FocoEditor({
       })
       const j = await res.json()
       if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
-      toast.success(foco ? "Período de foco actualizado" : "Período de foco creado")
+      toast.success(foco ? "Foco actualizado" : "Período creado")
       onSaved()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudo guardar")
@@ -654,7 +679,7 @@ function FocoEditor({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{foco ? "Editar período de foco" : "Nuevo período de foco"}</DialogTitle>
+          <DialogTitle>{foco ? "Editar el foco" : "Nuevo período a mano"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div>
@@ -662,7 +687,7 @@ function FocoEditor({
             <Input
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
-              placeholder="Ej.: Cluster Carnaval"
+              placeholder="Ej.: Pre-Navidad"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
