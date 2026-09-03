@@ -164,6 +164,14 @@ export async function updateOtProgramada(input: {
   try {
     await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
+
+    const { data: previo } = await supabase
+      .from("mantenimiento_ot_programadas")
+      .select("realizado_id")
+      .eq("id", input.id)
+      .single()
+    const yaTieneOt = !!previo?.realizado_id
+
     const update: Record<string, unknown> = {}
     if (input.fecha_programada) update.fecha_programada = input.fecha_programada
     if (input.tareas) {
@@ -173,7 +181,14 @@ export async function updateOtProgramada(input: {
     }
     if (input.taller !== undefined) update.taller = input.taller.trim()
     if (input.notas !== undefined) update.notas = input.notas.trim()
-    if (input.estado) update.estado = input.estado
+    // 🚨 El estado de una orden que YA tiene OT de trabajo lo maneja el circuito
+    // del taller (llevar / cerrar), no este formulario. El 03/09/2026 la OT del
+    // AE591EI se resolvió desde el panel de arriba y después, sin cerrar el
+    // diálogo, se apretó "Guardar cambios": el `estado` del formulario seguía en
+    // "planificada" y pisó el "realizada" recién escrito. Quedó planificada CON
+    // `realizado_id` y no hubo forma de finalizarla. El select ya venía
+    // deshabilitado, pero el valor viajaba igual en el payload.
+    if (input.estado && !yaTieneOt) update.estado = input.estado
     const { data, error } = await supabase
       .from("mantenimiento_ot_programadas")
       .update(update)

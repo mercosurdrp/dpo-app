@@ -473,7 +473,11 @@ function OtDialog({
           tareas: tareasArr,
           taller,
           notas,
-          estado,
+          // Con OT de trabajo creada el estado ya no es de este formulario: si
+          // el panel de arriba falló a mitad de camino, este valor quedó viejo y
+          // pisaba el que había escrito el circuito del taller. El servidor
+          // igual lo ignora, pero acá directamente no viaja.
+          ...(ot.realizado_id ? {} : { estado }),
         })
       : await createOtProgramada({
           dominio,
@@ -1133,12 +1137,19 @@ function TallerPanel({
     )
   }
 
-  if (ot.estado === "en_taller" && ot.realizado_id) {
+  // Alcanza con que TENGA una OT de trabajo: la condición era
+  // `estado === "en_taller" && realizado_id`, y una orden que quedaba en
+  // "planificada" con la OT ya creada caía en el formulario de abajo, que sólo
+  // sabe CREARLA. Los dos botones morían en "Esta orden ya tiene una OT de
+  // trabajo asociada" y la orden no se podía cerrar desde ningún lado.
+  if (ot.realizado_id) {
     return (
       <div className="space-y-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
         <div>
           <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
-            La unidad está en el taller
+            {ot.estado === "en_taller"
+              ? "La unidad está en el taller"
+              : `Esta orden ya tiene la OT${ot.ot_numero ? ` N° ${ot.ot_numero}` : ""} cargada`}
           </p>
           <p className="text-xs text-muted-foreground">
             Cuando vuelva, cerrala acá: se completa la orden de trabajo y {ot.dominio} vuelve a
