@@ -1,26 +1,29 @@
 // Detección automática de períodos críticos a partir del calendario diario.
 //
-// R3.4.1: identificar períodos para anticipar. Un día integra un período cuando
-// su INTENSIDAD es relevante = al menos MIN_VARS_PERIODO de las 4 variables
-// cruzan su target (>= MEDIO). NO depende del umbral binario `min_triggers` de
-// la config (que solo define el "crítico" del calendario): así la detección
-// funciona aunque ese umbral esté en 4. Agrupamos esos días en bloques de 1-7
-// días (con gaps cortos) y los nombramos por feriado/temporada.
+// R3.4.1: identificar períodos para anticipar. Un período es una SEMANA que
+// aprieta, no una celda roja suelta: lo abren los días CRÍTICOS (el volumen
+// supera la capacidad de distribución) y lo completan los días AL LÍMITE (90% o
+// más de la capacidad). Una corrida de días al límite sin ningún crítico también
+// es período si dura al menos 2 días. Clientes, rechazo y ausentismo no abren
+// período por sí solos. Los bloques van de 1 a 7 días (con gaps cortos) y se
+// nombran por feriado/temporada.
 
 import type { DiaCalendario } from "../_components/client"
-
-// Un día cuenta para un período si tiene esta cantidad de variables en target
-// o más. 2 = MEDIO+ (descarta el ruido de los días con una sola variable).
-const MIN_VARS_PERIODO = 2
+import { intensidadDia, intensidadMax, type Intensidad } from "./intensidad"
 
 // Un EVENTO DE EMPRESA (ej. Expoagro) queda FIJO: sus días siempre integran un
-// período sugerido aunque no crucen el umbral de variables, así no dependen del
-// filtro `minVars`. Se marcan con tipo='empresa' en pc_feriados.
+// período sugerido aunque el volumen no llegue a la capacidad. Se marcan con
+// tipo='empresa' en pc_feriados.
 const esEventoEmpresa = (d: DiaCalendario) => d.tipo_feriado === "empresa"
 
-// Un día "ancla" un período si cruza el umbral de variables O es evento de empresa.
-const esAncla = (d: DiaCalendario, minVars: number) =>
-  (d.trigger_count ?? 0) >= minVars || esEventoEmpresa(d)
+// Un día CRÍTICO abre un período: supera el volumen O es evento de empresa.
+const esCritico = (d: DiaCalendario) => d.trigger_vol === true || esEventoEmpresa(d)
+// Un día AL LÍMITE integra el período pero no lo abre solo.
+const esLimite = (d: DiaCalendario) => intensidadDia(d) === "LIMITE"
+// Día que forma parte de un bloque.
+const esAncla = (d: DiaCalendario) => esCritico(d) || esLimite(d)
+// Una corrida sólo de días al límite necesita esta cantidad para ser período.
+const MIN_LIMITE_SOLOS = 2
 
 export type PeriodoCritico = {
   /** "{añoMM}-{idx}" para listar y trackear. */
@@ -30,13 +33,14 @@ export type PeriodoCritico = {
   fechaInicio: string
   fechaFin: string
   cantDias: number
-  cantDiasCriticos: number   // días con estatus = CRITICO
-  codigoPredominante: string // el código más frecuente (ej. "AA")
+  cantDiasCriticos: number   // días que superaron la capacidad
+  cantDiasLimite: number     // días entre el 90% y el 100% de la capacidad
+  intensidad: Intensidad     // la del día más exigente del bloque
   hlMax: number
   hlAcum: number
   clientesMax: number
-  scoreMax: number
-  diaPico: string         // fecha del día con score más alto
+  pctCapacidadMax: number    // hl / capacidad del día pico (1 = justo la capacidad)
+  diaPico: string         // fecha del día con más HL
   feriadoCercano: string | null
   dias: DiaCalendario[]   // los días del bloque (incluye gaps no-CRITICO)
 }
@@ -139,13 +143,11 @@ function generarNombreYMotivo(
 
 /**
  * Devuelve los períodos críticos detectados (bloques de 1–7 días). Un día
- * integra un período si tiene `minVars` o más variables en target (1=BAJO+,
- * 2=MEDIO+, 3=ALTO+, 4=solo PICO). El usuario controla `minVars` desde el tab.
+ * integra un período si superó la capacidad de distribución (o es evento de
+ * empresa) o quedó al límite (90% o más). Un bloque sin ningún día crítico
+ * necesita al menos MIN_LIMITE_SOLOS días al límite.
  */
-export function detectarPeriodosCriticos(
-  dias: DiaCalendario[],
-  minVars: number = MIN_VARS_PERIODO,
-): PeriodoCritico[] {
+export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[] {
   // Lista plana de feriados del rango — el tooltip ya viene marcado por día,
   // pero para "pre/post feriado" necesitamos saberlos en orden.
   const feriados = dias
@@ -157,7 +159,7 @@ export function detectarPeriodosCriticos(
   let gap = 0
 
   for (const d of dias) {
-    const esAlto = esAncla(d, minVars)
+    const esAlto = esAncla(d)
 
     if (esAlto) {
       // si hay gap acumulado pero estoy abriendo bloque, los días no-ALTO previos
@@ -179,7 +181,7 @@ export function detectarPeriodosCriticos(
         gap++
       } else {
         // cortar el bloque, descartar los gap finales para que arranque/cierre en ancla
-        while (actual.length > 0 && !esAncla(actual[actual.length - 1], minVars)) {
+        while (actual.length > 0 && !esAncla(actual[actual.length - 1])) {
           actual.pop()
         }
         if (actual.length > 0) bloques.push(actual)
@@ -189,26 +191,19 @@ export function detectarPeriodosCriticos(
     }
   }
   // Cerrar el último bloque si quedó abierto
-  while (actual.length > 0 && !esAncla(actual[actual.length - 1], minVars)) {
+  while (actual.length > 0 && !esAncla(actual[actual.length - 1])) {
     actual.pop()
   }
   if (actual.length > 0) bloques.push(actual)
 
-  return bloques.map((bloque, i) => {
+  return bloques
+    .filter((b) => b.some(esCritico) || b.filter(esLimite).length >= MIN_LIMITE_SOLOS)
+    .map((bloque, i) => {
     const cercano = feriadoCercano(bloque, feriados)
     const { nombre, motivo } = generarNombreYMotivo(bloque, cercano)
     const diaPico = bloque.reduce((max, d) =>
-      Number(d.score) > Number(max.score) ? d : max,
+      Number(d.hl) > Number(max.hl) ? d : max,
     bloque[0])
-    // Código predominante: el código más frecuente entre los días CRITICO del bloque
-    const codigosCount: Record<string, number> = {}
-    for (const d of bloque) {
-      if ((d.trigger_count ?? 0) >= minVars && d.codigo) {
-        codigosCount[d.codigo] = (codigosCount[d.codigo] ?? 0) + 1
-      }
-    }
-    const codigoPredominante =
-      Object.entries(codigosCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? ""
     return {
       id: `${bloque[0].fecha}-${i + 1}`,
       nombre,
@@ -216,12 +211,13 @@ export function detectarPeriodosCriticos(
       fechaInicio: bloque[0].fecha,
       fechaFin: bloque[bloque.length - 1].fecha,
       cantDias: bloque.length,
-      cantDiasCriticos: bloque.filter((d) => (d.trigger_count ?? 0) >= minVars).length,
-      codigoPredominante,
+      cantDiasCriticos: bloque.filter((d) => d.trigger_vol).length,
+      cantDiasLimite: bloque.filter(esLimite).length,
+      intensidad: intensidadMax(bloque),
       hlMax: Math.max(...bloque.map((d) => Number(d.hl))),
       hlAcum: bloque.reduce((s, d) => s + Number(d.hl), 0),
       clientesMax: Math.max(...bloque.map((d) => Number(d.clientes_dia ?? 0))),
-      scoreMax: Math.max(...bloque.map((d) => Number(d.score))),
+      pctCapacidadMax: Math.max(...bloque.map((d) => Number(d.pct_capacidad))),
       diaPico: diaPico.fecha,
       feriadoCercano: cercano ? `${cercano.nombre} (${cercano.fecha})` : null,
       dias: bloque,

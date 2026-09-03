@@ -2,6 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
+import { CLAVE_ESTADO_MANUAL, parseEstadosManuales } from "@/lib/capacitacion-estado"
+import { createAdminClient } from "@/lib/supabase/admin"
 import type {
   Capacitacion,
   CapacitacionConResumen,
@@ -16,6 +18,60 @@ import type {
   EstadoCapacitacion,
   ResultadoCapacitacion,
 } from "@/types/database"
+
+// ─── Estado cargado a mano (cursos externos) ───
+// No hay columna para esto y no se puede correr DDL contra la base de Misiones,
+// así que el override vive en `app_config` bajo una sola clave, como un mapa
+// { capacitacionId: estado }. La escritura es leer-modificar-guardar: son pocos
+// admins y se toca de a una capacitación.
+async function leerEstadosManuales(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<Record<string, EstadoCapacitacion>> {
+  const { data } = await supabase
+    .from("app_config")
+    .select("valor")
+    .eq("clave", CLAVE_ESTADO_MANUAL)
+    .maybeSingle()
+
+  return parseEstadosManuales((data as { valor: string } | null)?.valor)
+}
+
+/**
+ * Pone (o saca, con `estado: null`) el estado a mano de una capacitación.
+ * Es lo que usan los cursos externos, que no se rinden en la app.
+ */
+export async function setEstadoManual(
+  capacitacionId: string,
+  estado: EstadoCapacitacion | null
+): Promise<{ data: EstadoCapacitacion | null } | { error: string }> {
+  try {
+    await requireRole(["admin", "auditor"])
+    const supabase = await createClient()
+
+    const mapa = await leerEstadosManuales(supabase)
+    if (estado) mapa[capacitacionId] = estado
+    else delete mapa[capacitacionId]
+
+    // Igual que el sorteo de lector: la RLS de `app_config` no deja escribir
+    // desde la sesión, y el permiso ya se validó arriba.
+    const admin = createAdminClient()
+    const { error } = await admin
+      .from("app_config")
+      .upsert(
+        {
+          clave: CLAVE_ESTADO_MANUAL,
+          valor: JSON.stringify(mapa),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "clave" }
+      )
+
+    if (error) return { error: error.message }
+    return { data: estado }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error guardando el estado manual" }
+  }
+}
 
 // ─── List capacitaciones + resumen de asistencias ───
 export async function getCapacitaciones(): Promise<
@@ -71,10 +127,13 @@ export async function getCapacitaciones(): Promise<
       resumen.set(a.capacitacion_id, r)
     }
 
+    const manuales = await leerEstadosManuales(supabase)
+
     const enriched: CapacitacionConResumen[] = caps.map((c) => {
       const r = resumen.get(c.id) ?? { total: 0, presentes: 0, rendidos: 0, pendientes: 0, aprobados: 0 }
       return {
         ...c,
+        estado_manual: manuales[c.id] ?? null,
         total_asistentes: r.total,
         presentes: r.presentes,
         rendidos: r.rendidos,
@@ -112,10 +171,13 @@ export async function getCapacitacion(
 
     if (asistError) return { error: asistError.message }
 
+    const manuales = await leerEstadosManuales(supabase)
+
     return {
       data: {
         ...(cap as Capacitacion),
         asistencias: (asistencias ?? []) as AsistenciaConEmpleado[],
+        estado_manual: manuales[id] ?? null,
       },
     }
   } catch (err) {

@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
+import { separarCargasSinRegistrar } from "@/lib/vehiculos/combustible-limpio"
 
 export interface CombustibleCamion {
   dominio: string
@@ -15,6 +16,8 @@ export interface CombustibleCamion {
   rendimiento: number | null // km / litros_con_km (km por litro)
   l_100km: number | null
   desvio_pct: number | null // % de rendimiento vs el promedio de la flota
+  /** Cargas del mes con una carga sin registrar en el medio: no entran al km/l. */
+  cargas_sin_registrar: number
 }
 
 export interface AnalisisCombustible {
@@ -24,6 +27,8 @@ export interface AnalisisCombustible {
   total_camiones: number
   total_litros: number
   total_km: number
+  /** Cargas del mes excluidas del km/l por carga faltante (suma de los camiones). */
+  total_sin_registrar: number
   rendimiento_flota: number | null
   l_100km_flota: number | null
   camiones: CombustibleCamion[]
@@ -56,8 +61,18 @@ function round(n: number, dec = 2): number {
 
 interface CargaRow {
   dominio: string | null
+  fecha: string
   litros: number | null
   km_recorridos: number | null
+}
+
+/** Días previos al mes que se usan como muestra para la mediana por camión. */
+const HISTORIAL_MEDIANA_DIAS = 90
+
+function restarDias(fechaISO: string, dias: number): string {
+  const d = new Date(`${fechaISO}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - dias)
+  return d.toISOString().slice(0, 10)
 }
 
 /**
@@ -79,13 +94,27 @@ export async function getAnalisisCombustible(
     const desde = `${mesSel}-01`
     const hasta = primerDiaMesSiguiente(mesSel)
 
-    const { data: cargas, error } = await supa
+    // Se traen también los ~90 días previos: son la muestra para la mediana de
+    // rendimiento de cada camión, con la que se detectan las cargas sin
+    // registrar del mes (ver `combustible-limpio.ts`).
+    const { data: cargasVentana, error } = await supa
       .from("registro_combustible")
-      .select("dominio, litros, km_recorridos")
+      .select("dominio, fecha, litros, km_recorridos")
       .eq("tipo_combustible", TIPO_CARGA_GASOIL)
-      .gte("fecha", desde)
+      .gte("fecha", restarDias(desde, HISTORIAL_MEDIANA_DIAS))
       .lt("fecha", hasta)
     if (error) return { error: error.message }
+    const historial = ((cargasVentana ?? []) as CargaRow[]).filter(
+      (r): r is CargaRow & { dominio: string } => !!r.dominio,
+    )
+    const cargasMes = historial.filter((r) => r.fecha >= desde)
+    const { sinRegistrar } = separarCargasSinRegistrar(cargasMes, historial)
+    const sinRegistrarPorDominio = new Map<string, number>()
+    for (const r of sinRegistrar) {
+      sinRegistrarPorDominio.set(r.dominio, (sinRegistrarPorDominio.get(r.dominio) ?? 0) + 1)
+    }
+    const setSinRegistrar = new Set<CargaRow>(sinRegistrar)
+    const cargas = cargasMes
 
     // Meses con datos (para el selector)
     const { data: todas, error: mErr } = await supa
@@ -110,14 +139,16 @@ export async function getAnalisisCombustible(
       string,
       { cargas: number; litros: number; km: number; litros_con_km: number }
     >()
-    for (const r of (cargas ?? []) as CargaRow[]) {
+    for (const r of cargas) {
       if (!r.dominio) continue
       const a = agg.get(r.dominio) ?? { cargas: 0, litros: 0, km: 0, litros_con_km: 0 }
       const litros = Number(r.litros ?? 0)
       const km = Number(r.km_recorridos ?? 0)
       a.cargas += 1
       a.litros += litros
-      if (km > 0) {
+      // Una carga faltante en el medio infla el tramo (8-10 km/l): sus litros
+      // son reales y suman al consumo, pero el tramo no entra al rendimiento.
+      if (km > 0 && !setSinRegistrar.has(r)) {
         a.km += km
         a.litros_con_km += litros
       }
@@ -157,6 +188,7 @@ export async function getAnalisisCombustible(
         rendimiento,
         l_100km,
         desvio_pct,
+        cargas_sin_registrar: sinRegistrarPorDominio.get(dominio) ?? 0,
       }
     })
 
@@ -175,6 +207,7 @@ export async function getAnalisisCombustible(
         total_camiones: agg.size,
         total_litros: round(totLitros, 0),
         total_km: totKm,
+        total_sin_registrar: sinRegistrar.length,
         rendimiento_flota,
         l_100km_flota,
         camiones,

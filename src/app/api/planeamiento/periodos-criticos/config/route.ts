@@ -6,9 +6,10 @@ export const dynamic = "force-dynamic"
 
 // PATCH /api/planeamiento/periodos-criticos/config
 //
-// Actualiza pesos / umbrales / año vigente. Sólo admin/admin_rrhh/supervisor.
-// Valida que los pesos sumen ~1 antes de mandarlo: el CHECK del schema da
-// error genérico y queremos un mensaje claro para la UI.
+// Actualiza el año vigente del calendario. Es lo único que queda en pc_config:
+// el criterio de día crítico es uno solo (volumen sobre la capacidad de
+// distribución, en pc_umbrales) y ya no hay pesos ni score que configurar.
+// Sólo admin/admin_rrhh/supervisor.
 export async function PATCH(req: NextRequest) {
   const profile = await getProfile()
   if (!profile) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
@@ -23,35 +24,17 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 })
   }
 
-  const patch: Record<string, number> = {}
-  for (const k of ["w_vol", "w_otif", "w_aus", "umbral_alto", "umbral_medio", "anio_vigente", "hl_p90_2025"]) {
-    if (body[k] != null) patch[k] = Number(body[k])
-  }
-
-  if (patch.w_vol != null || patch.w_otif != null || patch.w_aus != null) {
-    const supabase = await createClient()
-    const { data: actual } = await supabase.from("pc_config").select("*").eq("id", 1).single()
-    const w_vol = patch.w_vol ?? Number(actual?.w_vol)
-    const w_otif = patch.w_otif ?? Number(actual?.w_otif)
-    const w_aus = patch.w_aus ?? Number(actual?.w_aus)
-    if (Math.abs(w_vol + w_otif + w_aus - 1) > 0.001) {
-      return NextResponse.json(
-        { error: `Los 3 pesos deben sumar 1 exacto (suma actual: ${(w_vol + w_otif + w_aus).toFixed(3)})` },
-        { status: 400 },
-      )
-    }
-  }
-
-  if (patch.umbral_alto != null && patch.umbral_medio != null && patch.umbral_alto <= patch.umbral_medio) {
-    return NextResponse.json({ error: "umbral_alto debe ser > umbral_medio" }, { status: 400 })
+  const anio = Number(body.anio_vigente)
+  if (!Number.isInteger(anio) || anio < 2024 || anio > 2030) {
+    return NextResponse.json({ error: "anio_vigente debe ser un año entre 2024 y 2030" }, { status: 400 })
   }
 
   const supabase = await createClient()
   const { data, error } = await supabase
     .from("pc_config")
-    .update({ ...patch, updated_by: profile.id })
+    .update({ anio_vigente: anio, updated_by: profile.id })
     .eq("id", 1)
-    .select()
+    .select("id, anio_vigente")
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

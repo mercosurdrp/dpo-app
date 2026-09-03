@@ -4,7 +4,13 @@ import { NextRequest, NextResponse } from "next/server"
 import * as XLSX from "xlsx"
 import { createClient } from "@/lib/supabase/server"
 import { ESTADO_CAPACITACION_LABELS } from "@/lib/constants"
-import { estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
+import {
+  CLAVE_ESTADO_MANUAL,
+  esEstadoManual,
+  estadoDerivado,
+  formatDuracion,
+  parseEstadosManuales,
+} from "@/lib/capacitacion-estado"
 import { calcularAdherencia, type ItemAdherencia } from "@/lib/capacitacion-adherencia"
 import { HAY_PAC, META_CUMPLIMIENTO, PAC_2026_ORIGEN, PAC_2026_TOTAL } from "@/lib/pac-2026"
 import type {
@@ -146,6 +152,14 @@ export async function GET(_req: NextRequest) {
       }
     }
 
+    // Estados cargados a mano (cursos externos): mismo origen que la pantalla.
+    const { data: cfgManual } = await supabase
+      .from("app_config")
+      .select("valor")
+      .eq("clave", CLAVE_ESTADO_MANUAL)
+      .maybeSingle()
+    const manuales = parseEstadosManuales((cfgManual as { valor: string } | null)?.valor)
+
     type Row = Record<string, string | number | null>
     const rows: Row[] = []
     const itemsAdherencia: ItemAdherencia[] = []
@@ -153,20 +167,15 @@ export async function GET(_req: NextRequest) {
     const today = new Date().toISOString().slice(0, 10)
     for (const c of caps) {
       const list = asistByCap.get(c.id) ?? []
-      const presentes = list.filter((a) => a.presente).length
-      const rendidos = list.filter((a) => a.resultado && a.resultado !== "pendiente").length
-      const pendientes = list.filter((a) => !a.resultado || a.resultado === "pendiente").length
-      const estadoReal = estadoDerivado(
-        {
-          estado: c.estado,
-          fecha: c.fecha,
-          total_asistentes: list.length,
-          presentes,
-          rendidos,
-          pendientes,
-        },
-        today
-      )
+      const aprobados = list.filter((a) => a.resultado === "aprobado").length
+      const entradaEstado = {
+        estado: c.estado,
+        total_asistentes: list.length,
+        aprobados,
+        estado_manual: manuales[c.id] ?? null,
+      }
+      const estadoReal = estadoDerivado(entradaEstado)
+      const estadoManual = esEstadoManual(entradaEstado)
       const estadoLabel =
         ESTADO_CAPACITACION_LABELS[estadoReal] ?? estadoReal
       itemsAdherencia.push({
@@ -175,6 +184,7 @@ export async function GET(_req: NextRequest) {
         fecha: c.fecha,
         pilar: c.pilar,
         estadoReal,
+        estadoManual,
       })
       const base = {
         Capacitación: c.titulo,
@@ -183,6 +193,7 @@ export async function GET(_req: NextRequest) {
         Fecha: fmtDate(c.fecha),
         Duración: formatDuracion(c.duracion_horas),
         Estado: estadoLabel,
+        "Estado cargado": estadoManual ? "Manual" : "Automático",
         Lugar: c.lugar ?? "",
         Descripción: c.descripcion ?? "",
         Visible: fmtBool(c.visible),
@@ -236,8 +247,12 @@ export async function GET(_req: NextRequest) {
         "Pilar",
         "Instructor",
         "Fecha",
-        "Duración (h)",
+        // La celda trae el texto formateado ("30 min", "1 h"), no el decimal:
+        // si el encabezado dice "Duración (h)" no matchea la key y XLSX saca una
+        // columna vacía + otra "Duración" suelta al final.
+        "Duración",
         "Estado",
+        "Estado cargado",
         "Lugar",
         "Descripción",
         "Visible",
@@ -259,6 +274,7 @@ export async function GET(_req: NextRequest) {
       { wch: 12 },
       { wch: 10 },
       { wch: 14 },
+      { wch: 12 },
       { wch: 22 },
       { wch: 40 },
       { wch: 8 },
@@ -329,6 +345,11 @@ function hojaAdherencia(items: ItemAdherencia[], today: string) {
       `${a.cumplidasVencidas} cumplidas de ${a.vencidas} ya vencidas`,
     ],
     ["Atrasadas", a.atrasadas.length, "Vencidas sin cerrar"],
+    [
+      "Cumplidas con estado manual",
+      a.cumplidasManuales,
+      `De las ${a.cumplidasAnual} cumplidas, con el estado cargado a mano (cursos externos)`,
+    ],
     [
       "Cumplimiento anual (%)",
       a.cumplimientoAnual,

@@ -43,13 +43,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   Table,
   TableBody,
   TableCell,
@@ -64,9 +57,17 @@ import {
   RESULTADO_COLORS,
   RESULTADO_LABELS,
 } from "@/lib/constants"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import {
+  setEstadoManual,
   updateCapacitacion,
   toggleCapacitacionVisible,
   addAsistentes,
@@ -87,7 +88,13 @@ import type {
   EstadoCapacitacion,
   ResultadoCapacitacion,
 } from "@/types/database"
-import { formatDuracion } from "@/lib/capacitacion-estado"
+import {
+  ESTADOS_MANUALES,
+  UMBRAL_CUMPLIDA_PCT,
+  esEstadoManual,
+  estadoDerivado,
+  formatDuracion,
+} from "@/lib/capacitacion-estado"
 
 interface DpoHierarchyPilar {
   id: string
@@ -156,6 +163,34 @@ export function CapacitacionDetailClient({
     const pctAprobados = total > 0 ? Math.round((aprobados / total) * 100) : null
     return { total, presentes, aprobados, desaprobados, pctAprobados }
   }, [cap.asistencias])
+
+  // El estado que se muestra es el mismo que calcula el listado: lo manda el
+  // avance, salvo que esté cargado a mano (cursos externos) o dada de baja.
+  const entradaEstado = {
+    estado: cap.estado,
+    total_asistentes: stats.total,
+    aprobados: stats.aprobados,
+    estado_manual: cap.estado_manual ?? null,
+  }
+  const estadoReal = estadoDerivado(entradaEstado)
+  const manual = esEstadoManual(entradaEstado)
+
+  /** Estado cargado a mano: `null` devuelve la capacitación al cálculo. */
+  async function handleEstadoManual(estado: EstadoCapacitacion | null) {
+    startTransition(async () => {
+      const result = await setEstadoManual(cap.id, estado)
+      if ("error" in result) {
+        toast.error(result.error)
+      } else {
+        setCap((prev) => ({ ...prev, estado_manual: estado }))
+        toast.success(
+          estado
+            ? `Estado manual: ${ESTADO_CAPACITACION_LABELS[estado]}`
+            : "Vuelve a calcularse por el avance"
+        )
+      }
+    })
+  }
 
   async function handleEstadoChange(estado: EstadoCapacitacion) {
     startTransition(async () => {
@@ -280,23 +315,92 @@ export function CapacitacionDetailClient({
               {cap.visible ? <Eye className="mr-2 size-4" /> : <EyeOff className="mr-2 size-4" />}
               {cap.visible ? "Visible" : "Oculta"}
             </Button>
-            <Select
-              value={cap.estado}
-              onValueChange={(v) => handleEstadoChange(v as EstadoCapacitacion)}
+            {/* El estado ya no se elige a mano: lo define el avance (≥ 90 % aprobados
+                = Cumplida). Lo único que se decide acá es dar de baja o reactivar. */}
+            <div
+              className="flex items-center gap-2 rounded-md border px-3 py-1.5"
+              style={{
+                borderColor: ESTADO_CAPACITACION_COLORS[estadoReal] + "55",
+                backgroundColor: ESTADO_CAPACITACION_COLORS[estadoReal] + "12",
+              }}
+              title={
+                cap.estado === "cancelada"
+                  ? "Capacitación dada de baja"
+                  : manual
+                    ? "Estado cargado a mano"
+                    : `Se calcula solo: ${UMBRAL_CUMPLIDA_PCT} % de aprobados o más = Cumplida`
+              }
             >
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(
-                  ["programada", "en_curso", "completada", "cancelada"] as const
-                ).map((e) => (
-                  <SelectItem key={e} value={e}>
-                    {ESTADO_CAPACITACION_LABELS[e]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <span
+                className="text-sm font-semibold"
+                style={{ color: ESTADO_CAPACITACION_COLORS[estadoReal] }}
+              >
+                {ESTADO_CAPACITACION_LABELS[estadoReal]}
+              </span>
+              {cap.estado !== "cancelada" && !manual && (
+                <span className="text-xs text-slate-500">
+                  {stats.pctAprobados ?? 0} % aprobados
+                </span>
+              )}
+            </div>
+            {/* Cursos externos: no se rinden en la app, así que el estado se
+                carga a mano. Con "Manual" apagado, lo calcula el avance. */}
+            {cap.estado !== "cancelada" &&
+              (manual ? (
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={cap.estado_manual ?? "programada"}
+                    onValueChange={(v) => handleEstadoManual(v as EstadoCapacitacion)}
+                  >
+                    <SelectTrigger className="w-40">
+                      {/* Sin children muestra el valor crudo ("en_curso"). */}
+                      <SelectValue>
+                        {(v: string | null) =>
+                          ESTADO_CAPACITACION_LABELS[
+                            (v ?? "programada") as EstadoCapacitacion
+                          ]
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ESTADOS_MANUALES.map((e) => (
+                        <SelectItem key={e} value={e}>
+                          {ESTADO_CAPACITACION_LABELS[e]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    title="Vuelve a calcularse por el avance de los exámenes"
+                    onClick={() => handleEstadoManual(null)}
+                  >
+                    Automático
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isPending}
+                  title="Cargar el estado a mano (cursos externos)"
+                  onClick={() => handleEstadoManual(estadoReal === "cancelada" ? "programada" : estadoReal)}
+                >
+                  Manual
+                </Button>
+              ))}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isPending}
+              onClick={() =>
+                handleEstadoChange(cap.estado === "cancelada" ? "programada" : "cancelada")
+              }
+            >
+              {cap.estado === "cancelada" ? "Reactivar" : "Dar de baja"}
+            </Button>
           </div>
         )}
       </div>

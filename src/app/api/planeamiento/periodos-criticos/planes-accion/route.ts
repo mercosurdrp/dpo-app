@@ -7,8 +7,10 @@ export const dynamic = "force-dynamic"
 // PUT /api/planeamiento/periodos-criticos/planes-accion
 // Body: { codigo: string, descripcion: string, plan_texto: string }
 //
-// Upsert por código. Permite editar el texto del plan de acción asociado a
-// cada combinación de triggers ("AAAA", "AAA", "AA", "A", "").
+// Upsert por código. Hay un plan por escalón de la escala del calendario:
+// CRITICO (el volumen supera la capacidad), LIMITE (90–100% de la capacidad) y
+// NORMAL.
+const CODIGOS = ["CRITICO", "LIMITE", "NORMAL"]
 export async function PUT(req: NextRequest) {
   const profile = await getProfile()
   if (!profile) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
@@ -25,12 +27,12 @@ export async function PUT(req: NextRequest) {
   const codigo = (body.codigo ?? "").trim()
   const descripcion = (body.descripcion ?? "").trim()
   const plan_texto = (body.plan_texto ?? "").trim()
-  if (codigo.length > 4 || !plan_texto) {
-    return NextResponse.json({ error: "codigo (≤4 chars) y plan_texto requeridos" }, { status: 400 })
+  if (!plan_texto) {
+    return NextResponse.json({ error: "plan_texto requerido" }, { status: 400 })
   }
   // Solo aceptamos códigos del set válido para evitar polución
-  if (!/^P{0,4}$/.test(codigo)) {
-    return NextResponse.json({ error: 'codigo debe ser "", "P", "PP", "PPP" o "PPPP"' }, { status: 400 })
+  if (!CODIGOS.includes(codigo)) {
+    return NextResponse.json({ error: `codigo debe ser uno de: ${CODIGOS.join(", ")}` }, { status: 400 })
   }
 
   const supabase = await createClient()

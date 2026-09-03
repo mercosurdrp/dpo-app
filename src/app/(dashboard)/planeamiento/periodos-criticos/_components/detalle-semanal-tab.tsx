@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import type { DiaCalendario, UmbralesPC } from "./client"
-import { intensidadDia, INTENSIDAD_BG } from "./client"
+import { intensidadDia, INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
 
 const fmtHL = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
 const fmtPct = (n: number) => (n * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%"
@@ -272,8 +272,8 @@ function FilaTipo({ sem }: { sem: Semana }) {
       </td>
       {sem.dias.map((d, i) => {
         if (!d) return <td key={i} className="border border-slate-200 px-1 py-0.5 text-center bg-slate-50 text-slate-300">—</td>
-        const n = d.trigger_count
-        if (n === 0) {
+        const i2 = intensidadDia(d)
+        if (i2 === "NORMAL") {
           return (
             <td key={i} className="border border-slate-200 px-1 py-0.5 text-center bg-emerald-100 text-emerald-900">
               —
@@ -281,8 +281,8 @@ function FilaTipo({ sem }: { sem: Semana }) {
           )
         }
         return (
-          <td key={i} className={`border border-slate-200 px-1 py-0.5 text-center font-bold text-[9px] ${INTENSIDAD_BG[intensidadDia(n)]}`}>
-            {intensidadDia(n)}
+          <td key={i} className={`border border-slate-200 px-1 py-0.5 text-center font-bold text-[9px] ${INTENSIDAD_BG[i2]}`}>
+            {INTENSIDAD_LABEL[i2]}
           </td>
         )
       })}

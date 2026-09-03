@@ -15,8 +15,13 @@
  * afinar los que ya están.
  */
 
+import * as XLSX from "xlsx"
 import { resolverPadron, normalizarNombre } from "./owd-padron"
-import { estadoDerivado } from "@/lib/capacitacion-estado"
+import {
+  CLAVE_ESTADO_MANUAL,
+  estadoDerivado,
+  parseEstadosManuales,
+} from "@/lib/capacitacion-estado"
 import { normalizePilar } from "@/lib/capacitacion-adherencia"
 import { esFeriado } from "@/lib/feriados-ar"
 import { SLA_CARGA_TARGET } from "@/lib/sla-cumplimiento"
@@ -83,7 +88,7 @@ const VENCIMIENTOS_BLOB_URL =
   "https://deposito-esteban.vercel.app/api/shared/load?module=wms-vencimientos"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Sb = { from: (t: string) => any }
+type Sb = { from: (t: string) => any; storage: any }
 
 function hoyISO(ahora: Date): string {
   return ahora.toISOString().slice(0, 10)
@@ -385,8 +390,29 @@ async function chequeoCapacitaciones(sb: Sb, ahora: Date): Promise<Alerta[]> {
       deAlmacen.map((c: any) => c.id),
     )
 
-  type Resumen = { total: number; presentes: number; rendidos: number; pendientes: number }
-  const vacio = (): Resumen => ({ total: 0, presentes: 0, rendidos: 0, pendientes: 0 })
+  // Estado cargado a mano (cursos externos): si no se lee, una capacitación
+  // externa dada por cumplida seguiría figurando como atrasada acá.
+  const { data: cfgManual } = await sb
+    .from("app_config")
+    .select("valor")
+    .eq("clave", CLAVE_ESTADO_MANUAL)
+    .maybeSingle()
+  const manuales = parseEstadosManuales((cfgManual as { valor: string } | null)?.valor)
+
+  type Resumen = {
+    total: number
+    presentes: number
+    rendidos: number
+    pendientes: number
+    aprobados: number
+  }
+  const vacio = (): Resumen => ({
+    total: 0,
+    presentes: 0,
+    rendidos: 0,
+    pendientes: 0,
+    aprobados: 0,
+  })
   const resumen = new Map<string, Resumen>()
   for (const a of asis ?? []) {
     const r = resumen.get(a.capacitacion_id) ?? vacio()
@@ -394,23 +420,19 @@ async function chequeoCapacitaciones(sb: Sb, ahora: Date): Promise<Alerta[]> {
     if (a.presente) r.presentes++
     if (a.resultado === "pendiente") r.pendientes++
     else r.rendidos++
+    if (a.resultado === "aprobado") r.aprobados++
     resumen.set(a.capacitacion_id, r)
   }
 
   const atrasadas: Array<{ fecha: string; titulo: string; dias: number; porQue: string }> = []
   for (const c of deAlmacen) {
     const r = resumen.get(c.id) ?? vacio()
-    const estado = estadoDerivado(
-      {
-        estado: c.estado,
-        fecha: c.fecha,
-        total_asistentes: r.total,
-        presentes: r.presentes,
-        rendidos: r.rendidos,
-        pendientes: r.pendientes,
-      },
-      hoy,
-    )
+    const estado = estadoDerivado({
+      estado: c.estado,
+      total_asistentes: r.total,
+      aprobados: r.aprobados,
+      estado_manual: manuales[c.id] ?? null,
+    })
     if (estado === "completada" || estado === "cancelada") continue
     atrasadas.push({
       fecha: c.fecha,
@@ -604,6 +626,167 @@ async function chequeoVencimientosStock(ahora: Date): Promise<Alerta[]> {
   return out
 }
 
+
+/**
+ * Compras presupuestadas para el mes en curso (y el que viene, para pedirlas
+ * con tiempo). Salen del Excel anual de `presupuestos_anuales`, hoja
+ * "ALMACEN PXQ mrp": cada rubro declara su centro de costo en la col 0 y
+ * debajo van los renglones de detalle (Film, Termocontraible, Etiquetas y
+ * ribbon…) con su Q y su P. Sólo se miran los rubros que son COMPRAS, no los
+ * servicios recurrentes (volquetes, bioplagas, cuota de sistemas) ni las pérdidas.
+ *
+ * Por qué existe: las etiquetas y ribbon estaban presupuestadas en mayo-2026,
+ * nadie las pidió ese mes y en agosto hubo que comprarlas de urgencia. Con el
+ * tablero como único canal, lo presupuestado que no se ve acá no se pide.
+ *
+ * Una sola tarjeta por mes (id estable "compra-ppto:AAAA-MM"): aviso desde el
+ * día 1 y crítica desde el día DIA_COMPRA_CRITICA si el mes tiene compras, porque
+ * a esa altura ya no queda margen para que el pedido entre en el mes.
+ */
+const SHEET_ALMACEN_PXQ = "ALMACEN PXQ mrp"
+const BUCKET_PRESUPUESTOS = "presupuestos"
+/** Rubros de la hoja que son compras puntuales a pedir (normalizados). */
+const RUBROS_COMPRA = new Set([
+  "INSUMOS LOGISTICOS",
+  "ELEMENTOS DE SEGURIDAD DEPOSITO",
+  "ALQUILERES DE AUTOELEVADORES",
+])
+const DIA_COMPRA_CRITICA = 20
+const MESES_ES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
+interface CompraPpto {
+  rubro: string
+  item: string
+  mes: number
+  monto: number
+  q: number | null
+  p: number | null
+}
+
+function normTexto(v: unknown): string {
+  return String(v ?? "").trim().replace(/\s+/g, " ").toUpperCase()
+}
+
+function fmtPesos(n: number): string {
+  return "$ " + Math.round(n).toLocaleString("es-AR")
+}
+
+/** Lee la hoja ALMACEN PXQ y devuelve un renglón por (item, mes) con monto > 0. */
+export function parseComprasPresupuestadas(buffer: ArrayBuffer): CompraPpto[] {
+  const wb = XLSX.read(buffer, { type: "array" })
+  const ws = wb.Sheets[SHEET_ALMACEN_PXQ]
+  if (!ws) throw new Error(`el Excel del presupuesto no tiene la hoja "${SHEET_ALMACEN_PXQ}"`)
+  const alm = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, blankrows: false })
+
+  const out: CompraPpto[] = []
+  let rubro: string | null = null
+  let rubroRow: unknown[] | null = null
+  let detalles = 0
+  // Un rubro sin renglones de detalle (ej. Alquiler de autoelevadores) es él
+  // mismo la compra: se toma el monto de su propia fila.
+  const cerrarRubro = () => {
+    if (!rubro || detalles > 0 || !rubroRow) return
+    for (let mes = 1; mes <= 12; mes++) {
+      const v = rubroRow[1 + mes]
+      if (typeof v === "number" && v > 0) out.push({ rubro, item: rubro, mes, monto: v, q: null, p: null })
+    }
+  }
+
+  for (let i = 0; i < alm.length; i++) {
+    const r = alm[i]
+    if (!r) continue
+    if (typeof r[0] === "string" && typeof r[1] === "string") {
+      cerrarRubro()
+      const n = normTexto(r[1])
+      rubro = RUBROS_COMPRA.has(n) ? n : null
+      rubroRow = r
+      detalles = 0
+      continue
+    }
+    if (!rubro || typeof r[1] !== "string") continue
+    const etiqueta = normTexto(r[1])
+    if (/^(Q|P|PRECIO|PXQ)\b/.test(etiqueta)) continue // filas de cantidad/precio
+    detalles++
+    for (let mes = 1; mes <= 12; mes++) {
+      const v = r[1 + mes]
+      if (typeof v !== "number" || v <= 0) continue
+      let q: number | null = null
+      let p: number | null = null
+      for (let j = i + 1; j < Math.min(i + 4, alm.length); j++) {
+        const sub = alm[j]
+        if (!sub || typeof sub[0] === "string" || typeof sub[1] !== "string") break
+        const e = normTexto(sub[1])
+        const val = sub[1 + mes]
+        if (/^Q\b/.test(e) && typeof val === "number") q = val
+        if (/^P\b/.test(e) && typeof val === "number") p = val
+      }
+      out.push({ rubro, item: String(r[1]).trim(), mes, monto: v, q, p })
+    }
+  }
+  cerrarRubro()
+  return out
+}
+
+function describirCompra(c: CompraPpto): string {
+  const pxq = c.q != null && c.p != null ? ` — ${c.q} × ${fmtPesos(c.p)}` : ""
+  const rubro = c.item === c.rubro ? "" : ` (${c.rubro.toLowerCase()})`
+  return `${c.item}${pxq} = ${fmtPesos(c.monto)}${rubro}`
+}
+
+async function chequeoComprasPresupuestadas(sb: Sb, ahora: Date): Promise<Alerta[]> {
+  const anio = ahora.getFullYear()
+  const mes = ahora.getMonth() + 1
+  const dia = ahora.getDate()
+
+  const { data: ppto, error } = await sb
+    .from("presupuestos_anuales")
+    .select("archivo_url")
+    .eq("anio", anio)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!ppto?.archivo_url) throw new Error(`no hay presupuesto anual ${anio} cargado`)
+
+  const { data: blob, error: errDl } = await sb.storage.from(BUCKET_PRESUPUESTOS).download(ppto.archivo_url)
+  if (errDl || !blob) throw new Error(`descargando el presupuesto: ${errDl?.message ?? "sin archivo"}`)
+
+  const compras = parseComprasPresupuestadas(await blob.arrayBuffer())
+  const esteMes = compras.filter((c) => c.mes === mes)
+  const proximoMes = compras.filter((c) => c.mes === mes + 1)
+  if (esteMes.length === 0 && proximoMes.length === 0) return []
+
+  const total = esteMes.reduce((s, c) => s + c.monto, 0)
+  const nombreMes = MESES_ES[mes - 1]
+  const mesQueViene = MESES_ES[mes] ?? "enero"
+  const partes: string[] = []
+  if (esteMes.length > 0) partes.push(`Para ${nombreMes}: ${esteMes.map(describirCompra).join(" · ")}.`)
+  else partes.push(`Nada presupuestado para comprar en ${nombreMes}.`)
+  if (proximoMes.length > 0) {
+    partes.push(`Para ${mesQueViene} (pedir con tiempo): ${proximoMes.map(describirCompra).join(" · ")}.`)
+  }
+  partes.push("Fuente: presupuesto anual, hoja ALMACEN PXQ.")
+
+  const critica = esteMes.length > 0 && dia >= DIA_COMPRA_CRITICA
+  const mesISO = `${anio}-${String(mes).padStart(2, "0")}`
+  const titulo =
+    esteMes.length > 0
+      ? `${esteMes.length === 1 ? "1 compra presupuestada" : `${esteMes.length} compras presupuestadas`} para ${nombreMes}: ${esteMes.map((c) => c.item).join(", ")} (${fmtPesos(total)})`
+      : `Sin compras presupuestadas en ${nombreMes} · ${mesQueViene}: ${proximoMes.map((c) => c.item).join(", ")}`
+  return [
+    {
+      id: `compra-ppto:${mesISO}`,
+      chequeo: "compra_presupuestada",
+      severidad: critica ? "critica" : "aviso",
+      titulo,
+      detalle: partes.join(" "),
+      fecha: `${mesISO}-01`,
+      link: "/presupuesto",
+    },
+  ]
+}
+
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 export interface ResultadoAlertas {
@@ -627,6 +810,7 @@ export async function correrChequeos(sb: Sb, ahora = new Date()): Promise<Result
     ["checklist_autoelevador", () => chequeoChecklistAutoelevadores(sb, ahora)],
     ["sla_carga_bajo_target", () => chequeoSlaCarga(ahora)],
     ["vencimientos_stock", () => chequeoVencimientosStock(ahora)],
+    ["compra_presupuestada", () => chequeoComprasPresupuestadas(sb, ahora)],
   ]
 
   const alertas: Alerta[] = []

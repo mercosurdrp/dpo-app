@@ -73,27 +73,28 @@ export default async function PeriodosCriticosPage() {
     )
   }
 
-  const cfg: CfgPC = {
-    anio: cfgRow.anio_vigente,
-    w_vol: Number(cfgRow.w_vol),
-    w_otif: Number(cfgRow.w_otif),
-    w_aus: Number(cfgRow.w_aus),
-    umbral_alto: Number(cfgRow.umbral_alto),
-    umbral_medio: Number(cfgRow.umbral_medio),
-    hl_p90_2025: cfgRow.hl_p90_2025 != null ? Number(cfgRow.hl_p90_2025) : null,
-  }
+  const cfg: CfgPC = { anio: cfgRow.anio_vigente }
 
+  // `vol_pico` es columna generada: camiones × HL por camión × % ocupación.
   const umbrales: UmbralesPC = umbralesRow
     ? {
+        camiones: Number(umbralesRow.camiones),
+        hl_por_camion: Number(umbralesRow.hl_por_camion),
+        pct_ocupacion: Number(umbralesRow.pct_ocupacion),
         vol_pico: Number(umbralesRow.vol_pico),
-        vol_alto: Number(umbralesRow.vol_alto),
-        vol_medio: Number(umbralesRow.vol_medio),
         clientes: Number(umbralesRow.clientes),
         otif_min: Number(umbralesRow.otif_min),
         ausentismo_max: Number(umbralesRow.ausentismo_max),
-        min_triggers: Number(umbralesRow.min_triggers),
       }
-    : { vol_pico: 900, vol_alto: 650, vol_medio: 450, clientes: 300, otif_min: 0.92, ausentismo_max: 0.075, min_triggers: 2 }
+    : {
+        camiones: 10,
+        hl_por_camion: 72,
+        pct_ocupacion: 0.9,
+        vol_pico: 648,
+        clientes: 425,
+        otif_min: 0.03,
+        ausentismo_max: 0.1,
+      }
 
   return (
     <div className="space-y-4">

@@ -4,7 +4,6 @@ import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { CalendarRange, FlaskConical, Settings, ListTree, ColumnsIcon, Table, ClipboardCheck, Grid2x2, Gift } from "lucide-react"
@@ -30,33 +29,27 @@ export type DiaCalendario = {
   pct_rechazo: number
   otif_estimado: number
   pct_ausentismo: number
-  clasif_vol: "PICO" | "ALTO" | "MEDIO" | "BAJO"
+  clasif_vol: "PICO" | "NORMAL"   // superó la capacidad de distribución, o no
+  pct_capacidad: number           // hl / capacidad (1 = justo la capacidad)
   es_feriado: boolean
   nombre_feriado: string | null
   tipo_feriado: string | null   // nacional | provincial | empresa
-  score: number
   // Triggers booleanos (modelo Mercosur)
   trigger_vol: boolean
   trigger_cli: boolean
   trigger_otif: boolean
   trigger_aus: boolean
   trigger_count: number
-  codigo: string             // "AAAA" / "AAA" / "AA" / "A" / ""
+  contexto_count: number     // cuántas de las otras 3 acompañan al volumen
   estatus: "CRITICO" | "NORMAL"
-  // Compatibilidad con simulador / configuración del score continuo
-  nivel: "BAJO" | "MEDIO" | "ALTO"
 }
 
+// Lo único configurable fuera de la capacidad y el contexto es el año vigente.
 export type CfgPC = {
   anio: number
-  w_vol: number
-  w_otif: number
-  w_aus: number
-  umbral_alto: number
-  umbral_medio: number
-  hl_p90_2025: number | null
 }
 
+// `codigo` es una Intensidad: hay un plan por escalón (CRITICO, LIMITE, NORMAL).
 export type PlanAccion = {
   codigo: string
   descripcion: string
@@ -64,13 +57,16 @@ export type PlanAccion = {
 }
 
 export type UmbralesPC = {
+  // Capacidad de distribución: los 3 números que la definen…
+  camiones: number
+  hl_por_camion: number
+  pct_ocupacion: number
+  /** …y el HL que sale de multiplicarlos. Lo calcula la base (columna generada). */
   vol_pico: number
-  vol_alto: number
-  vol_medio: number
+  // Variables de contexto: agravan el día crítico, no lo crean.
   clientes: number
-  otif_min: number
+  otif_min: number        // tasa de rechazo máxima
   ausentismo_max: number
-  min_triggers: number
 }
 
 const MESES = [
@@ -104,39 +100,38 @@ const fmtHL = (n: number) =>
 const fmtPct = (n: number) =>
   (n * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%"
 
-// Intensidad del día = cuántas de las 4 variables (Vol/Cli/OTIF/Aus) cruzaron
-// su target ese día. Es el idioma único del módulo: 4=PICO · 3=ALTO · 2=MEDIO ·
-// 1=BAJO · 0=NORMAL. Reemplaza al viejo código "PPPP".
-export type Intensidad = "PICO" | "ALTO" | "MEDIO" | "BAJO" | "NORMAL"
+// La escala (CRITICO / LIMITE / NORMAL) vive en _lib/intensidad.ts porque también
+// la usan la API del mes siguiente y la sección de la reunión. Acá se re-exporta
+// para que las pestañas sigan importando desde "./client".
+export {
+  intensidadDia, intensidadMax, INTENSIDAD_BG, INTENSIDAD_LABEL, PCT_LIMITE,
+  type Intensidad,
+} from "../_lib/intensidad"
+import { intensidadDia, INTENSIDAD_BG, INTENSIDAD_LABEL, PCT_LIMITE } from "../_lib/intensidad"
 
-export function intensidadDia(triggerCount: number): Intensidad {
-  if (triggerCount >= 4) return "PICO"
-  if (triggerCount === 3) return "ALTO"
-  if (triggerCount === 2) return "MEDIO"
-  if (triggerCount === 1) return "BAJO"
-  return "NORMAL"
-}
+/** Las 3 variables de contexto que cruzaron (todas menos volumen). */
+export type ConTriggers = Pick<
+  DiaCalendario,
+  "trigger_vol" | "trigger_cli" | "trigger_otif" | "trigger_aus"
+>
 
-// Color de fondo por intensidad (celdas del calendario / badges).
-export const INTENSIDAD_BG: Record<Intensidad, string> = {
-  PICO:   "bg-red-700 text-white font-bold",
-  ALTO:   "bg-red-500 text-white font-semibold",
-  MEDIO:  "bg-orange-500 text-white font-semibold",
-  BAJO:   "bg-amber-300 text-amber-950 font-medium",
-  NORMAL: "bg-emerald-500/80 text-white",
+/** Cuántas variables de contexto cruzaron. Se muestra, no decide el color. */
+export function contextoDia(d: ConTriggers): number {
+  return (d.trigger_cli ? 1 : 0) + (d.trigger_otif ? 1 : 0) + (d.trigger_aus ? 1 : 0)
 }
 
 function estiloCelda(d: DiaCalendario): string {
   if (d.hl === 0 && d.dow !== 0) return "bg-slate-100 text-slate-400"  // sin datos
   if (d.dow === 0) return "bg-slate-100 text-slate-400"               // domingo
-  return INTENSIDAD_BG[intensidadDia(d.trigger_count)]
+  return INTENSIDAD_BG[intensidadDia(d)]
 }
 
-// Etiquetas humanas de los triggers (para tooltip).
+// Etiquetas humanas de los triggers (para tooltip). El volumen va primero: es
+// el único que define criticidad.
 const TRIGGER_LABELS: Array<[keyof DiaCalendario, string]> = [
-  ["trigger_otif", "OTIF < umbral"],
-  ["trigger_vol", "Volumen = PICO"],
+  ["trigger_vol", "Volumen sobre la capacidad"],
   ["trigger_cli", "Clientes > umbral"],
+  ["trigger_otif", "Rechazo > umbral"],
   ["trigger_aus", "Ausentismo ≥ umbral"],
 ]
 
@@ -154,16 +149,16 @@ function MesGrid({ mes, dias }: { mes: number; dias: DiaCalendario[] }) {
 
   return (
     <Card>
-      <CardContent className="p-3">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-semibold text-slate-900">{MESES[mes - 1]}</h3>
+      <CardContent className="p-4">
+        <div className="mb-2.5 flex items-baseline justify-between">
+          <h3 className="text-base font-semibold text-slate-900">{MESES[mes - 1]}</h3>
           <span className="text-xs text-slate-500">
             {delMes.filter((d) => d.estatus === "CRITICO").length} críticos
           </span>
         </div>
-        <div className="grid grid-cols-7 gap-1">
+        <div className="grid grid-cols-7 gap-1.5">
           {NOMBRES_DOW.map((d, i) => (
-            <div key={i} className="text-center text-[10px] font-semibold text-slate-500 uppercase">
+            <div key={i} className="text-center text-[11px] font-semibold text-slate-500 uppercase">
               {d}
             </div>
           ))}
@@ -177,21 +172,23 @@ function MesGrid({ mes, dias }: { mes: number; dias: DiaCalendario[] }) {
 }
 
 function DiaCell({ d }: { d: DiaCalendario | null }) {
-  if (!d) return <div className="aspect-square rounded-sm" />
+  if (!d) return <div className="aspect-square rounded" />
 
   const fecha = new Date(d.fecha + "T00:00:00")
   const cls = estiloCelda(d)
   const dayNum = fecha.getDate()
   const triggersActivos = TRIGGER_LABELS.filter(([k]) => d[k] === true)
+  const conDatos = d.hl > 0 && d.dow !== 0
 
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <div
-            className={`relative aspect-square rounded-sm text-[11px] flex items-center justify-center cursor-default ${cls} ${d.es_feriado ? "ring-2 ring-yellow-400" : ""}`}
+            className={`relative aspect-square rounded flex flex-col items-center justify-center leading-none cursor-default ${cls} ${d.es_feriado ? "ring-2 ring-yellow-400" : ""}`}
           >
-            {dayNum}
+            <span className="text-[15px] font-semibold">{dayNum}</span>
+            {conDatos && <span className="mt-0.5 text-[9px] opacity-80">{fmtHL(d.hl)}</span>}
           </div>
         }
       />
@@ -201,9 +198,9 @@ function DiaCell({ d }: { d: DiaCalendario | null }) {
             <span className="font-semibold">
               {d.dia_semana} {fecha.toLocaleDateString("es-AR")}
             </span>
-            {d.trigger_count > 0 && (
-              <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${INTENSIDAD_BG[intensidadDia(d.trigger_count)]}`}>
-                {intensidadDia(d.trigger_count)} · {d.trigger_count}/4
+            {intensidadDia(d) !== "NORMAL" && (
+              <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${INTENSIDAD_BG[intensidadDia(d)]}`}>
+                {INTENSIDAD_LABEL[intensidadDia(d)]}
               </span>
             )}
           </div>
@@ -211,14 +208,17 @@ function DiaCell({ d }: { d: DiaCalendario | null }) {
             <div className="text-yellow-700 font-medium">★ {d.nombre_feriado}</div>
           )}
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 border-t border-slate-200">
-            <span>HL:</span><span className="text-right"><b>{fmtHL(d.hl)}</b> · {d.clasif_vol}</span>
+            <span>HL:</span>
+            <span className="text-right">
+              <b>{fmtHL(d.hl)}</b> · {fmtPct(d.pct_capacidad)} de la capacidad
+            </span>
             <span>Clientes:</span><span className="text-right"><b>{d.clientes_dia}</b></span>
-            <span>OTIF est:</span><span className="text-right"><b>{fmtPct(d.otif_estimado)}</b></span>
+            <span>Rechazo:</span><span className="text-right"><b>{fmtPct(d.otif_estimado)}</b></span>
             <span>Ausentismo:</span><span className="text-right"><b>{fmtPct(d.pct_ausentismo)}</b></span>
           </div>
           {triggersActivos.length > 0 && (
             <div className="mt-1 pt-1 border-t border-slate-200">
-              <div className="text-[10px] uppercase text-slate-500 mb-0.5">Triggers activos</div>
+              <div className="text-[10px] uppercase text-slate-500 mb-0.5">Variables cruzadas</div>
               {triggersActivos.map(([k, label]) => (
                 <div key={k as string} className="text-[10px]">• {label}</div>
               ))}
@@ -266,16 +266,15 @@ export function PeriodosCriticosClient({
   const diasActivos = diasPorAnio[anioActivo] ?? []
 
   const conteo = useMemo(() => {
-    const c = { criticos: 0, t1: 0, t2: 0, t3: 0, t4: 0, normales: 0, sin_datos: 0 }
+    const c = { criticos: 0, limite: 0, normales: 0, sin_datos: 0 }
     for (const d of diasActivos) {
-      if (d.hl === 0 && d.dow !== 0) { c.sin_datos++; continue }
-      const n = d.trigger_count
-      if (n >= 2) c.criticos++   // crítico = MEDIO+ (2 o más variables en target)
-      if (n === 0) c.normales++
-      else if (n === 1) c.t1++
-      else if (n === 2) c.t2++
-      else if (n === 3) c.t3++
-      else if (n >= 4) c.t4++
+      if (d.dow === 0) continue                      // domingo: no se reparte
+      if (d.hl === 0) { c.sin_datos++; continue }
+      switch (intensidadDia(d)) {
+        case "CRITICO": c.criticos++; break
+        case "LIMITE":  c.limite++; break
+        default:        c.normales++
+      }
     }
     return c
   }, [diasActivos])
@@ -285,7 +284,8 @@ export function PeriodosCriticosClient({
       <header>
         <h1 className="text-2xl font-semibold text-slate-900">Períodos Críticos</h1>
         <p className="text-sm text-slate-600">
-          Pilar Planeamiento · Bloque 3.4 — Calendario por triggers (Volumen · Clientes · OTIF · Ausentismo).
+          Pilar Planeamiento · Bloque 3.4 — Un día es crítico cuando el volumen supera la capacidad de
+          distribución. Clientes, rechazo y ausentismo se cruzan como contexto: agravan el día, no lo vuelven crítico.
         </p>
       </header>
 
@@ -304,13 +304,11 @@ export function PeriodosCriticosClient({
             </select>
           </label>
           <span className="text-xs text-slate-600">
-            <b>{conteo.criticos}</b> días críticos · intensidad = cuántas de las 4 variables cruzan su target
+            <b>{conteo.criticos}</b> días críticos · superan {fmtHL(umbrales.vol_pico)} HL de capacidad
           </span>
           <div className="ml-auto flex items-center gap-3 text-xs">
-            <Legend color="bg-red-700" label={`PICO · 4 (${conteo.t4})`} />
-            <Legend color="bg-red-500" label={`ALTO · 3 (${conteo.t3})`} />
-            <Legend color="bg-orange-500" label={`MEDIO · 2 (${conteo.t2})`} />
-            <Legend color="bg-amber-300" label={`BAJO · 1 (${conteo.t1})`} />
+            <Legend color="bg-red-600" label={`Crítico: supera la capacidad (${conteo.criticos})`} />
+            <Legend color="bg-amber-300" label={`Al límite: ${Math.round(PCT_LIMITE * 100)}–100% (${conteo.limite})`} />
             <Legend color="bg-emerald-500/80" label={`Normal (${conteo.normales})`} />
             <Legend color="bg-slate-100 border border-slate-300" label={`s/datos (${conteo.sin_datos})`} />
           </div>
@@ -344,7 +342,8 @@ export function PeriodosCriticosClient({
             </div>
           )}
           <TooltipProvider delay={150}>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {/* 3 columnas como máximo: el calendario se lee más grande que con 4. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {Array.from({ length: 12 }, (_, i) => (
                 <MesGrid key={i} mes={i + 1} dias={diasActivos} />
               ))}
@@ -368,24 +367,22 @@ export function PeriodosCriticosClient({
           <ComparativoTab
             aniosDisponibles={aniosDisponibles}
             diasPorAnio={diasPorAnio}
-            minVars={umbrales.min_triggers}
           />
         </TabsContent>
         <TabsContent value="comparativo-inverso">
           <ComparativoInversoTab
             aniosDisponibles={aniosDisponibles}
             diasPorAnio={diasPorAnio}
-            minVars={umbrales.min_triggers}
           />
         </TabsContent>
         <TabsContent value="simulador">
-          <SimuladorTab dias={diasActivos} cfg={cfg} umbrales={umbrales} />
+          <SimuladorTab dias={diasActivos} umbrales={umbrales} />
         </TabsContent>
         <TabsContent value="revision">
-          <RevisionMensualTab dias={diasActivos} anio={anioActivo} minVars={umbrales.min_triggers} />
+          <RevisionMensualTab dias={diasActivos} anio={anioActivo} />
         </TabsContent>
         <TabsContent value="swot">
-          <SwotTab dias={diasActivos} anio={anioActivo} minVars={umbrales.min_triggers} />
+          <SwotTab dias={diasActivos} anio={anioActivo} />
         </TabsContent>
         <TabsContent value="incentivos">
           <IncentivosTab anioActivo={anioActivo} />
@@ -408,29 +405,30 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 // ============================================================================
-// Card inline con los 6 umbrales editables al toque. Mismo endpoint que el
-// tab Configuración, pero accesible mientras se mira el calendario.
+// Card inline con la capacidad de distribución y los targets de contexto,
+// editables sin salir del calendario. Mismo endpoint que el tab Configuración.
 // ============================================================================
-function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
+export function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
   const router = useRouter()
-  const [vp, setVP] = useState(umbrales.vol_pico)
-  const [va, setVA] = useState(umbrales.vol_alto)
-  const [vm, setVM] = useState(umbrales.vol_medio)
+  const [camiones, setCamiones] = useState(umbrales.camiones)
+  const [hlCam, setHlCam] = useState(umbrales.hl_por_camion)
+  const [ocup, setOcup] = useState(umbrales.pct_ocupacion)
   const [cli, setCli] = useState(umbrales.clientes)
   const [otif, setOtif] = useState(umbrales.otif_min)
   const [aus, setAus] = useState(umbrales.ausentismo_max)
-  const [mt, setMt] = useState(umbrales.min_triggers)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
+  // Mismo cálculo que la columna generada de la base, para ver el HL al tipear.
+  const capacidad = Math.round(camiones * hlCam * ocup)
+
   const dirty =
-    vp !== umbrales.vol_pico ||
-    va !== umbrales.vol_alto ||
-    vm !== umbrales.vol_medio ||
+    camiones !== umbrales.camiones ||
+    hlCam !== umbrales.hl_por_camion ||
+    ocup !== umbrales.pct_ocupacion ||
     cli !== umbrales.clientes ||
     otif !== umbrales.otif_min ||
-    aus !== umbrales.ausentismo_max ||
-    mt !== umbrales.min_triggers
+    aus !== umbrales.ausentismo_max
 
   async function guardar() {
     setSaving(true); setMsg(null)
@@ -439,8 +437,8 @@ function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vol_pico: vp, vol_alto: va, vol_medio: vm,
-          clientes: cli, otif_min: otif, ausentismo_max: aus, min_triggers: mt,
+          camiones, hl_por_camion: hlCam, pct_ocupacion: ocup,
+          clientes: cli, otif_min: otif, ausentismo_max: aus,
         }),
       })
       if (!res.ok) {
@@ -459,16 +457,23 @@ function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
 
   return (
     <Card>
-      <CardContent className="p-3">
+      <CardContent className="p-3 space-y-2">
         <div className="flex flex-wrap items-end gap-2">
-          <div className="text-xs font-semibold text-slate-700 mr-1">Targets (1 variable cuenta si cruza):</div>
-          <UInput label="Vol PICO ≥" value={vp} onChange={setVP} step={100} suffix="HL" />
-          <UInput label="Vol ALTO ≥" value={va} onChange={setVA} step={100} suffix="HL" />
-          <UInput label="Vol MEDIO ≥" value={vm} onChange={setVM} step={100} suffix="HL" />
-          <UInput label="Clientes >" value={cli} onChange={setCli} step={10} integer />
-          <UInput label="OTIF <" value={otif} onChange={setOtif} step={0.01} pct />
-          <UInput label="Aus ≥" value={aus} onChange={setAus} step={0.005} pct />
-          <UInput label="Crítico si #variables ≥" value={mt} onChange={setMt} step={1} min={1} max={4} integer />
+          <div className="text-xs font-semibold text-slate-700 mr-1">
+            Capacidad de distribución <span className="font-normal text-slate-500">(define el día crítico)</span>:
+          </div>
+          <UInput label="Camiones" value={camiones} onChange={setCamiones} step={1} min={1} max={200} integer />
+          <span className="pb-1.5 text-slate-400">×</span>
+          <UInput label="HL por camión" value={hlCam} onChange={setHlCam} step={1} min={1} max={1000} suffix="HL" />
+          <span className="pb-1.5 text-slate-400">×</span>
+          <UInput label="Ocupación bodega" value={ocup} onChange={setOcup} step={0.05} min={0.05} max={3} pct />
+          <span className="pb-1.5 text-slate-400">=</span>
+          <span className="pb-1 text-sm font-semibold text-slate-900">
+            {fmtHL(capacidad)} HL
+            {capacidad !== umbrales.vol_pico && (
+              <span className="ml-1 text-[10px] font-normal text-amber-700">sin guardar</span>
+            )}
+          </span>
           <Button onClick={guardar} disabled={!dirty || saving} size="sm" className="ml-auto">
             {saving ? "Guardando…" : "Guardar"}
           </Button>
@@ -477,6 +482,14 @@ function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
               {msg}
             </span>
           )}
+        </div>
+        <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-2">
+          <div className="text-xs font-semibold text-slate-700 mr-1">
+            Contexto <span className="font-normal text-slate-500">(agrava el día, no lo vuelve crítico)</span>:
+          </div>
+          <UInput label="Clientes >" value={cli} onChange={setCli} step={10} integer />
+          <UInput label="Rechazo >" value={otif} onChange={setOtif} step={0.01} pct />
+          <UInput label="Ausentismo ≥" value={aus} onChange={setAus} step={0.005} pct />
         </div>
       </CardContent>
     </Card>
@@ -527,12 +540,9 @@ function UInput({
 function ComparativoTab({
   aniosDisponibles,
   diasPorAnio,
-  minVars,
 }: {
   aniosDisponibles: number[]
   diasPorAnio: Record<number, DiaCalendario[]>
-  /** Condicionantes simultáneos que exige un día crítico (pc_umbrales.min_triggers). */
-  minVars: number
 }) {
   const ultimo = aniosDisponibles[aniosDisponibles.length - 1] ?? new Date().getFullYear()
   const anterior = aniosDisponibles[aniosDisponibles.length - 2] ?? ultimo - 1
@@ -576,7 +586,7 @@ function ComparativoTab({
       </Card>
 
       {/* Cruce de períodos: qué pasó en B con los períodos críticos de A */}
-      <CrucePeriodos diasBase={diasA} diasComparar={diasB} anioBase={anioA} anioComparar={anioB} minVars={minVars} />
+      <CrucePeriodos diasBase={diasA} diasComparar={diasB} anioBase={anioA} anioComparar={anioB} />
 
       <TooltipProvider delay={150}>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -593,12 +603,9 @@ function ComparativoTab({
 function ComparativoInversoTab({
   aniosDisponibles,
   diasPorAnio,
-  minVars,
 }: {
   aniosDisponibles: number[]
   diasPorAnio: Record<number, DiaCalendario[]>
-  /** Condicionantes simultáneos que exige un día crítico (pc_umbrales.min_triggers). */
-  minVars: number
 }) {
   const ultimo =
     aniosDisponibles[aniosDisponibles.length - 1] ?? new Date().getFullYear()
@@ -664,7 +671,6 @@ function ComparativoInversoTab({
         anioBase={anioBase}
         anioComparar={anioComp}
         soloNuevos
-        minVars={minVars}
       />
     </div>
   )

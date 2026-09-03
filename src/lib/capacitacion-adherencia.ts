@@ -24,6 +24,8 @@ export interface ItemAdherencia {
   fecha: string
   pilar: string | null
   estadoReal: EstadoCapacitacion
+  /** El estado lo puso una persona (curso externo), no el avance. */
+  estadoManual?: boolean
 }
 
 export interface MesAdherencia {
@@ -64,6 +66,8 @@ export interface Adherencia {
   /** cumplidas vencidas / vencidas, 0-100. Null si todavía no venció ninguna. */
   adherenciaYtd: number | null
   atrasadas: ItemAdherencia[]
+  /** De las cumplidas del año, cuántas tienen el estado cargado a mano. */
+  cumplidasManuales: number
   /** Cuántas hay que tener cumplidas a fin de año para llegar a la meta. */
   metaCantidad: number
   /** Cuántas faltan cumplir para llegar a la meta. */
@@ -113,6 +117,9 @@ export function calcularAdherencia(
 
   const totalAnual = delAnio.length
   const cumplidasAnual = delAnio.filter((c) => c.estadoReal === "completada").length
+  const cumplidasManuales = delAnio.filter(
+    (c) => c.estadoReal === "completada" && c.estadoManual
+  ).length
   const metaCantidad = Math.ceil(totalAnual * META_CUMPLIMIENTO)
   const faltanParaMeta = Math.max(0, metaCantidad - cumplidasAnual)
   const pendientes = totalAnual - cumplidasAnual
@@ -183,6 +190,7 @@ export function calcularAdherencia(
     cumplidasVencidas: cumplidasVencidas.length,
     adherenciaYtd: pct(cumplidasVencidas.length, vencidasList.length),
     atrasadas,
+    cumplidasManuales,
     metaCantidad,
     faltanParaMeta,
     margen: pendientes - faltanParaMeta,

@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic"
 
 // GET /api/planeamiento/periodos-criticos/calendario?anio=2026
 //
-// Devuelve el calendario anual día a día con score y nivel BAJO/MEDIO/ALTO,
-// junto con la configuración vigente (pesos + umbrales). Lo consume la página
-// /planeamiento/periodos-criticos (R3.4.1).
+// Devuelve el calendario anual día a día (CRITICO cuando el volumen supera la
+// capacidad de distribución, más las variables de contexto) y el año vigente.
+// Lo consume la página /planeamiento/periodos-criticos (R3.4.1).
 //
 // La vista v_pc_calendario_dia siempre devuelve el año configurado en
 // pc_config.anio_vigente. Si el caller pide otro, se actualiza pc_config y se
@@ -65,15 +65,7 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    config: {
-      anio: cfg.anio_vigente,
-      w_vol: Number(cfg.w_vol),
-      w_otif: Number(cfg.w_otif),
-      w_aus: Number(cfg.w_aus),
-      umbral_alto: Number(cfg.umbral_alto),
-      umbral_medio: Number(cfg.umbral_medio),
-      hl_p90_2025: cfg.hl_p90_2025 != null ? Number(cfg.hl_p90_2025) : null,
-    },
+    config: { anio: cfg.anio_vigente },
     dias: dias ?? [],
   })
 }

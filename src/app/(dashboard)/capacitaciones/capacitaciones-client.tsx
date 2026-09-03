@@ -46,9 +46,16 @@ import {
 } from "@/lib/constants"
 import { createCapacitacion, deleteCapacitacion, toggleCapacitacionVisible } from "@/actions/capacitaciones"
 import type { CapacitacionConResumen, EstadoCapacitacion } from "@/types/database"
-import { estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
+import { esEstadoManual, estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
 import { CapacitacionesCalendario } from "./capacitaciones-calendario"
 import { CapacitacionesAdherencia } from "./capacitaciones-adherencia"
+
+/** Sin fecha cargada la tarjeta mostraba "Invalid Date". */
+function fmtFecha(fecha: string | null | undefined): string {
+  if (!fecha) return "Sin fecha"
+  const d = new Date(fecha + "T12:00:00")
+  return isNaN(d.getTime()) ? "Sin fecha" : d.toLocaleDateString("es-AR")
+}
 
 interface Props {
   capacitaciones: CapacitacionConResumen[]
@@ -123,8 +130,13 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
   }, [])
 
   const withDerived = useMemo(
-    () => capacitaciones.map((c) => ({ ...c, estadoReal: estadoDerivado(c, hoy) })),
-    [capacitaciones, hoy]
+    () =>
+      capacitaciones.map((c) => ({
+        ...c,
+        estadoReal: estadoDerivado(c),
+        estadoManual: esEstadoManual(c),
+      })),
+    [capacitaciones]
   )
 
   const filtered = useMemo(() => {
@@ -500,7 +512,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                           </span>
                           <span className="flex shrink-0 items-center gap-2">
                             <span className="text-slate-400">
-                              {new Date(c.fecha + "T12:00:00").toLocaleDateString("es-AR")}
+                              {fmtFecha(c.fecha)}
                             </span>
                             <Badge
                               variant="secondary"
@@ -563,7 +575,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                         </Link>
                       </td>
                       <td className="py-2 pr-2 text-slate-600">
-                        {new Date(c.fecha + "T12:00:00").toLocaleDateString("es-AR")}
+                        {fmtFecha(c.fecha)}
                       </td>
                       <td className="py-2 pr-2 text-slate-600">{c.instructor}</td>
                       <td className="py-2">
@@ -656,6 +668,9 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                         backgroundColor: ESTADO_CAPACITACION_COLORS[cap.estadoReal] + "20",
                         color: ESTADO_CAPACITACION_COLORS[cap.estadoReal],
                       }}
+                      title={
+                        cap.estadoManual ? "Estado cargado a mano" : undefined
+                      }
                     >
                       {ESTADO_CAPACITACION_LABELS[cap.estadoReal]}
                     </Badge>
@@ -675,7 +690,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                   )}
                   <div className="flex items-center gap-2">
                     <Calendar className="size-3.5" />
-                    <span>{new Date(cap.fecha + "T12:00:00").toLocaleDateString("es-AR")}</span>
+                    <span>{fmtFecha(cap.fecha)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <User className="size-3.5" />
