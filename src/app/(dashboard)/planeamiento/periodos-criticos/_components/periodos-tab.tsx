@@ -40,6 +40,11 @@ const PRIORIDAD_BADGE: Record<string, string> = {
 
 const FOCO_API = "/api/planeamiento/periodos-criticos/foco"
 
+const MESES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
 const fmtHL = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
 const fmtPct = (n: number) =>
   (Number(n) * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%"
@@ -213,6 +218,20 @@ export function PeriodosTab({
 
   const cantFocos = filas.filter((f) => f.foco).length
 
+  // Agrupadas por el mes de la ventana a anticipar, para leerlas como calendario.
+  const porMes = useMemo(() => {
+    const grupos = new Map<number, { mes: number; filas: (Fila & { indice: number })[]; enFoco: number; criticos: number }>()
+    filas.forEach((f, idx) => {
+      const mes = Number(f.ini.slice(5, 7))
+      const g = grupos.get(mes) ?? { mes, filas: [], enFoco: 0, criticos: 0 }
+      g.filas.push({ ...f, indice: idx + 1 })
+      if (f.foco) g.enFoco++
+      g.criticos += f.periodo.cantDiasCriticos
+      grupos.set(mes, g)
+    })
+    return [...grupos.values()].sort((a, b) => a.mes - b.mes)
+  }, [filas])
+
   async function quitarFoco(id: string) {
     setFocos((prev) => prev.filter((f) => f.id !== id)) // optimista
     try {
@@ -348,19 +367,35 @@ export function PeriodosTab({
         </Card>
       ) : (
         <TooltipProvider delay={200}>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {filas.map((fila, idx) => (
-              <PeriodoCard
-                key={fila.key}
-                fila={fila}
-                indice={idx + 1}
-                anioBase={anioBase}
-                anioAnticipar={anioAnticipar}
-                plan={planByCodigo[fila.periodo.intensidad]}
-                onMarcarFoco={() => marcarComoFoco(fila.periodo)}
-                onEditarFoco={() => fila.foco && setEditor({ foco: fila.foco })}
-                onQuitarFoco={() => fila.foco && quitarFoco(fila.foco.id)}
-              />
+          <div className="space-y-5">
+            {porMes.map((g) => (
+              <section key={g.mes}>
+                <div className="flex items-baseline gap-2 mb-2 border-b border-slate-200 pb-1">
+                  <h3 className="text-sm font-semibold text-slate-800 capitalize">
+                    {MESES[g.mes - 1]} {anioAnticipar}
+                  </h3>
+                  <span className="text-xs text-slate-500">
+                    {g.filas.length} período{g.filas.length === 1 ? "" : "s"}
+                    {g.enFoco > 0 && ` · ${g.enFoco} en foco`}
+                    {g.criticos > 0 && ` · ${g.criticos} día${g.criticos === 1 ? "" : "s"} sobre la capacidad en ${anioBase}`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {g.filas.map((fila) => (
+                    <PeriodoCard
+                      key={fila.key}
+                      fila={fila}
+                      indice={fila.indice}
+                      anioBase={anioBase}
+                      anioAnticipar={anioAnticipar}
+                      plan={planByCodigo[fila.periodo.intensidad]}
+                      onMarcarFoco={() => marcarComoFoco(fila.periodo)}
+                      onEditarFoco={() => fila.foco && setEditor({ foco: fila.foco })}
+                      onQuitarFoco={() => fila.foco && quitarFoco(fila.foco.id)}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         </TooltipProvider>
