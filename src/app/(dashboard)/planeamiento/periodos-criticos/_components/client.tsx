@@ -49,7 +49,7 @@ export type CfgPC = {
   anio: number
 }
 
-// `codigo` es una Intensidad: hay un plan por escalón (CRITICO, ATENCION, NORMAL).
+// `codigo` es una Intensidad: hay un plan por escalón (CRITICO, LIMITE, NORMAL).
 export type PlanAccion = {
   codigo: string
   descripcion: string
@@ -100,12 +100,14 @@ const fmtHL = (n: number) =>
 const fmtPct = (n: number) =>
   (n * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%"
 
-// Estado del día, en tres colores. Lo decide el VOLUMEN y nada más: si el día
-// supera la capacidad de distribución es CRÍTICO (rojo). Clientes, rechazo y
-// ausentismo nunca vuelven crítico a un día: si cruzan sin que el volumen
-// llegue, el día queda en ATENCIÓN (amarillo); si no cruza nada, NORMAL (verde).
-// Cuando acompañan a un día crítico se ven en el detalle, no cambian el color.
-export type Intensidad = "CRITICO" | "ATENCION" | "NORMAL"
+// La escala (CRITICO / LIMITE / NORMAL) vive en _lib/intensidad.ts porque también
+// la usan la API del mes siguiente y la sección de la reunión. Acá se re-exporta
+// para que las pestañas sigan importando desde "./client".
+export {
+  intensidadDia, intensidadMax, INTENSIDAD_BG, INTENSIDAD_LABEL, PCT_LIMITE,
+  type Intensidad,
+} from "../_lib/intensidad"
+import { intensidadDia, INTENSIDAD_BG, INTENSIDAD_LABEL, PCT_LIMITE } from "../_lib/intensidad"
 
 /** Las 3 variables de contexto que cruzaron (todas menos volumen). */
 export type ConTriggers = Pick<
@@ -113,35 +115,9 @@ export type ConTriggers = Pick<
   "trigger_vol" | "trigger_cli" | "trigger_otif" | "trigger_aus"
 >
 
+/** Cuántas variables de contexto cruzaron. Se muestra, no decide el color. */
 export function contextoDia(d: ConTriggers): number {
   return (d.trigger_cli ? 1 : 0) + (d.trigger_otif ? 1 : 0) + (d.trigger_aus ? 1 : 0)
-}
-
-export function intensidadDia(d: ConTriggers): Intensidad {
-  if (d.trigger_vol) return "CRITICO"
-  return contextoDia(d) > 0 ? "ATENCION" : "NORMAL"
-}
-
-// De menor a mayor, para poder pedir "la peor del bloque".
-const ESCALA: Intensidad[] = ["NORMAL", "ATENCION", "CRITICO"]
-
-export function intensidadMax(dias: ConTriggers[]): Intensidad {
-  let peor = 0
-  for (const d of dias) peor = Math.max(peor, ESCALA.indexOf(intensidadDia(d)))
-  return ESCALA[peor]
-}
-
-export const INTENSIDAD_LABEL: Record<Intensidad, string> = {
-  CRITICO: "CRÍTICO",
-  ATENCION: "ATENCIÓN",
-  NORMAL: "NORMAL",
-}
-
-// Color de fondo por intensidad (celdas del calendario / badges).
-export const INTENSIDAD_BG: Record<Intensidad, string> = {
-  CRITICO:      "bg-red-600 text-white font-semibold",
-  ATENCION:     "bg-amber-300 text-amber-950 font-medium",
-  NORMAL:       "bg-emerald-500/80 text-white",
 }
 
 function estiloCelda(d: DiaCalendario): string {
@@ -290,14 +266,14 @@ export function PeriodosCriticosClient({
   const diasActivos = diasPorAnio[anioActivo] ?? []
 
   const conteo = useMemo(() => {
-    const c = { criticos: 0, atencion: 0, normales: 0, sin_datos: 0 }
+    const c = { criticos: 0, limite: 0, normales: 0, sin_datos: 0 }
     for (const d of diasActivos) {
       if (d.dow === 0) continue                      // domingo: no se reparte
       if (d.hl === 0) { c.sin_datos++; continue }
       switch (intensidadDia(d)) {
-        case "CRITICO":  c.criticos++; break
-        case "ATENCION": c.atencion++; break
-        default:         c.normales++
+        case "CRITICO": c.criticos++; break
+        case "LIMITE":  c.limite++; break
+        default:        c.normales++
       }
     }
     return c
@@ -332,7 +308,7 @@ export function PeriodosCriticosClient({
           </span>
           <div className="ml-auto flex items-center gap-3 text-xs">
             <Legend color="bg-red-600" label={`Crítico: supera la capacidad (${conteo.criticos})`} />
-            <Legend color="bg-amber-300" label={`Atención: contexto sin volumen (${conteo.atencion})`} />
+            <Legend color="bg-amber-300" label={`Al límite: ${Math.round(PCT_LIMITE * 100)}–100% (${conteo.limite})`} />
             <Legend color="bg-emerald-500/80" label={`Normal (${conteo.normales})`} />
             <Legend color="bg-slate-100 border border-slate-300" label={`s/datos (${conteo.sin_datos})`} />
           </div>

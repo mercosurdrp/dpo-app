@@ -84,7 +84,7 @@ const intensidadPeriodo = (p: PeriodoCritico) => intensidadMax(p.dias)
 // Prioridad del foco según la intensidad del período.
 function prioridadDeIntensidad(i: ReturnType<typeof intensidadDia>): PeriodoFoco["prioridad"] {
   if (i === "CRITICO") return "alta"
-  if (i === "ATENCION") return "media"
+  if (i === "LIMITE") return "media"
   return "baja"
 }
 
@@ -254,7 +254,7 @@ export function PeriodosTab({
           <p className="text-xs text-slate-500">
             Los períodos que el equipo decide priorizar para anticipar la operación. Generalos
             automáticamente desde los sugeridos de {anioBase} (prioridad según intensidad: CRÍTICO
-            → alta, ATENCIÓN → media, NORMAL → baja), creá uno a mano, o usá «Marcar como foco» en una
+            → alta, AL LÍMITE → media, NORMAL → baja), creá uno a mano, o usá «Marcar como foco» en una
             sugerencia puntual.
           </p>
         </CardHeader>
@@ -383,7 +383,7 @@ function PeriodoCard({
     const texto =
       `Período crítico ${indice} a anticipar en ${anioAnticipar}: ${p.nombre}\n` +
       `Ventana estimada ${fmtFecha(iniProy)} → ${fmtFecha(finProy)} (observado en ${anioBase}: ${fmtFecha(p.fechaInicio)} → ${fmtFecha(p.fechaFin)})\n` +
-      `${INTENSIDAD_LABEL[p.intensidad]} · ${p.cantDiasCriticos} días sobre la capacidad (pico ${fmtPct(p.pctCapacidadMax)})\n\n` +
+      `${INTENSIDAD_LABEL[p.intensidad]} · ${p.cantDiasCriticos} días sobre la capacidad · ${p.cantDiasLimite} al límite (pico ${fmtPct(p.pctCapacidadMax)})\n\n` +
       `${plan.descripcion}\n\n${plan.plan_texto}`
     await navigator.clipboard.writeText(texto)
     setCopiado(true)
@@ -427,7 +427,7 @@ function PeriodoCard({
             <span className="font-medium">{fmtFecha(finProy)}</span>
             <Badge variant="outline" className="text-[10px] font-normal">a anticipar {anioAnticipar}</Badge>
             <span className="text-xs text-slate-500">
-              ({p.cantDias}d · {p.cantDiasCriticos} críticos)
+              ({p.cantDias}d · {p.cantDiasCriticos} críticos{p.cantDiasLimite > 0 ? ` · ${p.cantDiasLimite} al límite` : ""})
             </span>
           </div>
           <p className="text-[11px] text-slate-400 pl-6">
@@ -500,7 +500,7 @@ function PeriodoCard({
         <div className="space-y-1 min-w-[230px]">
           <div className="flex items-center justify-between gap-3">
             <span className="font-semibold">
-              {p.cantDiasCriticos} de {p.cantDias} días sobre la capacidad
+              {p.cantDiasCriticos} sobre la capacidad · {p.cantDiasLimite} al límite · {p.cantDias} días
             </span>
             <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${INTENSIDAD_BG[intensidad]}`}>
               {INTENSIDAD_LABEL[intensidad]}
@@ -528,7 +528,7 @@ function PeriodoCard({
             <span>{diaPico ? VAR_AUSENTISMO.valor(diaPico) : "—"}{ausDias > 0 && ` · ${ausDias}d`}</span>
           </div>
           <div className="text-[10px] opacity-60 pt-1 border-t border-white/15">
-            ✗ = cruzó su umbral. Crítico = el volumen supera la capacidad de distribución; clientes, rechazo y ausentismo sólo lo agravan.
+            ✗ = cruzó su umbral. Crítico = el volumen supera la capacidad de distribución; al límite = llega al 90%. Clientes, rechazo y ausentismo son contexto.
           </div>
         </div>
       </TooltipContent>

@@ -12,14 +12,11 @@ import { Upload, Save, FileSpreadsheet } from "lucide-react"
 import { ExplicacionUmbrales } from "./explicacion-umbrales"
 import type { CfgPC, UmbralesPC, PlanAccion, Intensidad } from "./client"
 import { INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
+import { INTENSIDAD_DESC } from "../_lib/intensidad"
 
 // Un plan por escalón de la escala del calendario, del más al menos exigente.
-const CODIGOS: Intensidad[] = ["CRITICO", "ATENCION", "NORMAL"]
-const CODIGO_DESC: Record<Intensidad, string> = {
-  CRITICO: "El volumen supera la capacidad de distribución (con o sin clientes, rechazo o ausentismo en alerta)",
-  ATENCION: "No supera el volumen, pero cruza clientes, rechazo o ausentismo",
-  NORMAL: "Día normal",
-}
+const CODIGOS: Intensidad[] = ["CRITICO", "LIMITE", "NORMAL"]
+const CODIGO_DESC = INTENSIDAD_DESC
 
 export function ConfiguracionTab({
   cfg,

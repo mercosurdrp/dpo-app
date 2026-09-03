@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getProfile } from "@/lib/session"
+import { intensidadDia, type Intensidad } from "@/app/(dashboard)/planeamiento/periodos-criticos/_lib/intensidad"
 
 export const dynamic = "force-dynamic"
 
@@ -33,14 +34,8 @@ type Fila = {
   trigger_aus: boolean
 }
 
-export type Intensidad = "CRITICO" | "ATENCION" | "NORMAL"
-
-// Misma regla que el calendario del módulo: el volumen decide, el resto agrava.
-function intensidad(f: Fila): Intensidad {
-  if (f.trigger_vol) return "CRITICO"
-  const ctx = (f.trigger_cli ? 1 : 0) + (f.trigger_otif ? 1 : 0) + (f.trigger_aus ? 1 : 0)
-  return ctx > 0 ? "ATENCION" : "NORMAL"
-}
+// Misma escala que el calendario del módulo (CRITICO / LIMITE / NORMAL).
+export type { Intensidad }
 
 export type DiaObservado = {
   fecha: string
@@ -70,7 +65,7 @@ function observado(f: Fila): DiaObservado {
     trigger_cli: !!f.trigger_cli,
     trigger_otif: !!f.trigger_otif,
     trigger_aus: !!f.trigger_aus,
-    intensidad: intensidad(f),
+    intensidad: intensidadDia({ trigger_vol: !!f.trigger_vol, pct_capacidad: Number(f.pct_capacidad) }),
   }
 }
 
@@ -149,6 +144,10 @@ export async function GET(req: NextRequest) {
   const criticosBase = dias
     .filter((d) => d.base?.trigger_vol)
     .map((d) => ({ fecha: d.fecha, dia_semana: d.dia_semana, base: d.base! }))
+  // Días a anticipar: los críticos y los que quedaron al límite.
+  const aAnticipar = dias
+    .filter((d) => d.base && d.base.intensidad !== "NORMAL")
+    .map((d) => ({ fecha: d.fecha, dia_semana: d.dia_semana, base: d.base! }))
 
   return NextResponse.json({
     anio,
@@ -157,5 +156,6 @@ export async function GET(req: NextRequest) {
     capacidad: umb?.vol_pico != null ? Number(umb.vol_pico) : null,
     dias,
     criticos_base: criticosBase,
+    a_anticipar: aAnticipar,
   })
 }

@@ -37,8 +37,12 @@ import type { ReunionActividadConResponsable } from "@/types/database"
 import type {
   DiaMesSiguiente,
   DiaObservado,
-  Intensidad,
 } from "@/app/api/planeamiento/periodos-criticos/mes-siguiente/route"
+import {
+  INTENSIDAD_BG,
+  INTENSIDAD_LABEL,
+  PCT_LIMITE,
+} from "@/app/(dashboard)/planeamiento/periodos-criticos/_lib/intensidad"
 
 /** Mismo shape que espera SeccionGaleriaFotos para el selector de responsable. */
 interface ResponsableOpt {
@@ -67,6 +71,7 @@ type MesSiguiente = {
   capacidad: number | null
   dias: DiaMesSiguiente[]
   criticos_base: { fecha: string; dia_semana: string; base: DiaObservado }[]
+  a_anticipar: { fecha: string; dia_semana: string; base: DiaObservado }[]
 }
 
 const MESES = [
@@ -74,18 +79,6 @@ const MESES = [
   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 ]
 const NOMBRES_DOW = ["D", "L", "M", "M", "J", "V", "S"]
-
-// Misma escala y colores que el calendario de Planeamiento → Períodos críticos.
-const INTENSIDAD_LABEL: Record<Intensidad, string> = {
-  CRITICO: "CRÍTICO",
-  ATENCION: "ATENCIÓN",
-  NORMAL: "NORMAL",
-}
-const INTENSIDAD_BG: Record<Intensidad, string> = {
-  CRITICO: "bg-red-600 text-white font-semibold",
-  ATENCION: "bg-amber-300 text-amber-950 font-medium",
-  NORMAL: "bg-emerald-500/80 text-white",
-}
 
 const fmtHL = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
 const fmtPct = (n: number) =>
@@ -188,25 +181,28 @@ function CalendarioMesSiguiente({ fecha }: { fecha: string }) {
 
       <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-slate-600">
         <Leyenda color="bg-red-600" label="Crítico: supera la capacidad" />
-        <Leyenda color="bg-amber-300" label="Atención: contexto sin volumen" />
+        <Leyenda color="bg-amber-300" label={`Al límite: ${Math.round(PCT_LIMITE * 100)}–100%`} />
         <Leyenda color="bg-emerald-500/80" label="Normal" />
         <span className="flex items-center gap-1">
           <span className="inline-block size-3 rounded-sm ring-2 ring-yellow-400" /> Feriado
         </span>
       </div>
 
-      {(data.criticos_base.length > 0 || feriados.length > 0) && (
+      {(data.a_anticipar.length > 0 || feriados.length > 0) && (
         <div className="mt-2 grid gap-2 border-t pt-2 text-xs md:grid-cols-2">
           <div>
             <p className="mb-0.5 font-semibold text-slate-700">
               Días a anticipar (según {data.anio_base})
             </p>
-            {data.criticos_base.length === 0 ? (
-              <p className="text-slate-500">Ningún día superó la capacidad.</p>
+            {data.a_anticipar.length === 0 ? (
+              <p className="text-slate-500">Ningún día superó ni rozó la capacidad.</p>
             ) : (
               <ul className="space-y-0.5">
-                {data.criticos_base.map((c) => (
+                {data.a_anticipar.map((c) => (
                   <li key={c.fecha} className="flex items-center gap-2">
+                    <span className={`rounded px-1 text-[9px] font-bold ${INTENSIDAD_BG[c.base.intensidad]}`}>
+                      {INTENSIDAD_LABEL[c.base.intensidad]}
+                    </span>
                     <span className="font-medium text-slate-800">{fmtDiaMes(c.fecha)}</span>
                     <span className="text-slate-600">
                       {fmtHL(c.base.hl)} HL · {fmtPct(c.base.pct_capacidad)} de la capacidad

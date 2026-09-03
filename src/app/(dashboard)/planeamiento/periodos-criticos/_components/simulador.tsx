@@ -68,7 +68,7 @@ function recalcular(
   const trigger_otif = hl > 0 && otif_estimado > umbrales.otif_min
   const trigger_aus = pct_ausentismo >= umbrales.ausentismo_max
   const estatus: "CRITICO" | "NORMAL" = trigger_vol ? "CRITICO" : "NORMAL"
-  const intensidad = intensidadDia({ trigger_vol, trigger_cli, trigger_otif, trigger_aus })
+  const intensidad = intensidadDia({ trigger_vol, pct_capacidad })
 
   return {
     hl, pct_rechazo, otif_estimado, pct_ausentismo, clientes_dia, pct_capacidad,
@@ -456,12 +456,7 @@ function EscenarioCard({
   pct_capacidad: number
   triggers: { vol: boolean; cli: boolean; otif: boolean; aus: boolean }
 }) {
-  const intensidad = intensidadDia({
-    trigger_vol: triggers.vol,
-    trigger_cli: triggers.cli,
-    trigger_otif: triggers.otif,
-    trigger_aus: triggers.aus,
-  })
+  const intensidad = intensidadDia({ trigger_vol: triggers.vol, pct_capacidad })
   return (
     <Card className={destacado ? "border-2 border-slate-900" : ""}>
       <CardHeader className="pb-2">

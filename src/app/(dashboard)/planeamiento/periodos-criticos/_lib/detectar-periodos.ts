@@ -1,20 +1,29 @@
 // Detección automática de períodos críticos a partir del calendario diario.
 //
-// R3.4.1: identificar períodos para anticipar. Un día integra un período cuando
-// es CRÍTICO, y crítico es una sola cosa: el volumen del día supera la capacidad
-// de distribución (`trigger_vol`). Clientes, rechazo y ausentismo no abren
-// período por sí solos. Agrupamos esos días en bloques de 1-7 días (con gaps
-// cortos) y los nombramos por feriado/temporada.
+// R3.4.1: identificar períodos para anticipar. Un período es una SEMANA que
+// aprieta, no una celda roja suelta: lo abren los días CRÍTICOS (el volumen
+// supera la capacidad de distribución) y lo completan los días AL LÍMITE (90% o
+// más de la capacidad). Una corrida de días al límite sin ningún crítico también
+// es período si dura al menos 2 días. Clientes, rechazo y ausentismo no abren
+// período por sí solos. Los bloques van de 1 a 7 días (con gaps cortos) y se
+// nombran por feriado/temporada.
 
-import { intensidadMax, type DiaCalendario, type Intensidad } from "../_components/client"
+import type { DiaCalendario } from "../_components/client"
+import { intensidadDia, intensidadMax, type Intensidad } from "./intensidad"
 
 // Un EVENTO DE EMPRESA (ej. Expoagro) queda FIJO: sus días siempre integran un
 // período sugerido aunque el volumen no llegue a la capacidad. Se marcan con
 // tipo='empresa' en pc_feriados.
 const esEventoEmpresa = (d: DiaCalendario) => d.tipo_feriado === "empresa"
 
-// Un día "ancla" un período si supera el volumen O es evento de empresa.
-const esAncla = (d: DiaCalendario) => d.trigger_vol === true || esEventoEmpresa(d)
+// Un día CRÍTICO abre un período: supera el volumen O es evento de empresa.
+const esCritico = (d: DiaCalendario) => d.trigger_vol === true || esEventoEmpresa(d)
+// Un día AL LÍMITE integra el período pero no lo abre solo.
+const esLimite = (d: DiaCalendario) => intensidadDia(d) === "LIMITE"
+// Día que forma parte de un bloque.
+const esAncla = (d: DiaCalendario) => esCritico(d) || esLimite(d)
+// Una corrida sólo de días al límite necesita esta cantidad para ser período.
+const MIN_LIMITE_SOLOS = 2
 
 export type PeriodoCritico = {
   /** "{añoMM}-{idx}" para listar y trackear. */
@@ -25,6 +34,7 @@ export type PeriodoCritico = {
   fechaFin: string
   cantDias: number
   cantDiasCriticos: number   // días que superaron la capacidad
+  cantDiasLimite: number     // días entre el 90% y el 100% de la capacidad
   intensidad: Intensidad     // la del día más exigente del bloque
   hlMax: number
   hlAcum: number
@@ -134,7 +144,8 @@ function generarNombreYMotivo(
 /**
  * Devuelve los períodos críticos detectados (bloques de 1–7 días). Un día
  * integra un período si superó la capacidad de distribución (o es evento de
- * empresa).
+ * empresa) o quedó al límite (90% o más). Un bloque sin ningún día crítico
+ * necesita al menos MIN_LIMITE_SOLOS días al límite.
  */
 export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[] {
   // Lista plana de feriados del rango — el tooltip ya viene marcado por día,
@@ -185,7 +196,9 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
   }
   if (actual.length > 0) bloques.push(actual)
 
-  return bloques.map((bloque, i) => {
+  return bloques
+    .filter((b) => b.some(esCritico) || b.filter(esLimite).length >= MIN_LIMITE_SOLOS)
+    .map((bloque, i) => {
     const cercano = feriadoCercano(bloque, feriados)
     const { nombre, motivo } = generarNombreYMotivo(bloque, cercano)
     const diaPico = bloque.reduce((max, d) =>
@@ -199,6 +212,7 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
       fechaFin: bloque[bloque.length - 1].fecha,
       cantDias: bloque.length,
       cantDiasCriticos: bloque.filter((d) => d.trigger_vol).length,
+      cantDiasLimite: bloque.filter(esLimite).length,
       intensidad: intensidadMax(bloque),
       hlMax: Math.max(...bloque.map((d) => Number(d.hl))),
       hlAcum: bloque.reduce((s, d) => s + Number(d.hl), 0),
