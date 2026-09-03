@@ -49,7 +49,7 @@ export type CfgPC = {
   anio: number
 }
 
-// `codigo` es una Intensidad: hay un plan por escalón (CRITICO_ALTO, CRITICO, ATENCION, NORMAL).
+// `codigo` es una Intensidad: hay un plan por escalón (CRITICO, ATENCION, NORMAL).
 export type PlanAccion = {
   codigo: string
   descripcion: string
@@ -100,11 +100,12 @@ const fmtHL = (n: number) =>
 const fmtPct = (n: number) =>
   (n * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%"
 
-// Estado del día. Lo decide el VOLUMEN y nada más: si el día supera la
-// capacidad de distribución es CRÍTICO. Clientes, rechazo y ausentismo nunca
-// vuelven crítico a un día — sólo lo AGRAVAN (CRÍTICO +) cuando el volumen ya
-// se pasó, o lo dejan en ATENCIÓN cuando el volumen no llegó.
-export type Intensidad = "CRITICO_ALTO" | "CRITICO" | "ATENCION" | "NORMAL"
+// Estado del día, en tres colores. Lo decide el VOLUMEN y nada más: si el día
+// supera la capacidad de distribución es CRÍTICO (rojo). Clientes, rechazo y
+// ausentismo nunca vuelven crítico a un día: si cruzan sin que el volumen
+// llegue, el día queda en ATENCIÓN (amarillo); si no cruza nada, NORMAL (verde).
+// Cuando acompañan a un día crítico se ven en el detalle, no cambian el color.
+export type Intensidad = "CRITICO" | "ATENCION" | "NORMAL"
 
 /** Las 3 variables de contexto que cruzaron (todas menos volumen). */
 export type ConTriggers = Pick<
@@ -117,13 +118,12 @@ export function contextoDia(d: ConTriggers): number {
 }
 
 export function intensidadDia(d: ConTriggers): Intensidad {
-  const ctx = contextoDia(d)
-  if (d.trigger_vol) return ctx > 0 ? "CRITICO_ALTO" : "CRITICO"
-  return ctx > 0 ? "ATENCION" : "NORMAL"
+  if (d.trigger_vol) return "CRITICO"
+  return contextoDia(d) > 0 ? "ATENCION" : "NORMAL"
 }
 
 // De menor a mayor, para poder pedir "la peor del bloque".
-const ESCALA: Intensidad[] = ["NORMAL", "ATENCION", "CRITICO", "CRITICO_ALTO"]
+const ESCALA: Intensidad[] = ["NORMAL", "ATENCION", "CRITICO"]
 
 export function intensidadMax(dias: ConTriggers[]): Intensidad {
   let peor = 0
@@ -132,7 +132,6 @@ export function intensidadMax(dias: ConTriggers[]): Intensidad {
 }
 
 export const INTENSIDAD_LABEL: Record<Intensidad, string> = {
-  CRITICO_ALTO: "CRÍTICO +",
   CRITICO: "CRÍTICO",
   ATENCION: "ATENCIÓN",
   NORMAL: "NORMAL",
@@ -140,8 +139,7 @@ export const INTENSIDAD_LABEL: Record<Intensidad, string> = {
 
 // Color de fondo por intensidad (celdas del calendario / badges).
 export const INTENSIDAD_BG: Record<Intensidad, string> = {
-  CRITICO_ALTO: "bg-red-700 text-white font-bold",
-  CRITICO:      "bg-red-500 text-white font-semibold",
+  CRITICO:      "bg-red-600 text-white font-semibold",
   ATENCION:     "bg-amber-300 text-amber-950 font-medium",
   NORMAL:       "bg-emerald-500/80 text-white",
 }
@@ -292,15 +290,14 @@ export function PeriodosCriticosClient({
   const diasActivos = diasPorAnio[anioActivo] ?? []
 
   const conteo = useMemo(() => {
-    const c = { criticos: 0, criticoAlto: 0, critico: 0, atencion: 0, normales: 0, sin_datos: 0 }
+    const c = { criticos: 0, atencion: 0, normales: 0, sin_datos: 0 }
     for (const d of diasActivos) {
       if (d.dow === 0) continue                      // domingo: no se reparte
       if (d.hl === 0) { c.sin_datos++; continue }
       switch (intensidadDia(d)) {
-        case "CRITICO_ALTO": c.criticoAlto++; c.criticos++; break
-        case "CRITICO":      c.critico++;     c.criticos++; break
-        case "ATENCION":     c.atencion++; break
-        default:             c.normales++
+        case "CRITICO":  c.criticos++; break
+        case "ATENCION": c.atencion++; break
+        default:         c.normales++
       }
     }
     return c
@@ -334,9 +331,8 @@ export function PeriodosCriticosClient({
             <b>{conteo.criticos}</b> días críticos · superan {fmtHL(umbrales.vol_pico)} HL de capacidad
           </span>
           <div className="ml-auto flex items-center gap-3 text-xs">
-            <Legend color="bg-red-700" label={`Crítico + contexto (${conteo.criticoAlto})`} />
-            <Legend color="bg-red-500" label={`Crítico (${conteo.critico})`} />
-            <Legend color="bg-amber-300" label={`Atención, sin volumen (${conteo.atencion})`} />
+            <Legend color="bg-red-600" label={`Crítico: supera la capacidad (${conteo.criticos})`} />
+            <Legend color="bg-amber-300" label={`Atención: contexto sin volumen (${conteo.atencion})`} />
             <Legend color="bg-emerald-500/80" label={`Normal (${conteo.normales})`} />
             <Legend color="bg-slate-100 border border-slate-300" label={`s/datos (${conteo.sin_datos})`} />
           </div>

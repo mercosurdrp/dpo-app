@@ -83,8 +83,8 @@ const intensidadPeriodo = (p: PeriodoCritico) => intensidadMax(p.dias)
 
 // Prioridad del foco según la intensidad del período.
 function prioridadDeIntensidad(i: ReturnType<typeof intensidadDia>): PeriodoFoco["prioridad"] {
-  if (i === "CRITICO_ALTO") return "alta"
-  if (i === "CRITICO") return "media"
+  if (i === "CRITICO") return "alta"
+  if (i === "ATENCION") return "media"
   return "baja"
 }
 
@@ -253,8 +253,8 @@ export function PeriodosTab({
           </CardTitle>
           <p className="text-xs text-slate-500">
             Los períodos que el equipo decide priorizar para anticipar la operación. Generalos
-            automáticamente desde los sugeridos de {anioBase} (prioridad según intensidad: CRÍTICO +
-            → alta, CRÍTICO → media, ATENCIÓN → baja), creá uno a mano, o usá «Marcar como foco» en una
+            automáticamente desde los sugeridos de {anioBase} (prioridad según intensidad: CRÍTICO
+            → alta, ATENCIÓN → media, NORMAL → baja), creá uno a mano, o usá «Marcar como foco» en una
             sugerencia puntual.
           </p>
         </CardHeader>

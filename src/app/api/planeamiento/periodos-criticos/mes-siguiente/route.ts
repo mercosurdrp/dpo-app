@@ -33,12 +33,12 @@ type Fila = {
   trigger_aus: boolean
 }
 
-export type Intensidad = "CRITICO_ALTO" | "CRITICO" | "ATENCION" | "NORMAL"
+export type Intensidad = "CRITICO" | "ATENCION" | "NORMAL"
 
 // Misma regla que el calendario del módulo: el volumen decide, el resto agrava.
 function intensidad(f: Fila): Intensidad {
+  if (f.trigger_vol) return "CRITICO"
   const ctx = (f.trigger_cli ? 1 : 0) + (f.trigger_otif ? 1 : 0) + (f.trigger_aus ? 1 : 0)
-  if (f.trigger_vol) return ctx > 0 ? "CRITICO_ALTO" : "CRITICO"
   return ctx > 0 ? "ATENCION" : "NORMAL"
 }
 

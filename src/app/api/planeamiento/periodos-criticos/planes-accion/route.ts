@@ -8,9 +8,9 @@ export const dynamic = "force-dynamic"
 // Body: { codigo: string, descripcion: string, plan_texto: string }
 //
 // Upsert por código. Hay un plan por escalón de la escala del calendario:
-// CRITICO_ALTO (volumen + contexto), CRITICO (sólo volumen), ATENCION (contexto
-// sin volumen) y NORMAL.
-const CODIGOS = ["CRITICO_ALTO", "CRITICO", "ATENCION", "NORMAL"]
+// CRITICO (el volumen supera la capacidad), ATENCION (contexto sin volumen) y
+// NORMAL.
+const CODIGOS = ["CRITICO", "ATENCION", "NORMAL"]
 export async function PUT(req: NextRequest) {
   const profile = await getProfile()
   if (!profile) return NextResponse.json({ error: "No autenticado" }, { status: 401 })

@@ -14,10 +14,9 @@ import type { CfgPC, UmbralesPC, PlanAccion, Intensidad } from "./client"
 import { INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
 
 // Un plan por escalón de la escala del calendario, del más al menos exigente.
-const CODIGOS: Intensidad[] = ["CRITICO_ALTO", "CRITICO", "ATENCION", "NORMAL"]
+const CODIGOS: Intensidad[] = ["CRITICO", "ATENCION", "NORMAL"]
 const CODIGO_DESC: Record<Intensidad, string> = {
-  CRITICO_ALTO: "El volumen supera la capacidad y además cruza clientes, rechazo o ausentismo",
-  CRITICO: "El volumen supera la capacidad de distribución",
+  CRITICO: "El volumen supera la capacidad de distribución (con o sin clientes, rechazo o ausentismo en alerta)",
   ATENCION: "No supera el volumen, pero cruza clientes, rechazo o ausentismo",
   NORMAL: "Día normal",
 }

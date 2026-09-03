@@ -77,14 +77,12 @@ const NOMBRES_DOW = ["D", "L", "M", "M", "J", "V", "S"]
 
 // Misma escala y colores que el calendario de Planeamiento → Períodos críticos.
 const INTENSIDAD_LABEL: Record<Intensidad, string> = {
-  CRITICO_ALTO: "CRÍTICO +",
   CRITICO: "CRÍTICO",
   ATENCION: "ATENCIÓN",
   NORMAL: "NORMAL",
 }
 const INTENSIDAD_BG: Record<Intensidad, string> = {
-  CRITICO_ALTO: "bg-red-700 text-white font-bold",
-  CRITICO: "bg-red-500 text-white font-semibold",
+  CRITICO: "bg-red-600 text-white font-semibold",
   ATENCION: "bg-amber-300 text-amber-950 font-medium",
   NORMAL: "bg-emerald-500/80 text-white",
 }
@@ -189,9 +187,8 @@ function CalendarioMesSiguiente({ fecha }: { fecha: string }) {
       </TooltipProvider>
 
       <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-slate-600">
-        <Leyenda color="bg-red-700" label="Crítico + contexto" />
-        <Leyenda color="bg-red-500" label="Crítico (supera la capacidad)" />
-        <Leyenda color="bg-amber-300" label="Atención, sin volumen" />
+        <Leyenda color="bg-red-600" label="Crítico: supera la capacidad" />
+        <Leyenda color="bg-amber-300" label="Atención: contexto sin volumen" />
         <Leyenda color="bg-emerald-500/80" label="Normal" />
         <span className="flex items-center gap-1">
           <span className="inline-block size-3 rounded-sm ring-2 ring-yellow-400" /> Feriado
@@ -214,9 +211,9 @@ function CalendarioMesSiguiente({ fecha }: { fecha: string }) {
                     <span className="text-slate-600">
                       {fmtHL(c.base.hl)} HL · {fmtPct(c.base.pct_capacidad)} de la capacidad
                     </span>
-                    {c.base.intensidad === "CRITICO_ALTO" && (
-                      <span className="rounded bg-red-700 px-1 text-[9px] font-bold text-white">
-                        + contexto
+                    {(c.base.trigger_cli || c.base.trigger_otif || c.base.trigger_aus) && (
+                      <span className="text-[10px] text-slate-500">
+                        · además{c.base.trigger_cli ? " clientes" : ""}{c.base.trigger_otif ? " rechazo" : ""}{c.base.trigger_aus ? " ausentismo" : ""}
                       </span>
                     )}
                   </li>
