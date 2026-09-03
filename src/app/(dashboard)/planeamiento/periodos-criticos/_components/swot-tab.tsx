@@ -11,18 +11,16 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Camera, Check, History, Info, Pencil, Plus, Trash2 } from "lucide-react"
+  Check, ChevronDown, ChevronRight, ClipboardCheck, History, Info,
+  Minus, Pencil, Plus, Trash2,
+} from "lucide-react"
 import type { DiaCalendario } from "./client"
 import { detectarPeriodosCriticos } from "../_lib/detectar-periodos"
+import type { Revision, UltimaRevision } from "@/app/api/planeamiento/periodos-criticos/swot/revisiones/route"
 
 type Categoria = "F" | "O" | "D" | "A"
 type Impacto = "alto" | "medio" | "bajo"
@@ -46,27 +44,6 @@ type PeriodoOpcion = {
   anio: number
 }
 
-/** Ítem tal como quedó congelado dentro de un snapshot (sin id: es una copia). */
-type SnapshotItem = Pick<
-  SwotItem,
-  "categoria" | "texto" | "impacto" | "accion_recomendada"
->
-
-type Snapshot = {
-  id: string
-  periodo_nombre: string
-  periodo_anio: number
-  periodo_fecha_inicio: string | null
-  periodo_fecha_fin: string | null
-  momento: "previo" | "posterior"
-  fecha_corte: string
-  items: SnapshotItem[]
-  nota: string
-}
-
-/** "actual" = FODA vivo y editable · un id = foto congelada, solo lectura. */
-type Vista = "actual" | string
-
 const CUADRANTES: {
   cat: Categoria
   titulo: string
@@ -78,6 +55,9 @@ const CUADRANTES: {
   { cat: "D", titulo: "Debilidades", card: "border-amber-200", header: "text-amber-700" },
   { cat: "A", titulo: "Amenazas", card: "border-red-200", header: "text-red-700" },
 ]
+const CAT_LABEL: Record<Categoria, string> = {
+  F: "Fortaleza", O: "Oportunidad", D: "Debilidad", A: "Amenaza",
+}
 
 const IMPACTO_BADGE: Record<Impacto, string> = {
   alto: "bg-red-600",
@@ -87,6 +67,23 @@ const IMPACTO_BADGE: Record<Impacto, string> = {
 
 const IMPACTOS: Impacto[] = ["alto", "medio", "bajo"]
 
+// Cómo se lee cada decisión de una revisión, en el historial y en el ítem.
+const ACCION_LABEL = {
+  mantiene: "sin cambios",
+  modifica: "modificado",
+  elimina: "eliminado",
+  agrega: "nuevo",
+} as const
+const ACCION_BADGE = {
+  mantiene: "bg-slate-200 text-slate-700",
+  modifica: "bg-amber-500 text-white",
+  elimina: "bg-red-600 text-white",
+  agrega: "bg-emerald-600 text-white",
+} as const
+
+const fmtFecha = (f: string) =>
+  new Date(f + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" })
+
 export function SwotTab({
   dias,
   anio,
@@ -95,18 +92,17 @@ export function SwotTab({
   anio: number
 }) {
   const [items, setItems] = useState<SwotItem[]>([])
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([])
-  const [vista, setVista] = useState<Vista>("actual")
-  const [congelando, setCongelando] = useState(false)
+  const [revisiones, setRevisiones] = useState<Revision[]>([])
+  const [ultima, setUltima] = useState<Record<string, UltimaRevision>>({})
+  const [avisoRevisiones, setAvisoRevisiones] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // null = cerrado · {item|null, cat} = abierto (item null => crear)
   const [editor, setEditor] = useState<{ item: SwotItem | null; cat: Categoria } | null>(null)
-  // Período elegido para sacarle la foto (antes / después). Vive acá y no dentro
-  // del Select porque los dos botones de foto lo comparten.
-  const [periodoFoto, setPeriodoFoto] = useState("")
+  const [revisando, setRevisando] = useState(false)
+  const [verHistorial, setVerHistorial] = useState(false)
 
-  // Períodos críticos del año visible, para taggear de cuál surgió un item.
+  // Períodos críticos del año visible: para elegir cuál terminó y para taggear ítems.
   const periodos = useMemo<PeriodoOpcion[]>(() => {
     return detectarPeriodosCriticos(dias).map((p) => ({
       nombre: p.nombre,
@@ -120,18 +116,23 @@ export function SwotTab({
     setCargando(true)
     setError(null)
     try {
-      const [resItems, resSnaps] = await Promise.all([
+      const [resItems, resRev] = await Promise.all([
         fetch("/api/planeamiento/periodos-criticos/swot"),
-        fetch("/api/planeamiento/periodos-criticos/swot/snapshots"),
+        fetch("/api/planeamiento/periodos-criticos/swot/revisiones"),
       ])
       const jItems = await resItems.json()
       if (!resItems.ok) throw new Error(jItems.error || `HTTP ${resItems.status}`)
       setItems(jItems.items ?? [])
 
-      // Las fotos son secundarias: si fallan, el FODA vivo se sigue viendo.
-      if (resSnaps.ok) {
-        const jSnaps = await resSnaps.json()
-        setSnapshots(jSnaps.snapshots ?? [])
+      // El historial es secundario: si falla (por ejemplo, falta la migración),
+      // el FODA vivo se sigue viendo y se avisa.
+      const jRev = await resRev.json().catch(() => ({}))
+      if (resRev.ok) {
+        setRevisiones(jRev.revisiones ?? [])
+        setUltima(jRev.ultima_por_item ?? {})
+        setAvisoRevisiones(null)
+      } else {
+        setAvisoRevisiones(jRev.error || `No se pudo cargar el historial (HTTP ${resRev.status})`)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error cargando el análisis FODA")
@@ -144,47 +145,11 @@ export function SwotTab({
     void cargar()
   }, [])
 
-  const snapshotActivo = useMemo(
-    () => (vista === "actual" ? null : snapshots.find((s) => s.id === vista) ?? null),
-    [vista, snapshots],
-  )
-  const soloLectura = snapshotActivo !== null
-
   const porCategoria = useMemo(() => {
-    const m: Record<Categoria, (SwotItem | SnapshotItem)[]> = { F: [], O: [], D: [], A: [] }
-    const fuente = snapshotActivo ? snapshotActivo.items : items
-    for (const it of fuente) m[it.categoria]?.push(it)
+    const m: Record<Categoria, SwotItem[]> = { F: [], O: [], D: [], A: [] }
+    for (const it of items) m[it.categoria]?.push(it)
     return m
-  }, [items, snapshotActivo])
-
-  // Congela el FODA vivo como evidencia del período (R3.4.3). Los ítems los lee
-  // el server de la base, no se mandan desde acá.
-  async function congelar(periodo: PeriodoOpcion, momento: "previo" | "posterior") {
-    setCongelando(true)
-    try {
-      const res = await fetch("/api/planeamiento/periodos-criticos/swot/snapshots", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          periodo_nombre: periodo.nombre,
-          periodo_anio: periodo.anio,
-          periodo_fecha_inicio: periodo.fechaInicio,
-          periodo_fecha_fin: periodo.fechaFin,
-          momento,
-        }),
-      })
-      const j = await res.json()
-      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
-      toast.success(
-        `FODA ${momento === "previo" ? "previo" : "posterior"} congelado para ${periodo.nombre}`,
-      )
-      void cargar()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "No se pudo congelar el FODA")
-    } finally {
-      setCongelando(false)
-    }
-  }
+  }, [items])
 
   async function eliminar(it: SwotItem) {
     if (!confirm(`¿Eliminar este item del FODA?\n\n"${it.texto}"`)) return
@@ -202,15 +167,39 @@ export function SwotTab({
     }
   }
 
+  const ultimaRev = revisiones[0]
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="max-w-3xl text-sm text-slate-600">
-          R3.4.3 — Análisis FODA de los períodos críticos. Es un{" "}
-          <b>documento continuo</b>: una vez finalizado un período crítico, sumá
-          aprendizajes y <b>movelos entre cuadrantes</b> (por ejemplo, pasar una
-          Debilidad a Fortaleza o mitigar una Amenaza).
+          R3.4.3 — Análisis FODA de los períodos críticos. Es <b>un solo documento</b>,
+          siempre vigente. Cuando termina un período crítico se lo <b>revisa ítem por
+          ítem</b>: qué sigue igual, qué cambió y qué apareció. Ese registro por período
+          es la evidencia.
         </p>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1 text-xs"
+            onClick={() => setVerHistorial((v) => !v)}
+            disabled={revisiones.length === 0}
+          >
+            <History className="size-3.5" />
+            Historial ({revisiones.length})
+          </Button>
+          <Button
+            size="sm"
+            className="h-8 gap-1 text-xs"
+            onClick={() => setRevisando(true)}
+            disabled={cargando || items.length === 0 || !!avisoRevisiones}
+            title={avisoRevisiones ?? "Revisar el FODA tras un período que terminó"}
+          >
+            <ClipboardCheck className="size-3.5" />
+            Revisar tras un período
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -218,111 +207,32 @@ export function SwotTab({
           {error}
         </div>
       )}
-
-      {/* Selector de versión + congelado. La comparación entre la foto previa y
-          la posterior ES la evidencia que pide R3.4.3. */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2.5">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
-          <History className="size-4 text-slate-400" />
-          Ver FODA:
+      {avisoRevisiones && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
+          {avisoRevisiones}
         </div>
-        <Select value={vista} onValueChange={(v: string | null) => v && setVista(v)}>
-          <SelectTrigger className="h-8 w-[280px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="actual">Actual (editable)</SelectItem>
-            {snapshots.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.momento === "previo" ? "Previo" : "Posterior"} · {s.periodo_nombre} (
-                {s.periodo_anio}) · {s.fecha_corte}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      )}
 
-        {/* Foto del FODA: se elige el período UNA vez y cada botón guarda su
-            momento. Antes iba todo en un solo Select que listaba cada período
-            dos veces ("Previo · X" / "Posterior · X"), y no se veía cuál ya
-            tenía foto. El check verde marca las que ya están guardadas; volver
-            a apretar PISA esa foto (upsert por período+momento), que es la
-            forma de corregir una evidencia mal tomada. */}
-        {!soloLectura && periodos.length > 0 && (
-          <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-slate-500">Guardar foto del FODA:</span>
-            <Select
-              value={periodoFoto}
-              onValueChange={(v: string | null) => setPeriodoFoto(v ?? "")}
-            >
-              <SelectTrigger className="h-8 w-[220px] text-xs">
-                <SelectValue placeholder="Elegí el período…" />
-              </SelectTrigger>
-              <SelectContent>
-                {periodos.map((p) => (
-                  <SelectItem key={p.nombre} value={p.nombre}>
-                    {p.nombre}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {(["previo", "posterior"] as const).map((momento) => {
-              const yaExiste = snapshots.some(
-                (s) =>
-                  s.periodo_nombre === periodoFoto &&
-                  s.periodo_anio === anio &&
-                  s.momento === momento,
-              )
-              const etiqueta = momento === "previo" ? "Antes" : "Después"
-              return (
-                <Button
-                  key={momento}
-                  size="sm"
-                  variant={momento === "posterior" ? "default" : "outline"}
-                  className="h-8 gap-1 text-xs"
-                  disabled={congelando || !periodoFoto}
-                  title={
-                    !periodoFoto
-                      ? "Elegí primero el período"
-                      : yaExiste
-                        ? `Ya hay una foto "${etiqueta}" de ${periodoFoto}. Volver a guardar la reemplaza.`
-                        : `Guardar el FODA de hoy como la foto "${etiqueta}" de ${periodoFoto}`
-                  }
-                  onClick={() => {
-                    const p = periodos.find((x) => x.nombre === periodoFoto)
-                    if (p) void congelar(p, momento)
-                  }}
-                >
-                  {yaExiste ? (
-                    <Check className="size-3.5 text-emerald-600" />
-                  ) : (
-                    <Camera className="size-3.5" />
-                  )}
-                  {etiqueta} del período
-                </Button>
-              )
-            })}
-          </div>
+      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600">
+        <Info className="size-4 shrink-0 text-slate-400" />
+        {ultimaRev ? (
+          <span>
+            Última revisión: <b>{ultimaRev.periodo_nombre} {ultimaRev.periodo_anio}</b> el{" "}
+            {fmtFecha(ultimaRev.fecha)} · {ultimaRev.resumen.mantiene} sin cambios ·{" "}
+            {ultimaRev.resumen.modifica} modificados · {ultimaRev.resumen.elimina} eliminados ·{" "}
+            {ultimaRev.resumen.agrega} nuevos. Cada ítem muestra abajo cuándo se lo revisó por última vez.
+          </span>
+        ) : (
+          <span>
+            Todavía no hay revisiones registradas. Cuando termine un período crítico, tocá
+            «Revisar tras un período». También podés editar o mover ítems entre cuadrantes en
+            cualquier momento con el lápiz.
+          </span>
         )}
       </div>
 
-      {soloLectura ? (
-        <div className="flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50 p-2.5 text-xs text-indigo-900">
-          <Camera className="mt-0.5 size-4 shrink-0 text-indigo-500" />
-          <span>
-            Estás viendo una <b>foto congelada</b> del{" "}
-            {snapshotActivo?.momento === "previo" ? "FODA previo" : "FODA posterior"} de{" "}
-            <b>{snapshotActivo?.periodo_nombre}</b>, tomada el {snapshotActivo?.fecha_corte}.
-            No se edita: es la evidencia de cómo estaba el análisis en ese momento.
-            {snapshotActivo?.nota ? ` — ${snapshotActivo.nota}` : ""}
-          </span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600">
-          <Info className="size-4 shrink-0 text-slate-400" />
-          Para mover un item de cuadrante, editalo y cambiá su categoría. El tag de
-          período es opcional e indica de qué período crítico surgió el aprendizaje.
-        </div>
+      {verHistorial && revisiones.length > 0 && (
+        <HistorialRevisiones revisiones={revisiones} />
       )}
 
       {cargando ? (
@@ -338,31 +248,30 @@ export function SwotTab({
                     ({porCategoria[q.cat].length})
                   </span>
                 </CardTitle>
-                {!soloLectura && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 gap-1 text-xs"
-                    onClick={() => setEditor({ item: null, cat: q.cat })}
-                  >
-                    <Plus className="size-3.5" /> Agregar
-                  </Button>
-                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => setEditor({ item: null, cat: q.cat })}
+                >
+                  <Plus className="size-3.5" /> Agregar
+                </Button>
               </CardHeader>
               <CardContent className="space-y-2">
                 {porCategoria[q.cat].length === 0 ? (
                   <p className="text-xs text-muted-foreground">Sin items.</p>
                 ) : (
-                  porCategoria[q.cat].map((it, i) => (
-                    <div
-                      key={"id" in it ? it.id : `${q.cat}-${i}`}
-                      className="group rounded-md border bg-white p-2 text-sm"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="whitespace-pre-wrap text-slate-800">
-                          {it.texto}
-                        </p>
-                        {!soloLectura && "id" in it && (
+                  porCategoria[q.cat].map((it) => {
+                    const u = ultima[it.id]
+                    return (
+                      <div
+                        key={it.id}
+                        className="group rounded-md border bg-white p-2 text-sm"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="whitespace-pre-wrap text-slate-800">
+                            {it.texto}
+                          </p>
                           <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                             <Button
                               variant="ghost"
@@ -381,28 +290,38 @@ export function SwotTab({
                               <Trash2 className="size-3.5" />
                             </Button>
                           </div>
-                        )}
-                      </div>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                        <Badge className={`${IMPACTO_BADGE[it.impacto]} text-[10px]`}>
-                          Impacto {it.impacto}
-                        </Badge>
-                        {"periodo_nombre" in it && it.periodo_nombre && (
-                          <Badge variant="outline" className="text-[10px] font-normal">
-                            {it.periodo_nombre}
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <Badge className={`${IMPACTO_BADGE[it.impacto]} text-[10px]`}>
+                            Impacto {it.impacto}
                           </Badge>
+                          {it.periodo_nombre && (
+                            <Badge variant="outline" className="text-[10px] font-normal">
+                              {it.periodo_nombre}
+                            </Badge>
+                          )}
+                          {u ? (
+                            <span className="ml-auto text-[10px] text-slate-400">
+                              Rev. {u.periodo_nombre} {u.periodo_anio} ·{" "}
+                              <span className={u.accion === "mantiene" ? "" : "font-medium text-slate-600"}>
+                                {ACCION_LABEL[u.accion]}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="ml-auto text-[10px] text-slate-300">sin revisar</span>
+                          )}
+                        </div>
+                        {it.accion_recomendada && (
+                          <p className="mt-1.5 border-t pt-1.5 text-xs text-slate-600">
+                            <span className="font-medium text-slate-500">
+                              Acción:{" "}
+                            </span>
+                            {it.accion_recomendada}
+                          </p>
                         )}
                       </div>
-                      {it.accion_recomendada && (
-                        <p className="mt-1.5 border-t pt-1.5 text-xs text-slate-600">
-                          <span className="font-medium text-slate-500">
-                            Acción:{" "}
-                          </span>
-                          {it.accion_recomendada}
-                        </p>
-                      )}
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </CardContent>
             </Card>
@@ -422,7 +341,385 @@ export function SwotTab({
           }}
         />
       )}
+
+      {revisando && (
+        <RevisionDialog
+          items={items}
+          periodos={periodos}
+          anio={anio}
+          onClose={() => setRevisando(false)}
+          onSaved={() => {
+            setRevisando(false)
+            setVerHistorial(true)
+            void cargar()
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Historial: una fila por período revisado, expandible a los cambios
+// ---------------------------------------------------------------------------
+function HistorialRevisiones({ revisiones }: { revisiones: Revision[] }) {
+  const [abierta, setAbierta] = useState<string | null>(revisiones[0]?.id ?? null)
+  return (
+    <Card className="border-indigo-200">
+      <CardHeader className="py-3">
+        <CardTitle className="flex items-center gap-2 text-base text-indigo-800">
+          <History className="size-4" /> Revisiones por período
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {revisiones.map((r) => {
+          const open = abierta === r.id
+          const cambios = r.items.filter((i) => i.accion !== "mantiene")
+          return (
+            <div key={r.id} className="rounded-md border bg-white">
+              <button
+                type="button"
+                className="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-left text-sm"
+                onClick={() => setAbierta(open ? null : r.id)}
+              >
+                {open ? <ChevronDown className="size-4 text-slate-400" /> : <ChevronRight className="size-4 text-slate-400" />}
+                <span className="font-semibold text-slate-800">
+                  {r.periodo_nombre} {r.periodo_anio}
+                </span>
+                <span className="text-xs text-slate-500">revisado el {fmtFecha(r.fecha)}</span>
+                <span className="ml-auto flex flex-wrap gap-1">
+                  <Badge className={`${ACCION_BADGE.mantiene} text-[10px]`}>{r.resumen.mantiene} sin cambios</Badge>
+                  <Badge className={`${ACCION_BADGE.modifica} text-[10px]`}>{r.resumen.modifica} modificados</Badge>
+                  <Badge className={`${ACCION_BADGE.elimina} text-[10px]`}>{r.resumen.elimina} eliminados</Badge>
+                  <Badge className={`${ACCION_BADGE.agrega} text-[10px]`}>{r.resumen.agrega} nuevos</Badge>
+                </span>
+              </button>
+              {open && (
+                <div className="space-y-2 border-t px-3 py-2">
+                  {r.nota && <p className="text-xs italic text-slate-600">{r.nota}</p>}
+                  {cambios.length === 0 ? (
+                    <p className="text-xs text-slate-500">
+                      Se revisaron los {r.resumen.mantiene} ítems y ninguno cambió.
+                    </p>
+                  ) : (
+                    cambios.map((c) => (
+                      <div key={c.id} className="rounded border border-slate-100 bg-slate-50/60 p-2 text-xs">
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <Badge className={`${ACCION_BADGE[c.accion]} text-[10px]`}>{ACCION_LABEL[c.accion]}</Badge>
+                          <span className="text-slate-500">{CAT_LABEL[c.categoria]}</span>
+                          {c.nota && <span className="text-slate-400">· {c.nota}</span>}
+                        </div>
+                        {c.accion === "modifica" && (
+                          <div className="grid gap-1 md:grid-cols-2">
+                            <div>
+                              <p className="text-[10px] uppercase text-slate-400">Antes</p>
+                              <p className="text-slate-600 line-through decoration-slate-300">{c.texto_anterior}</p>
+                              {c.accion_anterior && <p className="text-slate-400">Acción: {c.accion_anterior}</p>}
+                            </div>
+                            <div>
+                              <p className="text-[10px] uppercase text-slate-400">Después</p>
+                              <p className="text-slate-800">{c.texto_nuevo}</p>
+                              {c.accion_nuevo && <p className="text-slate-500">Acción: {c.accion_nuevo}</p>}
+                            </div>
+                          </div>
+                        )}
+                        {c.accion === "elimina" && (
+                          <p className="text-slate-600 line-through decoration-slate-300">{c.texto_anterior}</p>
+                        )}
+                        {c.accion === "agrega" && (
+                          <>
+                            <p className="text-slate-800">{c.texto_nuevo}</p>
+                            {c.accion_nuevo && <p className="text-slate-500">Acción: {c.accion_nuevo}</p>}
+                          </>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Revisión tras un período: una decisión por ítem + los nuevos, y se cierra entera
+// ---------------------------------------------------------------------------
+type DecisionUI = {
+  accion: "mantiene" | "modifica" | "elimina" | null
+  texto: string
+  accion_recomendada: string
+  categoria: Categoria
+}
+type NuevoUI = { categoria: Categoria; texto: string; impacto: Impacto; accion_recomendada: string }
+
+function RevisionDialog({
+  items,
+  periodos,
+  anio,
+  onClose,
+  onSaved,
+}: {
+  items: SwotItem[]
+  periodos: PeriodoOpcion[]
+  anio: number
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [periodoKey, setPeriodoKey] = useState<string>(periodos[0] ? `${periodos[0].nombre}|${periodos[0].fechaInicio}` : "otro")
+  const [otroNombre, setOtroNombre] = useState("")
+  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
+  const [nota, setNota] = useState("")
+  const [decisiones, setDecisiones] = useState<Record<string, DecisionUI>>(() =>
+    Object.fromEntries(items.map((it) => [it.id, { accion: null, texto: it.texto, accion_recomendada: it.accion_recomendada ?? "", categoria: it.categoria }])),
+  )
+  const [nuevos, setNuevos] = useState<NuevoUI[]>([])
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const periodo = periodos.find((p) => `${p.nombre}|${p.fechaInicio}` === periodoKey) ?? null
+  const decididos = Object.values(decisiones).filter((d) => d.accion !== null).length
+  const completo = decididos === items.length && (periodo !== null || otroNombre.trim() !== "")
+
+  const set = (id: string, patch: Partial<DecisionUI>) =>
+    setDecisiones((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }))
+
+  const marcarRestoSinCambios = () =>
+    setDecisiones((prev) => Object.fromEntries(Object.entries(prev).map(([id, d]) => [id, d.accion ? d : { ...d, accion: "mantiene" }])))
+
+  async function cerrar() {
+    if (!completo) return
+    setGuardando(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/planeamiento/periodos-criticos/swot/revisiones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          periodo_nombre: periodo?.nombre ?? otroNombre.trim(),
+          periodo_anio: anio,
+          periodo_fecha_inicio: periodo?.fechaInicio ?? null,
+          periodo_fecha_fin: periodo?.fechaFin ?? null,
+          fecha,
+          nota,
+          decisiones: items.map((it) => {
+            const d = decisiones[it.id]
+            return d.accion === "modifica"
+              ? { item_id: it.id, accion: "modifica", texto: d.texto, accion_recomendada: d.accion_recomendada, categoria: d.categoria }
+              : { item_id: it.id, accion: d.accion }
+          }),
+          nuevos: nuevos.filter((n) => n.texto.trim()),
+        }),
+      })
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
+      toast.success(
+        `Revisión registrada: ${j.resumen.mantiene} sin cambios · ${j.resumen.modifica} modificados · ${j.resumen.elimina} eliminados · ${j.resumen.agrega} nuevos`,
+      )
+      onSaved()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar la revisión")
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && !guardando && onClose()}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ClipboardCheck className="size-5 text-indigo-600" /> Revisar el FODA tras un período
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 text-sm">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="space-y-1 md:col-span-2">
+              <Label className="text-xs">Período que terminó</Label>
+              <select
+                value={periodoKey}
+                onChange={(e) => setPeriodoKey(e.target.value)}
+                className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm"
+              >
+                {periodos.map((p) => (
+                  <option key={`${p.nombre}|${p.fechaInicio}`} value={`${p.nombre}|${p.fechaInicio}`}>
+                    {p.nombre} ({p.fechaInicio} → {p.fechaFin})
+                  </option>
+                ))}
+                <option value="otro">Otro período…</option>
+              </select>
+              {periodoKey === "otro" && (
+                <Input
+                  value={otroNombre}
+                  onChange={(e) => setOtroNombre(e.target.value)}
+                  placeholder="Nombre del período (ej.: Cierre de septiembre)"
+                  className="mt-1"
+                />
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Fecha de la revisión</Label>
+              <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-900">
+            <span>
+              Para cada ítem decidí: <b>sigue igual</b>, <b>cambió</b> (y corregilo acá) o <b>ya no aplica</b>.
+              Abajo agregá lo nuevo que dejó el período.
+            </span>
+            <span className="flex items-center gap-2">
+              <b>{decididos} de {items.length}</b> decididos
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={marcarRestoSinCambios}>
+                Marcar el resto como «sigue igual»
+              </Button>
+            </span>
+          </div>
+
+          {CUADRANTES.map((q) => {
+            const lista = items.filter((it) => it.categoria === q.cat)
+            if (lista.length === 0) return null
+            return (
+              <div key={q.cat} className={`rounded-md border ${q.card}`}>
+                <p className={`border-b px-3 py-1.5 text-sm font-semibold ${q.header}`}>{q.titulo}</p>
+                <div className="divide-y">
+                  {lista.map((it) => {
+                    const d = decisiones[it.id]
+                    return (
+                      <div key={it.id} className={`space-y-2 px-3 py-2 ${d.accion === "elimina" ? "bg-red-50/40" : d.accion === "modifica" ? "bg-amber-50/40" : ""}`}>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <p className={`flex-1 text-slate-800 ${d.accion === "elimina" ? "line-through decoration-slate-400" : ""}`}>
+                            {it.texto}
+                          </p>
+                          <div className="flex shrink-0 gap-1">
+                            <Opcion activa={d.accion === "mantiene"} tono="slate" onClick={() => set(it.id, { accion: "mantiene" })} icon={<Check className="size-3" />}>Sigue igual</Opcion>
+                            <Opcion activa={d.accion === "modifica"} tono="amber" onClick={() => set(it.id, { accion: "modifica" })} icon={<Pencil className="size-3" />}>Cambió</Opcion>
+                            <Opcion activa={d.accion === "elimina"} tono="red" onClick={() => set(it.id, { accion: "elimina" })} icon={<Minus className="size-3" />}>Ya no aplica</Opcion>
+                          </div>
+                        </div>
+                        {d.accion === "modifica" && (
+                          <div className="grid gap-2 md:grid-cols-[1fr_1fr_140px]">
+                            <div className="space-y-1">
+                              <Label className="text-[10px] uppercase text-slate-500">Texto nuevo</Label>
+                              <Textarea rows={2} value={d.texto} onChange={(e) => set(it.id, { texto: e.target.value })} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] uppercase text-slate-500">Acción</Label>
+                              <Textarea rows={2} value={d.accion_recomendada} onChange={(e) => set(it.id, { accion_recomendada: e.target.value })} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] uppercase text-slate-500">Cuadrante</Label>
+                              <select
+                                value={d.categoria}
+                                onChange={(e) => set(it.id, { categoria: e.target.value as Categoria })}
+                                className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm"
+                              >
+                                {CUADRANTES.map((c) => <option key={c.cat} value={c.cat}>{CAT_LABEL[c.cat]}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+
+          <div className="rounded-md border border-emerald-200">
+            <div className="flex items-center justify-between border-b px-3 py-1.5">
+              <p className="text-sm font-semibold text-emerald-700">Nuevo con este período</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1 text-xs"
+                onClick={() => setNuevos((n) => [...n, { categoria: "F", texto: "", impacto: "medio", accion_recomendada: "" }])}
+              >
+                <Plus className="size-3.5" /> Agregar ítem
+              </Button>
+            </div>
+            {nuevos.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-slate-500">Nada nuevo por ahora.</p>
+            ) : (
+              <div className="divide-y">
+                {nuevos.map((n, i) => (
+                  <div key={i} className="grid gap-2 px-3 py-2 md:grid-cols-[140px_1fr_1fr_110px_32px]">
+                    <select
+                      value={n.categoria}
+                      onChange={(e) => setNuevos((arr) => arr.map((x, j) => (j === i ? { ...x, categoria: e.target.value as Categoria } : x)))}
+                      className="h-9 rounded-md border border-slate-200 px-2 text-sm"
+                    >
+                      {CUADRANTES.map((c) => <option key={c.cat} value={c.cat}>{CAT_LABEL[c.cat]}</option>)}
+                    </select>
+                    <Textarea rows={2} placeholder="Qué aprendimos…" value={n.texto}
+                      onChange={(e) => setNuevos((arr) => arr.map((x, j) => (j === i ? { ...x, texto: e.target.value } : x)))} />
+                    <Textarea rows={2} placeholder="Acción (opcional)" value={n.accion_recomendada}
+                      onChange={(e) => setNuevos((arr) => arr.map((x, j) => (j === i ? { ...x, accion_recomendada: e.target.value } : x)))} />
+                    <select
+                      value={n.impacto}
+                      onChange={(e) => setNuevos((arr) => arr.map((x, j) => (j === i ? { ...x, impacto: e.target.value as Impacto } : x)))}
+                      className="h-9 rounded-md border border-slate-200 px-2 text-sm"
+                    >
+                      {IMPACTOS.map((im) => <option key={im} value={im}>Impacto {im}</option>)}
+                    </select>
+                    <Button size="sm" variant="ghost" className="h-9 w-8 p-0 text-red-600" onClick={() => setNuevos((arr) => arr.filter((_, j) => j !== i))}>
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Nota de la revisión (opcional)</Label>
+            <Textarea rows={2} value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Qué pasó en el período y qué se concluyó…" />
+          </div>
+
+          {error && <p className="rounded-md bg-red-50 p-2 text-xs text-red-700">{error}</p>}
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <Button variant="ghost" onClick={onClose} disabled={guardando}>Cancelar</Button>
+            <Button onClick={cerrar} disabled={guardando || !completo} title={completo ? "" : "Decidí todos los ítems y elegí el período"}>
+              {guardando ? "Guardando…" : "Cerrar revisión"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function Opcion({
+  activa, tono, onClick, icon, children,
+}: {
+  activa: boolean
+  tono: "slate" | "amber" | "red"
+  onClick: () => void
+  icon: React.ReactNode
+  children: React.ReactNode
+}) {
+  const on = {
+    slate: "bg-slate-700 text-white border-slate-700",
+    amber: "bg-amber-500 text-white border-amber-500",
+    red: "bg-red-600 text-white border-red-600",
+  }[tono]
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] transition-colors ${
+        activa ? on : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+      }`}
+    >
+      {icon}
+      {children}
+    </button>
   )
 }
 
@@ -464,10 +761,10 @@ function ItemDialog({
       texto: texto.trim(),
       impacto,
       accion_recomendada: accion.trim(),
-      periodo_nombre: periodo?.nombre ?? null,
-      periodo_anio: periodo?.anio ?? null,
-      periodo_fecha_inicio: periodo?.fechaInicio ?? null,
-      periodo_fecha_fin: periodo?.fechaFin ?? null,
+      periodo_nombre: periodo?.nombre ?? (periodoNombre || null),
+      periodo_anio: periodo?.anio ?? (item?.periodo_anio ?? null),
+      periodo_fecha_inicio: periodo?.fechaInicio ?? (item?.periodo_fecha_inicio ?? null),
+      periodo_fecha_fin: periodo?.fechaFin ?? (item?.periodo_fecha_fin ?? null),
     }
     try {
       const url = item
