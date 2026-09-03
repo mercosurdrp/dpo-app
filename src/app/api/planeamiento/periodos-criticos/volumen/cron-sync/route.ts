@@ -3,10 +3,14 @@
 // (Railway) donde viven las ventas reales Chess + GESCOM. Reemplaza al cron
 // Foxtrot de Misiones — en Pampeana no hay Foxtrot.
 //
-// HL del día = venta real (mismos filtros que src/lib/mercosur-dashboard.ts):
+// HL del día = lo que sale a distribuir con la flota propia:
 //   Chess : region='pampeana', anulado='NO', excluir SEGUNDA VUELTA, excluir env%.
-//   GESCOM: codigo_sede=2, estado='Finalizada', excluir env%. HL = cantidad·valor_unidad_medida.
+//   GESCOM: codigo_sede=2, estado='Finalizada', excluir env%, excluir las cuentas
+//           de PATENTES (ver GESCOM_CUENTAS_EXCLUIDAS). HL = cantidad·valor_unidad_medida.
 //   Clientes = id_cliente distinto sobre la unión de ambas fuentes.
+// Ojo: NO son los mismos filtros que src/lib/mercosur-dashboard.ts (ese excluye
+// GESCOM entero para coincidir con ventas). Acá GESCOM se suma porque sale del
+// mismo depósito con los mismos camiones, salvo las cuentas excluidas.
 // El OTIF NO se persiste acá: la vista v_pc_calendario_dia_multianio lo deriva
 // de la tabla `rechazos`.
 //
@@ -23,6 +27,13 @@ export const maxDuration = 300
 export const dynamic = "force-dynamic"
 
 const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/
+
+// Cuentas de GESCOM que NO cargan la flota propia: son ventas que retiran
+// terceros con su camión ("patentes"). Facturan bloques de 168/336/504 HL y en
+// 2026 explicaban 17 de los 18 días críticos. Decisión de Sebastián Roselli,
+// 03/09/2026: para Períodos Críticos se cuenta sólo lo distribuido con patente
+// propia. La 200990010 reemplazó a la 20099000 en mayo de 2026.
+const GESCOM_CUENTAS_EXCLUIDAS = [20099000, 200990010]
 const MAX_BACKFILL_DIAS = 800
 
 let _pool: Pool | null = null
@@ -58,6 +69,7 @@ gescom AS (
   LEFT JOIN articulos a ON g.id_articulo = a.id_articulo
   WHERE g.codigo_sede = 2 AND COALESCE(g.estado,'') = 'Finalizada'
     AND COALESCE(a.segmento,'') NOT ILIKE 'env%'
+    AND g.id_cliente <> ALL($3::bigint[])
     AND g.fecha BETWEEN $1 AND $2
 ),
 u AS (SELECT d, id_cliente, hl, es_cli FROM chess UNION ALL SELECT d, id_cliente, hl, es_cli FROM gescom)
@@ -92,7 +104,7 @@ async function handle(request: NextRequest) {
   const client = await pool.connect()
   let filas: { fecha: string; hl: number; clientes: number }[]
   try {
-    const res = await client.query(SQL, [d1, d2])
+    const res = await client.query(SQL, [d1, d2, GESCOM_CUENTAS_EXCLUIDAS])
     filas = res.rows
       .slice(0, MAX_BACKFILL_DIAS)
       .map((r) => ({
