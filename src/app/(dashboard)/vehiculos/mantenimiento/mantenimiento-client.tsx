@@ -206,6 +206,25 @@ function aDatetimeLocal(v: string | null): string {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 16)
 }
 
+/**
+ * La vuelta de `aDatetimeLocal`: el valor del input al instante que va a la DB.
+ *
+ * 🚨 Antes el string del `datetime-local` viajaba crudo ("2026-08-31T09:00").
+ * La columna es `timestamptz` y Postgres, sin offset, lo lee en la zona del
+ * servidor (UTC): quedaba guardado como 09:00Z, o sea 06:00 acá. Al releerlo el
+ * diálogo lo pasa de UTC a local y mostraba 06:00 — tres horas antes de lo
+ * tipeado. Y como al guardar volvía a mandar lo que mostraba, la entrada y la
+ * salida de la OT retrocedían 3 horas MÁS en cada edición: las OT 1759 y 1762
+ * pasaron de 14:00 a 11:00 con sólo abrirlas para cargarles la factura.
+ */
+function deDatetimeLocal(v: string): string | null {
+  if (!v) return null
+  // `new Date` interpreta el string sin offset como hora local, que es
+  // exactamente lo que el usuario tipeó: de ahí sale el instante real.
+  const d = new Date(v)
+  return isNaN(d.getTime()) ? null : d.toISOString()
+}
+
 function fmtFecha(f: string | null): string {
   if (!f) return "—"
   return f.slice(0, 10).split("-").reverse().join("/")
@@ -1724,8 +1743,8 @@ function NuevoMantenimientoDialog({
       repuestos: repuestosPayload(repuestos),
       facturas: comprobantes.facturas,
       evidencia_urls: comprobantes.urls.length > 0 ? comprobantes.urls : null,
-      entrada_taller: entradaTaller || null,
-      salida_taller: salidaTaller || null,
+      entrada_taller: deDatetimeLocal(entradaTaller),
+      salida_taller: deDatetimeLocal(salidaTaller),
       tareas,
       reprogramadas: reprogramadasPayload(reprogramadas),
     })
@@ -2991,8 +3010,8 @@ function EditarMantenimientoDialog({
       repuestos: repuestosPayload(repuestos),
       facturas: comprobantes.facturas,
       evidencia_urls: comprobantes.urls,
-      entrada_taller: entradaTaller || null,
-      salida_taller: salidaTaller || null,
+      entrada_taller: deDatetimeLocal(entradaTaller),
+      salida_taller: deDatetimeLocal(salidaTaller),
     })
     setSaving(false)
     if ("error" in res) {
