@@ -29,11 +29,13 @@ export const dynamic = "force-dynamic"
 const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // Cuentas de GESCOM que NO cargan la flota propia: son ventas que retiran
-// terceros con su camión ("patentes"). Facturan bloques de 168/336/504 HL y en
-// 2026 explicaban 17 de los 18 días críticos. Decisión de Sebastián Roselli,
-// 03/09/2026: para Períodos Críticos se cuenta sólo lo distribuido con patente
-// propia. La 200990010 reemplazó a la 20099000 en mayo de 2026.
-const GESCOM_CUENTAS_EXCLUIDAS = [20099000, 200990010]
+// terceros con su camión ("patentes"). Facturan bloques de 168/336/504 HL, van
+// casi todas con codigo_chofer = 5 y en 2026 explicaban 17 de los 18 días
+// críticos. Decisión de Sebastián Roselli, 03/09/2026: para Períodos Críticos
+// se cuenta sólo lo distribuido con patente propia. La 200990010 reemplazó a la
+// 20099000 en mayo de 2026. Si aparece una cuenta nueva del mismo tipo, se
+// agrega acá y se recarga el histórico con ?desde=&hasta=.
+const GESCOM_CUENTAS_EXCLUIDAS = [20099000, 200990010, 20099005, 200990012, 20014528, 20014607]
 const MAX_BACKFILL_DIAS = 800
 
 let _pool: Pool | null = null
