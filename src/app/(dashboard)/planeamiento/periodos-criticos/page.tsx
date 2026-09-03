@@ -73,15 +73,7 @@ export default async function PeriodosCriticosPage() {
     )
   }
 
-  const cfg: CfgPC = {
-    anio: cfgRow.anio_vigente,
-    w_vol: Number(cfgRow.w_vol),
-    w_otif: Number(cfgRow.w_otif),
-    w_aus: Number(cfgRow.w_aus),
-    umbral_alto: Number(cfgRow.umbral_alto),
-    umbral_medio: Number(cfgRow.umbral_medio),
-    hl_p90_2025: cfgRow.hl_p90_2025 != null ? Number(cfgRow.hl_p90_2025) : null,
-  }
+  const cfg: CfgPC = { anio: cfgRow.anio_vigente }
 
   // `vol_pico` es columna generada: camiones × HL por camión × % ocupación.
   const umbrales: UmbralesPC = umbralesRow

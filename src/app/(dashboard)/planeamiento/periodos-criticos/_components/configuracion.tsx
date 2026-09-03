@@ -10,9 +10,17 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Upload, Save, FileSpreadsheet } from "lucide-react"
 import { ExplicacionUmbrales } from "./explicacion-umbrales"
-import type { CfgPC, UmbralesPC, PlanAccion } from "./client"
+import type { CfgPC, UmbralesPC, PlanAccion, Intensidad } from "./client"
+import { INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
 
-const CODIGOS = ["PPPP", "PPP", "PP", "P", ""]
+// Un plan por escalón de la escala del calendario, del más al menos exigente.
+const CODIGOS: Intensidad[] = ["CRITICO_ALTO", "CRITICO", "ATENCION", "NORMAL"]
+const CODIGO_DESC: Record<Intensidad, string> = {
+  CRITICO_ALTO: "El volumen supera la capacidad y además cruza clientes, rechazo o ausentismo",
+  CRITICO: "El volumen supera la capacidad de distribución",
+  ATENCION: "No supera el volumen, pero cruza clientes, rechazo o ausentismo",
+  NORMAL: "Día normal",
+}
 
 export function ConfiguracionTab({
   cfg,
@@ -25,7 +33,7 @@ export function ConfiguracionTab({
 }) {
   return (
     <div className="space-y-4">
-      <PesosCard cfg={cfg} />
+      <AnioCard cfg={cfg} />
       <UmbralesCard umbrales={umbrales} />
       <AusentismoUploadCard />
       <PlanesAccionCard planes={planes} />
@@ -33,18 +41,12 @@ export function ConfiguracionTab({
   )
 }
 
-// -------------------------------------------------------------------- pesos
-function PesosCard({ cfg }: { cfg: CfgPC }) {
+// ----------------------------------------------------------- año vigente
+function AnioCard({ cfg }: { cfg: CfgPC }) {
   const router = useRouter()
-  const [w_vol, setWvol] = useState(cfg.w_vol)
-  const [w_otif, setWotif] = useState(cfg.w_otif)
-  const [w_aus, setWaus] = useState(cfg.w_aus)
   const [anio, setAnio] = useState(cfg.anio)
   const [guardando, setGuardando] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
-
-  const suma = +(w_vol + w_otif + w_aus).toFixed(3)
-  const sumaOk = Math.abs(suma - 1) < 0.001
 
   async function guardar() {
     setGuardando(true)
@@ -53,7 +55,7 @@ function PesosCard({ cfg }: { cfg: CfgPC }) {
       const res = await fetch("/api/planeamiento/periodos-criticos/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ w_vol, w_otif, w_aus, anio_vigente: anio }),
+        body: JSON.stringify({ anio_vigente: anio }),
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
@@ -71,33 +73,24 @@ function PesosCard({ cfg }: { cfg: CfgPC }) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Pesos del score (continuo)</CardTitle>
+        <CardTitle className="text-base">Año vigente</CardTitle>
         <p className="text-xs text-slate-500">
-          Score = w_vol · (HL/P90) + w_otif · % rechazo + w_aus · % ausentismo. Solo afecta el simulador.
+          Año que abre el calendario por defecto. El criterio de día crítico es uno solo y se
+          define abajo: el volumen del día contra la capacidad de distribución.
         </p>
       </CardHeader>
-      <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <NumField label="Vol (w_vol)" value={w_vol} onChange={setWvol} step={0.05} min={0} max={1} />
-        <NumField label="OTIF (w_otif)" value={w_otif} onChange={setWotif} step={0.05} min={0} max={1} />
-        <NumField label="Aus (w_aus)" value={w_aus} onChange={setWaus} step={0.05} min={0} max={1} />
-        <NumField label="Año vigente" value={anio} onChange={setAnio} step={1} min={2024} max={2030} integer />
-        <div className="md:col-span-4 flex items-center gap-3 text-sm">
-          Suma:{" "}
-          <span className={sumaOk ? "text-emerald-700 font-semibold" : "text-red-700 font-semibold"}>
-            {suma}
-          </span>
-          {!sumaOk && <span className="text-red-700 text-xs">— debe ser exactamente 1</span>}
-          <div className="ml-auto flex items-center gap-2">
-            {msg && (
-              <span className={msg.toLowerCase().includes("actual") ? "text-sm text-emerald-700" : "text-sm text-red-700"}>
-                {msg}
-              </span>
-            )}
-            <Button onClick={guardar} disabled={guardando || !sumaOk} size="sm">
-              <Save className="w-4 h-4 mr-1" /> Guardar pesos
-            </Button>
-          </div>
+      <CardContent className="flex flex-wrap items-end gap-3">
+        <div className="w-32">
+          <NumField label="Año vigente" value={anio} onChange={setAnio} step={1} min={2024} max={2030} integer />
         </div>
+        <Button onClick={guardar} disabled={guardando || anio === cfg.anio} size="sm">
+          <Save className="w-4 h-4 mr-1" /> Guardar
+        </Button>
+        {msg && (
+          <span className={msg.toLowerCase().includes("actual") ? "text-sm text-emerald-700" : "text-sm text-red-700"}>
+            {msg}
+          </span>
+        )}
       </CardContent>
     </Card>
   )
@@ -277,13 +270,13 @@ function PlanesAccionCard({ planes }: { planes: PlanAccion[] }) {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Planes de acción por código</CardTitle>
         <p className="text-xs text-slate-500">
-          Texto que se sugiere en los períodos críticos según los triggers gatillados. Editable libremente.
+          Texto que se sugiere en cada período crítico según su escalón en el calendario. Editable libremente.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
         {CODIGOS.map((codigo) => (
           <PlanRow
-            key={codigo || "vacio"}
+            key={codigo}
             codigo={codigo}
             plan={planByCodigo[codigo]}
             onSaved={() => router.refresh()}
@@ -299,7 +292,7 @@ function PlanRow({
   plan,
   onSaved,
 }: {
-  codigo: string
+  codigo: Intensidad
   plan: PlanAccion | undefined
   onSaved: () => void
 }) {
@@ -330,15 +323,13 @@ function PlanRow({
     }
   }
 
-  const label = codigo === "" ? "Día normal (sin triggers)" : `Código ${codigo}`
-
   return (
     <div className="border border-slate-200 rounded p-3">
-      <div className="flex items-center justify-between mb-2">
-        <Badge variant="outline" className="font-mono text-sm">
-          {codigo || "—"}
+      <div className="flex items-center justify-between mb-2 gap-3">
+        <Badge className={`${INTENSIDAD_BG[codigo]} text-sm`}>
+          {INTENSIDAD_LABEL[codigo]}
         </Badge>
-        <span className="text-xs text-slate-500">{label}</span>
+        <span className="text-xs text-slate-500 text-right">{CODIGO_DESC[codigo]}</span>
       </div>
       <div className="space-y-2">
         <Input

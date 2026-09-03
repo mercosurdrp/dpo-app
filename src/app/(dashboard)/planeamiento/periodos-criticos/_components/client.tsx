@@ -34,7 +34,6 @@ export type DiaCalendario = {
   es_feriado: boolean
   nombre_feriado: string | null
   tipo_feriado: string | null   // nacional | provincial | empresa
-  score: number
   // Triggers booleanos (modelo Mercosur)
   trigger_vol: boolean
   trigger_cli: boolean
@@ -42,22 +41,15 @@ export type DiaCalendario = {
   trigger_aus: boolean
   trigger_count: number
   contexto_count: number     // cuántas de las otras 3 acompañan al volumen
-  codigo: string             // "PPPP" / "PPP" / "PP" / "P" / ""
   estatus: "CRITICO" | "NORMAL"
-  // Compatibilidad con simulador / configuración del score continuo
-  nivel: "BAJO" | "MEDIO" | "ALTO"
 }
 
+// Lo único configurable fuera de la capacidad y el contexto es el año vigente.
 export type CfgPC = {
   anio: number
-  w_vol: number
-  w_otif: number
-  w_aus: number
-  umbral_alto: number
-  umbral_medio: number
-  hl_p90_2025: number | null
 }
 
+// `codigo` es una Intensidad: hay un plan por escalón (CRITICO_ALTO, CRITICO, ATENCION, NORMAL).
 export type PlanAccion = {
   codigo: string
   descripcion: string
@@ -412,7 +404,7 @@ export function PeriodosCriticosClient({
           />
         </TabsContent>
         <TabsContent value="simulador">
-          <SimuladorTab dias={diasActivos} cfg={cfg} umbrales={umbrales} />
+          <SimuladorTab dias={diasActivos} umbrales={umbrales} />
         </TabsContent>
         <TabsContent value="revision">
           <RevisionMensualTab dias={diasActivos} anio={anioActivo} />

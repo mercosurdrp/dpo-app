@@ -6,7 +6,7 @@
 // período por sí solos. Agrupamos esos días en bloques de 1-7 días (con gaps
 // cortos) y los nombramos por feriado/temporada.
 
-import type { DiaCalendario } from "../_components/client"
+import { intensidadMax, type DiaCalendario, type Intensidad } from "../_components/client"
 
 // Un EVENTO DE EMPRESA (ej. Expoagro) queda FIJO: sus días siempre integran un
 // período sugerido aunque el volumen no llegue a la capacidad. Se marcan con
@@ -24,13 +24,13 @@ export type PeriodoCritico = {
   fechaInicio: string
   fechaFin: string
   cantDias: number
-  cantDiasCriticos: number   // días con estatus = CRITICO
-  codigoPredominante: string // el código más frecuente (ej. "AA")
+  cantDiasCriticos: number   // días que superaron la capacidad
+  intensidad: Intensidad     // la del día más exigente del bloque
   hlMax: number
   hlAcum: number
   clientesMax: number
-  scoreMax: number
-  diaPico: string         // fecha del día con score más alto
+  pctCapacidadMax: number    // hl / capacidad del día pico (1 = justo la capacidad)
+  diaPico: string         // fecha del día con más HL
   feriadoCercano: string | null
   dias: DiaCalendario[]   // los días del bloque (incluye gaps no-CRITICO)
 }
@@ -189,17 +189,8 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
     const cercano = feriadoCercano(bloque, feriados)
     const { nombre, motivo } = generarNombreYMotivo(bloque, cercano)
     const diaPico = bloque.reduce((max, d) =>
-      Number(d.score) > Number(max.score) ? d : max,
+      Number(d.hl) > Number(max.hl) ? d : max,
     bloque[0])
-    // Código predominante: el código más frecuente entre los días CRITICO del bloque
-    const codigosCount: Record<string, number> = {}
-    for (const d of bloque) {
-      if (esAncla(d) && d.codigo) {
-        codigosCount[d.codigo] = (codigosCount[d.codigo] ?? 0) + 1
-      }
-    }
-    const codigoPredominante =
-      Object.entries(codigosCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? ""
     return {
       id: `${bloque[0].fecha}-${i + 1}`,
       nombre,
@@ -208,11 +199,11 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
       fechaFin: bloque[bloque.length - 1].fecha,
       cantDias: bloque.length,
       cantDiasCriticos: bloque.filter((d) => d.trigger_vol).length,
-      codigoPredominante,
+      intensidad: intensidadMax(bloque),
       hlMax: Math.max(...bloque.map((d) => Number(d.hl))),
       hlAcum: bloque.reduce((s, d) => s + Number(d.hl), 0),
       clientesMax: Math.max(...bloque.map((d) => Number(d.clientes_dia ?? 0))),
-      scoreMax: Math.max(...bloque.map((d) => Number(d.score))),
+      pctCapacidadMax: Math.max(...bloque.map((d) => Number(d.pct_capacidad))),
       diaPico: diaPico.fecha,
       feriadoCercano: cercano ? `${cercano.nombre} (${cercano.fecha})` : null,
       dias: bloque,

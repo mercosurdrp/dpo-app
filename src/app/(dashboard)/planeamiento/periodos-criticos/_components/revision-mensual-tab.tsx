@@ -25,6 +25,7 @@ import {
 } from "lucide-react"
 import { abrirArchivo } from "@/lib/abrir-archivo"
 import type { DiaCalendario } from "./client"
+import { INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
 import { detectarPeriodosCriticos } from "../_lib/detectar-periodos"
 
 const MESES = [
@@ -145,8 +146,8 @@ export function RevisionMensualTab({
             <ul className="space-y-1.5">
               {proximos.map((p) => (
                 <li key={p.id} className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="font-mono">
-                    {p.codigoPredominante || "—"}
+                  <Badge className={`${INTENSIDAD_BG[p.intensidad]} text-[10px]`}>
+                    {INTENSIDAD_LABEL[p.intensidad]}
                   </Badge>
                   <span className="font-medium text-slate-800">{p.nombre}</span>
                   <span className="text-xs text-slate-500">

@@ -253,8 +253,8 @@ export function PeriodosTab({
           </CardTitle>
           <p className="text-xs text-slate-500">
             Los períodos que el equipo decide priorizar para anticipar la operación. Generalos
-            automáticamente desde los sugeridos de {anioBase} (prioridad según intensidad: PICO/ALTO
-            → alta, MEDIO → media, BAJO → baja), creá uno a mano, o usá «Marcar como foco» en una
+            automáticamente desde los sugeridos de {anioBase} (prioridad según intensidad: CRÍTICO +
+            → alta, CRÍTICO → media, ATENCIÓN → baja), creá uno a mano, o usá «Marcar como foco» en una
             sugerencia puntual.
           </p>
         </CardHeader>
@@ -328,7 +328,7 @@ export function PeriodosTab({
                 indice={idx + 1}
                 anioBase={anioBase}
                 anioAnticipar={anioAnticipar}
-                plan={planByCodigo[p.codigoPredominante]}
+                plan={planByCodigo[p.intensidad]}
                 onMarcarFoco={() => marcarComoFoco(p)}
               />
             ))}
@@ -370,26 +370,20 @@ function PeriodoCard({
   const iniProy = proyectarFecha(p.fechaInicio, anioAnticipar)
   const finProy = proyectarFecha(p.fechaFin, anioAnticipar)
 
-  // Día más intenso del período (el de mayor score) → de ahí tomamos el valor
+  // Día más exigente del período (el de más HL) → de ahí tomamos el valor
   // puntual de cada variable en el tooltip.
   const diaPico = p.dias.find((d) => d.fecha === p.diaPico) ?? p.dias[0]
-  // Para cada "P" contamos en cuántos días del período NO se cumple (su trigger
-  // se dispara). Una P "no cumple" si falla en al menos un día del período.
-  const diasNoCumple = (v: VarP) => p.dias.filter((d) => d[v.trigger] === true).length
-  const pNoCumple = VARIABLES_P.filter((v) => diasNoCumple(v) > 0)
-  // Crítico (criterio del equipo): algún día no cumple las 3 P juntas (Volumen +
-  // Clientes + OTIF).
-  const esCritico = p.dias.some(
-    (d) => d.trigger_vol === true && d.trigger_cli === true && d.trigger_otif === true,
-  )
+  // Para cada variable contamos en cuántos días del período cruzó su umbral.
+  const diasCruzados = (v: VarP) => p.dias.filter((d) => d[v.trigger] === true).length
   const ausDias = p.dias.filter((d) => d.trigger_aus === true).length
+  const intensidad = intensidadPeriodo(p)
 
   async function copiarPlan() {
     if (!plan) return
     const texto =
       `Período crítico ${indice} a anticipar en ${anioAnticipar}: ${p.nombre}\n` +
       `Ventana estimada ${fmtFecha(iniProy)} → ${fmtFecha(finProy)} (observado en ${anioBase}: ${fmtFecha(p.fechaInicio)} → ${fmtFecha(p.fechaFin)})\n` +
-      `Código ${p.codigoPredominante} · ${p.cantDiasCriticos} días críticos\n\n` +
+      `${INTENSIDAD_LABEL[p.intensidad]} · ${p.cantDiasCriticos} días sobre la capacidad (pico ${fmtPct(p.pctCapacidadMax)})\n\n` +
       `${plan.descripcion}\n\n${plan.plan_texto}`
     await navigator.clipboard.writeText(texto)
     setCopiado(true)
@@ -445,7 +439,7 @@ function PeriodoCard({
           <Stat k="HL pico" v={fmtHL(p.hlMax)} />
           <Stat k="HL acum" v={fmtHL(p.hlAcum)} />
           <Stat k="Cli máx" v={String(p.clientesMax)} />
-          <Stat k="Score max" v={p.scoreMax.toFixed(3)} />
+          <Stat k="Capacidad máx" v={fmtPct(p.pctCapacidadMax)} />
         </div>
 
         {p.feriadoCercano && (
@@ -481,7 +475,7 @@ function PeriodoCard({
           <div className="border-t border-slate-200 pt-2">
             <div className="flex items-center justify-between mb-1">
               <p className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">
-                Plan de acción ({p.codigoPredominante})
+                Plan de acción ({INTENSIDAD_LABEL[p.intensidad]})
               </p>
               <Button variant="ghost" size="sm" onClick={copiarPlan} className="h-6 text-xs gap-1">
                 {copiado ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
@@ -495,7 +489,7 @@ function PeriodoCard({
           </div>
         ) : (
           <div className="border-t border-slate-200 pt-2 text-[11px] text-slate-400">
-            Sin plan de acción cargado para código <code>{p.codigoPredominante || "(vacío)"}</code>. Cargalo en Configuración.
+            Sin plan de acción cargado para «{INTENSIDAD_LABEL[p.intensidad]}». Cargalo en Configuración.
           </div>
         )}
       </CardContent>
@@ -506,19 +500,15 @@ function PeriodoCard({
         <div className="space-y-1 min-w-[230px]">
           <div className="flex items-center justify-between gap-3">
             <span className="font-semibold">
-              {pNoCumple.length === 0
-                ? "Cumple las 3 P"
-                : `No cumple ${pNoCumple.length} de 3 P: ${pNoCumple.map((v) => v.label).join(", ")}`}
+              {p.cantDiasCriticos} de {p.cantDias} días sobre la capacidad
             </span>
-            {esCritico && (
-              <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-600 text-white">
-                CRÍTICO
-              </span>
-            )}
+            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${INTENSIDAD_BG[intensidad]}`}>
+              {INTENSIDAD_LABEL[intensidad]}
+            </span>
           </div>
           <div className="space-y-0.5 pt-1 border-t border-white/15">
             {VARIABLES_P.map((v) => {
-              const dias = diasNoCumple(v)
+              const dias = diasCruzados(v)
               const noCumple = dias > 0
               return (
                 <div key={v.label} className="flex items-center justify-between gap-4 text-[11px]">
@@ -538,7 +528,7 @@ function PeriodoCard({
             <span>{diaPico ? VAR_AUSENTISMO.valor(diaPico) : "—"}{ausDias > 0 && ` · ${ausDias}d`}</span>
           </div>
           <div className="text-[10px] opacity-60 pt-1 border-t border-white/15">
-            ✗ = no cumple (cruzó su umbral). «{esCritico ? "Crítico" : "No crítico"}»: crítico = no cumplir Volumen + Clientes + OTIF el mismo día.
+            ✗ = cruzó su umbral. Crítico = el volumen supera la capacidad de distribución; clientes, rechazo y ausentismo sólo lo agravan.
           </div>
         </div>
       </TooltipContent>

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { RotateCcw, Copy, Trash2, FolderOpen, Bookmark } from "lucide-react"
-import type { CfgPC, DiaCalendario, UmbralesPC } from "./client"
+import type { DiaCalendario, Intensidad, UmbralesPC } from "./client"
 import { intensidadDia, INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
 
 // Escenario tal como vuelve del GET /escenarios. Las 4 variables se persisten.
@@ -29,20 +29,20 @@ type SimResult = {
   otif_estimado: number
   pct_ausentismo: number
   clientes_dia: number
-  score: number
-  nivel: "BAJO" | "MEDIO" | "ALTO"
+  pct_capacidad: number
   // Triggers
   trigger_vol: boolean
   trigger_cli: boolean
   trigger_otif: boolean
   trigger_aus: boolean
-  codigo: string
   estatus: "CRITICO" | "NORMAL"
+  intensidad: Intensidad
 }
 
-// Réplica client-side de la fórmula de v_pc_calendario_dia con triggers Mercosur.
-// Se mantienen los clamps (rechazo y ausentismo en [0,1]; score en [0,2]) para
-// que el preview coincida con la vista cuando se guarde el escenario.
+// Réplica client-side del criterio de v_pc_calendario_dia: el día es CRÍTICO
+// cuando los HL superan la capacidad de distribución; clientes, rechazo y
+// ausentismo sólo lo agravan. Se mantienen los clamps (rechazo y ausentismo en
+// [0,1]) para que el preview coincida con la vista cuando se guarde el escenario.
 function recalcular(
   base: {
     hl: number
@@ -51,7 +51,6 @@ function recalcular(
     clientes_dia: number
   },
   delta: { vol: number; otif: number; aus: number; cli: number },
-  cfg: CfgPC,
   umbrales: UmbralesPC,
 ): SimResult {
   const hl = Math.max(0, base.hl * (1 + delta.vol / 100))
@@ -62,30 +61,19 @@ function recalcular(
   const pct_ausentismo = clamp(base.pct_ausentismo + delta.aus / 100, 0, 1)
   const clientes_dia = Math.max(0, Math.round(base.clientes_dia * (1 + delta.cli / 100)))
 
-  // Score continuo (compatibilidad con la vista)
-  const p90 = cfg.hl_p90_2025 && cfg.hl_p90_2025 > 0 ? cfg.hl_p90_2025 : 1
-  const volNorm = hl / p90
-  const score = Math.min(2, cfg.w_vol * volNorm + cfg.w_otif * pct_rechazo + cfg.w_aus * pct_ausentismo)
-  const nivel: "BAJO" | "MEDIO" | "ALTO" =
-    score >= cfg.umbral_alto ? "ALTO" : score >= cfg.umbral_medio ? "MEDIO" : "BAJO"
-
   // El volumen define crítico; los otros tres son contexto.
+  const pct_capacidad = umbrales.vol_pico > 0 ? hl / umbrales.vol_pico : 0
   const trigger_vol = hl >= umbrales.vol_pico
   const trigger_cli = clientes_dia > umbrales.clientes
   const trigger_otif = hl > 0 && otif_estimado > umbrales.otif_min
   const trigger_aus = pct_ausentismo >= umbrales.ausentismo_max
-  const codigo =
-    (trigger_otif ? "P" : "") +
-    (trigger_vol ? "P" : "") +
-    (trigger_cli ? "P" : "") +
-    (trigger_aus ? "P" : "")
   const estatus: "CRITICO" | "NORMAL" = trigger_vol ? "CRITICO" : "NORMAL"
+  const intensidad = intensidadDia({ trigger_vol, trigger_cli, trigger_otif, trigger_aus })
 
   return {
-    hl, pct_rechazo, otif_estimado, pct_ausentismo, clientes_dia,
-    score, nivel,
+    hl, pct_rechazo, otif_estimado, pct_ausentismo, clientes_dia, pct_capacidad,
     trigger_vol, trigger_cli, trigger_otif, trigger_aus,
-    codigo, estatus,
+    estatus, intensidad,
   }
 }
 
@@ -96,19 +84,20 @@ function clamp(n: number, min: number, max: number): number {
 const fmtHL = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
 const fmtPct = (n: number) => (n * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%"
 
-const COLOR_NIVEL: Record<string, string> = {
-  ALTO: "bg-red-500 text-white",
-  MEDIO: "bg-amber-400 text-amber-950",
-  BAJO: "bg-emerald-500 text-white",
+// `resultado_nivel` guardado en pc_escenarios es la intensidad del día simulado.
+function badgeResultado(nivel: string): { cls: string; label: string } {
+  if (nivel in INTENSIDAD_BG) {
+    const i = nivel as Intensidad
+    return { cls: INTENSIDAD_BG[i], label: INTENSIDAD_LABEL[i] }
+  }
+  return { cls: "bg-slate-400 text-white", label: nivel }
 }
 
 export function SimuladorTab({
   dias,
-  cfg,
   umbrales,
 }: {
   dias: DiaCalendario[]
-  cfg: CfgPC
   umbrales: UmbralesPC
 }) {
   // Solo se pueden elegir como base días con datos (hl > 0 o ausentismo > 0)
@@ -121,8 +110,9 @@ export function SimuladorTab({
     [dias],
   )
 
+  // Arranca en el primer día crítico del año (si hay), que es el que interesa simular.
   const [fechaBase, setFechaBase] = useState<string>(
-    () => opciones.find((o) => o.label.includes("CRITICO"))?.value ?? opciones[0]?.value ?? "",
+    () => dias.find((d) => d.trigger_vol)?.fecha ?? opciones[0]?.value ?? "",
   )
   const [delta, setDelta] = useState({ vol: 0, otif: 0, aus: 0, cli: 0 })
   const [nombre, setNombre] = useState("")
@@ -139,11 +129,10 @@ export function SimuladorTab({
               clientes_dia: base.clientes_dia,
             },
             delta,
-            cfg,
             umbrales,
           )
         : null,
-    [base, delta, cfg, umbrales],
+    [base, delta, umbrales],
   )
 
   // Guardar escenario
@@ -186,8 +175,9 @@ export function SimuladorTab({
           delta_otif: delta.otif,
           delta_ausentismo: delta.aus,
           delta_clientes: delta.cli,
-          resultado_score: Number(sim.score.toFixed(3)),
-          resultado_nivel: sim.nivel,
+          // Se guarda el % de capacidad como "score" y la intensidad como nivel.
+          resultado_score: Number(sim.pct_capacidad.toFixed(3)),
+          resultado_nivel: sim.intensidad,
         }),
       })
       if (!res.ok) {
@@ -275,7 +265,7 @@ export function SimuladorTab({
           pct_ausentismo={base.pct_ausentismo}
           clientes_dia={base.clientes_dia}
           camiones={base.camiones}
-          score={base.score}
+          pct_capacidad={base.pct_capacidad}
           triggers={{
             vol: base.trigger_vol,
             cli: base.trigger_cli,
@@ -292,7 +282,7 @@ export function SimuladorTab({
             pct_ausentismo={sim.pct_ausentismo}
             clientes_dia={sim.clientes_dia}
             camiones={base.camiones}
-            score={sim.score}
+            pct_capacidad={sim.pct_capacidad}
             triggers={{
               vol: sim.trigger_vol,
               cli: sim.trigger_cli,
@@ -408,8 +398,8 @@ export function SimuladorTab({
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-slate-900 truncate">{e.nombre}</span>
                       {e.resultado_nivel && (
-                        <Badge className={`${COLOR_NIVEL[e.resultado_nivel] ?? "bg-slate-400 text-white"} text-[10px]`}>
-                          {e.resultado_nivel}
+                        <Badge className={`${badgeResultado(e.resultado_nivel).cls} text-[10px]`}>
+                          {badgeResultado(e.resultado_nivel).label}
                         </Badge>
                       )}
                     </div>
@@ -453,7 +443,7 @@ function EscenarioCard({
   pct_ausentismo,
   clientes_dia,
   camiones,
-  score,
+  pct_capacidad,
   triggers,
 }: {
   titulo: string
@@ -463,7 +453,7 @@ function EscenarioCard({
   pct_ausentismo: number
   clientes_dia: number
   camiones: number
-  score: number
+  pct_capacidad: number
   triggers: { vol: boolean; cli: boolean; otif: boolean; aus: boolean }
 }) {
   const intensidad = intensidadDia({
@@ -483,13 +473,12 @@ function EscenarioCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-1 text-sm">
-        <KV k="HL" v={fmtHL(hl)} trigger={triggers.vol} />
+        <KV k="HL" v={`${fmtHL(hl)} · ${fmtPct(pct_capacidad)} de la capacidad`} trigger={triggers.vol} />
         <KV k="Clientes" v={String(clientes_dia)} trigger={triggers.cli} />
         <KV k="OTIF est" v={fmtPct(1 - pct_rechazo)} trigger={triggers.otif} />
         <KV k="% Ausentismo" v={fmtPct(pct_ausentismo)} trigger={triggers.aus} />
         <KV k="% Rechazo" v={fmtPct(pct_rechazo)} />
         <KV k="Camiones" v={String(camiones)} />
-        <KV k="Score" v={score.toFixed(3)} />
       </CardContent>
     </Card>
   )
