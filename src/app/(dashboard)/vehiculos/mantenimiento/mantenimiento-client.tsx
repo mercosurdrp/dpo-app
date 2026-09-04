@@ -1921,14 +1921,12 @@ function NuevoMantenimientoDialog({
                 )}
               </p>
             </div>
-            <div>
-              <Label>Mano de obra ($)</Label>
-              <Input
-                type="number"
-                value={costoMO}
-                onChange={(e) => setCostoMO(e.target.value)}
-              />
-            </div>
+            <CampoManoObra
+              costoManoObra={costoMO}
+              setCostoManoObra={setCostoMO}
+              repuestos={repuestos}
+              facturas={facturas}
+            />
           </div>
 
           {/* Repuestos por un lado, mano de obra por el otro; el total se suma solo. */}
@@ -2862,6 +2860,59 @@ function RepuestosEditor({
   )
 }
 
+// El campo de mano de obra existe por el DESGLOSE, no por el total: cuando hay
+// comprobantes cargados el costo de la OT sale de ellos (`plataDeLaOt`) y este
+// numero no suma nada aparte. Sin decirlo, el formulario parecia pedir la misma
+// plata dos veces — es lo que se planteo el 04/09/2026.
+function CampoManoObra({
+  costoManoObra,
+  setCostoManoObra,
+  repuestos,
+  facturas,
+}: {
+  costoManoObra: string
+  setCostoManoObra: (v: string) => void
+  repuestos: RepuestoForm[]
+  facturas: FacturaForm[]
+}) {
+  const fac = totalFacturas(facturas)
+  const mo = parseFloat(costoManoObra) || 0
+  const sinDesglosar = Math.round((fac - mo - subtotalRepuestos(repuestos)) * 100) / 100
+  return (
+    <div>
+      <Label>{fac > 0 ? "Mano de obra ($) — desglose" : "Mano de obra ($)"}</Label>
+      <Input
+        type="number"
+        value={costoManoObra}
+        onChange={(e) => setCostoManoObra(e.target.value)}
+      />
+      {fac > 0 ? (
+        <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground/80">
+          <p>
+            No suma aparte: el total de la OT son los{" "}
+            <strong>{fmtMoney(fac)}</strong> de comprobantes.{" "}
+            {sinDesglosar > 0.5 ? (
+              <>Quedan {fmtMoney(sinDesglosar)} sin desglosar.</>
+            ) : sinDesglosar < -0.5 ? (
+              <>El desglose se pasa {fmtMoney(-sinDesglosar)} de los comprobantes.</>
+            ) : (
+              <>Comprobantes desglosados por completo.</>
+            )}
+          </p>
+          <p className="text-amber-600 dark:text-amber-500">
+            Si el taller cobra la mano de obra por separado, cargala como otro
+            comprobante: escrita solo aca no entra al costo de flota.
+          </p>
+        </div>
+      ) : (
+        <p className="mt-1 text-[11px] text-muted-foreground/70">
+          Sin comprobantes cargados, esto y los repuestos son el costo de la OT.
+        </p>
+      )}
+    </div>
+  )
+}
+
 // Total de la OT = mano de obra + repuestos, cada suma por su lado y el total al pie.
 function TotalOtLinea({
   repuestos,
@@ -3074,14 +3125,12 @@ function EditarMantenimientoDialog({
               onCreado={onProveedorCreado}
             />
           </div>
-          <div>
-            <Label>Mano de obra ($)</Label>
-            <Input
-              type="number"
-              value={costoMO}
-              onChange={(e) => setCostoMO(e.target.value)}
-            />
-          </div>
+          <CampoManoObra
+            costoManoObra={costoMO}
+            setCostoManoObra={setCostoMO}
+            repuestos={repuestos}
+            facturas={facturas}
+          />
           <div>
             <Label>N° de OT</Label>
             <Input
