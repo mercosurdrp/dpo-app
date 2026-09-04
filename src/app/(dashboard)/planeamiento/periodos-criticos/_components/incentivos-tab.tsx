@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
-import { Gift, FileText, Megaphone, Plus, Pencil, Trash2, CheckCircle2, Upload, Trophy, Camera } from "lucide-react"
+import { Gift, FileText, Megaphone, Plus, Pencil, Trash2, CheckCircle2, Upload, Trophy, Camera, Printer } from "lucide-react"
 import { createClient as createSupabaseBrowser } from "@/lib/supabase/client"
 
 // Sube un archivo DIRECTO a Storage desde el navegador (bypass del límite de
@@ -60,6 +60,7 @@ type KpiIncentivo = {
 }
 
 type Programa = {
+  id: number
   nombre: string; periodo: string; descripcion: string
   archivo_url: string | null; archivo_nombre: string | null
   comunicado: boolean; comunicado_fecha: string | null
@@ -404,10 +405,22 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
 
         {/* Comunicación al equipo */}
         <div className="border-t pt-3 space-y-2">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Megaphone className="w-4 h-4 text-amber-600" />
             <span className="text-xs font-semibold text-slate-700">Comunicación al equipo</span>
             {comunicado && <Badge className="bg-emerald-600 text-white text-[10px] gap-1"><CheckCircle2 className="w-3 h-3" /> comunicado</Badge>}
+            {/* El comunicado se arma con lo que está cargado (programa + metas) y trae la
+                planilla de firmas: se imprime, se firma y se sube acá como adjunto. */}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="ml-auto h-7 gap-1 text-xs"
+              onClick={() => window.open(`${API}/pdf?id=${prog.id}`, "_blank", "noopener")}
+              title="Abre el comunicado en PDF con la planilla de firmas, listo para imprimir"
+            >
+              <Printer className="w-3.5 h-3.5" /> Imprimir comunicado (PDF)
+            </Button>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-xs flex items-center gap-1.5">
