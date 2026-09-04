@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
-import { CalendarRange, Check, Save, Star } from "lucide-react"
+import { CalendarRange, Check, ClipboardList, Copy, Save, Star } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -38,6 +38,7 @@ import type {
   DiaMesSiguiente,
   DiaObservado,
 } from "@/app/api/planeamiento/periodos-criticos/mes-siguiente/route"
+import type { FocoProximo, PlanAccion } from "@/app/api/planeamiento/periodos-criticos/proximos/route"
 import {
   INTENSIDAD_BG,
   INTENSIDAD_LABEL,
@@ -54,15 +55,7 @@ interface ResponsableOpt {
 /** Slug de `reuniones_actividades.seccion` y `reunion_seccion_fotos.seccion`. */
 export const SECCION_PERIODOS_CRITICOS = "periodos_criticos"
 
-type PeriodoFoco = {
-  id: string
-  anio: number
-  nombre: string
-  fecha_inicio: string
-  fecha_fin: string
-  prioridad: string | null
-  foco: string | null
-}
+type PeriodoFoco = FocoProximo
 
 type MesSiguiente = {
   anio: number
@@ -72,6 +65,7 @@ type MesSiguiente = {
   dias: DiaMesSiguiente[]
   criticos_base: { fecha: string; dia_semana: string; base: DiaObservado }[]
   a_anticipar: { fecha: string; dia_semana: string; base: DiaObservado }[]
+  plan: PlanAccion | null
 }
 
 const MESES = [
@@ -188,6 +182,15 @@ function CalendarioMesSiguiente({ fecha }: { fecha: string }) {
         </span>
       </div>
 
+      {data.plan && (
+        <PlanParaVentas
+          titulo={`Para hablar con Ventas: ${nombreMes} ${data.anio}`}
+          intensidad={data.criticos_base.length > 0 ? "CRITICO" : "LIMITE"}
+          plan={data.plan}
+          contexto={`${nombreMes} ${data.anio} · según ${data.anio_base}: ${data.a_anticipar.map((c) => `${fmtDiaMes(c.fecha)} (${fmtHL(c.base.hl)} HL, ${fmtPct(c.base.pct_capacidad)})`).join(", ")}`}
+        />
+      )}
+
       {(data.a_anticipar.length > 0 || feriados.length > 0) && (
         <div className="mt-2 grid gap-2 border-t pt-2 text-xs md:grid-cols-2">
           <div>
@@ -237,6 +240,53 @@ function CalendarioMesSiguiente({ fecha }: { fecha: string }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Plan de acción del escalón, listo para copiar y llevar a la conversación con Ventas. */
+function PlanParaVentas({
+  titulo,
+  intensidad,
+  plan,
+  contexto,
+}: {
+  titulo: string
+  intensidad: "CRITICO" | "LIMITE" | "NORMAL"
+  plan: PlanAccion
+  contexto: string
+}) {
+  const [copiado, setCopiado] = useState(false)
+  async function copiar() {
+    const texto = `${titulo}
+${contexto}
+
+${plan.descripcion}
+${plan.plan_texto}`
+    try {
+      await navigator.clipboard.writeText(texto)
+      setCopiado(true)
+      setTimeout(() => setCopiado(false), 2000)
+    } catch {
+      toast.error("No se pudo copiar")
+    }
+  }
+  return (
+    <div className="mt-2 rounded-md border border-violet-200 bg-violet-50/50 p-2.5">
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <ClipboardList className="size-4 text-violet-700" />
+        <span className="text-xs font-semibold uppercase tracking-wide text-violet-800">{titulo}</span>
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${INTENSIDAD_BG[intensidad]}`}>
+          {INTENSIDAD_LABEL[intensidad]}
+        </span>
+        <Button size="sm" variant="ghost" className="ml-auto h-6 gap-1 text-xs" onClick={() => void copiar()}>
+          {copiado ? <Check className="size-3" /> : <Copy className="size-3" />}
+          {copiado ? "Copiado" : "Copiar"}
+        </Button>
+      </div>
+      <p className="text-[11px] text-slate-500">{contexto}</p>
+      <p className="mt-1 text-xs italic text-slate-600">{plan.descripcion}</p>
+      <pre className="mt-1 whitespace-pre-wrap font-sans text-xs text-slate-800">{plan.plan_texto}</pre>
     </div>
   )
 }
@@ -491,6 +541,23 @@ export function SeccionPeriodosCriticos({
                     </div>
                     {p.foco && (
                       <p className="mt-1 text-xs text-slate-600">{p.foco}</p>
+                    )}
+                    {p.base && (
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        <span className={`mr-1 rounded px-1 py-0.5 text-[10px] font-bold ${INTENSIDAD_BG[p.intensidad]}`}>
+                          {INTENSIDAD_LABEL[p.intensidad]}
+                        </span>
+                        En {p.anio - 1}: {p.base.criticos} día{p.base.criticos === 1 ? "" : "s"} sobre la capacidad
+                        {p.base.limite > 0 && `, ${p.base.limite} al límite`} · pico {fmtHL(p.base.hl_max)} HL ({fmtPct(p.base.pct_max)})
+                      </p>
+                    )}
+                    {p.plan && p.intensidad !== "NORMAL" && (
+                      <PlanParaVentas
+                        titulo={`Plan sugerido: ${p.nombre}`}
+                        intensidad={p.intensidad}
+                        plan={p.plan}
+                        contexto={`${formatearRango(p.fecha_inicio, p.fecha_fin)} · ${p.foco ?? ""}`.trim()}
+                      />
                     )}
                   </div>
                 )

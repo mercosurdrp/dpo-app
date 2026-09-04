@@ -6,8 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { CalendarRange, FlaskConical, Settings, ListTree, ColumnsIcon, Table, ClipboardCheck, Grid2x2, Gift } from "lucide-react"
-import { SimuladorTab } from "./simulador"
+import { CalendarRange, Settings, ListTree, ColumnsIcon, Table, ClipboardCheck, Grid2x2, Gift } from "lucide-react"
 import { ConfiguracionTab } from "./configuracion"
 import { PeriodosTab } from "./periodos-tab"
 import { DetalleSemanalTab } from "./detalle-semanal-tab"
@@ -327,8 +326,6 @@ export function PeriodosCriticosClient({
           <TabsTrigger value="detalle" className={`${TAB} ${FASE.detectar}`}><Table className="w-4 h-4" /><span>Detalle semanal</span></TabsTrigger>
           <TabsTrigger value="periodos" className={`${TAB} ${FASE.analizar}`}><ListTree className="w-4 h-4" /><span>Períodos críticos</span></TabsTrigger>
           <TabsTrigger value="comparativo" className={`${TAB} ${FASE.analizar}`}><ColumnsIcon className="w-4 h-4" /><span>Comparativo</span></TabsTrigger>
-          <TabsTrigger value="comparativo-inverso" className={`${TAB} ${FASE.analizar}`}><ColumnsIcon className="w-4 h-4" /><span>Comparativo inverso</span></TabsTrigger>
-          <TabsTrigger value="simulador" className={`${TAB} ${FASE.planificar}`}><FlaskConical className="w-4 h-4" /><span>Simulador</span></TabsTrigger>
           <TabsTrigger value="revision" className={`${TAB} ${FASE.revisar}`}><ClipboardCheck className="w-4 h-4" /><span>Revisión mensual</span></TabsTrigger>
           <TabsTrigger value="swot" className={`${TAB} ${FASE.evaluar}`}><Grid2x2 className="w-4 h-4" /><span>Análisis FODA</span></TabsTrigger>
           <TabsTrigger value="incentivos" className={`${TAB} ${FASE.evaluar}`}><Gift className="w-4 h-4" /><span>Incentivos</span></TabsTrigger>
@@ -368,15 +365,6 @@ export function PeriodosCriticosClient({
             aniosDisponibles={aniosDisponibles}
             diasPorAnio={diasPorAnio}
           />
-        </TabsContent>
-        <TabsContent value="comparativo-inverso">
-          <ComparativoInversoTab
-            aniosDisponibles={aniosDisponibles}
-            diasPorAnio={diasPorAnio}
-          />
-        </TabsContent>
-        <TabsContent value="simulador">
-          <SimuladorTab dias={diasActivos} umbrales={umbrales} />
         </TabsContent>
         <TabsContent value="revision">
           <RevisionMensualTab dias={diasActivos} anio={anioActivo} />
@@ -600,81 +588,7 @@ function ComparativoTab({
 
 // Comparativo inverso: períodos que fueron críticos en el año en curso
 // (transcurrido) y que NO lo fueron en las mismas fechas del año anterior.
-function ComparativoInversoTab({
-  aniosDisponibles,
-  diasPorAnio,
-}: {
-  aniosDisponibles: number[]
-  diasPorAnio: Record<number, DiaCalendario[]>
-}) {
-  const ultimo =
-    aniosDisponibles[aniosDisponibles.length - 1] ?? new Date().getFullYear()
-  const anterior = aniosDisponibles[aniosDisponibles.length - 2] ?? ultimo - 1
-  // Base = año en curso (último); Comparar = anterior.
-  const [anioBase, setAnioBase] = useState<number>(ultimo)
-  const [anioComp, setAnioComp] = useState<number>(anterior)
 
-  const hoyIso = useMemo(() => {
-    const d = new Date()
-    return [
-      d.getFullYear(),
-      String(d.getMonth() + 1).padStart(2, "0"),
-      String(d.getDate()).padStart(2, "0"),
-    ].join("-")
-  }, [])
-  // El año base se toma "transcurrido": si es el año actual, sólo hasta hoy.
-  const diasBase = useMemo(() => {
-    const arr = diasPorAnio[anioBase] ?? []
-    return anioBase === new Date().getFullYear()
-      ? arr.filter((d) => d.fecha <= hoyIso)
-      : arr
-  }, [diasPorAnio, anioBase, hoyIso])
-  const diasComp = diasPorAnio[anioComp] ?? []
-
-  return (
-    <div className="space-y-3">
-      <Card>
-        <CardContent className="p-4 flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-slate-600">Año (transcurrido):</span>
-            <select
-              value={anioBase}
-              onChange={(e) => setAnioBase(Number(e.target.value))}
-              className="h-8 rounded-md border border-slate-200 px-2 text-sm font-semibold"
-            >
-              {aniosDisponibles.map((a) => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
-          </label>
-          <span className="text-slate-400">vs</span>
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-slate-600">Comparar con:</span>
-            <select
-              value={anioComp}
-              onChange={(e) => setAnioComp(Number(e.target.value))}
-              className="h-8 rounded-md border border-slate-200 px-2 text-sm font-semibold"
-            >
-              {aniosDisponibles.map((a) => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
-          </label>
-          <ResumenAnio anio={anioBase} dias={diasBase} />
-          <ResumenAnio anio={anioComp} dias={diasComp} />
-        </CardContent>
-      </Card>
-
-      <CrucePeriodos
-        diasBase={diasBase}
-        diasComparar={diasComp}
-        anioBase={anioBase}
-        anioComparar={anioComp}
-        soloNuevos
-      />
-    </div>
-  )
-}
 
 function ResumenAnio({ anio, dias }: { anio: number; dias: DiaCalendario[] }) {
   const criticos = dias.filter((d) => d.estatus === "CRITICO").length
