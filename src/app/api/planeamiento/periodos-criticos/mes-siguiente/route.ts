@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
   const anioBase = anio - 1
 
   const supabase = await createClient()
-  const [{ data: destino, error: e1 }, { data: base, error: e2 }, { data: umb }] =
+  const [{ data: destino, error: e1 }, { data: base, error: e2 }, { data: umb }, { data: planesRaw }] =
     await Promise.all([
       supabase
         .from("v_pc_calendario_dia_multianio")
@@ -117,6 +117,7 @@ export async function GET(req: NextRequest) {
         .eq("mes", mes)
         .order("fecha", { ascending: true }),
       supabase.from("pc_umbrales").select("vol_pico").eq("id", 1).maybeSingle(),
+      supabase.from("pc_planes_accion").select("codigo, descripcion, plan_texto"),
     ])
 
   if (e1) return NextResponse.json({ error: e1.message }, { status: 500 })
@@ -149,6 +150,12 @@ export async function GET(req: NextRequest) {
     .filter((d) => d.base && d.base.intensidad !== "NORMAL")
     .map((d) => ({ fecha: d.fecha, dia_semana: d.dia_semana, base: d.base! }))
 
+  // Plan de acción del escalón más exigente del mes: es la sugerencia para
+  // hablar con Ventas. Sin días críticos ni al límite no hay plan que proponer.
+  const peor: Intensidad | null = criticosBase.length > 0 ? "CRITICO" : aAnticipar.length > 0 ? "LIMITE" : null
+  const planes = (planesRaw ?? []) as { codigo: string; descripcion: string; plan_texto: string }[]
+  const plan = peor ? planes.find((p) => p.codigo === peor) ?? null : null
+
   return NextResponse.json({
     anio,
     mes,
@@ -157,5 +164,6 @@ export async function GET(req: NextRequest) {
     dias,
     criticos_base: criticosBase,
     a_anticipar: aAnticipar,
+    plan,
   })
 }

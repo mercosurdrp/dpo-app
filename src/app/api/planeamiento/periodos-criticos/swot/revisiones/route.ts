@@ -48,6 +48,8 @@ export type RevisionItem = {
 
 export type Revision = {
   id: string
+  /** Correlativo cronológico: la revisión más vieja es la 1. */
+  numero: number
   periodo_nombre: string
   periodo_anio: number
   periodo_fecha_inicio: string | null
@@ -61,6 +63,7 @@ export type Revision = {
 
 export type UltimaRevision = {
   revision_id: string
+  numero: number
   periodo_nombre: string
   periodo_anio: number
   fecha: string
@@ -93,11 +96,14 @@ export async function GET() {
     )
   }
 
-  const revisiones: Revision[] = ((data ?? []) as unknown as (Omit<Revision, "items" | "resumen"> & {
+  // La lista viene de la más nueva a la más vieja; el número se asigna al revés.
+  const crudas = (data ?? []) as unknown as (Omit<Revision, "items" | "resumen" | "numero"> & {
     pc_swot_revision_items: RevisionItem[]
-  })[]).map((r) => {
+  })[]
+  const total = crudas.length
+  const revisiones: Revision[] = crudas.map((r, idx) => {
     const { pc_swot_revision_items: items, ...resto } = r
-    return { ...resto, items: items ?? [], resumen: resumir(items ?? []) }
+    return { ...resto, numero: total - idx, items: items ?? [], resumen: resumir(items ?? []) }
   })
 
   // Última revisión de cada ítem: la lista viene de la más nueva a la más vieja.
@@ -107,6 +113,7 @@ export async function GET() {
       if (!it.item_id || ultima[it.item_id]) continue
       ultima[it.item_id] = {
         revision_id: r.id,
+        numero: r.numero,
         periodo_nombre: r.periodo_nombre,
         periodo_anio: r.periodo_anio,
         fecha: r.fecha,

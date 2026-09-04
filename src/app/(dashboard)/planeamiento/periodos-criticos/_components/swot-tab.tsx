@@ -217,7 +217,7 @@ export function SwotTab({
         <Info className="size-4 shrink-0 text-slate-400" />
         {ultimaRev ? (
           <span>
-            Última revisión: <b>{ultimaRev.periodo_nombre} {ultimaRev.periodo_anio}</b> el{" "}
+            Última revisión: <b>Rev {ultimaRev.numero} · {ultimaRev.periodo_nombre}</b> el{" "}
             {fmtFecha(ultimaRev.fecha)} · {ultimaRev.resumen.mantiene} sin cambios ·{" "}
             {ultimaRev.resumen.modifica} modificados · {ultimaRev.resumen.elimina} eliminados ·{" "}
             {ultimaRev.resumen.agrega} nuevos. Cada ítem muestra abajo cuándo se lo revisó por última vez.
@@ -301,8 +301,8 @@ export function SwotTab({
                             </Badge>
                           )}
                           {u ? (
-                            <span className="ml-auto text-[10px] text-slate-400">
-                              Rev. {u.periodo_nombre} {u.periodo_anio} ·{" "}
+                            <span className="ml-auto text-[10px] text-slate-400" title={`${u.periodo_nombre} · ${fmtFecha(u.fecha)}`}>
+                              Rev {u.numero} · {fmtFecha(u.fecha)} ·{" "}
                               <span className={u.accion === "mantiene" ? "" : "font-medium text-slate-600"}>
                                 {ACCION_LABEL[u.accion]}
                               </span>
@@ -383,10 +383,9 @@ function HistorialRevisiones({ revisiones }: { revisiones: Revision[] }) {
                 onClick={() => setAbierta(open ? null : r.id)}
               >
                 {open ? <ChevronDown className="size-4 text-slate-400" /> : <ChevronRight className="size-4 text-slate-400" />}
-                <span className="font-semibold text-slate-800">
-                  {r.periodo_nombre} {r.periodo_anio}
-                </span>
-                <span className="text-xs text-slate-500">revisado el {fmtFecha(r.fecha)}</span>
+                <Badge variant="outline" className="font-mono text-[11px]">Rev {r.numero}</Badge>
+                <span className="font-semibold text-slate-800">{r.periodo_nombre}</span>
+                <span className="text-xs text-slate-500">{fmtFecha(r.fecha)}</span>
                 <span className="ml-auto flex flex-wrap gap-1">
                   <Badge className={`${ACCION_BADGE.mantiene} text-[10px]`}>{r.resumen.mantiene} sin cambios</Badge>
                   <Badge className={`${ACCION_BADGE.modifica} text-[10px]`}>{r.resumen.modifica} modificados</Badge>
