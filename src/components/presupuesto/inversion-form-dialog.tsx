@@ -27,11 +27,13 @@ import {
 import type {
   CategoriaInversion,
   EstadoInversion,
+  HorizonteInversion,
   InversionConDetalle,
 } from "@/types/database"
 import {
   CATEGORIA_OPCIONES,
   ESTADO_INVERSION_OPCIONES,
+  HORIZONTE_OPCIONES,
 } from "./inversiones-constantes"
 
 interface ResponsableOpt {
@@ -69,6 +71,9 @@ export function InversionFormDialog({
   const [estado, setEstado] = useState<EstadoInversion>(
     inversion?.estado ?? "programada",
   )
+  const [horizonte, setHorizonte] = useState<HorizonteInversion>(
+    inversion?.horizonte_anios ?? 1,
+  )
   const [responsableId, setResponsableId] = useState<string>(
     inversion?.responsable_id ?? "",
   )
@@ -77,6 +82,7 @@ export function InversionFormDialog({
     if (open) {
       setCategoria(inversion?.categoria ?? "equipos_almacen")
       setEstado(inversion?.estado ?? "programada")
+      setHorizonte(inversion?.horizonte_anios ?? 1)
       setResponsableId(inversion?.responsable_id ?? "")
       setError(null)
     }
@@ -90,6 +96,7 @@ export function InversionFormDialog({
     formData.set("anio", String(anio))
     formData.set("categoria", categoria)
     formData.set("estado", estado)
+    formData.set("horizonte_anios", String(horizonte))
     if (responsableId) formData.set("responsable_id", responsableId)
     else formData.delete("responsable_id")
 
@@ -127,7 +134,7 @@ export function InversionFormDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label>Categoría *</Label>
               <Select
@@ -142,6 +149,26 @@ export function InversionFormDialog({
                 <SelectContent>
                   {CATEGORIA_OPCIONES.map((o) => (
                     <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Horizonte *</Label>
+              <Select
+                value={String(horizonte)}
+                onValueChange={(v: string | null) =>
+                  setHorizonte((Number(v ?? 1) as HorizonteInversion) || 1)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {HORIZONTE_OPCIONES.map((o) => (
+                    <SelectItem key={o.value} value={String(o.value)}>
                       {o.label}
                     </SelectItem>
                   ))}

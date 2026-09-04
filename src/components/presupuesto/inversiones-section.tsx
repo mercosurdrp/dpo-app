@@ -29,11 +29,17 @@ import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import { getSignedUrl } from "@/actions/presupuesto"
 import { eliminarInversion } from "@/actions/presupuesto-inversiones"
 import { leerObservaciones, MARCA_ORIGEN } from "@/lib/inversiones-origen"
-import type { InversionConDetalle } from "@/types/database"
+import type {
+  HorizonteInversion,
+  InversionConDetalle,
+} from "@/types/database"
 import {
   CATEGORIA_LABEL,
   ESTADO_INVERSION_BADGE_CLASS,
   ESTADO_INVERSION_LABEL,
+  HORIZONTE_BADGE_CLASS,
+  HORIZONTE_LABEL,
+  HORIZONTE_OPCIONES,
 } from "./inversiones-constantes"
 import { InversionFormDialog } from "./inversion-form-dialog"
 
@@ -146,6 +152,30 @@ export function InversionesSection({
 
   const [openForm, setOpenForm] = useState(false)
   const [editando, setEditando] = useState<InversionConDetalle | null>(null)
+  // Filtro por horizonte: null = todas
+  const [horizonte, setHorizonte] = useState<HorizonteInversion | null>(null)
+
+  const filtradas = useMemo(
+    () =>
+      horizonte === null
+        ? inversiones
+        : inversiones.filter((i) => i.horizonte_anios === horizonte),
+    [inversiones, horizonte],
+  )
+
+  // Cuántas hay y cuánto suman por horizonte (sin canceladas), para los chips
+  const porHorizonte = useMemo(() => {
+    const acc = new Map<HorizonteInversion, { n: number; monto: number }>()
+    for (const o of HORIZONTE_OPCIONES) acc.set(o.value, { n: 0, monto: 0 })
+    for (const inv of inversiones) {
+      if (inv.estado === "cancelada") continue
+      const h = acc.get(inv.horizonte_anios)
+      if (!h) continue
+      h.n++
+      h.monto += inv.monto_estimado ?? 0
+    }
+    return acc
+  }, [inversiones])
 
   function refrescar() {
     router.refresh()
@@ -184,7 +214,7 @@ export function InversionesSection({
     let realizadasMonto = 0
     let realizadas = 0
     let pendientes = 0
-    for (const inv of inversiones) {
+    for (const inv of filtradas) {
       if (inv.estado !== "cancelada") estimadoTotal += inv.monto_estimado ?? 0
       if (inv.estado === "realizada") {
         realizadas++
@@ -194,7 +224,7 @@ export function InversionesSection({
       }
     }
     return { estimadoTotal, realizadasMonto, realizadas, pendientes }
-  }, [inversiones])
+  }, [filtradas])
 
   return (
     <div className="space-y-5">
@@ -208,10 +238,55 @@ export function InversionesSection({
               Cargá las inversiones futuras con su{" "}
               <strong>fecha programada</strong>, <strong>monto estimado</strong>{" "}
               y el <strong>beneficio esperado</strong>. Al concretarse, marcá el
-              estado y registrá <strong>cuánto salió</strong> realmente.
+              estado y registrá <strong>cuánto salió</strong> realmente. Cada
+              inversión lleva su <strong>horizonte</strong>: del año, o a 2, 3 o
+              5 años, para separar lo inmediato de lo que se planifica a largo
+              plazo.
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Filtro por horizonte */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-muted-foreground">
+          Horizonte:
+        </span>
+        <button
+          type="button"
+          onClick={() => setHorizonte(null)}
+          className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+            horizonte === null
+              ? "border-slate-900 bg-slate-900 text-white"
+              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+          }`}
+        >
+          Todas ({inversiones.filter((i) => i.estado !== "cancelada").length})
+        </button>
+        {HORIZONTE_OPCIONES.map((o) => {
+          const h = porHorizonte.get(o.value)
+          const activo = horizonte === o.value
+          return (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => setHorizonte(activo ? null : o.value)}
+              title={`${o.label}: ${formatMoney(h?.monto ?? 0)} estimados`}
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                activo
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : `${HORIZONTE_BADGE_CLASS[o.value]} hover:opacity-80`
+              }`}
+            >
+              {o.label} ({h?.n ?? 0})
+              {h && h.monto > 0 && (
+                <span className="ml-1 font-normal opacity-80">
+                  · {formatMoney(h.monto)}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {/* Resumen */}
@@ -276,6 +351,11 @@ export function InversionesSection({
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-700">
           Inversiones {anio}
+          {horizonte !== null && (
+            <span className="ml-2 font-normal text-muted-foreground">
+              · {HORIZONTE_LABEL[horizonte].toLowerCase()}
+            </span>
+          )}
         </h2>
         {puedeEditar && (
           <Button
@@ -293,11 +373,13 @@ export function InversionesSection({
       </div>
 
       {/* Tabla */}
-      {inversiones.length === 0 ? (
+      {filtradas.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Sin inversiones cargadas para {anio}.
-            {puedeEditar && (
+            {horizonte === null
+              ? `Sin inversiones cargadas para ${anio}.`
+              : `Sin inversiones ${HORIZONTE_LABEL[horizonte].toLowerCase()} en ${anio}.`}
+            {puedeEditar && horizonte === null && (
               <>
                 {" "}
                 <button
@@ -320,6 +402,7 @@ export function InversionesSection({
               <TableRow>
                 <TableHead>Inversión</TableHead>
                 <TableHead>Categoría</TableHead>
+                <TableHead>Horizonte</TableHead>
                 <TableHead>Programada</TableHead>
                 <TableHead className="text-right">Estimado</TableHead>
                 <TableHead>Estado</TableHead>
@@ -329,7 +412,7 @@ export function InversionesSection({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {inversiones.map((inv) => (
+              {filtradas.map((inv) => (
                 <TableRow key={inv.id}>
                   <TableCell className="font-medium">
                     {inv.titulo}
@@ -347,6 +430,13 @@ export function InversionesSection({
                   </TableCell>
                   <TableCell className="text-sm">
                     {CATEGORIA_LABEL[inv.categoria]}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={`${HORIZONTE_BADGE_CLASS[inv.horizonte_anios]} hover:opacity-100`}
+                    >
+                      {HORIZONTE_LABEL[inv.horizonte_anios]}
+                    </Badge>
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm">
                     {formatDate(inv.fecha_programada)}

@@ -7,8 +7,10 @@ import type {
   Profile,
   CategoriaInversion,
   EstadoInversion,
+  HorizonteInversion,
   InversionConDetalle,
 } from "@/types/database"
+import { HORIZONTES_INVERSION } from "@/types/database"
 
 const BUCKET = "presupuestos"
 const REVALIDATE_PATH = "/presupuesto"
@@ -64,6 +66,14 @@ function parseText(v: FormDataEntryValue | null): string | null {
   return s === "" ? null : s
 }
 
+// Horizonte: del año (1) o a 2 / 3 / 5 años. Cualquier otra cosa cae en "del año".
+function parseHorizonte(v: FormDataEntryValue | null): HorizonteInversion {
+  const n = parseInt0(v)
+  return HORIZONTES_INVERSION.includes(n as HorizonteInversion)
+    ? (n as HorizonteInversion)
+    : 1
+}
+
 export async function puedeEditarInversiones(): Promise<boolean> {
   const profile = await getProfile()
   if (!profile) return false
@@ -98,6 +108,7 @@ export async function listInversiones(
       return {
         id: r.id,
         anio: r.anio,
+        horizonte_anios: parseHorizonte(String(r.horizonte_anios ?? 1)),
         titulo: r.titulo,
         categoria: r.categoria as CategoriaInversion,
         cantidad: r.cantidad !== null ? Number(r.cantidad) : null,
@@ -155,6 +166,7 @@ function camposDesdeForm(formData: FormData): Record<string, any> {
 
   return {
     titulo: String(formData.get("titulo") ?? "").trim(),
+    horizonte_anios: parseHorizonte(formData.get("horizonte_anios")),
     categoria,
     cantidad: parseInt0(formData.get("cantidad")),
     descripcion: parseText(formData.get("descripcion")),
