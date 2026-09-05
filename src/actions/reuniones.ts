@@ -4653,11 +4653,12 @@ async function getIndicadoresMesCore(
         // pierde: las roturas reales en PPM y HL están en el popover del día.
         // WNP (productividad del depósito, HL/HH). Numerador = "HL vendidos",
         // igual que la pestaña Ventas del cuadro mensual: distribuido
-        // (`ventas_diarias`) + mostrador NETO de notas de crédito
+        // (`ventas_diarias`) + mostrador BRUTO, notas de crédito incluidas
         // (`ventas_mostrador_diarias`), con el mostrador prorrateado dentro del
         // mes. Es el MISMO numerador que el WNP mensual del depósito
         // (deposito-esteban): lo único que difiere entre los dos WNP son las
-        // horas — acá fichaje real, allá horas #20 pagas (2026-08-24).
+        // horas — acá fichaje real, allá horas #20 pagas (2026-08-24; bruto
+        // desde 2026-09-05).
         // Denominador = horas del personal
         // de Depósito: fichaje real, ausencias en 0 y jornada teórica donde el
         // reloj falló, más el supervisor (que no ficha). Toda la lógica y el

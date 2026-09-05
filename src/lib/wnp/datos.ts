@@ -55,7 +55,7 @@ export type SerieWnp = {
 
 /**
  * Arma la serie del WNP para un rango: HL vendidos (distribuido + mostrador
- * NETO de notas de crédito, prorrateado) y horas-hombre (fichaje real,
+ * BRUTO, notas de crédito incluidas, prorrateado) y horas-hombre (fichaje real,
  * ausencias y jornada teórica donde el reloj falló). Ver `./calculo` para el
  * detalle de cada regla.
  *
@@ -175,19 +175,19 @@ export async function cargarSerieWnp(
     const hl = Number(v.total_hl ?? 0)
     if (Number.isFinite(hl)) distribuido[v.fecha] = (distribuido[v.fecha] ?? 0) + hl
   }
-  // `ventas_mostrador_diarias` guarda TODO en valor absoluto: las notas de
-  // crédito (DVVTA) y las devoluciones de presupuesto (PRDVO) hay que RESTARLAS,
-  // igual que la fila "facturado Chess" del cuadro mensual
-  // (FCVTA + PRVTA − DVVTA − PRDVO). Sumarlas infla el numerador con
-  // mercadería que volvió. Y como la tabla `rechazos` son esos mismos DVVTA
-  // (jul/26: 73,2 de 76,9 HL), restar acá YA descuenta los rechazos: no hay que
-  // restarlos otra vez o se cuenta el mismo HL dos veces.
+  // `ventas_mostrador_diarias` guarda los cuatro documentos en valor absoluto
+  // y acá se SUMAN los cuatro, notas de crédito (DVVTA) y devoluciones (PRDVO)
+  // incluidas: el WNP mide lo que el almacén preparó y despachó, y esa
+  // mercadería se preparó y despachó aunque después haya vuelto. Es el mismo
+  // criterio que el distribuido de arriba, que toma `ventas_diarias` sin
+  // descontar rechazos. Decisión del usuario 2026-09-05 (entre el 24/8 y el
+  // 5/9 se restaban; se volvió atrás). El cuadro mensual y las pérdidas sí van
+  // netos (FCVTA + PRVTA − DVVTA − PRDVO): miden lo que llegó al cliente.
   const mostradorPorFecha: Record<string, number> = {}
   for (const v of mostrador) {
     const hl = Number(v.total_hl ?? 0)
     if (!Number.isFinite(hl)) continue
-    const signo = v.ds_documento === "DVVTA" || v.ds_documento === "PRDVO" ? -1 : 1
-    mostradorPorFecha[v.fecha] = (mostradorPorFecha[v.fecha] ?? 0) + signo * hl
+    mostradorPorFecha[v.fecha] = (mostradorPorFecha[v.fecha] ?? 0) + hl
   }
   const fichajePorFecha: Record<string, Record<number, number>> = {}
   for (const f of fichaje) {
