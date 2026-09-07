@@ -17,10 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { RmdCliente, RmdDashboardData } from "@/actions/rmd"
-import type {
-  RmdCoberturaCliente,
-  RmdCoberturaData,
-} from "@/actions/rmd-cobertura"
+import type { RmdCoberturaData } from "@/actions/rmd-cobertura"
 import type { RmdPlan } from "@/actions/rmd-planes"
 import { SyncAviso } from "@/components/sync-aviso"
 import {
@@ -126,29 +123,25 @@ export function RmdClient({ data, planesIniciales, cobertura }: Props) {
     setAbrirPlanNonce((n) => n + 1)
   }
 
-  // Los planes viven en la solapa del panel: al crear o abrir uno desde
-  // Cobertura hay que volver ahí, si no el formulario queda fuera de vista.
-  function planParaClienteCobertura(c: RmdCoberturaCliente) {
-    setTab("panel")
-    setFocoPlan({
-      foco_cliente_id: c.cod_cliente,
-      foco_cliente_nombre: c.nombre_cliente ?? `Cliente ${c.cod_cliente}`,
-    })
-    setAbrirPlanNonce((n) => n + 1)
-  }
-
-  function verPlanDesdeCobertura(plan: PlanMarcable) {
-    setTab("panel")
-    verPlan(plan)
-  }
-
-  // Plan general para SUBIR LA TASA DE RESPUESTA (botón de la solapa Cobertura):
-  // abre el formulario con el foco ya puesto en "Tasa de respuesta".
-  function planParaTasa() {
-    setTab("panel")
-    setFocoPlan({ foco_motivo: TASA_FOCO })
-    setAbrirPlanNonce((n) => n + 1)
-  }
+  // Opciones del formulario de plan, compartidas por el panel y por la solapa
+  // Cobertura (que crea y abre planes sin salir de ahí).
+  const motivosPlan = useMemo(
+    () => [...new Set([...motivos.map((m) => m.motivo), TASA_FOCO])],
+    [motivos],
+  )
+  const clientesPlan = useMemo(
+    () =>
+      clientes.map((c) => ({
+        cod_cliente: c.cod_cliente,
+        nombre_cliente: c.nombre_cliente,
+      })),
+    [clientes],
+  )
+  const choferesPlan = useMemo(
+    () =>
+      [...new Set(clientes.map((c) => c.chofer).filter(Boolean))].sort() as string[],
+    [clientes],
+  )
 
   function abrirDetalleRecuperado(codCliente: number) {
     const c = clientes.find((x) => x.cod_cliente === codCliente)
@@ -210,9 +203,10 @@ export function RmdClient({ data, planesIniciales, cobertura }: Props) {
             <CoberturaBloque
               data={cobertura}
               planes={planes}
-              onCrearPlan={planParaClienteCobertura}
-              onVerPlan={verPlanDesdeCobertura}
-              onCrearPlanTasa={planParaTasa}
+              onPlanesChange={setPlanes}
+              motivos={motivosPlan}
+              clientes={clientesPlan}
+              choferes={choferesPlan}
             />
           ) : (
             <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -636,18 +630,13 @@ export function RmdClient({ data, planesIniciales, cobertura }: Props) {
 
       {/* Planes de acción sobre RMD */}
       <PlanesAccionBloque
-        planesIniciales={planesIniciales}
+        planesIniciales={planes}
         onPlanesChange={setPlanes}
         verPlanId={verPlanId}
         verPlanNonce={verPlanNonce}
-        motivos={[...new Set([...motivos.map((m) => m.motivo), TASA_FOCO])]}
-        clientes={clientes.map((c) => ({
-          cod_cliente: c.cod_cliente,
-          nombre_cliente: c.nombre_cliente,
-        }))}
-        choferes={[
-          ...new Set(clientes.map((c) => c.chofer).filter(Boolean)),
-        ].sort() as string[]}
+        motivos={motivosPlan}
+        clientes={clientesPlan}
+        choferes={choferesPlan}
         focoInicial={focoPlan}
         abrirNonce={abrirPlanNonce}
       />

@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Bar,
   CartesianGrid,
@@ -39,12 +39,16 @@ import type {
   RmdCoberturaData,
   RmdSegmento,
 } from "@/actions/rmd-cobertura"
-import type { RmdPlan } from "@/actions/rmd-planes"
+import { listResponsablesPosibles } from "@/actions/reuniones"
+import { listarPlanesRmd, type RmdPlan } from "@/actions/rmd-planes"
 import {
   PlanBadge,
   planesPorClienteFoco,
   type PlanMarcable,
 } from "@/components/plan-badge"
+import { PlanFormDialog, type FocoInicial } from "./planes/plan-form-dialog"
+import { PlanDetalleDialog } from "./planes/plan-detalle-dialog"
+import { PlanesTasaCard } from "./planes/planes-tasa-card"
 
 const TODOS = "__todos__"
 
@@ -128,22 +132,80 @@ export const TASA_FOCO = "Tasa de respuesta"
 
 interface Props {
   data: RmdCoberturaData
+  /** Lista viva de planes RMD (todos, no sólo los de la tasa). */
   planes: RmdPlan[]
-  /** Crea un plan de acción para ese cliente (abre el formulario prellenado). */
-  onCrearPlan: (cliente: RmdCoberturaCliente) => void
-  onVerPlan: (plan: PlanMarcable) => void
-  /** Crea un plan de acción general para subir la tasa de respuesta. */
-  onCrearPlanTasa: () => void
+  /** Avisa la lista al día después de crear o editar un plan desde acá. */
+  onPlanesChange: (planes: RmdPlan[]) => void
+  /** Opciones del formulario de plan (las mismas que usa el panel). */
+  motivos: string[]
+  clientes: { cod_cliente: number; nombre_cliente: string }[]
+  choferes: string[]
 }
 
 export function CoberturaBloque({
   data,
   planes,
-  onCrearPlan,
-  onVerPlan,
-  onCrearPlanTasa,
+  onPlanesChange,
+  motivos,
+  clientes: clientesPlan,
+  choferes: choferesPlan,
 }: Props) {
   const { meses, choferes, clientes, resumen, anio } = data
+
+  // Los planes se crean y se abren acá mismo: la solapa del panel está
+  // desmontada mientras se mira Cobertura, así que sus diálogos no sirven.
+  const [responsables, setResponsables] = useState<
+    { id: string; nombre: string }[]
+  >([])
+  const [formOpen, setFormOpen] = useState(false)
+  const [planEditar, setPlanEditar] = useState<RmdPlan | null>(null)
+  const [focoForm, setFocoForm] = useState<FocoInicial | null>(null)
+  const [planDetalle, setPlanDetalle] = useState<RmdPlan | null>(null)
+
+  useEffect(() => {
+    listResponsablesPosibles().then((r) => {
+      if ("data" in r) {
+        setResponsables(r.data.map((u) => ({ id: u.id, nombre: u.nombre })))
+      }
+    })
+  }, [])
+
+  async function refetch() {
+    const r = await listarPlanesRmd()
+    if ("data" in r) {
+      onPlanesChange(r.data)
+      setPlanDetalle((prev) =>
+        prev ? (r.data.find((p) => p.id === prev.id) ?? null) : prev,
+      )
+    }
+  }
+
+  function onVerPlan(plan: PlanMarcable) {
+    const p = planes.find((x) => x.id === plan.id)
+    if (p) setPlanDetalle(p)
+  }
+
+  function onCrearPlan(c: RmdCoberturaCliente) {
+    setPlanEditar(null)
+    setFocoForm({
+      foco_cliente_id: c.cod_cliente,
+      foco_cliente_nombre: c.nombre_cliente ?? `Cliente ${c.cod_cliente}`,
+    })
+    setFormOpen(true)
+  }
+
+  // Plan general para SUBIR LA TASA DE RESPUESTA: foco ya puesto en la tasa.
+  function onCrearPlanTasa() {
+    setPlanEditar(null)
+    setFocoForm({ foco_motivo: TASA_FOCO })
+    setFormOpen(true)
+  }
+
+  function editarDesdeDetalle() {
+    if (!planDetalle) return
+    setPlanEditar(planDetalle)
+    setFormOpen(true)
+  }
 
   const [fPromotor, setFPromotor] = useState(TODOS)
   const [fSegmento, setFSegmento] = useState(TODOS)
@@ -307,6 +369,13 @@ export function CoberturaBloque({
           )}
         </div>
       </div>
+
+      {/* ---------- Plan de acción sobre la tasa ---------- */}
+      <PlanesTasaCard
+        planes={planesTasa}
+        onNuevo={onCrearPlanTasa}
+        onVer={setPlanDetalle}
+      />
 
       {/* ---------- Evolución mensual ---------- */}
       <Card>
@@ -633,6 +702,30 @@ export function CoberturaBloque({
           )}
         </CardContent>
       </Card>
+
+      <PlanFormDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        motivos={motivos}
+        clientes={clientesPlan}
+        choferes={choferesPlan}
+        responsables={responsables}
+        planExistente={planEditar}
+        focoInicial={planEditar ? null : focoForm}
+        onSaved={refetch}
+      />
+
+      {planDetalle && (
+        <PlanDetalleDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setPlanDetalle(null)
+          }}
+          plan={planDetalle}
+          onChanged={refetch}
+          onEditar={editarDesdeDetalle}
+        />
+      )}
     </div>
   )
 }
