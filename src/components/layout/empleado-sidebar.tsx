@@ -5,6 +5,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import {
+  BookOpen,
   GraduationCap,
   ClipboardList,
   ShieldAlert,
@@ -82,6 +83,10 @@ function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpI
     ...(IS_MISIONES
       ? []
       : [{ label: "Mi productividad", href: "/mi-productividad", icon: <Gauge className="size-5" /> }]),
+    // Campus de Capacitaciones: biblioteca de material por pilar (videos, PPT,
+    // SOPs, flyers) para consultar cuando quiera. Distinto de "Inicio"
+    // (/mis-capacitaciones), que son los cursos asignados con examen.
+    { label: "Campus", href: "/campus", icon: <BookOpen className="size-5" /> },
     // Trivia MERCOSUR: desafío de conocimiento diario (ambos tenants).
     { label: "Trivia", href: "/trivia", icon: <Brain className="size-5" /> },
     // Mi sector 5S: el responsable sorteado del mes carga sus tareas con foto.

@@ -5,6 +5,7 @@ import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useState } from "react"
 import {
+  BookOpen,
   LayoutDashboard,
   ClipboardCheck,
   ListTodo,
@@ -252,6 +253,14 @@ const navItemsFlat: NavItem[] = [
     hideForEmpleado: true,
   },
   {
+    // Campus de Capacitaciones: biblioteca de material (videos, PPT, SOPs,
+    // flyers) por pilar, de consulta libre. La carga RRHH. OJO: no es
+    // /capacitaciones (eventos dictados con asistencia y examen).
+    label: "Campus",
+    href: "/campus",
+    icon: <BookOpen className="size-5" />,
+  },
+  {
     label: "Capacitaciones",
     href: "/capacitaciones",
     icon: <GraduationCap className="size-5" />,
@@ -419,6 +428,7 @@ export const navSections: NavGroup[] = [
     "/riesgos-externos",
   ]),
   grupo("Gente", [
+    "/campus",
     "/clima",
     "/capacitaciones",
     "/gente/matriz-skap",

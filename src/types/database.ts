@@ -1,4 +1,9 @@
 import type { ArchivoAvance } from "@/lib/adjuntos-avance"
+import type {
+  CampusMaterialOrigen,
+  CampusMaterialTipo,
+  CampusPilarCodigo,
+} from "@/lib/campus"
 import type { PlanResumen } from "@/lib/vehiculos/tiempo-resolucion"
 
 // Enum types
@@ -4787,4 +4792,55 @@ export interface FlotaOpl {
   created_by: string | null
   created_at: string
   updated_at: string
+}
+
+// ===== Campus de Capacitaciones (biblioteca de material por pilar) =====
+// OJO: no confundir con `Capacitacion` (evento con fecha, asistencia y examen).
+// El Campus es consulta libre: no registra quién vio qué.
+
+export interface CampusCapacitacion {
+  id: string
+  pilar_codigo: CampusPilarCodigo
+  titulo: string
+  descripcion: string | null
+  orden: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CampusCapacitacionConTotal extends CampusCapacitacion {
+  total_materiales: number
+}
+
+export interface CampusMaterial {
+  id: string
+  capacitacion_id: string
+  titulo: string
+  descripcion: string | null
+  tipo: CampusMaterialTipo
+  origen: CampusMaterialOrigen
+  /** Clave saneada del bucket `campus` (solo si origen = archivo). */
+  storage_path: string | null
+  /** Nombre lindo del archivo, con tildes (lo que ve el usuario). */
+  nombre_original: string | null
+  mime_type: string | null
+  bytes: number | null
+  /** Link de YouTube / Drive / OneDrive (solo si origen = link). */
+  url_externa: string | null
+  orden: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Material con la URL ya resuelta en el server (pública del bucket o externa). */
+export interface CampusMaterialConUrl extends CampusMaterial {
+  url: string
+}
+
+export interface CampusPilarResumen {
+  pilar_codigo: CampusPilarCodigo
+  total_capacitaciones: number
+  total_materiales: number
 }
