@@ -76,6 +76,10 @@ export interface OperadorAperturaRow {
   errores: number | null
   /** Cantidad de errores = filas del Sheet "Errores picking" del operador. */
   errores_count: number | null
+  /** De esos errores, los que LLEGARON AL CLIENTE (col F "DETECTADO EN" =
+   *  DISTRIBUCIÓN): no los frenó el control de salida. El resto se corrigió
+   *  en almacén. null si el Sheet no respondió. */
+  errores_cliente: number | null
   /** 0..1 (donde 1 = sin errores). null si no hay bultos. */
   precision: number | null
   bul_hh_auto: number | null
@@ -457,8 +461,10 @@ export async function buildAperturaPickingDelDia(
   const erroresPorOp = await erroresPorOpPromise
   if (erroresPorOp) {
     for (const fila of base.filas) {
-      const c = erroresPorOp[fila.operador]
+      const c = erroresPorOp.count[fila.operador]
       fila.errores_count = typeof c === "number" ? c : 0
+      const k = erroresPorOp.cliente[fila.operador]
+      fila.errores_cliente = typeof k === "number" ? k : 0
     }
   }
   return base
@@ -468,9 +474,23 @@ export async function buildAperturaPickingDelDia(
  *  del Sheet "Errores picking") de un día puntual. El conteo sale del Sheet
  *  directo (ver fetchErroresCountDelSheet); a serie-diaria sólo se le pregunta
  *  si el día operó, para no mostrar 0 en un día sin despacho. */
+/** Col F "DETECTADO EN" → true si el error lo descubrió distribución. Se tipea
+ *  a mano: DISTRIBUCIÓN, DISTRIBUCION, CLIENTE, REPARTO o CALLE valen igual.
+ *  Vacío (filas anteriores al 7/9/26) o ALMACEN = corregido en almacén. */
+function llegoAlCliente(raw: string | undefined): boolean {
+  const n = (raw ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+  return /DISTRIB|CLIENTE|REPARTO|CALLE/.test(n)
+}
+
 async function fetchErroresCountPorOperador(
   fecha: string,
-): Promise<Record<string, number> | null> {
+): Promise<{
+  count: Record<string, number>
+  cliente: Record<string, number>
+} | null> {
   const partes = fecha.split("-").map((s) => parseInt(s, 10))
   const year = partes[0]
   const month = partes[1]
@@ -485,12 +505,19 @@ async function fetchErroresCountPorOperador(
   ])
   if (sheet) {
     const delSheet = sheet.porOperador[fecha]
-    if (delSheet) return delSheet
+    if (delSheet) {
+      return {
+        count: delSheet,
+        cliente: sheet.porOperadorCliente[fecha] ?? ceroPorOperador(),
+      }
+    }
     return res?.errores_count_dia?.[fecha] !== undefined
-      ? ceroPorOperador()
+      ? { count: ceroPorOperador(), cliente: ceroPorOperador() }
       : null
   }
-  return res?.errores_count_por_operador_dia?.[fecha] ?? null
+  // Sin Sheet no se sabe dónde se detectó cada error: sólo queda el conteo.
+  const delApi = res?.errores_count_por_operador_dia?.[fecha]
+  return delApi ? { count: delApi, cliente: ceroPorOperador() } : null
 }
 
 function buildAperturaFromSnapshot(
@@ -524,6 +551,7 @@ function buildAperturaFromSnapshot(
       bultos,
       errores,
       errores_count: null,
+      errores_cliente: null,
       precision,
       bul_hh_auto,
       bul_hh_manual: manual,
@@ -644,6 +672,9 @@ async function fetchErroresCountDelSheet(
 ): Promise<{
   porDia: Record<string, number>
   porOperador: Record<string, Record<string, number>>
+  /** Errores que llegaron al cliente, por día y operador (col F "DETECTADO
+   *  EN"). Subconjunto de `porOperador`; el resto se corrigió en almacén. */
+  porOperadorCliente: Record<string, Record<string, number>>
   /** Bultos involucrados en errores por día (col "CANTIDAD DE BULTOS").
    *  Numerador de la precisión; el conteo de filas es otra cosa. */
   bultosErradosPorDia: Record<string, number>
@@ -660,6 +691,7 @@ async function fetchErroresCountDelSheet(
   const prefijo = `${year}-${String(month).padStart(2, "0")}`
   const porDia: Record<string, number> = {}
   const porOperador: Record<string, Record<string, number>> = {}
+  const porOperadorCliente: Record<string, Record<string, number>> = {}
   const bultosErradosPorDia: Record<string, number> = {}
   let inicioMedicion: string | null = null
 
@@ -694,9 +726,17 @@ async function fetchErroresCountDelSheet(
       porOperador[fecha] = fila
     }
     fila[alias] += 1
+    if (llegoAlCliente(cells[5])) {
+      let fc = porOperadorCliente[fecha]
+      if (!fc) {
+        fc = Object.fromEntries(OPERADORES_APERTURA.map((a) => [a, 0]))
+        porOperadorCliente[fecha] = fc
+      }
+      fc[alias] += 1
+    }
   }
 
-  return { porDia, porOperador, bultosErradosPorDia, inicioMedicion }
+  return { porDia, porOperador, porOperadorCliente, bultosErradosPorDia, inicioMedicion }
 }
 
 /**
@@ -1347,6 +1387,7 @@ function computeAperturaLegacy(
       bultos: null,
       errores: erroresVal,
       errores_count: null,
+      errores_cliente: null,
       precision,
       bul_hh_auto,
       bul_hh_manual: manual,

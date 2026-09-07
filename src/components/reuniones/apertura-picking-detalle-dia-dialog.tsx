@@ -177,6 +177,12 @@ export function AperturaPickingDetalleDiaDialog({
                 <TableHead>Operador</TableHead>
                 <TableHead className="text-right">Bultos</TableHead>
                 <TableHead className="text-right">Errores</TableHead>
+                <TableHead
+                  className="text-right"
+                  title="De los errores, los que no frenó el control de salida y llegaron al cliente (columna DETECTADO EN de la planilla)"
+                >
+                  Al cliente
+                </TableHead>
                 <TableHead className="text-right">Bultos errados</TableHead>
                 <TableHead className="text-right">Precisión</TableHead>
                 <TableHead className="text-right">bul/HH</TableHead>
@@ -191,6 +197,15 @@ export function AperturaPickingDetalleDiaDialog({
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatNum(fila.errores_count)}
+                  </TableCell>
+                  <TableCell
+                    className={`text-right tabular-nums ${
+                      fila.errores_cliente
+                        ? "font-semibold text-red-600"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {formatNum(fila.errores_cliente)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatNum(fila.errores)}
