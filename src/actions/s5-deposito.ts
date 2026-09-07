@@ -16,8 +16,10 @@ import type {
 const PAGE_PATH = "/5s/ayudantes"
 
 // Sheet "Errores picking": col0 FECHA, col1 OPERARIO, col2 CANTIDAD DE BULTOS,
-// col3 FALTANTE/SOBRANTE, col4 TIPO DE ERROR (HUMANO/SISTEMA).
-// El error se cuenta por FILA (cada fila = 1 error) y SOLO si es HUMANO.
+// col3 FALTANTE/SOBRANTE, col4 TIPO DE ERROR (PROPIO/SISTEMA).
+// El error se cuenta por FILA (cada fila = 1 error) y SOLO si NO es SISTEMA:
+// la planilla dice PROPIO (nunca dijo HUMANO; hasta el 7/9/26 este filtro
+// buscaba HUMANO y el ranking veía 0 errores para todos).
 const ERRORES_SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1K7zWrhFFx7SBoTxZ6Dk93ZrgO05kULlGvxL6ahmUYTA/gviz/tq?tqx=out:csv&sheet=Errores%20picking"
 
@@ -187,7 +189,7 @@ function legacyTope(n: number): number {
   return Number.isFinite(n) && n > 0 && n <= 100 ? n : DEFAULT_CONFIG.tope_errores
 }
 
-// ── Errores por operario: CANTIDAD de errores HUMANOS (filas) en la ventana ──
+// ── Errores por operario: CANTIDAD de errores PROPIOS (filas) en la ventana ──
 async function fetchErroresPorOperario(
   prefijosMes: string[],
 ): Promise<Map<string, number>> {
@@ -208,9 +210,11 @@ async function fetchErroresPorOperario(
       if (!prefijosMes.some((p) => fecha.startsWith(p))) continue
       const operario = (cells[1] ?? "").trim()
       if (!operario) continue
-      // Solo errores HUMANOS (col E). Los del SISTEMA no cuentan.
+      // Solo errores del operario (col E = PROPIO). Los del SISTEMA no cuentan.
+      // Mismo criterio que deposito-esteban: se excluye SISTEMA, todo lo demás
+      // (PROPIO o un tipeo raro) es error del operario.
       const tipo = (cells[4] ?? "").trim().toUpperCase()
-      if (!tipo.includes("HUMANO")) continue
+      if (tipo === "SISTEMA") continue
       // Cada fila = 1 error (cuenta de ocurrencias, no bultos).
       out.set(operario, (out.get(operario) ?? 0) + 1)
     }
