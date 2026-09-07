@@ -414,7 +414,9 @@ export async function loadServiceGeneral(
       .eq("estado", "completado")
       .order("fecha", { ascending: false }),
     supabase.from("mantenimiento_config_unidad").select("*"),
-    fetchLecturas(undefined, supabase),
+    // Ver nota en loadEstadoPlan: sin client explícito entra por la versión
+    // memoizada y las dos cargas comparten el mismo barrido de lecturas.
+    fetchLecturas(undefined, client),
   ])
 
   if (vehRes.error) throw new Error(vehRes.error.message)

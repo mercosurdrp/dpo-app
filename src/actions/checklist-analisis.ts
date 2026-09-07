@@ -225,25 +225,50 @@ export async function getAnalisisChecklist(periodo?: {
       }>).map((o) => [o.item_id, o])
     )
 
-    // Denominador por ítem: 45 conteos `head` en paralelo, sin traer las filas.
-    // Con período, el conteo entra por `checklist_vehiculos` para poder cortar
-    // por la fecha del checklist, que es la que manda.
+    // Denominador por ítem: un solo group by en la base. Con período, el corte
+    // entra por `checklist_vehiculos` para poder usar la fecha del checklist,
+    // que es la que manda.
+    //
+    // Antes eran 46 conteos `head` en paralelo, uno por ítem activo. Medido
+    // contra Pampeana: 3,5 s, y la pantalla entera espera por ellos. La RPC
+    // hace lo mismo en una query (ver
+    // APLICAR_EN_PAMPEANA_CHECKLIST_EVALUADO_POR_ITEM.sql); si todavía no está
+    // aplicada en la base, se cae al método viejo y el resultado es idéntico,
+    // sólo que lento.
     const evaluadoPorItem = new Map<string, number>()
-    await Promise.all(
-      items.map(async (i) => {
-        const { count } = await acotarPorFecha(
-          supabase
-            .from("checklist_respuestas")
-            .select("id, cv:checklist_vehiculos!inner(fecha)", {
-              count: "exact",
-              head: true,
-            })
-            .eq("item_id", i.id),
-          "cv.fecha"
-        )
-        evaluadoPorItem.set(i.id, count ?? 0)
-      })
-    )
+    const evaluadoRes = await supabase.rpc("checklist_evaluado_por_item", {
+      p_desde: desde,
+      p_hasta: hasta,
+    })
+    if (!evaluadoRes.error) {
+      for (const fila of (evaluadoRes.data || []) as Array<{
+        item_id: string
+        evaluado: number
+      }>) {
+        evaluadoPorItem.set(fila.item_id, Number(fila.evaluado))
+      }
+      // El group by no devuelve fila para el ítem que nunca se evaluó; el count
+      // por ítem devolvía 0. Se completa para no cambiar el shape del dato.
+      for (const i of items) {
+        if (!evaluadoPorItem.has(i.id)) evaluadoPorItem.set(i.id, 0)
+      }
+    } else {
+      await Promise.all(
+        items.map(async (i) => {
+          const { count } = await acotarPorFecha(
+            supabase
+              .from("checklist_respuestas")
+              .select("id, cv:checklist_vehiculos!inner(fecha)", {
+                count: "exact",
+                head: true,
+              })
+              .eq("item_id", i.id),
+            "cv.fecha"
+          )
+          evaluadoPorItem.set(i.id, count ?? 0)
+        })
+      )
+    }
 
     // Los defectos son pocos (decenas): se agregan en memoria sin problema.
     const noOk = ((noOkRes.data || []) as unknown as RespuestaNoOk[]).filter(

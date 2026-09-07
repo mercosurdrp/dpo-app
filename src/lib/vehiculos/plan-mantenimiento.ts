@@ -250,7 +250,10 @@ export async function loadEstadoPlan(client?: SupabaseClient): Promise<{
       )
       .eq("mantenimiento.estado", "completado")
       .not("tarea_id", "is", null),
-    fetchLecturas(undefined, supabase),
+    // `client` y no `supabase`: sin client explícito, fetchLecturas usa su
+    // versión memoizada por request y no repite el barrido completo que
+    // loadServiceGeneral ya paga en la misma pantalla.
+    fetchLecturas(undefined, client),
   ])
 
   if (vehRes.error) throw new Error(vehRes.error.message)

@@ -1,3 +1,4 @@
+import { cache } from "react"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
 // Misma cota que usa la validación de carga (validar-lectura.ts), para que lo
@@ -78,13 +79,46 @@ export function toFecha(fecha: string | null | undefined, hora: string | null | 
   return today()
 }
 
+interface LecturasFilters {
+  dominio?: string
+  fechaDesde?: string
+  fechaHasta?: string
+}
+
+/**
+ * Traer TODA la flota sin acotar por fecha es la variante cara: 3 tablas
+ * paginadas de a 1000, ~3.400 filas y ~1,5 s. /vehiculos/mantenimiento la pedía
+ * dos veces por render —`loadEstadoPlan` y `loadServiceGeneral`— pagando el
+ * doble por el mismo dato. Memoizada por request con `cache()`, igual que
+ * `getProfile`.
+ *
+ * Solo se memoiza esta variante y solo cuando el client sale de la sesión:
+ * con filtros la query ya es barata, y sobre todo la usan los flujos de carga
+ * (checklist, combustible, urea) que leen justo antes de escribir, donde
+ * reusar una lectura previa del mismo request sí cambiaría el resultado.
+ */
+const fetchLecturasCompletas = cache(async function fetchLecturasCompletas(): Promise<
+  Lectura[]
+> {
+  return fetchLecturasRaw()
+})
+
 export async function fetchLecturas(
-  filters?: {
-    dominio?: string
-    fechaDesde?: string
-    fechaHasta?: string
-  },
+  filters?: LecturasFilters,
   // Client explícito para contextos sin sesión (cron con service role).
+  client?: SupabaseClient
+): Promise<Lectura[]> {
+  const sinFiltros =
+    !filters?.dominio && !filters?.fechaDesde && !filters?.fechaHasta
+  if (sinFiltros && !client) {
+    // Copia: el array memoizado lo comparten todos los llamadores del request.
+    return [...(await fetchLecturasCompletas())]
+  }
+  return fetchLecturasRaw(filters, client)
+}
+
+async function fetchLecturasRaw(
+  filters?: LecturasFilters,
   client?: SupabaseClient
 ): Promise<Lectura[]> {
   const supabase = client ?? (await createClient())
