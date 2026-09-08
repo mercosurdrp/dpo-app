@@ -82,10 +82,10 @@ const MARGEN_AVISO_SLA = 5
 const DIAS_VENCIMIENTO_AVISO = 30
 
 const SLA_CARGA_PRECOCIDO_URL =
-  "https://deposito-esteban.vercel.app/api/shared/load?module=sla-carga"
+  "https://deposito-regionpampeana.vercel.app/api/shared/load?module=sla-carga"
 
 const VENCIMIENTOS_BLOB_URL =
-  "https://deposito-esteban.vercel.app/api/shared/load?module=wms-vencimientos"
+  "https://deposito-regionpampeana.vercel.app/api/shared/load?module=wms-vencimientos"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = { from: (t: string) => any; storage: any }

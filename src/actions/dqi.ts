@@ -13,7 +13,7 @@ import type { RoturaConDetalle } from "@/types/roturas"
 // (que tiene la fuente de pérdidas); acá sólo lo consumimos para mostrarlo
 // dentro de dpo-app, en /indicadores/dqi.
 
-const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
+const DEPOSITO_API_BASE = "https://deposito-regionpampeana.vercel.app"
 // El endpoint liviano /api/dqi tarda ~2s medido (no recalcula NAC/horas/WNP
 // como el /api/indicadores pesado, que tarda ~22s). El margen de 30s era una
 // bomba: este fetch es un await bloqueante dentro del render de /reuniones/[id],

@@ -19,7 +19,7 @@ import {
   HL_POR_PALETA_RETORNABLE,
 } from "@/lib/dimensionamiento/retornable"
 
-const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
+const DEPOSITO_API_BASE = "https://deposito-regionpampeana.vercel.app"
 
 /** Promedio y pico (sobre valores > 0) de un Map fecha→valor. */
 function statsPorDia(m: Map<string, number>): { prom: number; pico: number; dias: number } {

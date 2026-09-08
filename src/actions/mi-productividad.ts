@@ -13,10 +13,10 @@ import {
 // Fuentes de depósito. Las tres viven en deposito-esteban salvo envases, que
 // es tabla propia de este mismo portal.
 const PICKING_URL =
-  "https://deposito-esteban.vercel.app/api/shared/load?module=productividad-picking"
+  "https://deposito-regionpampeana.vercel.app/api/shared/load?module=productividad-picking"
 const MINUTOS_URL: Record<Tramo, string> = {
-  carga: "https://deposito-esteban.vercel.app/api/carga/tiempos",
-  descarga: "https://deposito-esteban.vercel.app/api/acarreo/descargas",
+  carga: "https://deposito-regionpampeana.vercel.app/api/carga/tiempos",
+  descarga: "https://deposito-regionpampeana.vercel.app/api/acarreo/descargas",
 }
 
 const TIMEOUT_MS = 10_000

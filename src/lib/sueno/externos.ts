@@ -20,7 +20,7 @@
  */
 
 const DEPOSITO_API_BASE =
-  process.env.DEPOSITO_API_URL ?? "https://deposito-esteban.vercel.app"
+  process.env.DEPOSITO_API_URL ?? "https://deposito-regionpampeana.vercel.app"
 
 const TIMEOUT_MS = 5000
 const TTL_MS = 60 * 60 * 1000 // 1h: el blob del WMS se regenera 1 vez al día

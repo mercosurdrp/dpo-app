@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic"
 // (Scheduled Task WMS-WarehouseKPI-Push). Datos del WMS: VIAJES + BANDVIA +
 // EVENTOS de despacho. Una sola URL chica, sin acceso directo a la LAN.
 const BLOB_URL =
-  "https://deposito-esteban.vercel.app/api/shared/load?module=carga-camiones"
+  "https://deposito-regionpampeana.vercel.app/api/shared/load?module=carga-camiones"
 
 interface BlobResponse {
   data?: {

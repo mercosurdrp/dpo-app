@@ -25,7 +25,7 @@ import {
  */
 
 const PERDIDAS_URL =
-  "https://deposito-esteban.vercel.app/api/shared/load?module=perdidas"
+  "https://deposito-regionpampeana.vercel.app/api/shared/load?module=perdidas"
 const TIMEOUT_MS = 8000
 
 type Result<T> = { data: T } | { error: string }

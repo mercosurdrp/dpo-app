@@ -25,14 +25,14 @@ const ERRORES_SHEET_URL =
 
 // Productividad por operario (bul/HH) — deposito-esteban. Solo tasas.
 const PRODUCTIVIDAD_URL =
-  "https://deposito-esteban.vercel.app/api/shared/load?module=productividad-picking"
+  "https://deposito-regionpampeana.vercel.app/api/shared/load?module=productividad-picking"
 
 // Productividad de maquinistas (Pal/HH) — deposito-esteban. Trae filas por
 // (fecha, operario, actividad); para el ranking solo cuenta la actividad
 // DESPACHO — la actividad "MAQUINISTA" del WMS es reubicación/acarreos y
 // queda afuera (mismo criterio que la reunión de warehouse).
 const PRODUCTIVIDAD_MAQ_URL =
-  "https://deposito-esteban.vercel.app/api/shared/load?module=productividad-maquinistas"
+  "https://deposito-regionpampeana.vercel.app/api/shared/load?module=productividad-maquinistas"
 
 const DEFAULT_CONFIG: S5AyudantesConfig = {
   peso_errores: 0.6,

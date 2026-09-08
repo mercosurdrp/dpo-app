@@ -33,7 +33,7 @@ import type {
   RoturaDetalleSku,
 } from "@/lib/warehouse/auto-indicadores"
 
-const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
+const DEPOSITO_API_BASE = "https://deposito-regionpampeana.vercel.app"
 
 export interface WarehousePerdidasDia {
   fecha: string

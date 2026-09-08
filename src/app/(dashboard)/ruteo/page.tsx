@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic"
 // por el pusher local push_carga_camiones.ps1. Se cruza contra los camiones del
 // día (ocupación de bodega) por patente + fecha para mostrar la hora de carga.
 const CARGA_BLOB_URL =
-  "https://deposito-esteban.vercel.app/api/shared/load?module=carga-camiones"
+  "https://deposito-regionpampeana.vercel.app/api/shared/load?module=carga-camiones"
 
 interface CargaBlob {
   data?: {

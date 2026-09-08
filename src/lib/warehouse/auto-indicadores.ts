@@ -24,7 +24,7 @@ import { diaAnterior, esFeriado } from "@/lib/feriados-ar"
 // Configuración
 // ────────────────────────────────────────────────────────────────────
 
-const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
+const DEPOSITO_API_BASE = "https://deposito-regionpampeana.vercel.app"
 // Objetivo de venta mensual (HL) por categoría — denominador del target WQI.
 // Alias estable del team (mismo que consume Acarreo-RDF para planificador).
 const CHESS_DASHBOARD_BASE = "https://chess-dashboard-mercosurdrps-projects.vercel.app"

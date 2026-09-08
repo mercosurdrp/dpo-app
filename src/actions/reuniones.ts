@@ -4193,7 +4193,7 @@ async function getIndicadoresMesCore(
     }
 
     // 7d. Indicadores AUTO warehouse + logistica — KPIs del handbook 2025.
-    //     Vienen de deposito-esteban.vercel.app (APIs públicas) + Google Sheet
+    //     Vienen de deposito-regionpampeana.vercel.app (APIs públicas) + Google Sheet
     //     de errores picking. Tolerante a fallos: si una fuente cae, su KPI
     //     queda en null pero el resto sigue. Para detalle por operador del
     //     día, ver getAperturaPickingDia() y el dialog AperturaPickingDetalleDiaDialog.

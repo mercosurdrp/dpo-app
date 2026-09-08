@@ -1474,7 +1474,7 @@ async function filaCasos(
 // ===========================================================================
 
 const CARGA_BLOB_URL =
-  "https://deposito-esteban.vercel.app/api/shared/load?module=carga-camiones"
+  "https://deposito-regionpampeana.vercel.app/api/shared/load?module=carga-camiones"
 
 interface CargaViaje {
   viaje: number // ViajesCodigo (clave de cruce)
@@ -1597,7 +1597,7 @@ async function fetchCargaSnapshot(): Promise<CargaSnapshot | null> {
 // ===========================================================================
 
 const SLA_CARGA_PRECOCIDO_URL =
-  "https://deposito-esteban.vercel.app/api/shared/load?module=sla-carga"
+  "https://deposito-regionpampeana.vercel.app/api/shared/load?module=sla-carga"
 
 interface SlaCargaViajePre {
   viaje: number | null // ViajesCodigo: nº interno del WMS
