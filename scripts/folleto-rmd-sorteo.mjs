@@ -47,7 +47,7 @@ const tarjeta = `
   <div class="bottom">
     <span>Calificás en BEES</span><span class="mas">+</span><span>te inscribís</span><span class="mas">=</span><span class="fuerte">participás</span>
   </div>
-  <div class="pie">${EMPRESA} · ${URL_SORTEO.replace("https://", "")}</div>
+  <div class="pie">${EMPRESA}</div>
 </div>`
 
 const doc = `<!doctype html>
