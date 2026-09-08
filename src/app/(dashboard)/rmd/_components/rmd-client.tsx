@@ -19,7 +19,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { RmdCliente, RmdDashboardData } from "@/actions/rmd"
 import type { RmdCoberturaData } from "@/actions/rmd-cobertura"
 import type { RmdPlan } from "@/actions/rmd-planes"
-import type { InscripcionSorteoRmd } from "@/actions/rmd-sorteo"
+import type {
+  GanadorSorteoRmd,
+  ResumenSorteoRmd,
+} from "@/actions/rmd-sorteo"
 import { SyncAviso } from "@/components/sync-aviso"
 import {
   planesPorClienteFoco,
@@ -81,15 +84,17 @@ interface Props {
   planesIniciales: RmdPlan[]
   /** Encuestadas vs calificadas (solapa Cobertura). Null si falló la consulta. */
   cobertura: RmdCoberturaData | null
-  /** PDV inscriptos al sorteo del folleto (QR). Null si falló la consulta. */
-  inscriptosSorteo: InscripcionSorteoRmd[] | null
+  /** Conteos y ganadores del sorteo del folleto (QR). Null si fallo la consulta. */
+  resumenSorteo: ResumenSorteoRmd | null
+  ganadoresSorteo: GanadorSorteoRmd[] | null
 }
 
 export function RmdClient({
   data,
   planesIniciales,
   cobertura,
-  inscriptosSorteo,
+  resumenSorteo,
+  ganadoresSorteo,
 }: Props) {
   const { resumen, por_mes, distribucion, motivos, clientes, recuperados } =
     data
@@ -215,7 +220,8 @@ export function RmdClient({
               motivos={motivosPlan}
               clientes={clientesPlan}
               choferes={choferesPlan}
-              inscriptosSorteo={inscriptosSorteo}
+              resumenSorteo={resumenSorteo}
+              ganadoresSorteo={ganadoresSorteo}
             />
           ) : (
             <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">

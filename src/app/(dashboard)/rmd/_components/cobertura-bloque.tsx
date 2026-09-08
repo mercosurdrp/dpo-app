@@ -50,7 +50,11 @@ import { PlanFormDialog, type FocoInicial } from "./planes/plan-form-dialog"
 import { PlanDetalleDialog } from "./planes/plan-detalle-dialog"
 import { PlanesTasaCard } from "./planes/planes-tasa-card"
 import { SorteoInscriptosCard } from "./sorteo-inscriptos-card"
-import type { InscripcionSorteoRmd } from "@/actions/rmd-sorteo"
+import { SorteoGanadoresCard } from "./sorteo-ganadores-card"
+import type {
+  GanadorSorteoRmd,
+  ResumenSorteoRmd,
+} from "@/actions/rmd-sorteo"
 
 const TODOS = "__todos__"
 
@@ -142,7 +146,8 @@ interface Props {
   motivos: string[]
   clientes: { cod_cliente: number; nombre_cliente: string }[]
   choferes: string[]
-  inscriptosSorteo: InscripcionSorteoRmd[] | null
+  resumenSorteo: ResumenSorteoRmd | null
+  ganadoresSorteo: GanadorSorteoRmd[] | null
 }
 
 export function CoberturaBloque({
@@ -152,7 +157,8 @@ export function CoberturaBloque({
   motivos,
   clientes: clientesPlan,
   choferes: choferesPlan,
-  inscriptosSorteo,
+  resumenSorteo,
+  ganadoresSorteo,
 }: Props) {
   const { meses, choferes, clientes, resumen, anio } = data
 
@@ -382,7 +388,13 @@ export function CoberturaBloque({
       />
 
       {/* ---------- Inscriptos al sorteo del folleto ---------- */}
-      <SorteoInscriptosCard inscriptos={inscriptosSorteo} />
+      <SorteoInscriptosCard resumen={resumenSorteo} />
+
+      {/* ---------- Ganadores del sorteo ---------- */}
+      <SorteoGanadoresCard
+        ganadoresIniciales={ganadoresSorteo}
+        participan={resumenSorteo?.participan ?? 0}
+      />
 
       {/* ---------- Evolución mensual ---------- */}
       <Card>
