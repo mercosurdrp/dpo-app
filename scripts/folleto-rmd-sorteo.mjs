@@ -64,7 +64,7 @@ const tarjetaNps = `
       <p>El <b>NPS</b> es una encuesta corta que le llega <b>al azar</b> a algunos clientes y pregunta, del <b>0 al 10</b>, qué tan satisfecho estás con nosotros y qué mejorarías.</p>
       <ul class="puntos">
         <li>Lleva menos de un minuto.</li>
-        <li>No todos la reciben ni todos los meses: si te toca, ¡es tu momento!</li>
+        <li>No le llega a todos ni todos los meses: si te toca, ¡es tu momento!</li>
         <li>Tu respuesta nos dice qué mejorar: entrega, vendedor, frío, app.</li>
       </ul>
     </div>
@@ -107,6 +107,7 @@ const doc = `<!doctype html>
     display: flex; flex-direction: column;
     background: #fff;
     position: relative;
+    overflow: hidden;
   }
   .top {
     background: #0f172a; color: #fff;
@@ -159,18 +160,18 @@ const doc = `<!doctype html>
   .hoja:last-child { break-after: auto; }
   .top-nps { background: #0c4a6e; }
   .top-nps .kicker { color: #7dd3fc; }
-  .texto { flex: 1; font-size: 6.9pt; line-height: 1.25; color: #1e293b; }
-  .texto p { margin: 0 0 1.2mm; }
+  .texto { flex: 1; font-size: 6.4pt; line-height: 1.2; color: #1e293b; }
+  .texto p { margin: 0 0 0.9mm; }
   .puntos { margin: 0; padding-left: 3.6mm; }
-  .puntos li { margin-bottom: 0.8mm; }
+  .puntos li { margin-bottom: 0.4mm; }
   .puntos li::marker { color: #0369a1; }
   .escala {
     flex: 0 0 22mm; width: 22mm;
     display: flex; flex-direction: column; align-items: center; gap: 0.8mm;
   }
-  .escala-num { font-size: 9pt; font-weight: 800; color: #0f172a; }
+  .escala-num { font-size: 8pt; font-weight: 800; color: #0f172a; }
   .escala-barra {
-    width: 6mm; height: 22mm; border-radius: 3mm;
+    width: 6mm; height: 17mm; border-radius: 3mm;
     background: linear-gradient(to top, #ef4444, #f59e0b 45%, #22c55e);
     border: 0.3mm solid #fff; box-shadow: 0 0 0 0.3mm #cbd5e1;
   }
