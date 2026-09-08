@@ -2,7 +2,7 @@
 export const RMD_SORTEO_CAMPANIA = "folleto-2026-09"
 
 /** URL pública que va en el QR del folleto. */
-export const RMD_SORTEO_URL = "https://dpo-app.vercel.app/sorteo-rmd"
+export const RMD_SORTEO_URL = "https://dpo-app-self.vercel.app/sorteo-rmd"
 
 /** Qué se sortea (va en la página del QR y en el folleto). */
 export const RMD_SORTEO_PREMIO = {

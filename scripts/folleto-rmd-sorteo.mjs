@@ -12,9 +12,9 @@ import { dirname, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import QRCode from "qrcode"
 
-const URL_SORTEO = "https://dpo-app.vercel.app/sorteo-rmd"
+const URL_SORTEO = "https://dpo-app-self.vercel.app/sorteo-rmd"
 const EMPRESA = "Mercosur · Distribución"
-const PREMIO = "Escaneá el QR y mirá el premio de este bimestre"
+const PREMIO = "Escaneá el QR y mirá el premio"
 
 const salida = resolve(process.argv[2] ?? "folleto-rmd-sorteo.pdf")
 const html = salida.replace(/\.pdf$/i, "") + ".html"
