@@ -142,7 +142,7 @@ function fechaDia(iso: string | null, corto = false): string {
 }
 
 /** Hoy (YYYY-MM-DD) en horario argentino. */
-function hoyISO(): string {
+export function hoyISO(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Argentina/Buenos_Aires",
   }).format(new Date())
@@ -242,7 +242,7 @@ function normalizar(s: string): string {
 }
 
 /** Tarjeta de plan — se usa en el tablero y en la lista. */
-function PlanCard({
+export function PlanCard({
   plan,
   hoy,
   compacta,

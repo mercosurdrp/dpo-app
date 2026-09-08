@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/tabs"
 import type { NpsClienteDP, NpsDashboardData } from "@/actions/nps"
 import type {
-  NpsCoberturaCliente,
   NpsCoberturaData,
 } from "@/actions/nps-cobertura"
 import type { NpsPlan } from "@/actions/nps-planes"
@@ -131,30 +130,24 @@ export function NpsClient({ data, planesIniciales, cobertura }: Props) {
     setAbrirPlanNonce((n) => n + 1)
   }
 
-  // Los planes viven en la solapa del panel: al crear o abrir uno desde
-  // Cobertura hay que volver ahí, si no el formulario queda fuera de vista.
-  function planParaClienteCobertura(c: NpsCoberturaCliente) {
-    setTab("panel")
-    setFocoPlan({
-      foco_cliente_id: c.cod_cliente,
-      foco_cliente_nombre: c.nombre_cliente ?? `Cliente ${c.cod_cliente}`,
-      foco_promotor: c.promotor ?? undefined,
-    })
-    setAbrirPlanNonce((n) => n + 1)
-  }
-
-  function verPlanDesdeCobertura(plan: PlanMarcable) {
-    setTab("panel")
-    verPlan(plan)
-  }
-
-  // Plan general para SUBIR LA TASA DE RESPUESTA (botón de la solapa Cobertura):
-  // abre el formulario con el foco ya puesto en "Tasa de respuesta".
-  function planParaTasa() {
-    setTab("panel")
-    setFocoPlan({ foco_driver: TASA_FOCO })
-    setAbrirPlanNonce((n) => n + 1)
-  }
+  // Opciones del formulario de plan, compartidas por el panel y por la solapa
+  // Cobertura (que crea y abre planes sin salir de ahi).
+  const driversPlan = useMemo(
+    () => [...new Set([...drivers_dp.map((d) => d.driver), TASA_FOCO])],
+    [drivers_dp],
+  )
+  const clientesPlan = useMemo(
+    () =>
+      clientes_dp.map((c) => ({
+        cod_cliente: c.cod_cliente,
+        nombre_cliente: c.nombre_cliente,
+      })),
+    [clientes_dp],
+  )
+  const promotoresPlan = useMemo(
+    () => por_promotor.map((p) => p.promotor),
+    [por_promotor],
+  )
 
   const mesesConDatos = por_mes.filter((m) => m.encuestas > 0 || m.rmd != null)
   const chartEvolucion = mesesConDatos.map((m) => ({
@@ -211,9 +204,10 @@ export function NpsClient({ data, planesIniciales, cobertura }: Props) {
             <CoberturaBloque
               data={cobertura}
               planes={planes}
-              onCrearPlan={planParaClienteCobertura}
-              onVerPlan={verPlanDesdeCobertura}
-              onCrearPlanTasa={planParaTasa}
+              onPlanesChange={setPlanes}
+              drivers={driversPlan}
+              clientes={clientesPlan}
+              promotores={promotoresPlan}
             />
           ) : (
             <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -612,16 +606,13 @@ export function NpsClient({ data, planesIniciales, cobertura }: Props) {
 
       {/* Planes de acción (R4.1.2) */}
       <PlanesAccionBloque
-        planesIniciales={planesIniciales}
+        planesIniciales={planes}
         onPlanesChange={setPlanes}
         verPlanId={verPlanId}
         verPlanNonce={verPlanNonce}
-        drivers={[...new Set([...drivers_dp.map((d) => d.driver), TASA_FOCO])]}
-        clientes={clientes_dp.map((c) => ({
-          cod_cliente: c.cod_cliente,
-          nombre_cliente: c.nombre_cliente,
-        }))}
-        promotores={por_promotor.map((p) => p.promotor)}
+        drivers={driversPlan}
+        clientes={clientesPlan}
+        promotores={promotoresPlan}
         focoInicial={focoPlan}
         abrirNonce={abrirPlanNonce}
       />

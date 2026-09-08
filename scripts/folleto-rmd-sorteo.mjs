@@ -50,6 +50,37 @@ const tarjeta = `
   <div class="pie">${EMPRESA}</div>
 </div>`
 
+// Dorso: la otra encuesta. Se imprime doble faz; como las 12 tarjetas son
+// iguales, no importa por qué borde gire la hoja.
+const tarjetaNps = `
+<div class="f">
+  <div class="top top-nps">
+    <div class="kicker">★ ¿Conocés el NPS?</div>
+    <div class="titulo">La otra encuesta<br>que nos ayuda</div>
+  </div>
+  <div class="lema">Si te llega, respondela.</div>
+  <div class="cuerpo">
+    <div class="texto">
+      <p>El <b>NPS</b> es una encuesta corta que le llega <b>al azar</b> a algunos clientes y pregunta, del <b>0 al 10</b>, qué tan satisfecho estás con nosotros y qué mejorarías.</p>
+      <ul class="puntos">
+        <li>Lleva menos de un minuto.</li>
+        <li>No todos la reciben ni todos los meses: si te toca, ¡es tu momento!</li>
+        <li>Tu respuesta nos dice qué mejorar: entrega, vendedor, frío, app.</li>
+      </ul>
+    </div>
+    <div class="escala">
+      <div class="escala-num">0</div>
+      <div class="escala-barra"></div>
+      <div class="escala-num">10</div>
+      <div class="escala-txt">¿Cuánto nos recomendarías?</div>
+    </div>
+  </div>
+  <div class="bottom bottom-nps">
+    <span><b>RMD</b> = cada entrega</span><span class="mas">·</span><span><b>NPS</b> = cómo te tratamos en general</span>
+  </div>
+  <div class="pie">${EMPRESA}</div>
+</div>`
+
 const doc = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <title>Folleto RMD · sorteo</title>
@@ -123,8 +154,34 @@ const doc = `<!doctype html>
     font-size: 5.4pt; color: #64748b; text-align: center;
     letter-spacing: 0.01em;
   }
+  /* --- dorso NPS --- */
+  .hoja { break-after: page; }
+  .hoja:last-child { break-after: auto; }
+  .top-nps { background: #0c4a6e; }
+  .top-nps .kicker { color: #7dd3fc; }
+  .texto { flex: 1; font-size: 6.9pt; line-height: 1.25; color: #1e293b; }
+  .texto p { margin: 0 0 1.2mm; }
+  .puntos { margin: 0; padding-left: 3.6mm; }
+  .puntos li { margin-bottom: 0.8mm; }
+  .puntos li::marker { color: #0369a1; }
+  .escala {
+    flex: 0 0 22mm; width: 22mm;
+    display: flex; flex-direction: column; align-items: center; gap: 0.8mm;
+  }
+  .escala-num { font-size: 9pt; font-weight: 800; color: #0f172a; }
+  .escala-barra {
+    width: 6mm; height: 22mm; border-radius: 3mm;
+    background: linear-gradient(to top, #ef4444, #f59e0b 45%, #22c55e);
+    border: 0.3mm solid #fff; box-shadow: 0 0 0 0.3mm #cbd5e1;
+  }
+  .escala-txt { font-size: 5.8pt; font-weight: 700; color: #0c4a6e; text-align: center; }
+  .bottom-nps { background: #e0f2fe; border-color: #7dd3fc; color: #0c4a6e; }
+  .bottom-nps .mas { color: #0369a1; }
 </style></head>
-<body><div class="hoja">${tarjeta.repeat(12)}</div></body></html>`
+<body>
+<div class="hoja">${tarjeta.repeat(12)}</div>
+<div class="hoja">${tarjetaNps.repeat(12)}</div>
+</body></html>`
 
 mkdirSync(dirname(salida), { recursive: true })
 writeFileSync(html, doc, "utf8")

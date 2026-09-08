@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Bar,
   CartesianGrid,
@@ -38,12 +38,16 @@ import type {
   NpsCoberturaData,
   NpsSegmento,
 } from "@/actions/nps-cobertura"
-import type { NpsPlan } from "@/actions/nps-planes"
+import { listResponsablesPosibles } from "@/actions/reuniones"
+import { listarPlanesNps, type NpsPlan } from "@/actions/nps-planes"
 import {
   PlanBadge,
   planesPorClienteFoco,
   type PlanMarcable,
 } from "@/components/plan-badge"
+import { PlanFormDialog, type FocoInicial } from "./planes/plan-form-dialog"
+import { PlanDetalleDialog } from "./planes/plan-detalle-dialog"
+import { PlanesTasaCard } from "./planes/planes-tasa-card"
 
 const TODOS = "__todos__"
 
@@ -116,22 +120,81 @@ export const TASA_FOCO = "Tasa de respuesta"
 
 interface Props {
   data: NpsCoberturaData
+  /** Lista viva de planes NPS (todos, no solo los de la tasa). */
   planes: NpsPlan[]
-  /** Crea un plan de acción para ese cliente (abre el formulario prellenado). */
-  onCrearPlan: (cliente: NpsCoberturaCliente) => void
-  onVerPlan: (plan: PlanMarcable) => void
-  /** Crea un plan de acción general para subir la tasa de respuesta. */
-  onCrearPlanTasa: () => void
+  /** Avisa la lista al dia despues de crear o editar un plan desde aca. */
+  onPlanesChange: (planes: NpsPlan[]) => void
+  /** Opciones del formulario de plan (las mismas que usa el panel). */
+  drivers: string[]
+  clientes: { cod_cliente: number; nombre_cliente: string }[]
+  promotores: string[]
 }
 
 export function CoberturaBloque({
   data,
   planes,
-  onCrearPlan,
-  onVerPlan,
-  onCrearPlanTasa,
+  onPlanesChange,
+  drivers,
+  clientes: clientesPlan,
+  promotores: promotoresPlan,
 }: Props) {
   const { meses, promotores, clientes, resumen, anio } = data
+
+  // Los planes se crean y se abren aca mismo: la solapa del panel esta
+  // desmontada mientras se mira Cobertura, asi que sus dialogos no sirven.
+  const [responsables, setResponsables] = useState<
+    { id: string; nombre: string }[]
+  >([])
+  const [formOpen, setFormOpen] = useState(false)
+  const [planEditar, setPlanEditar] = useState<NpsPlan | null>(null)
+  const [focoForm, setFocoForm] = useState<FocoInicial | null>(null)
+  const [planDetalle, setPlanDetalle] = useState<NpsPlan | null>(null)
+
+  useEffect(() => {
+    listResponsablesPosibles().then((r) => {
+      if ("data" in r) {
+        setResponsables(r.data.map((u) => ({ id: u.id, nombre: u.nombre })))
+      }
+    })
+  }, [])
+
+  async function refetch() {
+    const r = await listarPlanesNps()
+    if ("data" in r) {
+      onPlanesChange(r.data)
+      setPlanDetalle((prev) =>
+        prev ? (r.data.find((p) => p.id === prev.id) ?? null) : prev,
+      )
+    }
+  }
+
+  function onVerPlan(plan: PlanMarcable) {
+    const p = planes.find((x) => x.id === plan.id)
+    if (p) setPlanDetalle(p)
+  }
+
+  function onCrearPlan(c: NpsCoberturaCliente) {
+    setPlanEditar(null)
+    setFocoForm({
+      foco_cliente_id: c.cod_cliente,
+      foco_cliente_nombre: c.nombre_cliente ?? `Cliente ${c.cod_cliente}`,
+      foco_promotor: c.promotor ?? undefined,
+    })
+    setFormOpen(true)
+  }
+
+  // Plan general para SUBIR LA TASA DE RESPUESTA: foco ya puesto en la tasa.
+  function onCrearPlanTasa() {
+    setPlanEditar(null)
+    setFocoForm({ foco_driver: TASA_FOCO })
+    setFormOpen(true)
+  }
+
+  function editarDesdeDetalle() {
+    if (!planDetalle) return
+    setPlanEditar(planDetalle)
+    setFormOpen(true)
+  }
 
   const [fPromotor, setFPromotor] = useState(TODOS)
   const [fSegmento, setFSegmento] = useState(TODOS)
@@ -296,6 +359,13 @@ export function CoberturaBloque({
           )}
         </div>
       </div>
+
+      {/* ---------- Plan de accion sobre la tasa ---------- */}
+      <PlanesTasaCard
+        planes={planesTasa}
+        onNuevo={onCrearPlanTasa}
+        onVer={setPlanDetalle}
+      />
 
       {/* ---------- Evolución mensual ---------- */}
       <Card>
@@ -621,6 +691,30 @@ export function CoberturaBloque({
           )}
         </CardContent>
       </Card>
+
+      <PlanFormDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        drivers={drivers}
+        clientes={clientesPlan}
+        promotores={promotoresPlan}
+        responsables={responsables}
+        planExistente={planEditar}
+        focoInicial={planEditar ? null : focoForm}
+        onSaved={refetch}
+      />
+
+      {planDetalle && (
+        <PlanDetalleDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setPlanDetalle(null)
+          }}
+          plan={planDetalle}
+          onChanged={refetch}
+          onEditar={editarDesdeDetalle}
+        />
+      )}
     </div>
   )
 }
