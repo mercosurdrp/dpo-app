@@ -6,10 +6,10 @@ export const RMD_SORTEO_URL = "https://dpo-app.vercel.app/sorteo-rmd"
 
 /** Qué se sortea (va en la página del QR y en el folleto). */
 export const RMD_SORTEO_PREMIO = {
-  titulo: "1 bulto de Stella Artois lata + 1 bulto de Stella Artois latón",
+  titulo: "1 bulto de Stella Artois + merchandising",
   items: [
-    { nombre: "Stella Artois lata", detalle: "1 bulto" },
-    { nombre: "Stella Artois latón", detalle: "1 bulto" },
+    { nombre: "Stella Artois", detalle: "1 bulto" },
+    { nombre: "Merchandising", detalle: "+ regalos" },
   ],
 }
 

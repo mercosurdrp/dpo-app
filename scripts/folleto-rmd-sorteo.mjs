@@ -14,7 +14,7 @@ import QRCode from "qrcode"
 
 const URL_SORTEO = "https://dpo-app.vercel.app/sorteo-rmd"
 const EMPRESA = "Mercosur · Distribución"
-const PREMIO = "1 bulto Stella Artois lata + 1 bulto Stella Artois latón"
+const PREMIO = "Escaneá el QR y mirá el premio de este bimestre"
 
 const salida = resolve(process.argv[2] ?? "folleto-rmd-sorteo.pdf")
 const html = salida.replace(/\.pdf$/i, "") + ".html"
