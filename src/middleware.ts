@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
-const PUBLIC_PATHS = ["/login", "/seguridad", "/linea-etica"]
+const PUBLIC_PATHS = ["/login", "/seguridad", "/linea-etica", "/sorteo-rmd"]
 
 // Cuánto antes del vencimiento del access token vale la pena refrescar.
 // Debajo de este margen se hace el round-trip a Supabase; por encima, no.

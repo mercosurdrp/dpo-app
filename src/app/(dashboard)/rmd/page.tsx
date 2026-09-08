@@ -1,15 +1,17 @@
 import { getRmdDashboard } from "@/actions/rmd"
 import { getRmdCobertura } from "@/actions/rmd-cobertura"
 import { listarPlanesRmd } from "@/actions/rmd-planes"
+import { listarInscripcionesSorteoRmd } from "@/actions/rmd-sorteo"
 import { RmdClient } from "./_components/rmd-client"
 
 export const dynamic = "force-dynamic"
 
 export default async function RmdPage() {
-  const [datos, planes, cobertura] = await Promise.all([
+  const [datos, planes, cobertura, inscriptos] = await Promise.all([
     getRmdDashboard(),
     listarPlanesRmd(),
     getRmdCobertura(),
+    listarInscripcionesSorteoRmd(),
   ])
 
   if ("error" in datos) {
@@ -28,6 +30,7 @@ export default async function RmdPage() {
       data={datos.data}
       planesIniciales={"data" in planes ? planes.data : []}
       cobertura={"data" in cobertura ? cobertura.data : null}
+      inscriptosSorteo={"data" in inscriptos ? inscriptos.data : null}
     />
   )
 }

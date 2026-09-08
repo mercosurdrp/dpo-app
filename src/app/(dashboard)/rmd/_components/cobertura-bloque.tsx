@@ -49,6 +49,8 @@ import {
 import { PlanFormDialog, type FocoInicial } from "./planes/plan-form-dialog"
 import { PlanDetalleDialog } from "./planes/plan-detalle-dialog"
 import { PlanesTasaCard } from "./planes/planes-tasa-card"
+import { SorteoInscriptosCard } from "./sorteo-inscriptos-card"
+import type { InscripcionSorteoRmd } from "@/actions/rmd-sorteo"
 
 const TODOS = "__todos__"
 
@@ -140,6 +142,7 @@ interface Props {
   motivos: string[]
   clientes: { cod_cliente: number; nombre_cliente: string }[]
   choferes: string[]
+  inscriptosSorteo: InscripcionSorteoRmd[] | null
 }
 
 export function CoberturaBloque({
@@ -149,6 +152,7 @@ export function CoberturaBloque({
   motivos,
   clientes: clientesPlan,
   choferes: choferesPlan,
+  inscriptosSorteo,
 }: Props) {
   const { meses, choferes, clientes, resumen, anio } = data
 
@@ -376,6 +380,9 @@ export function CoberturaBloque({
         onNuevo={onCrearPlanTasa}
         onVer={setPlanDetalle}
       />
+
+      {/* ---------- Inscriptos al sorteo del folleto ---------- */}
+      <SorteoInscriptosCard inscriptos={inscriptosSorteo} />
 
       {/* ---------- Evolución mensual ---------- */}
       <Card>
