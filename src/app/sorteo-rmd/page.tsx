@@ -1,4 +1,8 @@
+import { existsSync } from "node:fs"
+import { join } from "node:path"
 import { Gift, Star, Smartphone } from "lucide-react"
+import { RMD_SORTEO_PREMIO } from "@/lib/rmd-sorteo"
+import { PremioIlustracion } from "./premio-ilustracion"
 import { SorteoFormClient } from "./sorteo-form-client"
 
 export const dynamic = "force-dynamic"
@@ -27,12 +31,16 @@ const PASOS = [
   {
     icon: Gift,
     titulo: "Participás del sorteo",
-    texto:
-      "Entran en el sorteo los puntos de venta inscriptos que calificaron al menos una entrega en BEES desde que se inscribieron.",
+    texto: `Se sortea ${RMD_SORTEO_PREMIO.titulo}. Entran los puntos de venta inscriptos que calificaron al menos una entrega en BEES desde que se inscribieron.`,
   },
 ]
 
+// Si hay foto real del premio en public/sorteo-rmd/premio.jpg se usa esa;
+// si no, la ilustración de los dos bultos.
+const FOTO_PREMIO = "/sorteo-rmd/premio.jpg"
+
 export default function SorteoRmdPage() {
+  const hayFoto = existsSync(join(process.cwd(), "public", FOTO_PREMIO))
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-lg px-4 py-6">
@@ -48,6 +56,38 @@ export default function SorteoRmdPage() {
             punto de venta y participá del sorteo.
           </p>
         </header>
+
+        <section className="mt-4 overflow-hidden rounded-xl border border-amber-200 bg-white">
+          <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-4 py-2">
+            <Gift className="h-4 w-4 text-amber-700" />
+            <p className="text-sm font-bold text-amber-900">¿Qué se sortea?</p>
+          </div>
+          <div className="px-4 pt-3">
+            {hayFoto ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={FOTO_PREMIO}
+                alt={RMD_SORTEO_PREMIO.titulo}
+                className="mx-auto max-h-56 rounded-lg object-contain"
+              />
+            ) : (
+              <PremioIlustracion className="mx-auto h-auto w-full max-w-sm" />
+            )}
+          </div>
+          <ul className="grid grid-cols-2 gap-2 p-4 pt-3">
+            {RMD_SORTEO_PREMIO.items.map((it) => (
+              <li
+                key={it.nombre}
+                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center"
+              >
+                <p className="text-xs font-semibold uppercase text-slate-500">
+                  {it.detalle}
+                </p>
+                <p className="text-sm font-bold text-slate-900">{it.nombre}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
 
         <ol className="mt-4 space-y-2">
           {PASOS.map((p, i) => (

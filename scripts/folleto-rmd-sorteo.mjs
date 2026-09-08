@@ -14,6 +14,7 @@ import QRCode from "qrcode"
 
 const URL_SORTEO = "https://dpo-app.vercel.app/sorteo-rmd"
 const EMPRESA = "Mercosur · Distribución"
+const PREMIO = "1 bulto Stella Artois lata + 1 bulto Stella Artois latón"
 
 const salida = resolve(process.argv[2] ?? "folleto-rmd-sorteo.pdf")
 const html = salida.replace(/\.pdf$/i, "") + ".html"
@@ -36,7 +37,7 @@ const tarjeta = `
     <ol class="pasos">
       <li><b>Abrí BEES</b> cuando te llega el pedido y puntuá la entrega <span class="estrellas">★★★★★</span></li>
       <li><b>Escaneá el QR</b> e inscribí tu negocio.</li>
-      <li><b>¡Participás del sorteo!</b></li>
+      <li><b>¡Participás del sorteo!</b><br><span class="premio">${PREMIO}</span></li>
     </ol>
     <div class="qrbox">
       <img class="qr" src="${qr}" alt="QR al sorteo">
@@ -101,6 +102,7 @@ const doc = `<!doctype html>
     flex: 1;
   }
   .pasos li { margin-bottom: 1.4mm; }
+  .premio { color: #b91c1c; font-weight: 700; font-size: 6.6pt; }
   .pasos li::marker { font-weight: 800; color: #b45309; }
   .estrellas { color: #f59e0b; letter-spacing: -0.02em; white-space: nowrap; }
   .qrbox { width: 25mm; text-align: center; flex: 0 0 25mm; }
