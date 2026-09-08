@@ -68,14 +68,14 @@ export interface ParseoGops {
  * nombre): perder respuestas en silencio sería peor que un tema mal etiquetado.
  */
 const HOJAS_CONOCIDAS: Array<Omit<TemaParseado, "preguntas">> = [
-  { hoja: "GOP WQI", nombre: "WQI", area: "Almacén", tipo: "GOP", frecuencia: "mensual", dueno: "Sebastián Roselli", orden: 1 },
-  { hoja: "GOP Obsolescencia", nombre: "Obsolescencia", area: "Almacén", tipo: "GOP", frecuencia: "mensual", dueno: "Sebastián Roselli", orden: 2 },
-  { hoja: "GOP Total Productivity WH", nombre: "Productividad de almacén", area: "Almacén", tipo: "GOP", frecuencia: "mensual", dueno: "Sebastián Roselli", orden: 3 },
-  { hoja: "Inventory Toolkit", nombre: "Inventario", area: "Almacén", tipo: "Toolkit", frecuencia: "mensual", dueno: "Sebastián Roselli", orden: 4 },
-  { hoja: "Toolkit Prev. Violencia Nivel 1", nombre: "Prevención de violencia (nivel 1)", area: "Seguridad", tipo: "Toolkit", frecuencia: "mensual", dueno: "Fausto Azzaretti", orden: 5 },
-  { hoja: "Toolkit Prev. Violencia Nivel 2", nombre: "Prevención de violencia (nivel 2)", area: "Seguridad", tipo: "Toolkit", frecuencia: "mensual", dueno: "Fausto Azzaretti", orden: 6 },
-  { hoja: "Toolkit Seg. Vial Nivel 1", nombre: "Seguridad vial (nivel 1)", area: "Seguridad", tipo: "Toolkit", frecuencia: "mensual", dueno: "Fausto Azzaretti", orden: 7 },
-  { hoja: "Toolkit Seg. Vial Nivel 2", nombre: "Seguridad vial (nivel 2)", area: "Seguridad", tipo: "Toolkit", frecuencia: "mensual", dueno: "Fausto Azzaretti", orden: 8 },
+  { hoja: "GOP WQI", nombre: "WQI", area: "Almacén", tipo: "GOP", frecuencia: "mensual", dueno: "Esteban Altube", orden: 1 },
+  { hoja: "GOP Obsolescencia", nombre: "Obsolescencia", area: "Almacén", tipo: "GOP", frecuencia: "mensual", dueno: "Esteban Altube", orden: 2 },
+  { hoja: "GOP Total Productivity WH", nombre: "Productividad de almacén", area: "Almacén", tipo: "GOP", frecuencia: "mensual", dueno: "Esteban Altube", orden: 3 },
+  { hoja: "Inventory Toolkit", nombre: "Inventario", area: "Almacén", tipo: "Toolkit", frecuencia: "mensual", dueno: "Esteban Altube", orden: 4 },
+  { hoja: "Toolkit Prev. Violencia Nivel 1", nombre: "Prevención de violencia (nivel 1)", area: "Seguridad", tipo: "Toolkit", frecuencia: "mensual", dueno: "Daniel Avaro", orden: 5 },
+  { hoja: "Toolkit Prev. Violencia Nivel 2", nombre: "Prevención de violencia (nivel 2)", area: "Seguridad", tipo: "Toolkit", frecuencia: "mensual", dueno: "Daniel Avaro", orden: 6 },
+  { hoja: "Toolkit Seg. Vial Nivel 1", nombre: "Seguridad vial (nivel 1)", area: "Seguridad", tipo: "Toolkit", frecuencia: "mensual", dueno: "Daniel Avaro", orden: 7 },
+  { hoja: "Toolkit Seg. Vial Nivel 2", nombre: "Seguridad vial (nivel 2)", area: "Seguridad", tipo: "Toolkit", frecuencia: "mensual", dueno: "Daniel Avaro", orden: 8 },
   { hoja: "GOP Total Quality Index (DEL)", nombre: "DQI", area: "Entrega", tipo: "GOP", frecuencia: "bimestral", dueno: "Fausto Azzaretti", orden: 9 },
   { hoja: "GOP Entrega-Total productivity ", nombre: "TLP", area: "Entrega", tipo: "GOP", frecuencia: "bimestral", dueno: "Fausto Azzaretti", orden: 10 },
   { hoja: "GOP Combustible", nombre: "Consumo de combustible", area: "Flota", tipo: "GOP", frecuencia: "bimestral", dueno: "Fausto Azzaretti", orden: 11 },
