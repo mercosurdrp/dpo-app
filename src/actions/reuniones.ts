@@ -22,6 +22,7 @@ import {
   buildAperturaPickingDelDia,
   buildAperturaMinutosCamionDelDia,
   buildMinutosCamionSerie,
+  buildReabastecimientoSerie,
   buildWarehouseSerieDiaria,
   refreshSerieDiariaDeposito,
   OPERADORES_APERTURA,
@@ -3091,6 +3092,7 @@ async function getIndicadoresMesCore(
       NOMBRES_AUTO.add("precision picking")
       NOMBRES_AUTO.add("capacidad utilizada")
       NOMBRES_AUTO.add("productividad de picking")
+      NOMBRES_AUTO.add("reabastecimiento durante el picking")
     } else if (
       tipo === "logistica" ||
       (IS_MISIONES && tipo === "matinal-distribucion")
@@ -4793,9 +4795,10 @@ async function getIndicadoresMesCore(
         // + MaquinistasMinutosDetalleDiaDialog). Menos es mejor. Se enmascara
         // el día en curso, igual que picking: el muelle de hoy no cerró.
         // Van inmediatamente debajo del picking.
-        const [minCarga, minDescarga] = await Promise.all([
+        const [minCarga, minDescarga, reabast] = await Promise.all([
           buildMinutosCamionSerie(fechas, "carga"),
           buildMinutosCamionSerie(fechas, "descarga"),
+          buildReabastecimientoSerie(fechas),
         ])
         const hastaAyer = (
           porFecha: Record<string, number | null>,
@@ -4803,6 +4806,10 @@ async function getIndicadoresMesCore(
           const out: Record<string, number | null> = {}
           for (const f of fechas) out[f] = f < fecha ? (porFecha[f] ?? null) : null
           return out
+        }
+        const reabastObsHastaAyer: Record<string, string | null> = {}
+        for (const f of fechas) {
+          reabastObsHastaAyer[f] = f < fecha ? (reabast.obs[f] ?? null) : null
         }
 
         indicadoresAuto.push(
@@ -4817,6 +4824,24 @@ async function getIndicadoresMesCore(
             // `sueno_kpi_valores`) y en `META_PICKING` de deposito-esteban.
             290,
             "mayor",
+          ),
+          // Reabastecimiento durante el picking: % de pallets repuestos a la
+          // cara que se pickearon inmediatamente después de reponerse. Es el
+          // indicador del PDCA de almacén 2026 (punto 4.3, dpo-app
+          // /herramientas-gestion): se lee todos los días con el equipo para
+          // sostener la rutina de reponer al cierre y revisar al arranque.
+          // Meta 40 = objetivo oct-dic del PDCA (≤ 30 en diciembre). MTD =
+          // durante ÷ total del mes, ponderado por pallet. Menos es mejor.
+          // Día en curso enmascarado como el resto del picking.
+          buildDiarioConMtdRow(
+            "auto_reabastecimiento_picking",
+            "Reabastecimiento durante el picking",
+            "%",
+            hastaAyer(reabast.dia),
+            hastaAyer(reabast.mtd),
+            40,
+            "menor",
+            reabastObsHastaAyer,
           ),
           // MTD ponderado por CAMIÓN (no promedio de días): un día de un solo
           // camión no puede pesar lo mismo que uno de cinco. Por eso van con

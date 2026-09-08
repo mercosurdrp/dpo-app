@@ -1630,6 +1630,76 @@ export async function buildMinutosCamionSerie(
   return { dia, mtd }
 }
 
+// ────────────────────────────────────────────────────────────────────
+// Reabastecimiento durante el picking — PDCA de almacén 2026 (punto 4.3)
+// ────────────────────────────────────────────────────────────────────
+//
+// % de pallets repuestos a la cara de picking que se pickearon inmediatamente
+// después de reponerse: el pickeador estaba esperando el pallet. Sale del blob
+// `reabastecimiento-picking` de deposito-esteban (pusher del WMS, una fila por
+// día con total y "durante"). Menos es mejor: el plan es reponer las canchas
+// antes de retirarse y completarlas antes de comenzar a pickear. Se lee en la
+// reunión diaria de Warehouse para que el equipo vea el seguimiento.
+
+interface ReabastecimientoFilaApi {
+  fecha: string
+  pallets: number
+  pallets_durante: number
+}
+
+interface ReabastecimientoResp {
+  data?: { filas?: ReabastecimientoFilaApi[] } | null
+}
+
+export interface ReabastecimientoSerie {
+  /** % durante el picking del día (null si no hubo reposición). */
+  dia: Record<string, number | null>
+  /** % acumulado del mes hasta ese día: durante ÷ total, no promedio de días. */
+  mtd: Record<string, number | null>
+  /** "x de y pallets", para la nota de la celda. */
+  obs: Record<string, string | null>
+}
+
+export async function buildReabastecimientoSerie(
+  fechas: string[],
+): Promise<ReabastecimientoSerie> {
+  const dia: Record<string, number | null> = {}
+  const mtd: Record<string, number | null> = {}
+  const obs: Record<string, string | null> = {}
+  if (fechas.length === 0) return { dia, mtd, obs }
+
+  const res = await fetchJsonSafe<ReabastecimientoResp>(
+    `${DEPOSITO_API_BASE}/api/shared/load?module=reabastecimiento-picking`,
+    EXTERNAL_FETCH_TTL_MS,
+  )
+  const porFecha = new Map<string, ReabastecimientoFilaApi>()
+  for (const f of res?.data?.filas ?? []) {
+    if (f?.fecha) porFecha.set(f.fecha, f)
+  }
+
+  const pct = (x: number) => Math.round(x * 1000) / 10
+  let accTotal = 0
+  let accDurante = 0
+  for (const f of fechas) {
+    const r = porFecha.get(f)
+    const total = n(r?.pallets)
+    if (!r || total === 0) {
+      dia[f] = null
+      obs[f] = null
+      // El MTD arrastra el último valor: un día sin reposición no lo borra.
+      mtd[f] = accTotal > 0 ? pct(accDurante / accTotal) : null
+      continue
+    }
+    const durante = n(r.pallets_durante)
+    dia[f] = pct(durante / total)
+    obs[f] = `${durante} de ${total} pallets`
+    accTotal += total
+    accDurante += durante
+    mtd[f] = pct(accDurante / accTotal)
+  }
+  return { dia, mtd, obs }
+}
+
 /** Apertura por maquinista de un día puntual. Read-only (sin overrides). */
 export async function buildAperturaMinutosCamionDelDia(
   fecha: string,
