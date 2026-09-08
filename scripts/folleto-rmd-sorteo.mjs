@@ -3,7 +3,7 @@
 //
 //   node scripts/folleto-rmd-sorteo.mjs [salida.pdf]
 //
-// Arma un HTML con las 12 tarjetas y lo imprime a PDF con Edge o Chrome en modo
+// Arma un HTML con las 8 tarjetas y lo imprime a PDF con Edge o Chrome en modo
 // headless (vienen con Windows / están instalados en las PCs de la operación).
 // El QR se genera con el paquete `qrcode` que ya usa la app.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
@@ -97,12 +97,12 @@ const doc = `<!doctype html>
   .hoja {
     width: 210mm; height: 297mm;
     display: grid;
-    grid-template-columns: repeat(3, 70mm);
+    grid-template-columns: repeat(2, 105mm);
     grid-template-rows: repeat(4, 74.25mm);
   }
   .f {
-    width: 70mm; height: 74.25mm;
-    padding: 3.2mm 3.4mm 2.6mm;
+    width: 105mm; height: 74.25mm;
+    padding: 2.8mm 4.5mm 2.2mm;
     border: 0.15mm dashed #94a3b8;
     display: flex; flex-direction: column;
     background: #fff;
@@ -112,47 +112,47 @@ const doc = `<!doctype html>
   .top {
     background: #0f172a; color: #fff;
     border-radius: 2mm;
-    padding: 1.8mm 2.4mm 2mm;
+    padding: 1.6mm 3mm 1.8mm;
   }
   .kicker {
-    font-size: 6.6pt; font-weight: 700; letter-spacing: 0.04em;
+    font-size: 7.4pt; font-weight: 700; letter-spacing: 0.04em;
     text-transform: uppercase; color: #fcd34d;
   }
-  .titulo { font-size: 12.5pt; font-weight: 800; line-height: 1.05; margin-top: 0.6mm; }
+  .titulo { font-size: 14pt; font-weight: 800; line-height: 1.02; margin-top: 0.4mm; }
   .lema {
-    margin-top: 1.8mm;
-    font-size: 8.4pt; font-weight: 600; color: #b45309;
+    margin-top: 1.2mm;
+    font-size: 9.5pt; font-weight: 600; color: #b45309;
     text-align: center;
   }
   .cuerpo {
     display: flex; gap: 2mm; align-items: center;
-    margin-top: 1.6mm; flex: 1;
+    margin-top: 1mm; flex: 1;
   }
   .pasos {
-    margin: 0; padding-left: 4.2mm;
-    font-size: 6.9pt; line-height: 1.25; color: #1e293b;
+    margin: 0; padding-left: 5mm;
+    font-size: 8pt; line-height: 1.22; color: #1e293b;
     flex: 1;
   }
-  .pasos li { margin-bottom: 1.4mm; }
-  .premio { color: #b91c1c; font-weight: 700; font-size: 6.6pt; }
+  .pasos li { margin-bottom: 1mm; }
+  .premio { color: #b91c1c; font-weight: 700; font-size: 7.8pt; }
   .pasos li::marker { font-weight: 800; color: #b45309; }
   .estrellas { color: #f59e0b; letter-spacing: -0.02em; white-space: nowrap; }
-  .qrbox { width: 25mm; text-align: center; flex: 0 0 25mm; }
-  .qr { width: 23mm; height: 23mm; display: block; margin: 0 auto; }
-  .qrtxt { font-size: 6pt; font-weight: 700; color: #0f172a; margin-top: 0.8mm; }
+  .qrbox { width: 30mm; text-align: center; flex: 0 0 30mm; }
+  .qr { width: 26mm; height: 26mm; display: block; margin: 0 auto; }
+  .qrtxt { font-size: 6.8pt; font-weight: 700; color: #0f172a; margin-top: 0.5mm; }
   .bottom {
-    margin-top: 1.4mm;
+    margin-top: 1mm;
     background: #fef3c7; border: 0.2mm solid #fcd34d; border-radius: 1.5mm;
-    padding: 1.2mm 1.5mm;
-    font-size: 6.9pt; font-weight: 600; color: #78350f;
+    padding: 1.1mm 2mm;
+    font-size: 8pt; font-weight: 600; color: #78350f;
     display: flex; justify-content: center; align-items: center; gap: 1mm;
     white-space: nowrap;
   }
   .bottom .mas { font-weight: 800; color: #b45309; }
   .bottom .fuerte { font-weight: 800; text-transform: uppercase; }
   .pie {
-    margin-top: 1.2mm;
-    font-size: 5.4pt; color: #64748b; text-align: center;
+    margin-top: 0.8mm;
+    font-size: 6.2pt; color: #64748b; text-align: center;
     letter-spacing: 0.01em;
   }
   /* --- dorso NPS --- */
@@ -160,28 +160,28 @@ const doc = `<!doctype html>
   .hoja:last-child { break-after: auto; }
   .top-nps { background: #0c4a6e; }
   .top-nps .kicker { color: #7dd3fc; }
-  .texto { flex: 1; font-size: 6.4pt; line-height: 1.2; color: #1e293b; }
-  .texto p { margin: 0 0 0.9mm; }
-  .puntos { margin: 0; padding-left: 3.6mm; }
-  .puntos li { margin-bottom: 0.4mm; }
+  .texto { flex: 1; font-size: 7.6pt; line-height: 1.2; color: #1e293b; }
+  .texto p { margin: 0 0 0.7mm; }
+  .puntos { margin: 0; padding-left: 4.4mm; }
+  .puntos li { margin-bottom: 0.3mm; }
   .puntos li::marker { color: #0369a1; }
   .escala {
-    flex: 0 0 22mm; width: 22mm;
-    display: flex; flex-direction: column; align-items: center; gap: 0.8mm;
+    flex: 0 0 30mm; width: 30mm;
+    display: flex; flex-direction: column; align-items: center; gap: 0.5mm;
   }
-  .escala-num { font-size: 8pt; font-weight: 800; color: #0f172a; }
+  .escala-num { font-size: 9pt; font-weight: 800; color: #0f172a; }
   .escala-barra {
-    width: 6mm; height: 17mm; border-radius: 3mm;
+    width: 7mm; height: 16mm; border-radius: 3.5mm;
     background: linear-gradient(to top, #ef4444, #f59e0b 45%, #22c55e);
     border: 0.3mm solid #fff; box-shadow: 0 0 0 0.3mm #cbd5e1;
   }
-  .escala-txt { font-size: 5.8pt; font-weight: 700; color: #0c4a6e; text-align: center; }
+  .escala-txt { font-size: 6.6pt; font-weight: 700; color: #0c4a6e; text-align: center; }
   .bottom-nps { background: #e0f2fe; border-color: #7dd3fc; color: #0c4a6e; }
   .bottom-nps .mas { color: #0369a1; }
 </style></head>
 <body>
-<div class="hoja">${tarjeta.repeat(12)}</div>
-<div class="hoja">${tarjetaNps.repeat(12)}</div>
+<div class="hoja">${tarjeta.repeat(8)}</div>
+<div class="hoja">${tarjetaNps.repeat(8)}</div>
 </body></html>`
 
 mkdirSync(dirname(salida), { recursive: true })
