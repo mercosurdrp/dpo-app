@@ -60,8 +60,31 @@ export interface GopTemaResumen {
   sin_decidir: number
   /** Cuánto suma al puntaje cerrar un solo "No" (1 / preguntas que puntúan). */
   impacto_por_no: number | null
-  /** Puntaje mes a mes del año, para la tendencia. */
-  serie: Array<{ mes: number; puntaje: number }>
+  /** Puntaje mes a mes del año, para la tendencia. Trae Si/No para sumar el total. */
+  serie: Array<{ mes: number; puntaje: number; si: number; no: number }>
+}
+
+/**
+ * Una pregunta que cambió de respuesta respecto del mes anterior con carga: es lo que
+ * explica por qué el puntaje del tema subió o bajó, y a qué plan atribuírselo.
+ */
+export interface GopCambio {
+  pregunta_id: string
+  tema_id: string
+  tema_nombre: string
+  tema_area: string | null
+  codigo: string
+  seccion: string | null
+  texto: string
+  /** Mes contra el que se compara (el anterior con carga para esa pregunta). */
+  mes_previo: number
+  valor_previo: ValorGop
+  valor: ValorGop
+  /** 'mejora' = pasó a Si; 'retroceso' = dejó de ser Si. */
+  sentido: "mejora" | "retroceso"
+  /** Cuánto movió el puntaje del tema (1 / preguntas que puntúan). */
+  impacto: number | null
+  decision: GopPreguntaDetalle["decision"]
 }
 
 export interface GopPreguntaDetalle {
@@ -301,13 +324,20 @@ export async function getGopsResumen(anio: number, mes: number): Promise<GopTema
       return !!d.fecha_revision && d.fecha_revision <= hoy
     }).length
 
-    const serie: Array<{ mes: number; puntaje: number }> = []
+    const serie: GopTemaResumen["serie"] = []
     for (let m = 1; m <= 12; m++) {
       const vs = preguntas
         .map((p) => porPregunta.get(p.id)?.get(m))
         .filter((v): v is ValorGop => !!v)
       const p = puntajeDeRespuestas(vs)
-      if (p !== null) serie.push({ mes: m, puntaje: p })
+      if (p !== null) {
+        serie.push({
+          mes: m,
+          puntaje: p,
+          si: vs.filter((v) => v === "si").length,
+          no: vs.filter((v) => v === "no").length,
+        })
+      }
     }
 
     const puntaje = puntajeDeRespuestas(valores)
@@ -405,6 +435,71 @@ export async function getGopsPendientes(anio: number, mes: number): Promise<GopP
   }
 
   return out.sort((a, b) => (b.impacto ?? 0) - (a.impacto ?? 0) || b.meses_en_no - a.meses_en_no)
+}
+
+/**
+ * Qué cambió en el mes: cada pregunta que pasó a Si (mejora) o dejó de serlo
+ * (retroceso) contra el último mes con carga para esa pregunta — para las bimestrales
+ * eso es dos meses atrás. Es la lectura que falta en el Excel: el Resumen muestra que
+ * un GOP subió, pero no cuál punto se cerró ni qué plan lo cerró.
+ */
+export async function getGopsCambios(anio: number, mes: number): Promise<GopCambio[]> {
+  const hoy = hoyAR()
+  const { temas, porTema, porPregunta, decisionPorPregunta } = await cargarAnio(anio)
+
+  const out: GopCambio[] = []
+
+  for (const t of temas) {
+    const preguntas = porTema.get(t.id) ?? []
+    const puntuan = preguntas.filter((p) => {
+      const v = porPregunta.get(p.id)?.get(mes)
+      return v === "si" || v === "no"
+    }).length
+
+    for (const p of preguntas) {
+      const valores = porPregunta.get(p.id)
+      const valor = valores?.get(mes)
+      if (!valor) continue
+
+      let mesPrevio: number | null = null
+      for (let m = mes - 1; m >= 1; m--) {
+        if (valores?.has(m)) {
+          mesPrevio = m
+          break
+        }
+      }
+      if (mesPrevio === null) continue
+      const previo = valores!.get(mesPrevio)!
+      if (previo === valor) continue
+
+      // Solo cuenta lo que mueve el puntaje: entrar o salir de "Si". Un No que pasa a
+      // N/A también sube el puntaje, pero no es una mejora real y se lista igual como
+      // cambio para que no pase desapercibido.
+      const sentido: GopCambio["sentido"] = valor === "si" ? "mejora" : "retroceso"
+
+      out.push({
+        pregunta_id: p.id,
+        tema_id: t.id,
+        tema_nombre: t.nombre,
+        tema_area: t.area,
+        codigo: p.codigo,
+        seccion: p.seccion,
+        texto: p.texto,
+        mes_previo: mesPrevio,
+        valor_previo: previo,
+        valor,
+        sentido,
+        impacto: puntuan === 0 ? null : 1 / puntuan,
+        decision: armarDecision(decisionPorPregunta.get(p.id), hoy),
+      })
+    }
+  }
+
+  return out.sort(
+    (a, b) =>
+      (a.sentido === b.sentido ? 0 : a.sentido === "mejora" ? -1 : 1) ||
+      (b.impacto ?? 0) - (a.impacto ?? 0),
+  )
 }
 
 // ---------------------------------------------------------------------------

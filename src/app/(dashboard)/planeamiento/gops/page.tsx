@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react"
 import { requireAuth } from "@/lib/session"
 import { hoyAR } from "@/lib/herramientas-gestion"
 import {
+  getGopsCambios,
   getGopsPendientes,
   getGopsPeriodos,
   getGopsResumen,
@@ -33,9 +34,10 @@ export default async function GopsPage({
     ? { anio: Number(pedido[1]), mes: Number(pedido[2]) }
     : (periodos[0] ?? { anio: anioHoy, mes: mesHoy })
 
-  const [resumen, pendientes, planes, responsables, importaciones] = await Promise.all([
+  const [resumen, pendientes, cambios, planes, responsables, importaciones] = await Promise.all([
     getGopsResumen(actual.anio, actual.mes),
     getGopsPendientes(actual.anio, actual.mes),
+    getGopsCambios(actual.anio, actual.mes),
     listarPlanesGops(),
     canEdit ? listarResponsablesGops() : Promise.resolve([]),
     getUltimasImportaciones(3),
@@ -54,6 +56,7 @@ export default async function GopsPage({
         periodos={periodos}
         resumen={resumen}
         pendientes={pendientes}
+        cambios={cambios}
         planes={"data" in planes ? planes.data : []}
         responsables={responsables}
         importaciones={importaciones}

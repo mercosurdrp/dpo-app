@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { ClipboardList, Loader2, Paperclip } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -20,6 +20,8 @@ interface Props {
   planes: GopPlan[]
   responsables: Array<{ id: string; nombre: string }>
   canEdit: boolean
+  /** Plan al que se llegó desde el Resumen: se muestra abierto y se scrollea hasta él. */
+  destacadoId?: string | null
 }
 
 const ESTADO_COLOR: Record<string, string> = {
@@ -28,13 +30,20 @@ const ESTADO_COLOR: Record<string, string> = {
   completado: "bg-emerald-100 text-emerald-700",
 }
 
-export function PlanesTab({ planes, canEdit }: Props) {
+export function PlanesTab({ planes, canEdit, destacadoId }: Props) {
   const [filtro, setFiltro] = useState<"todos" | "corto" | "largo">("todos")
 
   const lista = useMemo(
     () => (filtro === "todos" ? planes : planes.filter((p) => p.horizonte === filtro)),
     [planes, filtro],
   )
+
+  // Si el plan destacado quedó fuera del filtro, se vuelve a "todos" para que aparezca.
+  useEffect(() => {
+    if (!destacadoId) return
+    if (!lista.some((p) => p.id === destacadoId)) setFiltro("todos")
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destacadoId])
 
   if (planes.length === 0) {
     return (
@@ -75,18 +84,47 @@ export function PlanesTab({ planes, canEdit }: Props) {
       </div>
 
       {lista.map((plan) => (
-        <PlanCard key={plan.id} plan={plan} canEdit={canEdit} />
+        <PlanCard
+          key={plan.id}
+          plan={plan}
+          canEdit={canEdit}
+          destacado={plan.id === destacadoId}
+        />
       ))}
     </div>
   )
 }
 
-function PlanCard({ plan, canEdit }: { plan: GopPlan; canEdit: boolean }) {
+function PlanCard({
+  plan,
+  canEdit,
+  destacado,
+}: {
+  plan: GopPlan
+  canEdit: boolean
+  destacado?: boolean
+}) {
   const router = useRouter()
   const [abierto, setAbierto] = useState(false)
   const [avances, setAvances] = useState<GopPlanAvance[] | null>(null)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+
+  // Llegar desde "Ver plan": abrir, cargar avances y traerlo a la vista.
+  useEffect(() => {
+    if (!destacado) return
+    setAbierto(true)
+    if (avances === null) {
+      startTransition(async () => {
+        const res = await listarAvancesPlanGop(plan.id)
+        setAvances("data" in res ? res.data : [])
+      })
+    }
+    document
+      .getElementById(`plan-${plan.id}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destacado, plan.id])
 
   function alternar() {
     const nuevo = !abierto
@@ -123,7 +161,10 @@ function PlanCard({ plan, canEdit }: { plan: GopPlan; canEdit: boolean }) {
   }
 
   return (
-    <Card>
+    <Card
+      id={`plan-${plan.id}`}
+      className={destacado ? "scroll-mt-4 ring-2 ring-blue-400 ring-offset-2" : undefined}
+    >
       <CardContent className="py-4">
         <button onClick={alternar} className="w-full text-left">
           <div className="flex flex-wrap items-center gap-2">

@@ -2,12 +2,19 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ClipboardCheck, FileSpreadsheet, ListChecks, Target } from "lucide-react"
+import { ClipboardCheck, FileSpreadsheet, LayoutGrid, ListChecks, Target } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import type { GopPendiente, GopTemaResumen, ImportacionLog, GopPeriodo } from "@/actions/gops"
+import type {
+  GopCambio,
+  GopPendiente,
+  GopTemaResumen,
+  ImportacionLog,
+  GopPeriodo,
+} from "@/actions/gops"
 import type { GopPlan } from "@/actions/gops-planes"
+import { ResumenTab } from "./_components/resumen-tab"
 import { PendientesTab } from "./_components/pendientes-tab"
 import { TemasTab } from "./_components/temas-tab"
 import { PlanesTab } from "./_components/planes-tab"
@@ -19,6 +26,7 @@ interface Props {
   periodos: GopPeriodo[]
   resumen: GopTemaResumen[]
   pendientes: GopPendiente[]
+  cambios: GopCambio[]
   planes: GopPlan[]
   responsables: Array<{ id: string; nombre: string }>
   importaciones: ImportacionLog[]
@@ -31,6 +39,7 @@ export function GopsClient({
   periodos,
   resumen,
   pendientes,
+  cambios,
   planes,
   responsables,
   importaciones,
@@ -38,8 +47,17 @@ export function GopsClient({
   mesEnCurso,
 }: Props) {
   const router = useRouter()
-  const [tab, setTab] = useState("pendientes")
+  // Arranca en Resumen: es la hoja del Excel que se mira primero, con la mejora del mes.
+  const [tab, setTab] = useState("resumen")
   const [importarAbierto, setImportarAbierto] = useState(false)
+  // Plan al que se salta desde "Ver plan" en el Resumen: abre la pestaña Planes ya
+  // desplegado sobre ese plan.
+  const [planDestacado, setPlanDestacado] = useState<string | null>(null)
+
+  function verPlan(planId: string) {
+    setPlanDestacado(planId)
+    setTab("planes")
+  }
 
   const hayDatos = resumen.some((t) => t.puntaje !== null)
 
@@ -165,7 +183,11 @@ export function GopsClient({
           </div>
 
           <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
-            <TabsList className="grid w-full max-w-xl grid-cols-3">
+            <TabsList className="grid w-full max-w-2xl grid-cols-4">
+              <TabsTrigger value="resumen">
+                <LayoutGrid className="mr-1.5 h-3.5 w-3.5" />
+                Resumen
+              </TabsTrigger>
               <TabsTrigger value="pendientes">
                 A decidir
                 {pendientes.length > 0 && (
@@ -184,6 +206,15 @@ export function GopsClient({
                 )}
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="resumen" className="mt-4">
+              <ResumenTab
+                resumen={resumen}
+                cambios={cambios}
+                periodo={periodo}
+                onVerPlan={verPlan}
+              />
+            </TabsContent>
 
             <TabsContent value="pendientes" className="mt-4">
               <PendientesTab
@@ -206,7 +237,12 @@ export function GopsClient({
             </TabsContent>
 
             <TabsContent value="planes" className="mt-4">
-              <PlanesTab planes={planes} responsables={responsables} canEdit={canEdit} />
+              <PlanesTab
+                planes={planes}
+                responsables={responsables}
+                canEdit={canEdit}
+                destacadoId={planDestacado}
+              />
             </TabsContent>
           </Tabs>
         </>
