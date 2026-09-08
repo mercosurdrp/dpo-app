@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import {
   Camera,
   CheckCircle2,
+  Clock,
   Dices,
   ImageIcon,
   Loader2,
@@ -226,6 +227,17 @@ export function SorteoGanadoresCard({
                         <Phone className="h-3 w-3" />
                         {g.telefono}
                       </span>
+                      {g.ventana_desde && g.ventana_hasta && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded bg-sky-50 px-1.5 text-sky-800"
+                          title={g.ventana_obs ?? undefined}
+                        >
+                          <Clock className="h-3 w-3" />
+                          Recibe {g.ventana_desde.slice(0, 5)}–
+                          {g.ventana_hasta.slice(0, 5)}
+                          {g.ventana_obs && ` (${g.ventana_obs})`}
+                        </span>
+                      )}
                     </p>
                     <p className="mt-1 text-[11px] text-slate-500">
                       Premio: {g.premio}. Sorteado el{" "}

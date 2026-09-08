@@ -20,6 +20,9 @@ export function SorteoFormClient() {
   const [contacto, setContacto] = useState("")
   const [telefono, setTelefono] = useState("")
   const [califico, setCalifico] = useState(false)
+  const [desde, setDesde] = useState("")
+  const [hasta, setHasta] = useState("")
+  const [ventanaObs, setVentanaObs] = useState("")
   const [web, setWeb] = useState("")
 
   async function handleSubmit(e: React.FormEvent) {
@@ -30,6 +33,10 @@ export function SorteoFormClient() {
     if (!contacto.trim()) return toast.error("Escribí tu nombre")
     if (telefono.replace(/\D/g, "").length < 6)
       return toast.error("Escribí un teléfono o WhatsApp válido")
+    if (!desde || !hasta)
+      return toast.error("Indicá desde y hasta qué hora podés recibir el pedido")
+    if (desde >= hasta)
+      return toast.error("La hora «hasta» tiene que ser después de la «desde»")
 
     setLoading(true)
     const r = await inscribirSorteoRmd({
@@ -40,6 +47,9 @@ export function SorteoFormClient() {
       nombre_contacto: contacto,
       telefono,
       declara_califico: califico,
+      ventana_desde: desde,
+      ventana_hasta: hasta,
+      ventana_obs: ventanaObs,
       web,
     })
     setLoading(false)
@@ -163,6 +173,48 @@ export function SorteoFormClient() {
                 required
               />
             </div>
+          </div>
+
+          <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <p className="text-sm font-medium text-slate-800">
+              ¿En qué horario podés recibir el pedido? *
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="desde" className="text-xs">
+                  Desde
+                </Label>
+                <Input
+                  id="desde"
+                  type="time"
+                  value={desde}
+                  onChange={(e) => setDesde(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="hasta" className="text-xs">
+                  Hasta
+                </Label>
+                <Input
+                  id="hasta"
+                  type="time"
+                  value={hasta}
+                  onChange={(e) => setHasta(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <Input
+              value={ventanaObs}
+              onChange={(e) => setVentanaObs(e.target.value)}
+              placeholder="Aclaración (opcional): ej. cerrado de 13 a 16, sábados hasta las 12"
+              maxLength={200}
+              className="text-sm"
+            />
+            <p className="text-[11px] text-slate-500">
+              Nos sirve para que el reparto pase cuando estás.
+            </p>
           </div>
 
           <label className="flex cursor-pointer items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">

@@ -386,6 +386,17 @@ export function SorteoInscriptosCard({ resumen }: Props) {
                           <span className="block text-slate-400">
                             {i.localidad}
                           </span>
+                          {i.ventana_desde && i.ventana_hasta && (
+                            <span
+                              className="mt-0.5 inline-flex items-center gap-1 rounded bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-800"
+                              title={i.ventana_obs ?? undefined}
+                            >
+                              <Clock className="h-3 w-3" />
+                              Recibe {i.ventana_desde.slice(0, 5)}–
+                              {i.ventana_hasta.slice(0, 5)}
+                              {i.ventana_obs && " *"}
+                            </span>
+                          )}
                         </span>
                       </span>
                     </td>

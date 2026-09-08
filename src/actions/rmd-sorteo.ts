@@ -43,6 +43,10 @@ export interface InscripcionSorteoRmd {
   ultima_puntuacion: number | null
   ultima_puntuacion_fecha: string | null
   estado: EstadoInscripcion
+  /** Horario en que el PDV dice poder recibir el pedido (HH:MM:SS). */
+  ventana_desde: string | null
+  ventana_hasta: string | null
+  ventana_obs: string | null
 }
 
 export interface ResumenSorteoRmd {
@@ -71,10 +75,15 @@ export interface GanadorSorteoRmd {
   localidad: string
   nombre_contacto: string
   telefono: string
+  ventana_desde: string | null
+  ventana_hasta: string | null
+  ventana_obs: string | null
 }
 
 const COLS_INSCRIPCION =
-  "id, campania, nombre_pdv, cod_cliente, cod_cliente_resuelto, codigo_origen, nombre_sugerido, direccion, localidad, nombre_contacto, telefono, declara_califico, created_at, votos_desde, ultima_puntuacion, ultima_puntuacion_fecha, estado"
+  "id, campania, nombre_pdv, cod_cliente, cod_cliente_resuelto, codigo_origen, nombre_sugerido, direccion, localidad, nombre_contacto, telefono, declara_califico, created_at, votos_desde, ultima_puntuacion, ultima_puntuacion_fecha, estado, ventana_desde, ventana_hasta, ventana_obs"
+
+const HORA_RE = /^([01]\d|2[0-3]):[0-5]\d$/
 
 function limpiar(s: unknown, max: number): string {
   return typeof s === "string"
@@ -164,6 +173,13 @@ export async function inscribirSorteoRmd(
       return { error: "Escribí un teléfono o WhatsApp válido." }
     if (cod_cliente != null && (cod_cliente <= 0 || cod_cliente > 99_999_999))
       return { error: "El número de cliente no parece válido." }
+    const ventana_desde = limpiar(input.ventana_desde, 5)
+    const ventana_hasta = limpiar(input.ventana_hasta, 5)
+    const ventana_obs = limpiar(input.ventana_obs, 200) || null
+    if (!HORA_RE.test(ventana_desde) || !HORA_RE.test(ventana_hasta))
+      return { error: "Indicá desde qué hora y hasta qué hora podés recibir." }
+    if (ventana_desde >= ventana_hasta)
+      return { error: "La hora «hasta» tiene que ser posterior a la hora «desde»." }
 
     const supabase = createAdminClient()
 
@@ -226,15 +242,20 @@ export async function inscribirSorteoRmd(
       declara_califico: !!input.declara_califico,
       user_agent,
     }
-    let { error } = await supabase.from("rmd_sorteo_inscripciones").insert({
-      ...fila,
+    const extras = {
       cod_cliente_resuelto,
       codigo_origen,
       nombre_sugerido,
-    })
-    // Si la segunda migración todavía no está aplicada, las columnas nuevas no
-    // existen: se guarda igual sin ellas antes que perder la inscripción.
-    if (error && /cod_cliente_resuelto|codigo_origen|nombre_sugerido/.test(error.message)) {
+      ventana_desde,
+      ventana_hasta,
+      ventana_obs,
+    }
+    let { error } = await supabase
+      .from("rmd_sorteo_inscripciones")
+      .insert({ ...fila, ...extras })
+    // Si las migraciones 2 o 3 todavía no están aplicadas, las columnas nuevas
+    // no existen: se guarda igual sin ellas antes que perder la inscripción.
+    if (error && /cod_cliente_resuelto|codigo_origen|nombre_sugerido|ventana_/.test(error.message)) {
       ;({ error } = await supabase.from("rmd_sorteo_inscripciones").insert(fila))
     }
     if (error)
@@ -375,6 +396,9 @@ export async function exportarInscripcionesSorteoRmd(
       "ultima_puntuacion",
       "ultima_puntuacion_fecha",
       "estado",
+      "recibe_desde",
+      "recibe_hasta",
+      "recibe_obs",
     ]
     const lineas = filas.map((i) =>
       [
@@ -392,6 +416,9 @@ export async function exportarInscripcionesSorteoRmd(
         i.ultima_puntuacion ?? "",
         i.ultima_puntuacion_fecha ?? "",
         i.estado,
+        i.ventana_desde?.slice(0, 5) ?? "",
+        i.ventana_hasta?.slice(0, 5) ?? "",
+        i.ventana_obs ?? "",
       ]
         .map(celda)
         .join(";"),
@@ -427,11 +454,14 @@ function mapGanador(r: Record<string, unknown>): GanadorSorteoRmd {
     localidad: (ins.localidad as string) ?? "",
     nombre_contacto: (ins.nombre_contacto as string) ?? "",
     telefono: (ins.telefono as string) ?? "",
+    ventana_desde: (ins.ventana_desde as string | null) ?? null,
+    ventana_hasta: (ins.ventana_hasta as string | null) ?? null,
+    ventana_obs: (ins.ventana_obs as string | null) ?? null,
   }
 }
 
 const SELECT_GANADOR =
-  "*, inscripcion:rmd_sorteo_inscripciones!rmd_sorteo_ganadores_inscripcion_id_fkey(nombre_pdv, cod_cliente_resuelto, direccion, localidad, nombre_contacto, telefono)"
+  "*, inscripcion:rmd_sorteo_inscripciones!rmd_sorteo_ganadores_inscripcion_id_fkey(nombre_pdv, cod_cliente_resuelto, direccion, localidad, nombre_contacto, telefono, ventana_desde, ventana_hasta, ventana_obs)"
 
 export async function listarGanadoresSorteoRmd(): Promise<
   Result<GanadorSorteoRmd[]>

@@ -21,6 +21,10 @@ export interface InscripcionSorteoInput {
   nombre_contacto: string
   telefono: string
   declara_califico: boolean
+  /** Horario en que puede recibir el pedido (HH:MM). */
+  ventana_desde: string
+  ventana_hasta: string
+  ventana_obs?: string
   /** Honeypot: los bots lo completan, las personas no lo ven. */
   web?: string
 }
