@@ -47,6 +47,7 @@ import {
   cuentaComoCumplido,
   arriboAnticipadoRecepcion,
   cumpleRecepcion,
+  esSoloVaciosRecepcion,
   esPicoRecepcion,
   type CasoCategoria,
   type CasoSlaDetalle,
@@ -838,7 +839,7 @@ async function filaRecepcion(
 
   const { data, error } = await acarreo
     .from("recepcion_acarreos")
-    .select("fecha, hora_arribo, hora_fin_descarga, hora_salida")
+    .select("fecha, hora_arribo, hora_fin_descarga, hora_salida, notas")
     .gte("fecha", desde)
     .lt("fecha", hastaExcl)
 
@@ -850,6 +851,8 @@ async function filaRecepcion(
   let cumplidos = 0
   let totalAplica = 0
   for (const r of data as any[]) {
+    // El que sólo cargó vacíos no descargó producto: no entra al SLA.
+    if (esSoloVaciosRecepcion(r)) continue
     const res = cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga, r.hora_salida)
     if (res === null) continue // fuera de ventana 08–16 o sin fin de descarga
     const dia = Number((r.fecha as string).slice(8, 10))
@@ -2266,11 +2269,12 @@ export async function getDetalleDiaSla(
       } else {
         const { data } = await acarreo
           .from("recepcion_acarreos")
-          .select("patente, transportista, origen, hora_arribo, hora_fin_descarga, hora_salida")
+          .select("patente, transportista, origen, hora_arribo, hora_fin_descarga, hora_salida, notas")
           .eq("fecha", fecha)
           .order("hora_arribo", { ascending: true })
         const rows = (data ?? []) as any[]
         const evaluables = rows
+          .filter((r) => !esSoloVaciosRecepcion(r))
           .map((r) => cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga, r.hora_salida))
           .filter((v) => v !== null) as boolean[]
 
@@ -2287,11 +2291,14 @@ export async function getDetalleDiaSla(
         }
 
         for (const r of rows) {
-          const ok = cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga, r.hora_salida)
+          const soloVacios = esSoloVaciosRecepcion(r)
+          const ok = soloVacios ? null : cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga, r.hora_salida)
           const pico = esPicoRecepcion(r.hora_arribo, r.hora_fin_descarga, r.hora_salida)
           const arr = fmtMin(minutosARG(r.hora_arribo))
           const fin = r.hora_fin_descarga ? fmtMin(minutosARG(r.hora_fin_descarga)) : "—"
-          const mark = pico ? "pico" : ok === null ? "·" : ok ? "✓" : "✗"
+          // El de sólo vacíos se sigue listando —ocupó dársena— pero se aclara
+          // por qué no cuenta, si no parece un registro incompleto.
+          const mark = soloVacios ? "vacíos" : pico ? "pico" : ok === null ? "·" : ok ? "✓" : "✗"
           // Llegó antes de que abra la ventana: se aclara que el reloj arrancó
           // a las 08:00, si no el "02:20→08:37 ✓" se lee como un error.
           const reloj = arriboAnticipadoRecepcion(r.hora_arribo) ? " (reloj 08:00)" : ""

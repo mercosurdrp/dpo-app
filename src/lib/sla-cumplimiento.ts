@@ -226,6 +226,23 @@ export function esPicoRecepcion(
 }
 
 /**
+ * Camión que vino SÓLO a cargar envases vacíos: no descarga producto, así que no
+ * hay descarga que evaluar en el SLA. acarreo-rdf lo marca en la nota de la
+ * recepción (ver "Dónde se guarda la carga de vacíos" en su src/lib/acarreo.ts);
+ * mientras esa base no tenga la columna `operacion`, el marcador es el dato.
+ *
+ * 🚨 Los dos sistemas tienen que dar el MISMO número: si acá se contara y en
+ * acarreo-rdf no, el SLA #7 y el ATCT dejarían de coincidir.
+ */
+export function esSoloVaciosRecepcion(
+  fila: { notas?: string | null; operacion?: string | null } | null | undefined,
+): boolean {
+  if (!fila) return false
+  if (fila.operacion) return fila.operacion === "solo_vacios"
+  return /\[\[vac:solo_vacios\|/.test(fila.notas ?? "")
+}
+
+/**
  * Cumplimiento de una recepción para el SLA #7. El reloj arranca en el arribo,
  * o a las 08:00 si el camión llegó antes (compromiso de ventana). Devuelve:
  *   true  → descarga ≤ 3 h desde el inicio del reloj
