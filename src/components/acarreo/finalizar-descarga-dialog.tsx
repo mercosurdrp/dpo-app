@@ -29,6 +29,9 @@ export function FinalizarDescargaDialog({
   pendiente,
   onCerrar,
   onConfirmar,
+  titulo,
+  descripcion,
+  accionLabel = "Finalizar",
 }: {
   abierto: boolean
   patente: string
@@ -37,6 +40,11 @@ export function FinalizarDescargaDialog({
   pendiente: boolean
   onCerrar: () => void
   onConfirmar: (maquinistas: string[]) => void
+  /** Por defecto pregunta quién DESCARGÓ; el de sólo vacíos pregunta quién cargó. */
+  titulo?: string
+  descripcion?: string
+  /** Texto del botón: «Finalizar», «Empezar vacíos», «Fin vacíos». */
+  accionLabel?: string
 }) {
   const [elegidos, setElegidos] = useState<string[]>([])
 
@@ -58,9 +66,9 @@ export function FinalizarDescargaDialog({
     <Dialog open={abierto} onOpenChange={(o) => !o && onCerrar()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>¿Quién descargó {patente}?</DialogTitle>
+          <DialogTitle>{titulo ?? `¿Quién descargó ${patente}?`}</DialogTitle>
           <DialogDescription>
-            Marcá a todos los que descargaron. Si fueron dos, marcá los dos.
+            {descripcion ?? "Marcá a todos los que descargaron. Si fueron dos, marcá los dos."}
           </DialogDescription>
         </DialogHeader>
 
@@ -119,7 +127,7 @@ export function FinalizarDescargaDialog({
             <CheckCircle2 className="size-4" />
             {elegidos.length === 0
               ? "Elegí quién descargó"
-              : `Finalizar (${elegidos.length === 1 ? "1 maquinista" : `${elegidos.length} maquinistas`})`}
+              : `${accionLabel} (${elegidos.length === 1 ? "1 maquinista" : `${elegidos.length} maquinistas`})`}
           </button>
         </DialogFooter>
       </DialogContent>

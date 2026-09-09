@@ -2,19 +2,29 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Truck, Clock, Package, MapPin, FileText, PlayCircle, CheckCircle2, LogIn, LogOut, Trash2, Tv, QrCode, Download } from "lucide-react"
+import { Truck, Clock, Package, MapPin, FileText, PlayCircle, CheckCircle2, LogIn, LogOut, Trash2, Tv, QrCode, Download, Recycle } from "lucide-react"
 import {
   getPendientesAcarreo,
   ingresarDepositoAcarreo,
   iniciarDescargaAcarreo,
   finalizarDescargaAcarreo,
+  finalizarVaciosAcarreo,
   marcarSalidaAcarreo,
   borrarRecepcionAcarreo,
   type RecepcionPendiente,
 } from "@/actions/acarreo"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ACARREO_ANUNCIO_URL } from "@/lib/acarreo-anuncio"
+import { OPERACIONES_ACARREO, etiquetaOperacion, llevaVacios } from "@/lib/acarreo-vacios"
 import { FinalizarDescargaDialog } from "@/components/acarreo/finalizar-descarga-dialog"
+
+/**
+ * Qué se está cerrando en el diálogo de "¿quién lo hizo?":
+ *  - descarga:        Finalizar una descarga sin vacíos.
+ *  - empezar_vacios:  cierra la descarga y abre la carga de vacíos de una.
+ *  - fin_vacios:      cierra la operación del camión que SÓLO cargó vacíos.
+ */
+type Cierre = { row: RecepcionPendiente; modo: "descarga" | "empezar_vacios" | "fin_vacios" }
 
 type Color = "verde" | "amarillo" | "rojo"
 function semaforo(min: number): Color {
@@ -60,7 +70,7 @@ export function RecepcionClient({
   const [qrAbierto, setQrAbierto] = useState(false)
   // Camión cuya descarga se está cerrando: abre el diálogo que pregunta quiénes
   // descargaron (puede haber sido de a dos).
-  const [finalizando, setFinalizando] = useState<RecepcionPendiente | null>(null)
+  const [finalizando, setFinalizando] = useState<Cierre | null>(null)
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -113,15 +123,37 @@ export function RecepcionClient({
 
       <FinalizarDescargaDialog
         abierto={finalizando !== null}
-        patente={finalizando?.patente ?? ""}
-        iniciadoPor={finalizando?.registrado_por ?? null}
+        patente={finalizando?.row.patente ?? ""}
+        iniciadoPor={finalizando?.row.registrado_por ?? null}
         pendiente={pending}
+        titulo={
+          finalizando?.modo === "fin_vacios"
+            ? `¿Quién cargó los vacíos de ${finalizando.row.patente}?`
+            : undefined
+        }
+        descripcion={
+          finalizando?.modo === "fin_vacios"
+            ? "Marcá a todos los que cargaron. Si fueron dos, marcá los dos."
+            : finalizando?.modo === "empezar_vacios"
+              ? "Marcá a todos los que descargaron. Al confirmar se cierra la descarga y arranca la carga de vacíos."
+              : undefined
+        }
+        accionLabel={
+          finalizando?.modo === "empezar_vacios"
+            ? "Empezar vacíos"
+            : finalizando?.modo === "fin_vacios"
+              ? "Fin vacíos"
+              : "Finalizar"
+        }
         onCerrar={() => setFinalizando(null)}
         onConfirmar={(maquinistas) =>
           start(async () => {
-            const id = finalizando?.id
-            if (!id) return
-            const res = await finalizarDescargaAcarreo(id, maquinistas)
+            if (!finalizando) return
+            const { row, modo } = finalizando
+            const res =
+              modo === "fin_vacios"
+                ? await finalizarVaciosAcarreo(row.id, maquinistas)
+                : await finalizarDescargaAcarreo(row.id, maquinistas, modo === "empezar_vacios")
             if (res.error) {
               toast.error(res.error)
               return
@@ -187,11 +219,17 @@ export function RecepcionClient({
             const estadiaMin = Math.round((now - new Date(r.hora_arribo).getTime()) / 60000)
             const color = semaforo(estadiaMin)
             const c = ESTILO[color]
-            const estadoLabel =
-              r.estado === "finalizado"
+            const conVacios = llevaVacios(r.operacion)
+            // Tramo de vacíos abierto: empezó y no cerró. Bloquea la salida.
+            const cargandoVacios = conVacios && !!r.hora_inicio_vacios && !r.hora_fin_vacios
+            const estadoLabel = cargandoVacios
+              ? "Cargando vacíos"
+              : r.estado === "finalizado"
                 ? "Esperando salida"
                 : r.estado === "descargando"
-                  ? "Descargando"
+                  ? r.operacion === "solo_vacios"
+                    ? "Cargando vacíos"
+                    : "Descargando"
                   : r.estado === "ingresado"
                     ? "En depósito"
                     : "Anunciado"
@@ -219,7 +257,17 @@ export function RecepcionClient({
                   <Linea icon={<Clock className="size-3.5" />} t={`Arribo ${horaHHmm(r.hora_arribo)}`} />
                   {r.hora_ingreso_deposito && <Linea icon={<LogIn className="size-3.5" />} t={`Ingreso ${horaHHmm(r.hora_ingreso_deposito)}`} />}
                   {r.hora_inicio_descarga && <Linea icon={<PlayCircle className="size-3.5" />} t={`Inicio descarga ${horaHHmm(r.hora_inicio_descarga)}`} />}
-                  {r.hora_fin_descarga && <Linea icon={<CheckCircle2 className="size-3.5" />} t={`Fin descarga ${horaHHmm(r.hora_fin_descarga)}`} />}
+                  {r.hora_fin_descarga && r.operacion !== "solo_vacios" && <Linea icon={<CheckCircle2 className="size-3.5" />} t={`Fin descarga ${horaHHmm(r.hora_fin_descarga)}`} />}
+                  {conVacios && (
+                    <Linea
+                      icon={<Recycle className="size-3.5" />}
+                      t={
+                        r.hora_inicio_vacios
+                          ? `Vacíos ${horaHHmm(r.hora_inicio_vacios)} → ${r.hora_fin_vacios ? horaHHmm(r.hora_fin_vacios) : "…"}`
+                          : etiquetaOperacion(r.operacion)
+                      }
+                    />
+                  )}
                   {r.transportista && <Linea icon={<Truck className="size-3.5" />} t={r.transportista} />}
                   {r.origen && <Linea icon={<MapPin className="size-3.5" />} t={r.origen} />}
                   {r.remito && <Linea icon={<FileText className="size-3.5" />} t={`Remito ${r.remito}`} />}
@@ -248,30 +296,82 @@ export function RecepcionClient({
                     </span>
                   )}
                   {r.estado === "ingresado" && (
-                    <button
-                      disabled={pending}
-                      onClick={() =>
-                        start(async () => {
-                          const res = await iniciarDescargaAcarreo(r.id)
-                          if (res.error) toast.error(res.error)
-                          await refrescar()
-                        })
-                      }
-                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
-                    >
-                      <PlayCircle className="size-4" /> Iniciar descarga
-                    </button>
+                    // Qué vino a hacer el camión: se elige al iniciar, en un
+                    // solo paso. Sin esto el tiempo de los vacíos quedaba
+                    // escondido en «fin de descarga → salida».
+                    <div className="flex flex-1 flex-col gap-1.5">
+                      {OPERACIONES_ACARREO.map((op) => (
+                        <button
+                          key={op.valor}
+                          disabled={pending}
+                          title={op.detalle}
+                          onClick={() =>
+                            start(async () => {
+                              const res = await iniciarDescargaAcarreo(r.id, op.valor)
+                              if (res.error) toast.error(res.error)
+                              await refrescar()
+                            })
+                          }
+                          className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white disabled:opacity-60 ${
+                            op.valor === "descarga"
+                              ? "bg-indigo-600 hover:bg-indigo-500"
+                              : op.valor === "descarga_vacios"
+                                ? "bg-violet-600 hover:bg-violet-500"
+                                : "bg-teal-600 hover:bg-teal-500"
+                          }`}
+                        >
+                          {op.valor === "descarga" ? <PlayCircle className="size-4" /> : <Recycle className="size-4" />}
+                          {op.label}
+                        </button>
+                      ))}
+                    </div>
                   )}
-                  {r.estado === "descargando" && (
+                  {r.estado === "descargando" && r.operacion === "descarga" && (
                     <button
                       disabled={pending}
-                      onClick={() => setFinalizando(r)}
+                      onClick={() => setFinalizando({ row: r, modo: "descarga" })}
                       className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
                     >
                       <CheckCircle2 className="size-4" /> Finalizar
                     </button>
                   )}
-                  {r.estado === "finalizado" && puedeIngreso && (
+                  {r.estado === "descargando" && r.operacion === "descarga_vacios" && (
+                    <button
+                      disabled={pending}
+                      onClick={() => setFinalizando({ row: r, modo: "empezar_vacios" })}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-60"
+                    >
+                      <Recycle className="size-4" /> Empezar vacíos
+                    </button>
+                  )}
+                  {r.estado === "descargando" && r.operacion === "solo_vacios" && (
+                    <button
+                      disabled={pending}
+                      onClick={() => setFinalizando({ row: r, modo: "fin_vacios" })}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
+                    >
+                      <CheckCircle2 className="size-4" /> Fin vacíos
+                    </button>
+                  )}
+                  {r.estado === "finalizado" && cargandoVacios && (
+                    // Descarga cerrada, vacíos abiertos: la salida se mide
+                    // contra el cierre real de la operación, así que primero
+                    // hay que cerrar este tramo.
+                    <button
+                      disabled={pending}
+                      onClick={() =>
+                        start(async () => {
+                          const res = await finalizarVaciosAcarreo(r.id)
+                          if (res.error) toast.error(res.error)
+                          await refrescar()
+                        })
+                      }
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
+                    >
+                      <CheckCircle2 className="size-4" /> Fin vacíos
+                    </button>
+                  )}
+                  {r.estado === "finalizado" && !cargandoVacios && puedeIngreso && (
                     <button
                       disabled={pending}
                       onClick={() =>
@@ -286,9 +386,9 @@ export function RecepcionClient({
                       <LogOut className="size-4" /> Salida del almacén
                     </button>
                   )}
-                  {r.estado === "finalizado" && !puedeIngreso && (
+                  {r.estado === "finalizado" && !cargandoVacios && !puedeIngreso && (
                     <span className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs italic text-slate-500">
-                      Descarga terminada · esperando salida
+                      {conVacios ? "Vacíos cargados · esperando salida" : "Descarga terminada · esperando salida"}
                     </span>
                   )}
                   {esAdmin && (

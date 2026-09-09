@@ -17,8 +17,12 @@
  * ([[src/lib/acarreo-operadores.ts]]).
  */
 
-/** Marcador al final de la nota. El `\s*` se come el espacio que lo separa. */
-const MARCA_EQUIPO = /\s*\[\[maq:([^\]]*)\]\]\s*$/
+/**
+ * Marcador en cualquier parte de la nota: convive con el de vacíos
+ * (`[[vac:...]]`, ver src/lib/acarreo-vacios.ts) en cualquier orden. El `\s*`
+ * se come el espacio que lo separa.
+ */
+const MARCA_EQUIPO = /\s*\[\[maq:([^\]]*)\]\]/
 
 /** Emails del equipo escondidos en la nota. Null si la nota no trae marcador. */
 export function equipoDeNotas(notas: string | null): string[] | null {
