@@ -161,12 +161,23 @@ export function WarehousePerdidasDetalleDiaDialog({
     data?.wqi_hl_dia != null && data?.reempaque_hl_dia != null
       ? Math.max(0, data.wqi_hl_dia - data.reempaque_hl_dia)
       : null
-  const hayDistribucion = (data?.roturas_detalle ?? []).some(
+  // Roturas que entran en el WQI: almacén y acarreo. Las de Distribución se
+  // rompieron en la calle y van al DQI (esa fila tiene su propio popover por
+  // camión): NO se listan acá. Así la tabla suma exactamente las "roturas
+  // reales" de la tarjeta, con el mismo criterio que el indicador.
+  const roturasWqi = (data?.roturas_detalle ?? []).filter(
+    (r) => r.origen !== "distribucion",
+  )
+  const roturasDistribucion = (data?.roturas_detalle ?? []).filter(
     (r) => r.origen === "distribucion",
   )
-  const hayAcarreo = (data?.roturas_detalle ?? []).some(
-    (r) => r.origen === "acarreo",
+  const roturasDistribucionHl = roturasDistribucion.reduce(
+    (acc, r) => acc + r.hl,
+    0,
   )
+  const hayDistribucion = roturasDistribucion.length > 0
+  const hayAcarreo = roturasWqi.some((r) => r.origen === "acarreo")
+  const roturasWqiHl = roturasWqi.reduce((acc, r) => acc + r.hl, 0)
   // Faltantes: mismo aviso, pero acá la mezcla es la regla y no la excepción —
   // el grueso de los faltantes es de acarreo, y hasta ahora la tabla no lo decía.
   const faltantesFueraDeAlmacen = (data?.faltantes_detalle ?? []).filter(
@@ -181,6 +192,13 @@ export function WarehousePerdidasDetalleDiaDialog({
       ? data.wqi_hl_dia - data.roturas_hl_dia
       : null
   const hayMermaDeOtroDia = reempaqueDetalle.some((r) => r.sin_ingreso_dia)
+  // Las roturas reales se reparten en dos: la merma que salió del sector
+  // reempaque (columna "Roto" de la tabla de abajo) y la que nunca pasó por él
+  // (rotura directa de depósito o acarreo). Se muestran las dos para que la
+  // columna "Roto" no parezca contradecir a la tabla de roturas.
+  const rotoReempaqueHl = reempaqueDetalle.reduce((acc, r) => acc + r.hl_roto, 0)
+  const rotoDirectoHl = Math.max(0, roturasWqiHl - rotoReempaqueHl)
+  const hayRotoDirecto = rotoDirectoHl > 0.00005
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -291,11 +309,20 @@ export function WarehousePerdidasDetalleDiaDialog({
             </div>
 
             {/* Detalle de roturas por SKU: qué se rompió ese día */}
-            {data.roturas_detalle.length > 0 && (
+            {roturasWqi.length > 0 && (
               <div className="space-y-2">
-                <p className="text-sm font-semibold text-slate-700">
-                  Roturas por SKU ({data.roturas_detalle.length})
-                </p>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <p className="text-sm font-semibold text-slate-700">
+                    Roturas por SKU ({roturasWqi.length})
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Total{" "}
+                    <span className="font-semibold tabular-nums text-red-700">
+                      {fmt(roturasWqiHl, 2)} HL
+                    </span>{" "}
+                    = roturas reales
+                  </p>
+                </div>
                 <div className="overflow-x-auto rounded-md border">
                   <Table>
                     <TableHeader>
@@ -308,7 +335,7 @@ export function WarehousePerdidasDetalleDiaDialog({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {data.roturas_detalle.map((r) => (
+                      {roturasWqi.map((r) => (
                         <TableRow key={`${r.sku}-${r.origen ?? "almacen"}`}>
                           <TableCell className="font-mono font-medium">
                             {r.sku}
@@ -333,13 +360,6 @@ export function WarehousePerdidasDetalleDiaDialog({
                     </TableBody>
                   </Table>
                 </div>
-                {hayDistribucion && (
-                  <p className="text-xs text-muted-foreground">
-                    Las roturas de <strong>Distribución</strong> se rompieron en
-                    la calle: van al DQI y no suman a ninguno de los dos números
-                    de arriba.
-                  </p>
-                )}
                 {hayAcarreo && (
                   <p className="text-xs text-muted-foreground">
                     Las de <strong>Acarreo</strong> pasaron en el transporte
@@ -348,6 +368,16 @@ export function WarehousePerdidasDetalleDiaDialog({
                   </p>
                 )}
               </div>
+            )}
+
+            {hayDistribucion && (
+              <p className="text-xs text-muted-foreground">
+                Además hubo <strong>{fmt(roturasDistribucionHl, 2)} HL</strong> de
+                roturas de <strong>Distribución</strong> ({roturasDistribucion.length}{" "}
+                SKU) que se rompieron en la calle. No están en esta lista ni en
+                el WQI: van al <strong>DQI</strong>, y se abren desde esa fila
+                del tablero (por camión).
+              </p>
             )}
 
             {/* La OTRA parte del WQI: lo que se envió a reempaque y no se
@@ -360,15 +390,35 @@ export function WarehousePerdidasDetalleDiaDialog({
                     <PackageCheck className="size-4 text-emerald-600" />
                     Enviado a reempaque ({reempaqueDetalle.length})
                   </p>
-                  {recuperadoHl != null && (
-                    <p className="text-xs text-muted-foreground">
-                      Recuperado{" "}
-                      <span className="font-semibold tabular-nums text-emerald-700">
-                        {fmt(recuperadoHl, 2)} HL
-                      </span>{" "}
-                      = WQI total − roturas reales
+                  <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground">
+                    {recuperadoHl != null && (
+                      <p>
+                        Recuperado{" "}
+                        <span className="font-semibold tabular-nums text-emerald-700">
+                          {fmt(recuperadoHl, 2)} HL
+                        </span>{" "}
+                        = WQI total − roturas reales
+                      </p>
+                    )}
+                    <p>
+                      Roto en reempaque{" "}
+                      <span className="font-semibold tabular-nums text-red-700">
+                        {fmt(rotoReempaqueHl, 2)} HL
+                      </span>
+                      {hayRotoDirecto ? (
+                        <>
+                          {" "}
+                          + roturas directas{" "}
+                          <span className="font-semibold tabular-nums text-red-700">
+                            {fmt(rotoDirectoHl, 2)} HL
+                          </span>{" "}
+                          = roturas reales
+                        </>
+                      ) : (
+                        <> = roturas reales</>
+                      )}
                     </p>
-                  )}
+                  </div>
                 </div>
                 <div className="overflow-x-auto rounded-md border">
                   <Table>
@@ -431,8 +481,16 @@ export function WarehousePerdidasDetalleDiaDialog({
                 <p className="text-xs text-muted-foreground">
                   Todo esto suma al <strong>WQI total</strong> —una rotura
                   consume proceso aunque el producto se recupere— pero no a las{" "}
-                  <strong>roturas reales</strong>: la merma es sólo la columna
+                  <strong>roturas reales</strong>: de acá sólo cuenta la columna
                   &ldquo;Roto&rdquo;.
+                  {hayRotoDirecto && (
+                    <>
+                      {" "}
+                      El resto de las roturas reales ({fmt(rotoDirectoHl, 2)} HL)
+                      no pasó por reempaque: son las filas de la tabla de
+                      roturas que no aparecen en esta lista.
+                    </>
+                  )}
                   {hayMermaDeOtroDia && (
                     <>
                       {" "}
