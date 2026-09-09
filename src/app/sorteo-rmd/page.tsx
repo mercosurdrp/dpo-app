@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { Gift, Star, Smartphone } from "lucide-react"
-import { RMD_SORTEO_PREMIO } from "@/lib/rmd-sorteo"
+import { CalendarDays } from "lucide-react"
+import { RMD_SORTEO_PREMIO, fechaSorteoLarga } from "@/lib/rmd-sorteo"
 import { PremioIlustracion } from "./premio-ilustracion"
 import { SorteoFormClient } from "./sorteo-form-client"
 
@@ -31,7 +32,7 @@ const PASOS = [
   {
     icon: Gift,
     titulo: "Participás del sorteo",
-    texto: `Se sortea ${RMD_SORTEO_PREMIO.titulo}. Entran los puntos de venta inscriptos que calificaron al menos una entrega en BEES desde que se inscribieron.`,
+    texto: `Se sortea ${RMD_SORTEO_PREMIO.titulo} el ${fechaSorteoLarga()}. Entran los puntos de venta inscriptos que calificaron al menos una entrega en BEES desde que se inscribieron.`,
   },
 ]
 
@@ -54,6 +55,10 @@ export default function SorteoRmdPage() {
           <p className="mt-2 text-sm text-slate-200">
             Votá el RMD en BEES cada vez que te llega el pedido, inscribí tu
             punto de venta y participá del sorteo.
+          </p>
+          <p className="mt-3 inline-flex items-center gap-2 rounded-md bg-amber-400 px-3 py-1.5 text-sm font-bold text-slate-900">
+            <CalendarDays className="h-4 w-4" />
+            Sorteo: {fechaSorteoLarga()}
           </p>
         </header>
 

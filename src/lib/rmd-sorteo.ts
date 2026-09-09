@@ -4,6 +4,19 @@ export const RMD_SORTEO_CAMPANIA = "folleto-2026-09"
 /** URL pública que va en el QR del folleto. */
 export const RMD_SORTEO_URL = "https://dpo-app-self.vercel.app/sorteo-rmd"
 
+/** Cuándo se sortea (ISO). Se muestra en la página del QR y en Cobertura. */
+export const RMD_SORTEO_FECHA = "2026-11-05"
+
+/** La fecha del sorteo en formato largo, ej. «jueves 5 de noviembre». */
+export function fechaSorteoLarga(): string {
+  return new Intl.DateTimeFormat("es-AR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(new Date(RMD_SORTEO_FECHA + "T12:00:00-03:00"))
+}
+
 /** Qué se sortea (va en la página del QR y en el folleto). */
 export const RMD_SORTEO_PREMIO = {
   titulo: "1 bulto de Stella Artois + merchandising",

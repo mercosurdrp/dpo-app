@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { inscribirSorteoRmd } from "@/actions/rmd-sorteo"
+import { fechaSorteoLarga } from "@/lib/rmd-sorteo"
 
 export function SorteoFormClient() {
   const [loading, setLoading] = useState(false)
@@ -76,6 +77,9 @@ export function SorteoFormClient() {
               calificar tu entrega en BEES
             </span>{" "}
             cuando te llega el pedido. Cada entrega calificada suma.
+          </p>
+          <p className="mt-2 text-sm font-semibold text-emerald-900">
+            El sorteo es el {fechaSorteoLarga()}.
           </p>
           <p className="mt-4 inline-flex items-center gap-1 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
             <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />

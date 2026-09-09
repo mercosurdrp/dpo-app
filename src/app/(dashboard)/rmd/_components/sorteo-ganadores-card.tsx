@@ -32,7 +32,7 @@ import {
   registrarEntregaGanadorRmd,
   type GanadorSorteoRmd,
 } from "@/actions/rmd-sorteo"
-import { RMD_SORTEO_PREMIO } from "@/lib/rmd-sorteo"
+import { RMD_SORTEO_PREMIO, fechaSorteoLarga } from "@/lib/rmd-sorteo"
 import { abrirArchivo } from "@/lib/abrir-archivo"
 
 const FMT = new Intl.DateTimeFormat("es-AR", {
@@ -155,7 +155,8 @@ export function SorteoGanadoresCard({
           </Button>
         </CardTitle>
         <p className="text-xs text-slate-500">
-          Premio vigente: <strong>{RMD_SORTEO_PREMIO.titulo}</strong>. Entran
+          Premio vigente: <strong>{RMD_SORTEO_PREMIO.titulo}</strong>. Fecha
+          del sorteo: <strong>{fechaSorteoLarga()}</strong>. Entran
           sólo los que participan (inscriptos que calificaron en BEES) y nadie
           gana dos veces en la misma campaña. Cada sorteo queda registrado con
           fecha, quién lo hizo y cuántos participaban.
