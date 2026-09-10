@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { abrirArchivo } from "@/lib/abrir-archivo"
+import { RMD_TASA_OBJETIVO, TASA_FOCO } from "@/lib/rmd-tasa"
 import {
   Calendar,
   Download,
@@ -301,6 +302,17 @@ export function PlanDetalleDialog({
                 ]
                   .filter(Boolean)
                   .join(" · ")}
+              </span>
+            </div>
+          )}
+          {plan.foco_motivo === TASA_FOCO && (
+            <div className="flex items-start gap-2 sm:col-span-2">
+              <Target className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+              <span>
+                <span className="font-medium text-slate-700">Objetivo: </span>
+                llegar al {RMD_TASA_OBJETIVO} % de tasa de respuesta (de las
+                entregas encuestadas, la mitad calificadas). Se sigue en la
+                solapa Cobertura.
               </span>
             </div>
           )}

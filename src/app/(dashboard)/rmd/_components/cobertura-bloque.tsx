@@ -7,6 +7,7 @@ import {
   ComposedChart,
   Legend,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -41,6 +42,7 @@ import type {
 } from "@/actions/rmd-cobertura"
 import { listResponsablesPosibles } from "@/actions/reuniones"
 import { listarPlanesRmd, type RmdPlan } from "@/actions/rmd-planes"
+import { RMD_TASA_OBJETIVO, TASA_FOCO } from "@/lib/rmd-tasa"
 import {
   PlanBadge,
   planesPorClienteFoco,
@@ -133,8 +135,9 @@ function colorTasa(t: number | null): string {
   return "text-red-600"
 }
 
-/** Foco de los planes de acción que atacan la tasa de respuesta de la encuesta. */
-export const TASA_FOCO = "Tasa de respuesta"
+// El foco y el objetivo de la tasa viven en src/lib/rmd-tasa.ts; se
+// re-exporta el foco porque rmd-client lo suma a la lista de motivos.
+export { TASA_FOCO }
 
 interface Props {
   data: RmdCoberturaData
@@ -318,7 +321,8 @@ export function CoberturaBloque({
                 : `${fmtNum(resumen.tasa_respuesta, 1)} %`}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              el RMD se calcula sobre esta parte
+              objetivo {RMD_TASA_OBJETIVO} % · el RMD se calcula sobre esta
+              parte
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {planesTasa.length > 0 && (
@@ -383,6 +387,8 @@ export function CoberturaBloque({
       {/* ---------- Plan de acción sobre la tasa ---------- */}
       <PlanesTasaCard
         planes={planesTasa}
+        resumen={resumen}
+        meses={meses}
         onNuevo={onCrearPlanTasa}
         onVer={setPlanDetalle}
       />
@@ -418,6 +424,18 @@ export function CoberturaBloque({
               />
               <Tooltip />
               <Legend />
+              <ReferenceLine
+                yAxisId="der"
+                y={RMD_TASA_OBJETIVO}
+                stroke="#059669"
+                strokeDasharray="6 4"
+                label={{
+                  value: `Objetivo ${RMD_TASA_OBJETIVO} %`,
+                  position: "insideTopRight",
+                  fill: "#059669",
+                  fontSize: 12,
+                }}
+              />
               <Bar
                 yAxisId="izq"
                 dataKey="Encuestadas"
