@@ -7,6 +7,7 @@ import {
   ComposedChart,
   Legend,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -40,6 +41,7 @@ import type {
 } from "@/actions/nps-cobertura"
 import { listResponsablesPosibles } from "@/actions/reuniones"
 import { listarPlanesNps, type NpsPlan } from "@/actions/nps-planes"
+import { NPS_TASA_OBJETIVO, TASA_FOCO } from "@/lib/nps-tasa"
 import {
   PlanBadge,
   planesPorClienteFoco,
@@ -115,8 +117,9 @@ const TOPES: Record<string, string> = {
   todos: "Todos",
 }
 
-/** Foco de los planes de acción que atacan la tasa de respuesta de la encuesta. */
-export const TASA_FOCO = "Tasa de respuesta"
+// El foco y el objetivo de la tasa viven en src/lib/nps-tasa.ts; se
+// re-exporta el foco porque nps-client lo suma a la lista de drivers.
+export { TASA_FOCO }
 
 interface Props {
   data: NpsCoberturaData
@@ -299,7 +302,8 @@ export function CoberturaBloque({
                 : `${fmtNum(resumen.tasa_respuesta, 1)} %`}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              el NPS se calcula sobre esta parte
+              objetivo {NPS_TASA_OBJETIVO} % · el NPS se calcula sobre esta
+              parte
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {planesTasa.length > 0 && (
@@ -363,6 +367,8 @@ export function CoberturaBloque({
       {/* ---------- Plan de accion sobre la tasa ---------- */}
       <PlanesTasaCard
         planes={planesTasa}
+        resumen={resumen}
+        meses={meses}
         onNuevo={onCrearPlanTasa}
         onVer={setPlanDetalle}
       />
@@ -389,6 +395,18 @@ export function CoberturaBloque({
               />
               <Tooltip />
               <Legend />
+              <ReferenceLine
+                yAxisId="der"
+                y={NPS_TASA_OBJETIVO}
+                stroke="#059669"
+                strokeDasharray="6 4"
+                label={{
+                  value: `Objetivo ${NPS_TASA_OBJETIVO} %`,
+                  position: "insideTopRight",
+                  fill: "#059669",
+                  fontSize: 12,
+                }}
+              />
               <Bar
                 yAxisId="izq"
                 dataKey="Enviadas"

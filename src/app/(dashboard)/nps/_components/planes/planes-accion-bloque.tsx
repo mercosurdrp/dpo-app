@@ -34,6 +34,7 @@ import {
   type NpsPlan,
   type RecuperacionPlan,
 } from "@/actions/nps-planes"
+import { NPS_TASA_OBJETIVO, TASA_FOCO } from "@/lib/nps-tasa"
 import { PlanFormDialog, type FocoInicial } from "./plan-form-dialog"
 import { PlanDetalleDialog } from "./plan-detalle-dialog"
 
@@ -309,6 +310,14 @@ export function PlanCard({
             <span className="inline-flex max-w-full items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">
               <Target className="h-3 w-3 shrink-0" />
               <span className="truncate">{plan.foco_driver}</span>
+            </span>
+          )}
+          {plan.foco_driver === TASA_FOCO && (
+            <span
+              className="inline-flex max-w-full items-center rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700"
+              title={`El plan busca que el ${NPS_TASA_OBJETIVO} % de las encuestas enviadas vuelvan respondidas`}
+            >
+              Objetivo: {NPS_TASA_OBJETIVO} % de respuesta
             </span>
           )}
           {plan.foco_cliente_nombre && (
