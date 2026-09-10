@@ -92,6 +92,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/indicadores/sync-familias" ||
     pathname === "/api/presupuesto/inversiones/sync" ||
     pathname === "/api/indicadores/quiebres-stock/cron-foto" ||
+    pathname === "/api/rrhh/cron-sync-ausentismo-yam" ||
     // Alertas de almacén: la consume el backend Python de deposito-esteban.
     // No lleva sesión; se autentica con Bearer ALERTAS_ALMACEN_TOKEN.
     pathname === "/api/alertas/almacen"

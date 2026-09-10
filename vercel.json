@@ -64,6 +64,10 @@
     {
       "path": "/api/indicadores/quiebres-stock/cron-foto",
       "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/rrhh/cron-sync-ausentismo-yam",
+      "schedule": "45 6 * * *"
     }
   ]
 }
