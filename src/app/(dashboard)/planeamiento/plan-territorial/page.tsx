@@ -8,6 +8,7 @@ import {
   listarPlanesTerritoriales,
   listarRevisiones,
 } from "@/actions/plan-territorial"
+import { getRuteroVigente, type RuteroVigente } from "@/actions/territorial-rutero"
 import { PlanTerritorialClient } from "./plan-territorial-client"
 
 export const dynamic = "force-dynamic"
@@ -36,6 +37,18 @@ export default async function PlanTerritorialPage() {
         .order("nombre", { ascending: true }),
     ])
 
+  // Rutero vigente de promotores (base comercial) para cada ciudad con plan:
+  // es el "después" vivo del rediseño de rutas. Una consulta por ciudad, no
+  // por plan, y si la base comercial no contesta la página igual se muestra.
+  const planesData = "data" in planes ? planes.data : []
+  const ciudadesConPlan = [...new Set(planesData.map((p) => p.ciudad))]
+  const ruteros: Record<string, RuteroVigente | null> = {}
+  await Promise.all(
+    ciudadesConPlan.map(async (c) => {
+      ruteros[c] = await getRuteroVigente(c)
+    }),
+  )
+
   return (
     <PlanTerritorialClient
       anio={anio}
@@ -43,7 +56,8 @@ export default async function PlanTerritorialPage() {
       territorio={"data" in territorio ? territorio.data : null}
       territorioError={"error" in territorio ? territorio.error : null}
       escenarios={"data" in escenarios ? escenarios.data : []}
-      planes={"data" in planes ? planes.data : []}
+      planes={planesData}
+      ruteros={ruteros}
       revisiones={"data" in revisiones ? revisiones.data : []}
       perfiles={
         (perfilesRes.data ?? []) as Array<{ id: string; nombre: string }>
