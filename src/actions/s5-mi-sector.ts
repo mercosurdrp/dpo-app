@@ -6,6 +6,8 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth } from "@/lib/session"
 import { archivosDeFila, columnasArchivos, type ArchivoAvance } from "@/lib/adjuntos-avance"
 import { calcularBonus, type ResumenDocumentacion } from "@/lib/s5-bonus"
+import { getAdherenciaCheck } from "@/actions/s5-check"
+import type { AdherenciaCheck } from "@/lib/s5-cronograma"
 import type { S5ItemCatalogo } from "@/types/database"
 
 const MI_PATH = "/mi-5s"
@@ -782,6 +784,8 @@ export interface SectorConEvidencias {
   tareas: TareaSector[]
   evidencias: EvidenciaSector[]
   documentacion: ResumenDocumentacion
+  /** Check diario de limpieza del mes. */
+  check: AdherenciaCheck
 }
 
 export async function getPanelSectores5S(
@@ -858,6 +862,7 @@ export async function getPanelSectores5S(
         tareas,
         evidencias,
         documentacion: resumirDocumentacion(evidencias, resp?.profileId ?? null),
+        check: await getAdherenciaCheck(periodo, s.numero),
       })
     }
 

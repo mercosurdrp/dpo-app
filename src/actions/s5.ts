@@ -26,7 +26,9 @@ import type {
 import { S5_CATEGORIA_ORDEN, S5_MAX_PUNTAJE } from "@/types/database"
 import type { S5TendenciaSectores, S5TendenciaSectoresMes } from "@/types/database"
 import { getDocumentacionSector } from "@/actions/s5-mi-sector"
+import { getAdherenciaCheck } from "@/actions/s5-check"
 import { textoBonus } from "@/lib/s5-bonus"
+import { textoAdherencia } from "@/lib/s5-cronograma"
 
 const DASHBOARD_PATH = "/5s"
 
@@ -1260,6 +1262,11 @@ export async function finalizarAuditoria(
         const linea = textoBonus(doc.data.resumen)
         observaciones = observaciones ? `${observaciones}\n\n${linea}` : linea
       }
+      // El check diario de limpieza (ítem 18) queda documentado en la auditoría.
+      const lineaCheck = textoAdherencia(
+        await getAdherenciaCheck(aud.periodo as string, aud.sector_numero as number)
+      )
+      observaciones = observaciones ? `${observaciones}\n${lineaCheck}` : lineaCheck
     }
 
     const { data, error } = await supabase

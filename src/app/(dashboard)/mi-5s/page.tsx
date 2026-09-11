@@ -1,4 +1,5 @@
 import { getMiSector5S } from "@/actions/s5-mi-sector"
+import { getCheckSector } from "@/actions/s5-check"
 import { Mi5SClient } from "./mi-5s-client"
 
 export default async function Mi5SPage() {
@@ -13,5 +14,8 @@ export default async function Mi5SPage() {
     )
   }
 
-  return <Mi5SClient data={res.data} />
+  const check =
+    res.data.sector_numero !== null ? await getCheckSector(res.data.sector_numero) : null
+
+  return <Mi5SClient data={res.data} check={check && "data" in check ? check.data : null} />
 }
