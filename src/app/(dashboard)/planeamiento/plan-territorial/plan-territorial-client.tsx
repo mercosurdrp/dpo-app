@@ -59,13 +59,12 @@ import {
   type RevisionTerritorial,
   type PalancaPlan,
 } from "@/actions/plan-territorial"
+import type { RuteroVigente } from "@/actions/territorial-rutero"
+import { MESES, num, pesos } from "./formato"
+import { RedisenoRutasSection } from "./rediseno-rutas"
 
 const PILAR_PLANEAMIENTO_COLOR = "#EC4899"
 
-const MESES = [
-  "", "Ene", "Feb", "Mar", "Abr", "May", "Jun",
-  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
-]
 
 const PALANCA_LABEL: Record<PalancaPlan, string> = {
   frecuencia: "Frecuencia de visita",
@@ -81,18 +80,6 @@ const ESTADO_LABEL: Record<string, string> = {
   completado: "Completado",
 }
 
-function pesos(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  return "$" + Math.round(n).toLocaleString("es-AR")
-}
-
-function num(n: number | null | undefined, dec = 2): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  return n.toLocaleString("es-AR", {
-    minimumFractionDigits: dec,
-    maximumFractionDigits: dec,
-  })
-}
 
 interface AportePlan {
   ciudad: string
@@ -177,6 +164,8 @@ interface Props {
   territorioError: string | null
   escenarios: Escenario[]
   planes: PlanTerritorial[]
+  /** Rutero vigente de promotores por ciudad (base comercial); null si no respondió. */
+  ruteros: Record<string, RuteroVigente | null>
   revisiones: RevisionTerritorial[]
   perfiles: Array<{ id: string; nombre: string }>
 }
@@ -188,6 +177,7 @@ export function PlanTerritorialClient({
   territorioError,
   escenarios,
   planes,
+  ruteros,
   revisiones,
   perfiles,
 }: Props) {
@@ -439,6 +429,7 @@ export function PlanTerritorialClient({
               key={p.id}
               plan={p}
               ciudad={territorio?.ciudades.find((c) => c.ciudad === p.ciudad)}
+              rutero={ruteros[p.ciudad] ?? null}
               esEditor={esEditor}
               ciudades={(territorio?.ciudades ?? []).map((c) => c.ciudad)}
               perfiles={perfiles}
@@ -855,6 +846,7 @@ function PuenteObjetivo({
 function PlanCard({
   plan,
   ciudad,
+  rutero,
   esEditor,
   ciudades,
   perfiles,
@@ -862,6 +854,7 @@ function PlanCard({
 }: {
   plan: PlanTerritorial
   ciudad: CiudadResumen | undefined
+  rutero: RuteroVigente | null
   esEditor: boolean
   ciudades: string[]
   perfiles: Array<{ id: string; nombre: string }>
@@ -941,6 +934,13 @@ function PlanCard({
             responsables.
           </p>
         )}
+
+        <RedisenoRutasSection
+          plan={plan}
+          ciudad={ciudad}
+          rutero={rutero}
+          esEditor={esEditor}
+        />
 
         {plan.avances.length > 0 && (
           <div className="space-y-2 border-t pt-3">

@@ -322,6 +322,8 @@ export interface PlanTerritorial {
   avances_count: number
   /** Los avances cargados, más nuevo primero. Es la bitácora del plan. */
   avances: AvanceTerritorial[]
+  /** Antes/después del rutero (promotores + reparto). null si no se documentó. */
+  rediseno: RedisenoRutas | null
   /** $/HL vigente de la ciudad. Se completa en la página con el territorio. */
   costo_actual?: number | null
 }
@@ -376,6 +378,18 @@ export async function listarPlanesTerritoriales(): Promise<
       }
     }
 
+    const redisenoMap = new Map<string, RedisenoRutas>()
+    if (ids.length) {
+      const { data: reds } = await supabase
+        .from("territorial_rediseno_rutas")
+        .select("*")
+        .in("plan_id", ids)
+      for (const row of (reds ?? []) as unknown as Array<Record<string, unknown>>) {
+        const red = parseRediseno(row)
+        redisenoMap.set(red.plan_id, red)
+      }
+    }
+
     return {
       data: rows.map((row) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -402,6 +416,7 @@ export async function listarPlanesTerritoriales(): Promise<
           updated_at: r.updated_at,
           avances_count: avancesMap.get(String(r.id))?.length ?? 0,
           avances: avancesMap.get(String(r.id)) ?? [],
+          rediseno: redisenoMap.get(String(r.id)) ?? null,
         }
       }),
     }
@@ -791,6 +806,152 @@ export async function registrarRevision(input: {
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error registrando la revisión",
+    }
+  }
+}
+
+// ==================================================================
+// Rediseño de rutas
+//
+// Es la devolución textual del auditor H1 2026 (5.1 = 0): "realizar análisis
+// de reestructuración de rutas en pos de la mejora en el costo/HL, teniendo en
+// cuenta relevamiento de ventas horarias, frecuencia de entrega, rechazo".
+// Y el plan territorial son las rutas de ENTREGA y las de PROMOTORES juntas:
+// el día de visita del promotor define el día de pedido y ése el de reparto.
+//
+// Acá se guarda sólo lo que la app no puede saber sola (el rutero de antes,
+// los días de entrega, viajes, km). El $/HL y las entregas antes/después
+// salen en vivo de la serie de la ciudad; el rutero vigente de promotores se
+// lee de la base comercial (ver territorial-rutero.ts).
+// ==================================================================
+
+/**
+ * Foto del rutero en un momento (antes o después del plan). Todo opcional:
+ * se completa lo que se sabe y el resto queda en blanco, no en cero.
+ */
+export interface RuteroMomento {
+  // Rutero de preventa (ventas)
+  promotores?: number | null
+  pdv?: number | null
+  dias_visita?: string | null
+  visitas_sem?: number | null
+  mix_frecuencia?: string | null
+  // Rutas de reparto (logística)
+  dias_entrega?: string | null
+  viajes_sem?: number | null
+  paradas_viaje?: number | null
+  km_viaje?: number | null
+  // Justificación
+  rechazo_pct?: number | null
+}
+
+const MOMENTO_NUM = [
+  "promotores",
+  "pdv",
+  "visitas_sem",
+  "viajes_sem",
+  "paradas_viaje",
+  "km_viaje",
+  "rechazo_pct",
+] as const
+const MOMENTO_TXT = ["dias_visita", "mix_frecuencia", "dias_entrega"] as const
+
+export interface RedisenoRutas {
+  plan_id: string
+  antes: RuteroMomento
+  despues: RuteroMomento
+  ventanas_horarias: string | null
+  justificacion: string | null
+  resultado: string | null
+  updated_at: string
+}
+
+function parseMomento(raw: unknown): RuteroMomento {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>
+  const m: RuteroMomento = {}
+  for (const k of MOMENTO_NUM) {
+    const v = o[k]
+    m[k] = v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v)
+  }
+  for (const k of MOMENTO_TXT) {
+    const v = o[k]
+    m[k] = v == null ? null : String(v).trim() || null
+  }
+  return m
+}
+
+function parseRediseno(row: Record<string, unknown>): RedisenoRutas {
+  return {
+    plan_id: String(row.plan_id),
+    antes: parseMomento(row.antes),
+    despues: parseMomento(row.despues),
+    ventanas_horarias: (row.ventanas_horarias as string) ?? null,
+    justificacion: (row.justificacion as string) ?? null,
+    resultado: (row.resultado as string) ?? null,
+    updated_at: String(row.updated_at),
+  }
+}
+
+/**
+ * Guarda (o reemplaza) el antes/después de rutas de un plan. Los campos vienen
+ * como `antes.promotores`, `despues.dias_entrega`, etc. Pueden cargarlo los
+ * editores o cualquiera de los dos responsables del plan.
+ */
+export async function guardarRedisenoRutas(
+  planId: string,
+  formData: FormData,
+): Promise<Result<{ ok: true }>> {
+  try {
+    const profile = await requireAuth()
+    if (!planId) return { error: "ID de plan inválido" }
+    const supabase = await createClient()
+
+    const { data: plan, error: errP } = await supabase
+      .from("territorial_planes")
+      .select("created_by, responsable_comercial_id, responsable_logistica_id")
+      .eq("id", planId)
+      .single()
+    if (errP || !plan) return { error: errP?.message ?? "Plan no encontrado" }
+    const p = plan as {
+      created_by: string | null
+      responsable_comercial_id: string | null
+      responsable_logistica_id: string | null
+    }
+    if (
+      !esEditor(profile.role) &&
+      p.created_by !== profile.id &&
+      p.responsable_comercial_id !== profile.id &&
+      p.responsable_logistica_id !== profile.id
+    ) {
+      return { error: "Solo los responsables o un editor pueden cargar el rediseño" }
+    }
+
+    const leer = (momento: "antes" | "despues"): RuteroMomento => {
+      const o: Record<string, unknown> = {}
+      for (const k of MOMENTO_NUM) o[k] = numOrNull(formData.get(`${momento}.${k}`))
+      for (const k of MOMENTO_TXT) o[k] = strOrNull(formData.get(`${momento}.${k}`))
+      return parseMomento(o)
+    }
+
+    const { error } = await supabase.from("territorial_rediseno_rutas").upsert(
+      {
+        plan_id: planId,
+        antes: leer("antes"),
+        despues: leer("despues"),
+        ventanas_horarias: strOrNull(formData.get("ventanas_horarias")),
+        justificacion: strOrNull(formData.get("justificacion")),
+        resultado: strOrNull(formData.get("resultado")),
+        updated_at: new Date().toISOString(),
+        updated_by: profile.id,
+      },
+      { onConflict: "plan_id" },
+    )
+    if (error) return { error: error.message }
+    revalidatePath(PATH)
+    return { data: { ok: true } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error guardando el rediseño",
     }
   }
 }
