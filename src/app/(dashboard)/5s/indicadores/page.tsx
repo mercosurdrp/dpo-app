@@ -5,6 +5,7 @@ import {
   getPeriodoActual,
   getS5KpisMes,
   getS5TendenciaMensual,
+  getS5TendenciaSectores,
   getS5Ranking,
   getS5TopItemsCriticos,
 } from "@/actions/s5"
@@ -33,9 +34,10 @@ export default async function IndicadoresS5Page({
 
   const periodoActual = await getPeriodoActual()
 
-  const [kpis, tendencia, ranking, criticos] = await Promise.all([
+  const [kpis, tendencia, sectores, ranking, criticos] = await Promise.all([
     getS5KpisMes(tipoInicial, periodoActual),
     getS5TendenciaMensual(tipoInicial, periodoActual, 12),
+    getS5TendenciaSectores(tipoInicial, periodoActual, 12),
     getS5Ranking(tipoInicial, periodoActual),
     getS5TopItemsCriticos(tipoInicial, periodoActual, 5),
   ])
@@ -53,6 +55,7 @@ export default async function IndicadoresS5Page({
         periodoInicial={periodoActual}
         kpisInicial={"error" in kpis ? null : kpis.data}
         tendenciaInicial={"error" in tendencia ? [] : tendencia.data}
+        sectoresInicial={"error" in sectores ? null : sectores.data}
         rankingInicial={"error" in ranking ? [] : ranking.data}
         criticosInicial={"error" in criticos ? [] : criticos.data}
       />

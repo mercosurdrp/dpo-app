@@ -24,6 +24,7 @@ import type {
   S5ItemCriticoRow,
 } from "@/types/database"
 import { S5_CATEGORIA_ORDEN, S5_MAX_PUNTAJE } from "@/types/database"
+import type { S5TendenciaSectores, S5TendenciaSectoresMes } from "@/types/database"
 import { getDocumentacionSector } from "@/actions/s5-mi-sector"
 import { textoBonus } from "@/lib/s5-bonus"
 
@@ -1581,6 +1582,101 @@ export async function getS5TendenciaMensual(
     return {
       error:
         err instanceof Error ? err.message : "Error cargando tendencia 5S",
+    }
+  }
+}
+
+/**
+ * Nota total mes a mes, abierta por sector. Complementa a getS5TendenciaMensual
+ * (que promedia todos los sectores y abre por S): acá se ve cómo viene CADA
+ * sector, que es lo que se compara en la reunión. En flota no se abre por
+ * vehículo (serían decenas de líneas): va solo el promedio general.
+ */
+export async function getS5TendenciaSectores(
+  tipo: S5Tipo,
+  periodoFin: string,
+  meses: number = 12
+): Promise<{ data: S5TendenciaSectores } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const periodos: string[] = []
+    for (let i = meses - 1; i >= 0; i--) {
+      periodos.push(addMonths(periodoFin, -i))
+    }
+    const inicio = periodos[0]
+
+    const { data: audRaw, error } = await supabase
+      .from("s5_auditorias")
+      .select("periodo, sector_numero, nota_total")
+      .eq("tipo", tipo)
+      .eq("estado", "completada")
+      .not("nota_total", "is", null)
+      .gte("periodo", inicio)
+      .lte("periodo", periodoFin)
+
+    if (error) return { error: error.message }
+    const rows = (audRaw ?? []) as {
+      periodo: string
+      sector_numero: number | null
+      nota_total: number | string
+    }[]
+
+    let claves: { key: string; label: string }[] = []
+    if (tipo === "almacen") {
+      const { data: sectores } = await supabase
+        .from("s5_sectores_almacen")
+        .select("numero, nombre")
+        .order("numero")
+      const nombres = new Map<number, string>()
+      for (const r of (sectores ?? []) as { numero: number; nombre: string | null }[]) {
+        if (r.nombre) nombres.set(r.numero, r.nombre)
+      }
+      claves = [1, 2, 3, 4].map((n) => ({
+        key: String(n),
+        label: nombres.get(n) ? `S${n} ${nombres.get(n)}` : `Sector ${n}`,
+      }))
+    }
+
+    // (periodo, serie) → acumulador. En almacén la serie es el sector; en
+    // flota todo cae en el promedio general.
+    const acum = new Map<string, { sum: number; n: number }>()
+    const total = new Map<string, { sum: number; n: number }>()
+    const add = (m: Map<string, { sum: number; n: number }>, k: string, v: number) => {
+      const slot = m.get(k) ?? { sum: 0, n: 0 }
+      slot.sum += v
+      slot.n += 1
+      m.set(k, slot)
+    }
+    for (const r of rows) {
+      const v = Number(r.nota_total)
+      if (!Number.isFinite(v)) continue
+      add(total, r.periodo, v)
+      if (tipo === "almacen" && r.sector_numero !== null) {
+        add(acum, `${r.periodo}:${r.sector_numero}`, v)
+      }
+    }
+    const avg = (s: { sum: number; n: number } | undefined) =>
+      s && s.n > 0 ? Number((s.sum / s.n).toFixed(1)) : null
+
+    const out: S5TendenciaSectoresMes[] = periodos.map((p) => {
+      const series: Record<string, number | null> = {}
+      for (const c of claves) series[c.key] = avg(acum.get(`${p}:${c.key}`))
+      return {
+        periodo: p,
+        mes_label: formatMesCorto(p),
+        promedio: avg(total.get(p)),
+        auditorias: total.get(p)?.n ?? 0,
+        series,
+      }
+    })
+
+    return { data: { meses: out, claves } }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error cargando tendencia por sector",
     }
   }
 }

@@ -2889,6 +2889,22 @@ export interface S5TendenciaMes {
   total: number | null
 }
 
+/** Nota total mes a mes, abierta por sector (almacén) o promedio general (flota). */
+export interface S5TendenciaSectoresMes {
+  periodo: string // YYYY-MM-01
+  mes_label: string
+  promedio: number | null
+  auditorias: number
+  /** clave de serie ("1".."4" en almacén) → nota_total promedio del mes, o null */
+  series: Record<string, number | null>
+}
+
+export interface S5TendenciaSectores {
+  meses: S5TendenciaSectoresMes[]
+  /** Series a graficar, en orden. Vacío en flota (solo promedio). */
+  claves: { key: string; label: string }[]
+}
+
 export interface S5RankingRow {
   id: string
   nombre: string

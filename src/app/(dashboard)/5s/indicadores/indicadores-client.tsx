@@ -52,6 +52,7 @@ import {
 import {
   getS5KpisMes,
   getS5TendenciaMensual,
+  getS5TendenciaSectores,
   getS5Ranking,
   getS5TopItemsCriticos,
 } from "@/actions/s5"
@@ -60,9 +61,13 @@ import {
   type S5Tipo,
   type S5KpisMes,
   type S5TendenciaMes,
+  type S5TendenciaSectores,
   type S5RankingRow,
   type S5ItemCriticoRow,
 } from "@/types/database"
+
+/** Una línea por sector en "Nota total mes a mes" (almacén: 4 sectores). */
+const SECTOR_COLORES = ["#2563eb", "#f59e0b", "#7c3aed", "#dc2626"]
 
 const MESES_LARGOS = [
   "Enero",
@@ -133,6 +138,7 @@ export function IndicadoresClient({
   periodoInicial,
   kpisInicial,
   tendenciaInicial,
+  sectoresInicial,
   rankingInicial,
   criticosInicial,
 }: {
@@ -140,6 +146,7 @@ export function IndicadoresClient({
   periodoInicial: string
   kpisInicial: S5KpisMes | null
   tendenciaInicial: S5TendenciaMes[]
+  sectoresInicial: S5TendenciaSectores | null
   rankingInicial: S5RankingRow[]
   criticosInicial: S5ItemCriticoRow[]
 }) {
@@ -147,6 +154,7 @@ export function IndicadoresClient({
   const [periodo, setPeriodo] = useState(periodoInicial)
   const [kpis, setKpis] = useState<S5KpisMes | null>(kpisInicial)
   const [tendencia, setTendencia] = useState(tendenciaInicial)
+  const [sectores, setSectores] = useState(sectoresInicial)
   const [ranking, setRanking] = useState(rankingInicial)
   const [criticos, setCriticos] = useState(criticosInicial)
   const [isPending, startTransition] = useTransition()
@@ -167,15 +175,17 @@ export function IndicadoresClient({
 
   function recargar(nuevoTipo: S5Tipo, nuevoPeriodo: string) {
     startTransition(async () => {
-      const [k, t, r, c] = await Promise.all([
+      const [k, t, s, r, c] = await Promise.all([
         getS5KpisMes(nuevoTipo, nuevoPeriodo),
         getS5TendenciaMensual(nuevoTipo, nuevoPeriodo, 12),
+        getS5TendenciaSectores(nuevoTipo, nuevoPeriodo, 12),
         getS5Ranking(nuevoTipo, nuevoPeriodo),
         getS5TopItemsCriticos(nuevoTipo, nuevoPeriodo, 5),
       ])
       if ("data" in k) setKpis(k.data)
       else setKpis(null)
       if ("data" in t) setTendencia(t.data)
+      if ("data" in s) setSectores(s.data)
       if ("data" in r) setRanking(r.data)
       if ("data" in c) setCriticos(c.data)
     })
@@ -210,6 +220,18 @@ export function IndicadoresClient({
     Estandarización: t.estandarizacion,
     Disciplina: t.disciplina,
   }))
+
+  // Nota total mes a mes, una línea por sector (almacén) + promedio
+  const sectoresChartData = (sectores?.meses ?? []).map((m) => {
+    const row: Record<string, string | number | null> = {
+      name: m.mes_label,
+      Promedio: m.promedio,
+    }
+    for (const c of sectores?.claves ?? []) row[c.label] = m.series[c.key] ?? null
+    return row
+  })
+  const sectoresClaves = sectores?.claves ?? []
+  const mesesConNota = (sectores?.meses ?? []).filter((m) => m.promedio !== null)
 
   // Ranking top 10
   const rankingTop = ranking.slice(0, 10)
@@ -567,6 +589,108 @@ export function IndicadoresClient({
               </LineChart>
             </ResponsiveContainer>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Nota total mes a mes, por sector */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Nota total mes a mes —{" "}
+            {tipo === "almacen" ? "por sector" : "promedio de la flota"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={sectoresChartData}
+                margin={{ top: 5, right: 12, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="name" fontSize={11} />
+                <YAxis fontSize={11} domain={[0, 100]} unit="%" />
+                <Tooltip
+                  formatter={(value) =>
+                    value === null || value === undefined
+                      ? "—"
+                      : `${Number(value).toFixed(1)}%`
+                  }
+                />
+                <ReferenceLine
+                  y={80}
+                  stroke="#10B981"
+                  strokeDasharray="5 5"
+                  label={{
+                    value: "Meta 80%",
+                    position: "right",
+                    fontSize: 10,
+                    fill: "#10B981",
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} iconSize={10} />
+                {sectoresClaves.map((c, i) => (
+                  <Line
+                    key={c.key}
+                    type="monotone"
+                    dataKey={c.label}
+                    stroke={SECTOR_COLORES[i % SECTOR_COLORES.length]}
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    connectNulls
+                  />
+                ))}
+                <Line
+                  type="monotone"
+                  dataKey="Promedio"
+                  stroke="#0f172a"
+                  strokeWidth={sectoresClaves.length ? 1.5 : 2.5}
+                  strokeDasharray={sectoresClaves.length ? "4 3" : undefined}
+                  dot={{ r: 2 }}
+                  connectNulls
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          {mesesConNota.length > 0 && (
+            <div className="mt-3 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Mes</TableHead>
+                    {sectoresClaves.map((c) => (
+                      <TableHead key={c.key} className="text-right text-xs">
+                        {c.label}
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-right text-xs">Promedio</TableHead>
+                    <TableHead className="text-right text-xs">Auditorías</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mesesConNota.map((m) => (
+                    <TableRow key={m.periodo}>
+                      <TableCell className="text-xs font-medium">{m.mes_label}</TableCell>
+                      {sectoresClaves.map((c) => {
+                        const v = m.series[c.key]
+                        return (
+                          <TableCell key={c.key} className="text-right text-xs tabular-nums">
+                            {v === null || v === undefined ? "—" : v.toFixed(1)}
+                          </TableCell>
+                        )
+                      })}
+                      <TableCell className="text-right text-xs font-semibold tabular-nums">
+                        {m.promedio === null ? "—" : m.promedio.toFixed(1)}
+                      </TableCell>
+                      <TableCell className="text-right text-xs tabular-nums">
+                        {m.auditorias}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
