@@ -63,18 +63,18 @@ export function itemsDelSector(sector: number): ItemCronograma[] {
 
 /** Cumplimiento del check en un mes. Lo calcula `actions/s5-check`. */
 export interface AdherenciaCheck {
-  /** Días lunes a sábado del mes ya transcurridos, hoy incluido. */
+  /** Días lunes a sábado del mes ya cerrados (hasta ayer). */
   dias: number
-  /** De esos, cuántos tuvieron todos los ítems diarios tildados. */
+  /** De esos, cuántos no tuvieron ningún ítem diario marcado como no hecho. */
   dias_completos: number
   pct: number | null
-  /** Ítems semanales/quincenales/mensuales hechos al menos una vez en el mes. */
+  /** Ítems semanales/quincenales/mensuales sin faltas en el mes. */
   periodicos_hechos: number
   periodicos_total: number
 }
 
 /** Línea que queda en las observaciones de la auditoría al completarla. */
 export function textoAdherencia(a: AdherenciaCheck): string {
-  if (a.dias === 0) return "Check diario de limpieza: sin días cargados."
-  return `Check diario de limpieza: ${a.dias_completos} de ${a.dias} días completos (${a.pct}%) · periódicos ${a.periodicos_hechos}/${a.periodicos_total}.`
+  if (a.dias === 0) return "Check de limpieza: todavía sin días cerrados."
+  return `Check de limpieza: ${a.dias_completos} de ${a.dias} días sin faltas (${a.pct}%) · periódicos sin faltas ${a.periodicos_hechos}/${a.periodicos_total}.`
 }

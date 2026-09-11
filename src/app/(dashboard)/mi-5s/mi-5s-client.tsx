@@ -36,8 +36,12 @@ import {
   prepararCarga5S,
   type MiSector5S,
 } from "@/actions/s5-mi-sector"
-import { marcarCheck, type CheckSector } from "@/actions/s5-check"
-import { FRECUENCIA_LABEL, type FrecuenciaCheck } from "@/lib/s5-cronograma"
+import type { CheckSector } from "@/actions/s5-check"
+import {
+  ListaCronograma,
+  formatDiaCorto,
+  textoAdherenciaCorto,
+} from "@/components/s5/cronograma-check"
 import {
   S5_CATEGORIA_COLORS,
   S5_CATEGORIA_ORDEN,
@@ -140,118 +144,56 @@ function BotonFoto({
 /** Opción del desplegable que abre el campo para escribir una tarea nueva. */
 const OPCION_NUEVA = "__nueva__"
 
-const ORDEN_FRECUENCIA: FrecuenciaCheck[] = ["diaria", "semanal", "quincenal", "mensual"]
-
-function formatDiaCorto(iso: string) {
-  const [, m, d] = iso.split("-")
-  return `${d}/${m}`
-}
-
 /**
- * El check de limpieza del sector. Los diarios se tildan todos los días; los
- * periódicos quedan tildados hasta que vence su ventana. El tilde es
- * optimista: se pinta al toque y se vuelve atrás si el server dice que no.
+ * El cronograma de limpieza del sector. El responsable no tilda nada: todo se
+ * da por hecho al cerrar el día, y acá ve lo que la recorrida marcó como no
+ * hecho.
  */
-function CheckDeHoy({ inicial }: { inicial: CheckSector }) {
-  const [check, setCheck] = useState(inicial)
-  const [guardando, setGuardando] = useState<string | null>(null)
-
-  const grupos = ORDEN_FRECUENCIA.map((f) => ({
-    frecuencia: f,
-    items: check.items.filter((i) => i.frecuencia === f),
-  })).filter((g) => g.items.length > 0)
-
-  const diarios = check.items.filter((i) => i.frecuencia === "diaria")
-  const diariosHechos = diarios.filter((i) => i.hecho).length
-  const todoHecho = diarios.length > 0 && diariosHechos === diarios.length
+function CronogramaDelSector({ check }: { check: CheckSector }) {
   const adh = check.adherencia
-
-  async function alternar(itemId: string, hecho: boolean) {
-    if (guardando) return
-    setGuardando(itemId)
-    const previo = check
-    setCheck({
-      ...check,
-      items: check.items.map((i) => (i.id === itemId ? { ...i, hecho } : i)),
-    })
-    const res = await marcarCheck({ sector: check.sector, itemId, hecho })
-    setGuardando(null)
-    if ("error" in res) {
-      setCheck(previo)
-      toast.error(res.error)
-      return
-    }
-    setCheck(res.data)
-  }
-
+  const sinFaltasHoy = check.items.every((i) => !i.falta)
   return (
-    <Card className={todoHecho ? "border-emerald-300 bg-emerald-50/40" : "border-slate-200"}>
+    <Card className={sinFaltasHoy ? "border-emerald-300 bg-emerald-50/40" : "border-red-200"}>
       <CardHeader className="pb-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-base">
-            <CheckCircle2 className={`size-5 ${todoHecho ? "text-emerald-600" : "text-slate-400"}`} />
-            Check de limpieza de hoy · {formatDiaCorto(check.hoy)}
+            <ClipboardList className="size-5 text-emerald-600" />
+            Cronograma de limpieza de tu sector
           </CardTitle>
-          <Badge className={todoHecho ? "bg-emerald-600" : "bg-slate-400"}>
-            {diariosHechos}/{diarios.length} diarios
+          <Badge
+            variant="outline"
+            className={
+              adh.dias === 0
+                ? "text-slate-400"
+                : (adh.pct ?? 0) >= 80
+                  ? "border-emerald-300 text-emerald-700"
+                  : "border-amber-300 text-amber-700"
+            }
+          >
+            {textoAdherenciaCorto(adh)}
           </Badge>
         </div>
         <p className="text-xs text-slate-600">
-          Tildá cada ítem cuando quede hecho, antes de irte. Este mes:{" "}
-          {adh.dias === 0
-            ? "todavía no hay días cargados."
-            : `${adh.dias_completos} de ${adh.dias} días completos (${adh.pct}%).`}
+          No hay nada que tildar: cada día se da por hecho al cerrar. Si en la recorrida ven
+          que algo no se hizo, queda marcado acá y baja el cumplimiento del mes.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        {grupos.map((g) => (
-          <div key={g.frecuencia}>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              {FRECUENCIA_LABEL[g.frecuencia]}
+        <ListaCronograma check={check} />
+        {check.faltas_mes.length > 0 && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+            <p className="mb-1 text-xs font-semibold text-red-800">
+              Marcado como no hecho este mes ({check.faltas_mes.length})
             </p>
-            <ul className="space-y-1.5">
-              {g.items.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    disabled={guardando !== null}
-                    onClick={() => alternar(item.id, !item.hecho)}
-                    className={`flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-70 ${
-                      item.hecho
-                        ? "border-emerald-300 bg-emerald-50"
-                        : "border-slate-200 bg-white hover:bg-slate-50"
-                    }`}
-                  >
-                    <span
-                      className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border-2 ${
-                        item.hecho
-                          ? "border-emerald-600 bg-emerald-600 text-white"
-                          : "border-slate-300 bg-white"
-                      }`}
-                    >
-                      {guardando === item.id ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : item.hecho ? (
-                        <Check className="size-4" />
-                      ) : null}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className={`block text-sm ${item.hecho ? "text-emerald-900" : "text-slate-800"}`}>
-                        {item.texto}
-                      </span>
-                      {item.hecho && item.frecuencia !== "diaria" && item.hecho_el && (
-                        <span className="block text-[11px] text-emerald-700">
-                          Hecho el {formatDiaCorto(item.hecho_el)}
-                          {item.hecho_por ? ` · ${item.hecho_por}` : ""}
-                        </span>
-                      )}
-                    </span>
-                  </button>
+            <ul className="space-y-0.5 text-xs text-red-900">
+              {check.faltas_mes.map((f) => (
+                <li key={`${f.fecha}-${f.item_id}`}>
+                  {formatDiaCorto(f.fecha)} · {f.texto}
                 </li>
               ))}
             </ul>
           </div>
-        ))}
+        )}
       </CardContent>
     </Card>
   )
@@ -521,8 +463,8 @@ export function Mi5SClient({ data, check }: { data: MiSector5S; check: CheckSect
         </div>
       </div>
 
-      {/* ── Check de limpieza de hoy ── */}
-      {check && <CheckDeHoy inicial={check} />}
+      {/* ── Cronograma de limpieza del sector ── */}
+      {check && <CronogramaDelSector check={check} />}
 
       {/* ── Bonus: qué te suma documentar ── */}
       <Card className={doc.bonus > 0 ? "border-amber-300 bg-amber-50" : "border-slate-200"}>

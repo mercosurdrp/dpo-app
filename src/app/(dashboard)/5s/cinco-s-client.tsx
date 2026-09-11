@@ -39,6 +39,8 @@ import {
 } from "@/components/ui/table"
 import { NuevaFlotaDialog } from "@/components/s5/nueva-flota-dialog"
 import { NuevaAlmacenDialog } from "@/components/s5/nueva-almacen-dialog"
+import { CronogramaRecorrida } from "@/components/s5/cronograma-check"
+import type { CheckSector } from "@/actions/s5-check"
 import {
   upsertSectorResponsable,
   eliminarAuditoria,
@@ -69,6 +71,7 @@ function formatMes(periodo: string) {
 }
 
 export function CincoSClient({
+  checksInicial,
   periodoActual,
   tipoInicial = "flota",
   currentRole,
@@ -82,6 +85,7 @@ export function CincoSClient({
   elegibles,
   historialResponsables,
 }: {
+  checksInicial: CheckSector[]
   periodoActual: string
   tipoInicial?: S5Tipo
   currentRole: UserRole
@@ -677,6 +681,15 @@ export function CincoSClient({
               </div>
             </CardContent>
           </Card>
+
+          {/* Cronograma de limpieza + recorrida */}
+          <CronogramaRecorrida
+            inicial={checksInicial}
+            nombres={Object.fromEntries(
+              sectoresAlmacen.map((s) => [s.numero, s.nombre ?? `Sector ${s.numero}`])
+            )}
+            puedeMarcar={currentRole === "admin" || currentRole === "auditor"}
+          />
 
           {/* Historial de responsables por mes */}
           <Card>

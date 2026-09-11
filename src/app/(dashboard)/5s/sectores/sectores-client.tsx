@@ -139,19 +139,19 @@ export function SectoresClient({ sectores, periodo, puedeEditar }: Props) {
                 {s.documentacion.con_antes_despues} con antes y después
               </p>
               <p className="text-xs text-slate-500">
-                Check diario de limpieza:{" "}
+                Check de limpieza:{" "}
                 {s.check.dias === 0 ? (
-                  <span className="text-slate-400">sin días cargados</span>
+                  <span className="text-slate-400">todavía sin días cerrados</span>
                 ) : (
                   <span
                     className={
                       (s.check.pct ?? 0) >= 80 ? "font-semibold text-emerald-700" : "font-semibold text-amber-700"
                     }
                   >
-                    {s.check.dias_completos} de {s.check.dias} días completos ({s.check.pct}%)
+                    {s.check.dias_completos} de {s.check.dias} días sin faltas ({s.check.pct}%)
                   </span>
                 )}
-                {" · "}periódicos {s.check.periodicos_hechos}/{s.check.periodicos_total}
+                {" · "}periódicos sin faltas {s.check.periodicos_hechos}/{s.check.periodicos_total}
               </p>
             </CardHeader>
             <CardContent className="space-y-4">

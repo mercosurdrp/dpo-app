@@ -11,6 +11,7 @@ import {
   getVehiculosPendientesMes,
 } from "@/actions/s5"
 import type { S5Tipo } from "@/types/database"
+import { getCheckSectores } from "@/actions/s5-check"
 import { CincoSClient } from "./cinco-s-client"
 
 export default async function CincoSPage({
@@ -72,8 +73,11 @@ export default async function CincoSPage({
     )
   }
 
+  const checks = await getCheckSectores([1, 2, 3, 4])
+
   return (
     <CincoSClient
+      checksInicial={"error" in checks ? [] : checks.data}
       periodoActual={periodoActual}
       tipoInicial={tipoInicial}
       currentRole={profile.role}

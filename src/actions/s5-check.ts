@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache"
 import { requireAuth } from "@/lib/session"
-import { createAdminClient } from "@/lib/supabase/admin"
 import { escribirClave, leerClave, leerPrefijo } from "@/lib/clima-store"
 import {
   itemsDelSector,
@@ -12,44 +11,65 @@ import {
 } from "@/lib/s5-cronograma"
 
 /**
- * Check diario de limpieza 5S (ítem 18 de la auditoría: "¿la limpieza es
- * monitoreada con check?"). Reemplaza la planilla en papel de la cartelera.
+ * Check de limpieza 5S (ítem 18 de la auditoría: "¿la limpieza es monitoreada
+ * con check?"). Reemplaza la planilla en papel de la cartelera.
  *
- * Sin tabla propia, igual que Clima y los artículos de limpieza: cada día de
- * cada sector es una clave de `app_config`:
+ * Está al revés de un checklist común: **todo se da por hecho**. El
+ * responsable del sector no tilda nada al cerrar el turno (no tiene tiempo);
+ * el que hace la recorrida marca lo que NO se hizo, y eso es lo único que se
+ * guarda. Un día sin faltas es un día completo. Cada día cierra solo: hoy está
+ * "en curso", ayer ya cuenta.
  *
- *   s5:check:<sector>:<YYYY-MM-DD> → { items: { <item_id>: { por, at } } }
+ * Sin tabla propia, igual que Clima y los artículos de limpieza: cada día con
+ * faltas de cada sector es una clave de `app_config`:
  *
- * Un ítem presente está hecho; ausente, no. Los ítems semanales, quincenales y
- * mensuales se guardan en el día en que se hicieron y la pantalla los da por
- * cumplidos mientras dure su ventana (la semana, la quincena, el mes).
+ *   s5:falta:<sector>:<YYYY-MM-DD> → { items: { <item_id>: { por, at } } }
  *
- * Quién puede tildar: el responsable 5S del sector ese mes (desde Mi 5S) y
- * admin / auditor / supervisor. Se valida acá, antes de escribir con la
+ * Los ítems semanales, quincenales y mensuales se marcan en el día de la
+ * recorrida y la falta vale para toda su ventana (la semana, la quincena, el
+ * mes).
+ *
+ * Quién marca: admin y auditor. Se valida acá, antes de escribir con la
  * service role.
  */
 
-const PREFIJO = "s5:check:"
+const PREFIJO = "s5:falta:"
 const TZ = "America/Argentina/Buenos_Aires"
 const MI_PATH = "/mi-5s"
+const DASHBOARD_PATH = "/5s"
 const PANEL_PATH = "/5s/sectores"
+/** Hasta cuántos días atrás se puede cargar una recorrida. */
+const DIAS_ATRAS_MAX = 45
+const ROLES_RECORRIDA = ["admin", "auditor"]
 
-interface CheckDia {
+interface FaltasDia {
   items: Record<string, { por: string; at: string }>
 }
 
+export interface FaltaRegistrada {
+  fecha: string
+  item_id: string
+  texto: string
+  frecuencia: FrecuenciaCheck
+  por: string
+}
+
 export interface EstadoItemCheck extends ItemCronograma {
-  hecho: boolean
-  hecho_por: string | null
-  /** YYYY-MM-DD en que se tildó (el último dentro de la ventana). */
-  hecho_el: string | null
+  /** Marcado como no hecho en la fecha consultada (o en su ventana). */
+  falta: boolean
+  falta_por: string | null
+  falta_el: string | null
 }
 
 export interface CheckSector {
   sector: number
   hoy: string
+  /** Fecha consultada (la de la recorrida). */
+  fecha: string
   items: EstadoItemCheck[]
   adherencia: AdherenciaCheck
+  /** Todas las faltas del mes de `fecha`, para listarlas. */
+  faltas_mes: FaltaRegistrada[]
 }
 
 // ===================================================
@@ -119,14 +139,14 @@ function clave(sector: number, fecha: string): string {
   return `${PREFIJO}${sector}:${fecha}`
 }
 
-/** Todos los días guardados de un sector en un mes (YYYY-MM). */
-async function leerMes(sector: number, yyyymm: string): Promise<Map<string, CheckDia>> {
-  const out = new Map<string, CheckDia>()
+/** Todos los días con faltas de un sector en un mes (YYYY-MM). */
+async function leerMes(sector: number, yyyymm: string): Promise<Map<string, FaltasDia>> {
+  const out = new Map<string, FaltasDia>()
   const res = await leerPrefijo(`${PREFIJO}${sector}:${yyyymm}-`)
   if ("error" in res) return out
   for (const fila of res.data) {
     try {
-      const dia = JSON.parse(fila.valor) as CheckDia
+      const dia = JSON.parse(fila.valor) as FaltasDia
       out.set(fila.clave.slice(fila.clave.lastIndexOf(":") + 1), dia)
     } catch {
       // Una clave ilegible no voltea el check entero.
@@ -137,39 +157,54 @@ async function leerMes(sector: number, yyyymm: string): Promise<Map<string, Chec
 
 function estadoDeItems(
   items: ItemCronograma[],
-  mes: Map<string, CheckDia>,
-  hoy: string
+  mes: Map<string, FaltasDia>,
+  fecha: string
 ): EstadoItemCheck[] {
   return items.map((item) => {
-    const [desde, hasta] = ventana(item.frecuencia, hoy)
-    let hecho_el: string | null = null
-    let hecho_por: string | null = null
-    for (const [fecha, dia] of mes) {
-      if (fecha < desde || fecha > hasta) continue
+    const [desde, hasta] = ventana(item.frecuencia, fecha)
+    let falta_el: string | null = null
+    let falta_por: string | null = null
+    for (const [f, dia] of mes) {
+      if (f < desde || f > hasta) continue
       const marca = dia.items[item.id]
-      if (marca && (!hecho_el || fecha > hecho_el)) {
-        hecho_el = fecha
-        hecho_por = marca.por
+      if (marca && (!falta_el || f > falta_el)) {
+        falta_el = f
+        falta_por = marca.por
       }
     }
-    return { ...item, hecho: hecho_el !== null, hecho_por, hecho_el }
+    return { ...item, falta: falta_el !== null, falta_por, falta_el }
   })
 }
 
+function faltasDelMes(items: ItemCronograma[], mes: Map<string, FaltasDia>): FaltaRegistrada[] {
+  const porId = new Map(items.map((i) => [i.id, i]))
+  const out: FaltaRegistrada[] = []
+  for (const [fecha, dia] of mes) {
+    for (const [id, marca] of Object.entries(dia.items)) {
+      const item = porId.get(id)
+      if (!item) continue
+      out.push({ fecha, item_id: id, texto: item.texto, frecuencia: item.frecuencia, por: marca.por })
+    }
+  }
+  out.sort((a, b) => b.fecha.localeCompare(a.fecha) || a.texto.localeCompare(b.texto))
+  return out
+}
+
 /**
- * Cumplimiento del mes. Cuenta lunes a sábado desde el día 1 hasta hoy (o
- * hasta fin de mes si el mes ya cerró); un día está completo cuando todos los
- * ítems diarios del sector quedaron tildados.
+ * Cumplimiento del mes. Cuenta lunes a sábado desde el día 1 hasta AYER (hoy
+ * todavía está en curso), o hasta fin de mes si el mes ya cerró. Un día está
+ * completo cuando ningún ítem diario del sector quedó marcado como no hecho.
  */
 function calcularAdherencia(
   items: ItemCronograma[],
-  mes: Map<string, CheckDia>,
+  mes: Map<string, FaltasDia>,
   periodo: string,
   hoy: string
 ): AdherenciaCheck {
   const [y, m] = partes(periodo)
   const fin = iso(y, m, ultimoDiaDelMes(y, m))
-  const hasta = hoy < fin ? hoy : fin
+  const ayer = sumarDias(hoy, -1)
+  const hasta = ayer < fin ? ayer : fin
   const diarios = items.filter((i) => i.frecuencia === "diaria")
   const periodicos = items.filter((i) => i.frecuencia !== "diaria")
 
@@ -180,41 +215,73 @@ function calcularAdherencia(
       if (diaSemana(f) === 0) continue
       dias += 1
       const dia = mes.get(f)
-      if (dia && diarios.every((i) => dia.items[i.id])) completos += 1
+      if (!dia || diarios.every((i) => !dia.items[i.id])) completos += 1
     }
   }
 
-  const hechos = new Set<string>()
+  const conFalta = new Set<string>()
   for (const dia of mes.values()) {
-    for (const id of Object.keys(dia.items)) hechos.add(id)
+    for (const id of Object.keys(dia.items)) conFalta.add(id)
   }
 
   return {
     dias,
     dias_completos: completos,
     pct: dias > 0 ? Math.round((completos / dias) * 100) : null,
-    periodicos_hechos: periodicos.filter((i) => hechos.has(i.id)).length,
+    periodicos_hechos: periodicos.filter((i) => !conFalta.has(i.id)).length,
     periodicos_total: periodicos.length,
   }
 }
 
-/** Pantalla del operario: el check de hoy y cómo viene el mes. */
+async function armarCheck(sector: number, fecha: string, hoy: string): Promise<CheckSector> {
+  const items = itemsDelSector(sector)
+  const mes = await leerMes(sector, fecha.slice(0, 7))
+  return {
+    sector,
+    hoy,
+    fecha,
+    items: estadoDeItems(items, mes, fecha),
+    adherencia: calcularAdherencia(items, mes, `${fecha.slice(0, 7)}-01`, hoy),
+    faltas_mes: faltasDelMes(items, mes),
+  }
+}
+
+function fechaValida(fecha: string, hoy: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return "Fecha inválida."
+  if (fecha > hoy) return "No se puede cargar una recorrida a futuro."
+  if (fecha < sumarDias(hoy, -DIAS_ATRAS_MAX)) return "Esa fecha ya quedó muy atrás."
+  return null
+}
+
+/** El cronograma de un sector con las faltas de una fecha (por defecto hoy). */
 export async function getCheckSector(
-  sector: number
+  sector: number,
+  fecha?: string
 ): Promise<{ data: CheckSector } | { error: string }> {
   try {
     await requireAuth()
     const hoy = hoyLocal()
-    const items = itemsDelSector(sector)
-    const mes = await leerMes(sector, hoy.slice(0, 7))
-    return {
-      data: {
-        sector,
-        hoy,
-        items: estadoDeItems(items, mes, hoy),
-        adherencia: calcularAdherencia(items, mes, `${hoy.slice(0, 7)}-01`, hoy),
-      },
-    }
+    const f = fecha ?? hoy
+    const err = fechaValida(f, hoy)
+    if (err) return { error: err }
+    return { data: await armarCheck(sector, f, hoy) }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando el check" }
+  }
+}
+
+/** Los cuatro sectores de una vez, para la página 5S. */
+export async function getCheckSectores(
+  sectores: number[],
+  fecha?: string
+): Promise<{ data: CheckSector[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const hoy = hoyLocal()
+    const f = fecha ?? hoy
+    const err = fechaValida(f, hoy)
+    if (err) return { error: err }
+    return { data: await Promise.all(sectores.map((s) => armarCheck(s, f, hoy))) }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error cargando el check" }
   }
@@ -231,71 +298,55 @@ export async function getAdherenciaCheck(
 }
 
 // ===================================================
-// Escritura
+// Escritura: marcar / desmarcar una falta
 // ===================================================
 
-async function puedeTildar(
-  profile: { id: string; role: string },
-  sector: number,
-  periodo: string
-): Promise<boolean> {
-  if (["admin", "auditor", "supervisor"].includes(profile.role)) return true
-  const { data } = await createAdminClient()
-    .from("s5_sector_responsables")
-    .select("empleado:empleados!s5_sector_responsables_empleado_id_fkey(profile_id)")
-    .eq("periodo", periodo)
-    .eq("sector_numero", sector)
-    .maybeSingle()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data as any)?.empleado?.profile_id === profile.id
-}
-
-export async function marcarCheck(input: {
+export async function marcarFalta(input: {
   sector: number
   itemId: string
-  hecho: boolean
-  /** YYYY-MM-DD; por defecto hoy. Se acepta hoy o ayer, nada más. */
-  fecha?: string
+  /** YYYY-MM-DD de la recorrida. */
+  fecha: string
+  /** true = "no se hizo"; false = lo saca (se hizo después de todo). */
+  falta: boolean
 }): Promise<{ data: CheckSector } | { error: string }> {
   try {
     const profile = await requireAuth()
-    const hoy = hoyLocal()
-    const fecha = input.fecha ?? hoy
-    if (fecha !== hoy && fecha !== sumarDias(hoy, -1)) {
-      return { error: "Solo se puede tildar el check de hoy o el de ayer." }
+    if (!ROLES_RECORRIDA.includes(profile.role)) {
+      return { error: "Las faltas del check las carga quien hace la recorrida (admin o auditor)." }
     }
+    const hoy = hoyLocal()
+    const err = fechaValida(input.fecha, hoy)
+    if (err) return { error: err }
+
     const items = itemsDelSector(input.sector)
     const item = items.find((i) => i.id === input.itemId)
     if (!item) return { error: "Ese ítem no está en el cronograma del sector." }
 
-    const periodo = `${fecha.slice(0, 7)}-01`
-    if (!(await puedeTildar(profile, input.sector, periodo))) {
-      return { error: "Este mes el check de ese sector lo carga su responsable 5S." }
-    }
-
-    const k = clave(input.sector, fecha)
-    const dia = (await leerClave<CheckDia>(k)) ?? { items: {} }
-    if (input.hecho) {
+    const k = clave(input.sector, input.fecha)
+    const dia = (await leerClave<FaltasDia>(k)) ?? { items: {} }
+    if (input.falta) {
       dia.items[item.id] = { por: profile.nombre, at: new Date().toISOString() }
     } else {
+      // Si la falta de un periódico se cargó otro día de la misma ventana,
+      // hay que sacarla de ese día, no de éste.
+      const mes = await leerMes(input.sector, input.fecha.slice(0, 7))
+      const [desde, hasta] = ventana(item.frecuencia, input.fecha)
+      for (const [f, d] of mes) {
+        if (f < desde || f > hasta || !d.items[item.id]) continue
+        delete d.items[item.id]
+        const r = await escribirClave(clave(input.sector, f), d, profile.id)
+        if ("error" in r) return { error: r.error }
+      }
       delete dia.items[item.id]
     }
     const res = await escribirClave(k, dia, profile.id)
     if ("error" in res) return { error: res.error }
 
     revalidatePath(MI_PATH)
+    revalidatePath(DASHBOARD_PATH)
     revalidatePath(PANEL_PATH)
-
-    const mes = await leerMes(input.sector, hoy.slice(0, 7))
-    return {
-      data: {
-        sector: input.sector,
-        hoy,
-        items: estadoDeItems(items, mes, hoy),
-        adherencia: calcularAdherencia(items, mes, `${hoy.slice(0, 7)}-01`, hoy),
-      },
-    }
+    return { data: await armarCheck(input.sector, input.fecha, hoy) }
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Error guardando el check" }
+    return { error: err instanceof Error ? err.message : "Error guardando la recorrida" }
   }
 }
