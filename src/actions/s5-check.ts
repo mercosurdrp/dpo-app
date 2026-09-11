@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { requireAuth } from "@/lib/session"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { escribirClave, leerClave, leerPrefijo } from "@/lib/clima-store"
 import {
   itemsDelSector,
@@ -59,6 +60,13 @@ export interface EstadoItemCheck extends ItemCronograma {
   falta: boolean
   falta_por: string | null
   falta_el: string | null
+}
+
+/** Cumplimiento del cronograma de un sector en un mes, para Indicadores. */
+export interface CumplimientoSector {
+  sector: number
+  nombre: string
+  adherencia: AdherenciaCheck
 }
 
 export interface CheckSector {
@@ -295,6 +303,36 @@ export async function getAdherenciaCheck(
   const items = itemsDelSector(sector)
   const mes = await leerMes(sector, periodo.slice(0, 7))
   return calcularAdherencia(items, mes, periodo, hoyLocal())
+}
+
+/** Indicadores: cumplimiento del cronograma de cada sector en un mes (periodo = YYYY-MM-01). */
+export async function getCumplimientoSectores(
+  periodo: string
+): Promise<{ data: CumplimientoSector[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const { data: sectores, error } = await createAdminClient()
+      .from("s5_sectores_almacen")
+      .select("numero, nombre")
+      .order("numero")
+    if (error) return { error: error.message }
+    const hoy = hoyLocal()
+    const filas = (sectores ?? []) as { numero: number; nombre: string | null }[]
+    const data = await Promise.all(
+      filas.map(async (s) => {
+        const items = itemsDelSector(s.numero)
+        const mes = await leerMes(s.numero, periodo.slice(0, 7))
+        return {
+          sector: s.numero,
+          nombre: s.nombre ?? `Sector ${s.numero}`,
+          adherencia: calcularAdherencia(items, mes, periodo, hoy),
+        }
+      })
+    )
+    return { data }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando el cumplimiento" }
+  }
 }
 
 // ===================================================

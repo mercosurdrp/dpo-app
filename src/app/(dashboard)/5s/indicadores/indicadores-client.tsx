@@ -56,6 +56,7 @@ import {
   getS5Ranking,
   getS5TopItemsCriticos,
 } from "@/actions/s5"
+import { getCumplimientoSectores, type CumplimientoSector } from "@/actions/s5-check"
 import {
   S5_CATEGORIA_LABELS,
   type S5Tipo,
@@ -139,6 +140,7 @@ export function IndicadoresClient({
   kpisInicial,
   tendenciaInicial,
   sectoresInicial,
+  cumplimientoInicial,
   rankingInicial,
   criticosInicial,
 }: {
@@ -147,6 +149,7 @@ export function IndicadoresClient({
   kpisInicial: S5KpisMes | null
   tendenciaInicial: S5TendenciaMes[]
   sectoresInicial: S5TendenciaSectores | null
+  cumplimientoInicial: CumplimientoSector[]
   rankingInicial: S5RankingRow[]
   criticosInicial: S5ItemCriticoRow[]
 }) {
@@ -155,6 +158,7 @@ export function IndicadoresClient({
   const [kpis, setKpis] = useState<S5KpisMes | null>(kpisInicial)
   const [tendencia, setTendencia] = useState(tendenciaInicial)
   const [sectores, setSectores] = useState(sectoresInicial)
+  const [cumplimiento, setCumplimiento] = useState(cumplimientoInicial)
   const [ranking, setRanking] = useState(rankingInicial)
   const [criticos, setCriticos] = useState(criticosInicial)
   const [isPending, startTransition] = useTransition()
@@ -175,10 +179,12 @@ export function IndicadoresClient({
 
   function recargar(nuevoTipo: S5Tipo, nuevoPeriodo: string) {
     startTransition(async () => {
-      const [k, t, s, r, c] = await Promise.all([
+      const [k, t, s, cu, r, c] = await Promise.all([
         getS5KpisMes(nuevoTipo, nuevoPeriodo),
-        getS5TendenciaMensual(nuevoTipo, nuevoPeriodo, 12),
-        getS5TendenciaSectores(nuevoTipo, nuevoPeriodo, 12),
+        // Las tendencias de 12 meses no dependen del mes elegido: siempre hasta hoy.
+        getS5TendenciaMensual(nuevoTipo, periodoInicial, 12),
+        getS5TendenciaSectores(nuevoTipo, periodoInicial, 12),
+        getCumplimientoSectores(nuevoPeriodo),
         getS5Ranking(nuevoTipo, nuevoPeriodo),
         getS5TopItemsCriticos(nuevoTipo, nuevoPeriodo, 5),
       ])
@@ -186,6 +192,7 @@ export function IndicadoresClient({
       else setKpis(null)
       if ("data" in t) setTendencia(t.data)
       if ("data" in s) setSectores(s.data)
+      if ("data" in cu) setCumplimiento(cu.data)
       if ("data" in r) setRanking(r.data)
       if ("data" in c) setCriticos(c.data)
     })
@@ -256,49 +263,6 @@ export function IndicadoresClient({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Selector de mes */}
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => cambiarMes(-1)}
-                disabled={isPending || esMesMasAntiguo}
-                aria-label="Mes anterior"
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-              <Select
-                value={periodo}
-                onValueChange={(v) => {
-                  if (!v) return
-                  setPeriodo(v)
-                  recargar(tipo, v)
-                }}
-                disabled={isPending}
-                items={opcionesMesItems}
-              >
-                <SelectTrigger className="min-w-[160px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {opcionesMes.map((p) => (
-                    <SelectItem key={p} value={p} label={formatMesLargo(p)}>
-                      {formatMesLargo(p)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => cambiarMes(1)}
-                disabled={isPending || esMesActual}
-                aria-label="Mes siguiente"
-              >
-                <ChevronRight className="size-4" />
-              </Button>
-            </div>
-
             {/* Selector de tipo */}
             <Tabs value={tipo} onValueChange={cambiarTipo}>
               <TabsList>
@@ -313,6 +277,246 @@ export function IndicadoresClient({
               </TabsList>
             </Tabs>
           </div>
+        </div>
+      </div>
+
+      {/* Tendencia — 12 meses */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Tendencia 12 meses — % promedio por S
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={tendenciaChartData}
+                margin={{ top: 5, right: 12, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="name" fontSize={11} />
+                <YAxis fontSize={11} domain={[0, 100]} unit="%" />
+                <Tooltip
+                  formatter={(value) =>
+                    value === null || value === undefined
+                      ? "—"
+                      : `${Number(value).toFixed(1)}%`
+                  }
+                />
+                <ReferenceLine
+                  y={80}
+                  stroke="#10B981"
+                  strokeDasharray="5 5"
+                  label={{
+                    value: "Meta 80%",
+                    position: "right",
+                    fontSize: 10,
+                    fill: "#10B981",
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} iconSize={10} />
+                <Line
+                  type="monotone"
+                  dataKey="Organización"
+                  stroke={CATEGORIA_COLORES.organizacion}
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  connectNulls
+                />
+                <Line
+                  type="monotone"
+                  dataKey="Orden"
+                  stroke={CATEGORIA_COLORES.orden}
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  connectNulls
+                />
+                <Line
+                  type="monotone"
+                  dataKey="Limpieza"
+                  stroke={CATEGORIA_COLORES.limpieza}
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  connectNulls
+                />
+                <Line
+                  type="monotone"
+                  dataKey="Estandarización"
+                  stroke={CATEGORIA_COLORES.estandarizacion}
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  connectNulls
+                />
+                <Line
+                  type="monotone"
+                  dataKey="Disciplina"
+                  stroke={CATEGORIA_COLORES.disciplina}
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  connectNulls
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Nota total mes a mes, por sector */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Nota total mes a mes —{" "}
+            {tipo === "almacen" ? "por sector" : "promedio de la flota"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={sectoresChartData}
+                margin={{ top: 5, right: 12, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="name" fontSize={11} />
+                <YAxis fontSize={11} domain={[0, 100]} unit="%" />
+                <Tooltip
+                  formatter={(value) =>
+                    value === null || value === undefined
+                      ? "—"
+                      : `${Number(value).toFixed(1)}%`
+                  }
+                />
+                <ReferenceLine
+                  y={80}
+                  stroke="#10B981"
+                  strokeDasharray="5 5"
+                  label={{
+                    value: "Meta 80%",
+                    position: "right",
+                    fontSize: 10,
+                    fill: "#10B981",
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} iconSize={10} />
+                {sectoresClaves.map((c, i) => (
+                  <Line
+                    key={c.key}
+                    type="monotone"
+                    dataKey={c.label}
+                    stroke={SECTOR_COLORES[i % SECTOR_COLORES.length]}
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    connectNulls
+                  />
+                ))}
+                <Line
+                  type="monotone"
+                  dataKey="Promedio"
+                  stroke="#0f172a"
+                  strokeWidth={sectoresClaves.length ? 1.5 : 2.5}
+                  strokeDasharray={sectoresClaves.length ? "4 3" : undefined}
+                  dot={{ r: 2 }}
+                  connectNulls
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          {mesesConNota.length > 0 && (
+            <div className="mt-3 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Mes</TableHead>
+                    {sectoresClaves.map((c) => (
+                      <TableHead key={c.key} className="text-right text-xs">
+                        {c.label}
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-right text-xs">Promedio</TableHead>
+                    <TableHead className="text-right text-xs">Auditorías</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mesesConNota.map((m) => (
+                    <TableRow key={m.periodo}>
+                      <TableCell className="text-xs font-medium">{m.mes_label}</TableCell>
+                      {sectoresClaves.map((c) => {
+                        const v = m.series[c.key]
+                        return (
+                          <TableCell key={c.key} className="text-right text-xs tabular-nums">
+                            {v === null || v === undefined ? "—" : v.toFixed(1)}
+                          </TableCell>
+                        )
+                      })}
+                      <TableCell className="text-right text-xs font-semibold tabular-nums">
+                        {m.promedio === null ? "—" : m.promedio.toFixed(1)}
+                      </TableCell>
+                      <TableCell className="text-right text-xs tabular-nums">
+                        {m.auditorias}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Barra del mes: lo de abajo responde a este selector */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-slate-50 px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">Detalle del mes</p>
+          <p className="text-xs text-muted-foreground">
+            Promedios, cumplimiento del cronograma, ranking e ítems críticos del mes elegido.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {isPending && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+        {/* Selector de mes */}
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => cambiarMes(-1)}
+            disabled={isPending || esMesMasAntiguo}
+            aria-label="Mes anterior"
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <Select
+            value={periodo}
+            onValueChange={(v) => {
+              if (!v) return
+              setPeriodo(v)
+              recargar(tipo, v)
+            }}
+            disabled={isPending}
+            items={opcionesMesItems}
+          >
+            <SelectTrigger className="min-w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {opcionesMes.map((p) => (
+                <SelectItem key={p} value={p} label={formatMesLargo(p)}>
+                  {formatMesLargo(p)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => cambiarMes(1)}
+            disabled={isPending || esMesActual}
+            aria-label="Mes siguiente"
+          >
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+
         </div>
       </div>
 
@@ -510,189 +714,53 @@ export function IndicadoresClient({
         </Card>
       </div>
 
-      {/* Tendencia — 12 meses */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Tendencia 12 meses — % promedio por S
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={tendenciaChartData}
-                margin={{ top: 5, right: 12, left: 0, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" fontSize={11} />
-                <YAxis fontSize={11} domain={[0, 100]} unit="%" />
-                <Tooltip
-                  formatter={(value) =>
-                    value === null || value === undefined
-                      ? "—"
-                      : `${Number(value).toFixed(1)}%`
-                  }
-                />
-                <ReferenceLine
-                  y={80}
-                  stroke="#10B981"
-                  strokeDasharray="5 5"
-                  label={{
-                    value: "Meta 80%",
-                    position: "right",
-                    fontSize: 10,
-                    fill: "#10B981",
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 11 }} iconSize={10} />
-                <Line
-                  type="monotone"
-                  dataKey="Organización"
-                  stroke={CATEGORIA_COLORES.organizacion}
-                  strokeWidth={2}
-                  dot={{ r: 2 }}
-                  connectNulls
-                />
-                <Line
-                  type="monotone"
-                  dataKey="Orden"
-                  stroke={CATEGORIA_COLORES.orden}
-                  strokeWidth={2}
-                  dot={{ r: 2 }}
-                  connectNulls
-                />
-                <Line
-                  type="monotone"
-                  dataKey="Limpieza"
-                  stroke={CATEGORIA_COLORES.limpieza}
-                  strokeWidth={2}
-                  dot={{ r: 2 }}
-                  connectNulls
-                />
-                <Line
-                  type="monotone"
-                  dataKey="Estandarización"
-                  stroke={CATEGORIA_COLORES.estandarizacion}
-                  strokeWidth={2}
-                  dot={{ r: 2 }}
-                  connectNulls
-                />
-                <Line
-                  type="monotone"
-                  dataKey="Disciplina"
-                  stroke={CATEGORIA_COLORES.disciplina}
-                  strokeWidth={2}
-                  dot={{ r: 2 }}
-                  connectNulls
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Nota total mes a mes, por sector */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Nota total mes a mes —{" "}
-            {tipo === "almacen" ? "por sector" : "promedio de la flota"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={sectoresChartData}
-                margin={{ top: 5, right: 12, left: 0, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" fontSize={11} />
-                <YAxis fontSize={11} domain={[0, 100]} unit="%" />
-                <Tooltip
-                  formatter={(value) =>
-                    value === null || value === undefined
-                      ? "—"
-                      : `${Number(value).toFixed(1)}%`
-                  }
-                />
-                <ReferenceLine
-                  y={80}
-                  stroke="#10B981"
-                  strokeDasharray="5 5"
-                  label={{
-                    value: "Meta 80%",
-                    position: "right",
-                    fontSize: 10,
-                    fill: "#10B981",
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 11 }} iconSize={10} />
-                {sectoresClaves.map((c, i) => (
-                  <Line
-                    key={c.key}
-                    type="monotone"
-                    dataKey={c.label}
-                    stroke={SECTOR_COLORES[i % SECTOR_COLORES.length]}
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                    connectNulls
-                  />
-                ))}
-                <Line
-                  type="monotone"
-                  dataKey="Promedio"
-                  stroke="#0f172a"
-                  strokeWidth={sectoresClaves.length ? 1.5 : 2.5}
-                  strokeDasharray={sectoresClaves.length ? "4 3" : undefined}
-                  dot={{ r: 2 }}
-                  connectNulls
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          {mesesConNota.length > 0 && (
-            <div className="mt-3 overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">Mes</TableHead>
-                    {sectoresClaves.map((c) => (
-                      <TableHead key={c.key} className="text-right text-xs">
-                        {c.label}
-                      </TableHead>
-                    ))}
-                    <TableHead className="text-right text-xs">Promedio</TableHead>
-                    <TableHead className="text-right text-xs">Auditorías</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {mesesConNota.map((m) => (
-                    <TableRow key={m.periodo}>
-                      <TableCell className="text-xs font-medium">{m.mes_label}</TableCell>
-                      {sectoresClaves.map((c) => {
-                        const v = m.series[c.key]
-                        return (
-                          <TableCell key={c.key} className="text-right text-xs tabular-nums">
-                            {v === null || v === undefined ? "—" : v.toFixed(1)}
-                          </TableCell>
-                        )
-                      })}
-                      <TableCell className="text-right text-xs font-semibold tabular-nums">
-                        {m.promedio === null ? "—" : m.promedio.toFixed(1)}
-                      </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">
-                        {m.auditorias}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+      {/* Cumplimiento del cronograma de limpieza (almacén) */}
+      {tipo === "almacen" && cumplimiento.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Cumplimiento del cronograma de limpieza — {formatMesLargo(periodo)}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Días lunes a sábado sin ítems marcados como no hechos en la recorrida. Los periódicos son
+              los ítems semanales, quincenales y mensuales sin faltas en el mes.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {cumplimiento.map((c) => {
+                const a = c.adherencia
+                const color =
+                  a.dias === 0
+                    ? "text-slate-400"
+                    : (a.pct ?? 0) >= 80
+                      ? "text-emerald-600"
+                      : (a.pct ?? 0) >= 60
+                        ? "text-amber-600"
+                        : "text-red-600"
+                return (
+                  <div key={c.sector} className="rounded-lg border border-slate-200 p-4">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {c.sector}. {c.nombre}
+                    </p>
+                    <p className={`mt-1 text-3xl font-bold ${color}`}>
+                      {a.dias === 0 ? "—" : `${a.pct}%`}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      {a.dias === 0
+                        ? "sin días cerrados"
+                        : `${a.dias_completos} de ${a.dias} días sin faltas`}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      periódicos sin faltas {a.periodicos_hechos}/{a.periodicos_total}
+                    </p>
+                  </div>
+                )
+              })}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Ranking */}
       <Card>
