@@ -26,6 +26,12 @@ import {
   type PuntoMedicion,
 } from "@/lib/vehiculos/desgaste-neumaticos"
 import {
+  analizarSerieFuego,
+  validarLoteFuego,
+  validarNumeroFuego,
+  type SerieFuego,
+} from "@/lib/vehiculos/numeracion-fuego"
+import {
   PROFUNDIDAD_CRITICA_MM,
   type AccionNeumaticos,
   type Alineacion,
@@ -57,6 +63,19 @@ function hoyArgentina(): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date())
+}
+
+/**
+ * Estado de la serie de fuego, leído de la base. Se pide entera (dos columnas
+ * de todas las cubiertas) porque la serie es de toda la flota: para saber cuál
+ * es el próximo número y qué huecos quedan hay que mirarlas todas, no sólo las
+ * de una unidad.
+ */
+async function cargarSerieFuego(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<SerieFuego> {
+  const { data } = await supabase.from("mantenimiento_neumaticos").select("id, numero")
+  return analizarSerieFuego((data ?? []) as Array<{ id: string; numero: string | null }>)
 }
 
 // ==================== LECTURA ====================
@@ -196,6 +215,14 @@ export async function crearNeumaticosMasivo(input: {
     if (cantidad < 1) return { error: "Indicá una cantidad o al menos un número" }
     if (cantidad > 200) return { error: "Máximo 200 cubiertas por carga" }
 
+    // Los números de fuego los propone la pantalla, pero el control vive acá:
+    // la serie es única para toda la flota y dos cargas simultáneas tomarían
+    // el mismo número si sólo se validara en el cliente.
+    if (numeros.length > 0) {
+      const v = validarLoteFuego(numeros, await cargarSerieFuego(supabase))
+      if (!v.ok) return { error: v.error }
+    }
+
     const base = {
       tipo: input.tipo,
       marca: input.marca?.trim() || null,
@@ -255,7 +282,23 @@ export async function actualizarNeumatico(input: {
     await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
     const update: Record<string, unknown> = {}
-    if (input.numero !== undefined) update.numero = input.numero?.trim() || null
+    if (input.numero !== undefined) {
+      // El número de fuego se puede completar (cubierta que entró sin marcar)
+      // o corregir, pero sigue las mismas reglas que en el alta. El valor que
+      // ya tenía siempre pasa: hay cubiertas viejas con número de fabricante y
+      // no se pueden dejar sin editar el resto de los datos.
+      const { data: previa } = await supabase
+        .from("mantenimiento_neumaticos")
+        .select("numero")
+        .eq("id", input.id)
+        .maybeSingle()
+      const v = validarNumeroFuego(input.numero, await cargarSerieFuego(supabase), {
+        idPropio: input.id,
+        valorActual: (previa as { numero: string | null } | null)?.numero ?? null,
+      })
+      if (!v.ok) return { error: v.error }
+      update.numero = input.numero?.trim() || null
+    }
     if (input.marca !== undefined) update.marca = input.marca?.trim() || null
     if (input.medida !== undefined) update.medida = input.medida?.trim() || null
     if (input.dibujo !== undefined) update.dibujo = input.dibujo ?? null
@@ -397,6 +440,21 @@ export async function asignarNeumatico(input: {
       .maybeSingle()
     if (ocupa) return { error: "Esa posición ya tiene una cubierta instalada" }
 
+    // La cubierta del stock puede llegar sin marcar y marcarse recién acá,
+    // cuando el gomero la coloca. Mismo control que en el alta.
+    if (input.numero?.trim()) {
+      const { data: prevNum } = await supabase
+        .from("mantenimiento_neumaticos")
+        .select("numero")
+        .eq("id", input.id)
+        .maybeSingle()
+      const v = validarNumeroFuego(input.numero, await cargarSerieFuego(supabase), {
+        idPropio: input.id,
+        valorActual: (prevNum as { numero: string | null } | null)?.numero ?? null,
+      })
+      if (!v.ok) return { error: v.error }
+    }
+
     const patch: Record<string, unknown> = {
       dominio: input.dominio.toUpperCase(),
       posicion: input.posicion,
@@ -491,6 +549,11 @@ export async function crearYColocarNeumatico(input: {
       .eq("estado", "instalado")
       .maybeSingle()
     if (ocupa) return { error: "Esa posición ya tiene una cubierta instalada" }
+
+    if (input.numero?.trim()) {
+      const v = validarNumeroFuego(input.numero, await cargarSerieFuego(supabase))
+      if (!v.ok) return { error: v.error }
+    }
 
     const { data: creada, error } = await supabase
       .from("mantenimiento_neumaticos")

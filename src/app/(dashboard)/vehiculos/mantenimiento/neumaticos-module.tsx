@@ -37,6 +37,7 @@ import {
   Gauge,
   Layers,
   FileDown,
+  Flame,
   Paperclip,
   Pencil,
   Plus,
@@ -81,9 +82,16 @@ import {
   type Rotacion,
   NEUMATICO_DIBUJO_LABEL,
   NEUMATICO_DIBUJOS,
+  NEUMATICO_ESTADO_LABEL,
   PROFUNDIDAD_CRITICA_MM,
   SIN_DIBUJO,
 } from "@/lib/vehiculos/neumaticos-tipos"
+import {
+  analizarSerieFuego,
+  parseNumeroFuego,
+  siguientesFuego,
+  type SerieFuego,
+} from "@/lib/vehiculos/numeracion-fuego"
 import { PlanesNeumaticos } from "./_components/planes-neumaticos"
 import type { FlotaPlanConItems } from "@/actions/flota-indicadores"
 import {
@@ -172,6 +180,9 @@ interface Props {
 }
 
 const TIPO_LABEL: Record<string, string> = { nuevo: "Nuevo", recapado: "Recapado" }
+
+/** Opción "sin filtrar" del selector de unidad (el Select no admite value=""). */
+const TODAS_LAS_UNIDADES = "__todas__"
 
 const fmtFecha = (f: string | null) =>
   !f ? "—" : f.slice(0, 10).split("-").reverse().join("/")
@@ -283,6 +294,10 @@ export function NeumaticosModule({
     actual: Neumatico | null
   } | null>(null)
   const [tabUnidad, setTabUnidad] = useState("diagrama")
+
+  // Numeración de fuego: la serie es de toda la flota y la usan tanto la
+  // pestaña como los formularios que asignan un número.
+  const serieFuego = useMemo(() => analizarSerieFuego(neumaticos), [neumaticos])
 
   const stock = useMemo(
     () => neumaticos.filter((n) => n.estado === "stock"),
@@ -575,6 +590,9 @@ export function NeumaticosModule({
                     <CircleDollarSign className="mr-1 size-4" /> Compras y costos (
                     {cubiertasUnidad.length})
                   </TabsTrigger>
+                  <TabsTrigger value="fuego" className="flex-none px-4 text-sm">
+                    <Flame className="mr-1 size-4" /> Marcación de fuego
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="diagrama" className="pt-4">
@@ -609,6 +627,19 @@ export function NeumaticosModule({
 
                 <TabsContent value="compras" className="pt-4">
                   <ComprasCubiertasPanel neumaticos={cubiertasUnidad} />
+                </TabsContent>
+
+                {/* Numeración de fuego. Arranca filtrada en la unidad que se
+                    está mirando, pero la serie y el próximo número son de
+                    toda la flota. */}
+                <TabsContent value="fuego" className="pt-4">
+                  <MarcacionFuegoPanel
+                    neumaticos={neumaticos}
+                    unidades={unidades}
+                    dominioSel={unidadSel}
+                    puedeEditar={puedeEditar}
+                    onEditar={setEditNeu}
+                  />
                 </TabsContent>
               </Tabs>
             </div>
@@ -974,6 +1005,7 @@ export function NeumaticosModule({
 
       {cargaOpen && (
         <CargarCubiertasDialog
+          serie={serieFuego}
           onClose={() => setCargaOpen(false)}
           onDone={() => {
             setCargaOpen(false)
@@ -984,6 +1016,7 @@ export function NeumaticosModule({
       {editNeu && (
         <EditarCubiertaDialog
           neumatico={editNeu}
+          serie={serieFuego}
           onClose={() => setEditNeu(null)}
           onDone={() => {
             setEditNeu(null)
@@ -1022,6 +1055,7 @@ export function NeumaticosModule({
           pos={posDialog.pos}
           actual={posDialog.actual}
           stock={stock}
+          serie={serieFuego}
           kmActual={kmUnidad.kmActual}
           vida={posDialog.actual ? (vidaPorId.get(posDialog.actual.id) ?? null) : null}
           onClose={() => setPosDialog(null)}
@@ -1037,6 +1071,338 @@ export function NeumaticosModule({
       )}
     </div>
     </ProveedoresProvider>
+  )
+}
+
+/**
+ * Selector del número de fuego.
+ *
+ * No es un input: la serie no se tipea. Las únicas opciones son el número que
+ * sigue, los de la serie que faltan cargar (cubiertas marcadas que nunca se
+ * dieron de alta) y dejarla sin marcar. Así no hay forma de repetir un número
+ * ni de saltear la serie, que es lo que pasaba con el campo de texto libre.
+ *
+ * `valorActual` es el número que la cubierta ya tenía: se ofrece como opción
+ * para poder editar el resto de los datos sin tocarlo, incluso cuando es un
+ * número de fabricante que quedó de la importación de Cloudfleet.
+ */
+const SIN_MARCAR = "__sin_marcar__"
+
+function NumeroFuegoField({
+  value,
+  onChange,
+  serie,
+  valorActual,
+  label = "N° de fuego",
+  ayuda,
+}: {
+  value: string
+  onChange: (v: string) => void
+  serie: SerieFuego
+  valorActual?: string | null
+  label?: string
+  ayuda?: string
+}) {
+  const actual = (valorActual ?? "").trim()
+  const esOpcionAparte =
+    actual !== "" &&
+    !serie.huecos.includes(parseNumeroFuego(actual)?.n ?? -1) &&
+    parseNumeroFuego(actual)?.n !== serie.proximo
+
+  return (
+    <div>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Select
+        value={value.trim() === "" ? SIN_MARCAR : value}
+        onValueChange={(v) => onChange(!v || v === SIN_MARCAR ? "" : v)}
+      >
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={SIN_MARCAR}>Sin marcar todavía</SelectItem>
+          <SelectItem value={String(serie.proximo)}>
+            {serie.proximo} — el que sigue en la serie
+          </SelectItem>
+          {esOpcionAparte && (
+            <SelectItem value={actual}>{actual} — el que ya tenía</SelectItem>
+          )}
+          {serie.huecos.map((h) => (
+            <SelectItem key={h} value={String(h)}>
+              {h} — ya marcada, falta cargarla
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {ayuda ??
+          `La serie va por el ${serie.ultimo ?? 0}. Si la cubierta ya viene marcada de antes, elegí su número de la lista; no se puede repetir ni saltear.`}
+      </p>
+    </div>
+  )
+}
+
+// ==================== Marcación de fuego ====================
+// La numeración de fuego es una serie única de toda la flota: cada cubierta
+// lleva grabado en el flanco el número que sigue al último marcado, y lo
+// conserva hasta la baja aunque cambie de camión o de posición. Antes el campo
+// era texto libre en tres formularios distintos y sin ningún control: se podía
+// repetir un número o saltear la serie sin que nada avisara.
+//
+// El panel vive acá, junto al diagrama, porque la pregunta que se hace frente
+// al camión es siempre la misma: qué número tiene esta cubierta y cuál sigue.
+
+/** Dónde está una cubierta, para la columna de ubicación. */
+function ubicacionCubierta(n: Neumatico): string {
+  if (n.estado === "instalado") {
+    return `${n.dominio ?? "—"}${n.posicion ? ` · ${n.posicion}` : ""}`
+  }
+  return NEUMATICO_ESTADO_LABEL[n.estado]
+}
+
+function MarcacionFuegoPanel({
+  neumaticos,
+  unidades,
+  dominioSel,
+  puedeEditar,
+  onEditar,
+}: {
+  neumaticos: Neumatico[]
+  unidades: UnidadFlota[]
+  dominioSel: string
+  puedeEditar: boolean
+  onEditar: (n: Neumatico) => void
+}) {
+  const [filtro, setFiltro] = useState<string>(dominioSel || TODAS_LAS_UNIDADES)
+
+  // La serie se calcula SIEMPRE sobre la flota entera, aunque la tabla esté
+  // filtrada por unidad: el próximo número no depende del camión que se mire.
+  const serie = useMemo(() => analizarSerieFuego(neumaticos), [neumaticos])
+
+  const { marcadas, sinMarcar } = useMemo(() => {
+    const dela = (n: Neumatico) =>
+      filtro === TODAS_LAS_UNIDADES
+        ? true
+        : n.estado === "instalado" && n.dominio === filtro
+    const conNumero: Array<{ n: Neumatico; fuego: number; recapada: boolean }> = []
+    const sin: Neumatico[] = []
+    for (const n of neumaticos) {
+      if (!dela(n)) continue
+      const p = parseNumeroFuego(n.numero)
+      if (p) conNumero.push({ n, fuego: p.n, recapada: p.recapada })
+      else sin.push(n)
+    }
+    // De la última marcación para atrás: lo primero que se quiere ver es en qué
+    // número quedó la serie.
+    conNumero.sort((a, b) => b.fuego - a.fuego)
+    return { marcadas: conNumero, sinMarcar: sin }
+  }, [neumaticos, filtro])
+
+  const [verTodas, setVerTodas] = useState(false)
+  const visibles = verTodas ? marcadas : marcadas.slice(0, 12)
+
+  return (
+    <div className="space-y-4">
+      {/* Lo primero: en qué número quedó la serie y cuál hay que grabar */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-md border-2 border-primary/50 bg-primary/5 p-3">
+          <p className="text-xs text-muted-foreground">Próximo número a marcar</p>
+          <p className="text-3xl font-semibold tabular-nums text-foreground">
+            {serie.proximo}
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            Se asigna solo al cargar una cubierta
+          </p>
+        </div>
+        <div className="rounded-md border border-border p-3">
+          <p className="text-xs text-muted-foreground">Último marcado</p>
+          <p className="text-3xl font-semibold tabular-nums text-foreground">
+            {serie.ultimo ?? "—"}
+          </p>
+        </div>
+        <div className="rounded-md border border-border p-3">
+          <p className="text-xs text-muted-foreground">Marcadas en la serie</p>
+          <p className="text-3xl font-semibold tabular-nums text-foreground">
+            {serie.ocupados.size}
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">en toda la flota</p>
+        </div>
+        <div className="rounded-md border border-border p-3">
+          <p className="text-xs text-muted-foreground">Sin cargar</p>
+          <p
+            className={cn(
+              "text-3xl font-semibold tabular-nums",
+              serie.huecos.length > 0 ? "text-amber-600" : "text-foreground"
+            )}
+          >
+            {serie.huecos.length}
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            números de la serie que faltan
+          </p>
+        </div>
+      </div>
+
+      {/* Los huecos son cubiertas que existen y nunca se cargaron, no números
+          libres. Por eso se listan acá: son las únicas alternativas que el alta
+          acepta además del próximo. */}
+      {serie.huecos.length > 0 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+          <p className="text-sm font-medium text-foreground">
+            Números de la serie que no figuran en el sistema
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {serie.huecos.map((h) => (
+              <Badge key={h} variant="outline" className="tabular-nums">
+                {h}
+              </Badge>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            No están libres: son cubiertas marcadas que nunca se dieron de alta (el
+            auxilio, las que salieron de una unidad, las del acoplado). Al cargar una
+            cubierta que ya viene marcada se elige de esta lista; ninguna otra se puede
+            tipear.
+          </p>
+        </div>
+      )}
+
+      {/* Filtro por unidad */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Ver</span>
+        <Select value={filtro} onValueChange={(v) => setFiltro(v ?? TODAS_LAS_UNIDADES)}>
+          <SelectTrigger className="h-8 w-56 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={TODAS_LAS_UNIDADES}>Toda la flota</SelectItem>
+            {unidades.map((u) => (
+              <SelectItem key={u.dominio} value={u.dominio}>
+                {u.dominio}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-muted-foreground">
+          {marcadas.length} marcada{marcadas.length === 1 ? "" : "s"}
+          {sinMarcar.length > 0 ? ` · ${sinMarcar.length} sin número` : ""}
+        </span>
+      </div>
+
+      {/* Últimas marcaciones */}
+      {marcadas.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {filtro === TODAS_LAS_UNIDADES
+            ? "Todavía no hay cubiertas con número de fuego."
+            : `El ${filtro} no tiene cubiertas con número de fuego.`}
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground">
+              <tr className="border-b">
+                <th className="py-2">N°</th>
+                <th>Cubierta</th>
+                <th>Dónde está</th>
+                <th>Instalada</th>
+                {puedeEditar && <th className="w-10" />}
+              </tr>
+            </thead>
+            <tbody>
+              {visibles.map(({ n, fuego, recapada }, i) => (
+                <tr
+                  key={n.id}
+                  className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
+                >
+                  <td className="py-2 font-semibold tabular-nums">
+                    {fuego}
+                    {recapada && (
+                      <span
+                        className="ml-1 text-[10px] font-normal text-muted-foreground"
+                        title="Remarcada después del recapado"
+                      >
+                        R
+                      </span>
+                    )}
+                  </td>
+                  <td className="text-muted-foreground">
+                    {[TIPO_LABEL[n.tipo], n.marca, n.medida].filter(Boolean).join(" · ") ||
+                      "—"}
+                  </td>
+                  <td>
+                    {n.estado === "instalado" ? (
+                      <span className="font-medium text-foreground">
+                        {ubicacionCubierta(n)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">{ubicacionCubierta(n)}</span>
+                    )}
+                  </td>
+                  <td className="text-muted-foreground">
+                    {fmtFecha(n.fecha_instalacion ?? n.fecha_ingreso)}
+                  </td>
+                  {puedeEditar && (
+                    <td>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
+                        title="Editar la cubierta"
+                        onClick={() => onEditar(n)}
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {marcadas.length > 12 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-1"
+              onClick={() => setVerTodas((v) => !v)}
+            >
+              {verTodas ? "Ver solo las últimas" : `Ver las ${marcadas.length}`}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Cubiertas sin número: son las que hay que ir a marcar */}
+      {sinMarcar.length > 0 && (
+        <div className="rounded-md border border-border p-3">
+          <p className="text-sm font-medium text-foreground">
+            Sin número de fuego ({sinMarcar.length})
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Cubiertas cargadas sin marcar, o con el número de serie del fabricante que
+            trajo la importación de Cloudfleet. Editá cada una para ponerle el número que
+            le corresponde.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {sinMarcar.map((n) => (
+              <Button
+                key={n.id}
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={!puedeEditar}
+                onClick={() => onEditar(n)}
+              >
+                {n.numero || "s/n"}
+                <span className="ml-1 text-muted-foreground">
+                  {n.dominio ?? NEUMATICO_ESTADO_LABEL[n.estado]}
+                  {n.posicion ? ` ${n.posicion}` : ""}
+                </span>
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -2382,10 +2748,13 @@ function DibujoSelect({
 
 function EditarCubiertaDialog({
   neumatico,
+  serie,
   onClose,
   onDone,
 }: {
   neumatico: Neumatico
+  /** Numeración de fuego: acá se completa o corrige el número. */
+  serie: SerieFuego
   onClose: () => void
   onDone: () => void
 }) {
@@ -2444,10 +2813,12 @@ function EditarCubiertaDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div>
-              <Label className="text-xs text-muted-foreground">Código</Label>
-              <Input value={numero} onChange={(e) => setNumero(e.target.value)} />
-            </div>
+            <NumeroFuegoField
+              value={numero}
+              onChange={setNumero}
+              serie={serie}
+              valorActual={neumatico.numero}
+            />
             <div>
               <Label className="text-xs text-muted-foreground">Marca</Label>
               <Input value={marca} onChange={(e) => setMarca(e.target.value)} />
@@ -2544,9 +2915,12 @@ function EditarCubiertaDialog({
  * cargar) y la factura.
  */
 function CargarCubiertasDialog({
+  serie,
   onClose,
   onDone,
 }: {
+  /** Estado de la numeración de fuego, para proponer los números que siguen. */
+  serie: SerieFuego
   onClose: () => void
   onDone: () => void
 }) {
@@ -2558,10 +2932,9 @@ function CargarCubiertasDialog({
   const [dibujo, setDibujo] = useState<NeumaticoDibujo | "">("")
   const [prof, setProf] = useState("")
   const [presion, setPresion] = useState("")
-  // Códigos: uno en modo "una", varios (o solo cantidad) en modo "varias"
+  // Números de fuego: el de la cubierta suelta, o si el lote se marca ahora.
   const [codigo, setCodigo] = useState("")
-  const [porCodigos, setPorCodigos] = useState(true)
-  const [codigos, setCodigos] = useState("")
+  const [marcarLote, setMarcarLote] = useState(true)
   const [cantidad, setCantidad] = useState("4")
   // Compra
   const [fechaCompra, setFechaCompra] = useState(hoyLocalISO())
@@ -2570,32 +2943,22 @@ function CargarCubiertasDialog({
   const [facturas, setFacturas] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
 
-  // Códigos tipeados (uno por línea o separados por coma), sin vacíos ni repetidos.
+  const total =
+    cuantas === "una" ? 1 : Math.max(0, Math.floor(Number(cantidad) || 0))
+
+  // Los números no se tipean nunca: en una cubierta suelta se elige del
+  // selector y en un lote se toman los que siguen en la serie, correlativos.
   const listaCodigos = useMemo(() => {
     if (cuantas === "una") return codigo.trim() ? [codigo.trim()] : []
-    return Array.from(
-      new Set(
-        codigos
-          .split(/[\n,;]+/)
-          .map((c) => c.trim())
-          .filter(Boolean)
-      )
-    )
-  }, [cuantas, codigo, codigos])
+    return marcarLote ? siguientesFuego(serie, total).map(String) : []
+  }, [cuantas, codigo, marcarLote, serie, total])
 
-  const usaCodigos = cuantas === "una" || porCodigos
-  const total =
-    cuantas === "una"
-      ? 1
-      : usaCodigos
-        ? listaCodigos.length
-        : Math.max(0, Math.floor(Number(cantidad) || 0))
   const costoNum = costo ? Number(costo) : null
   const totalCompra = costoNum != null && total > 0 ? costoNum * total : null
 
   const guardar = async () => {
     if (total < 1) {
-      toast.error(usaCodigos ? "Ingresá al menos un código" : "Ingresá la cantidad")
+      toast.error("Ingresá la cantidad")
       return
     }
     setSaving(true)
@@ -2612,8 +2975,8 @@ function CargarCubiertasDialog({
       profundidad_inicial_mm: prof ? Number(prof) : null,
       presion_psi: presion ? Number(presion) : null,
       // Con códigos se crea una por código; sin códigos, por cantidad.
-      numeros: usaCodigos && listaCodigos.length > 0 ? listaCodigos : undefined,
-      cantidad: usaCodigos && listaCodigos.length > 0 ? undefined : total,
+      numeros: listaCodigos.length > 0 ? listaCodigos : undefined,
+      cantidad: listaCodigos.length > 0 ? undefined : total,
       factura_urls: facturaUrls,
       fecha_compra: fechaCompra || null,
       proveedor,
@@ -2666,77 +3029,66 @@ function CargarCubiertasDialog({
             ))}
           </div>
 
-          {/* Códigos */}
+          {/* Numeración de fuego */}
           <div className="rounded-md border border-border p-3">
             <p className="mb-2 text-sm font-medium text-foreground">
-              {cuantas === "una" ? "Código de la cubierta" : "Códigos del lote"}
+              {cuantas === "una" ? "N° de fuego" : "N° de fuego del lote"}
             </p>
             {cuantas === "una" ? (
-              <div>
-                <Input
-                  value={codigo}
-                  onChange={(e) => setCodigo(e.target.value)}
-                  placeholder="ej. AB1234"
-                />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Opcional: si no lo tenés, la cubierta entra sin código y se lo podés poner
-                  después (al editarla o al montarla).
-                </p>
-              </div>
+              <NumeroFuegoField
+                value={codigo}
+                onChange={setCodigo}
+                serie={serie}
+                label=""
+                ayuda={`La serie va por el ${serie.ultimo ?? 0}. Si todavía no la marcaste, dejala sin marcar y ponele el número cuando la montes.`}
+              />
             ) : (
               <div className="space-y-2">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Cantidad</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={cantidad}
+                    onChange={(e) => setCantidad(e.target.value)}
+                  />
+                </div>
                 <div className="flex gap-2">
                   <Button
                     type="button"
                     size="sm"
-                    variant={porCodigos ? "default" : "outline"}
-                    onClick={() => setPorCodigos(true)}
+                    variant={marcarLote ? "default" : "outline"}
+                    onClick={() => setMarcarLote(true)}
                   >
-                    Con códigos
+                    Marcarlas ahora
                   </Button>
                   <Button
                     type="button"
                     size="sm"
-                    variant={!porCodigos ? "default" : "outline"}
-                    onClick={() => setPorCodigos(false)}
+                    variant={!marcarLote ? "default" : "outline"}
+                    onClick={() => setMarcarLote(false)}
                   >
-                    Solo cantidad
+                    Entran sin marcar
                   </Button>
                 </div>
-                {porCodigos ? (
+                {marcarLote ? (
                   <div>
-                    <Textarea
-                      rows={4}
-                      value={codigos}
-                      onChange={(e) => setCodigos(e.target.value)}
-                      placeholder={"AB123\nAB124\nAB125"}
-                    />
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      Uno por línea o separados por coma. Se crea una cubierta por código.
+                    <p className="text-[11px] text-muted-foreground">
+                      Se marcan con los números que siguen en la serie, correlativos:
                     </p>
-                    {listaCodigos.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {listaCodigos.map((c) => (
-                          <Badge key={c} variant="outline" className="text-[10px]">
-                            {c}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {listaCodigos.map((c) => (
+                        <Badge key={c} variant="outline" className="tabular-nums">
+                          {c}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
                 ) : (
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Cantidad</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={cantidad}
-                      onChange={(e) => setCantidad(e.target.value)}
-                    />
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      Entran sin código; se los cargás cuando las montés.
-                    </p>
-                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Entran al stock sin número; se los ponés cuando las marques o al
+                    montarlas.
+                  </p>
                 )}
               </div>
             )}
@@ -2907,6 +3259,10 @@ function MontajeDialog({
   const [unidadSel, setUnidadSel] = useState(unidadInicial)
   const unidad = unidades.find((u) => u.dominio === unidadSel) ?? null
   const layout = layoutDeTipo(unidad?.tipo ?? null)
+  // Numeración de fuego: desde acá también se puede marcar una cubierta al
+  // montarla o editarla, así que la serie se calcula igual que en el módulo.
+  const serieFuego = useMemo(() => analizarSerieFuego(neumaticos), [neumaticos])
+
   const stock = useMemo(
     () => neumaticos.filter((n) => n.estado === "stock"),
     [neumaticos]
@@ -3278,6 +3634,7 @@ function MontajeDialog({
           pos={posDialog.pos}
           actual={posDialog.actual}
           stock={stock}
+          serie={serieFuego}
           kmActual={kmU.kmActual}
           vida={
             posDialog.actual
@@ -3299,6 +3656,7 @@ function MontajeDialog({
       {editNeu && (
         <EditarCubiertaDialog
           neumatico={editNeu}
+          serie={serieFuego}
           onClose={() => setEditNeu(null)}
           onDone={() => {
             setEditNeu(null)
@@ -3455,6 +3813,7 @@ function PosicionDialog({
   pos,
   actual,
   stock,
+  serie,
   kmActual,
   vida,
   onClose,
@@ -3467,6 +3826,8 @@ function PosicionDialog({
   pos: PosicionNeumatico
   actual: Neumatico | null
   stock: Neumatico[]
+  /** Numeración de fuego: la cubierta se puede marcar al montarla. */
+  serie: SerieFuego
   kmActual: number | null
   vida: VidaNeumatico | null
   onClose: () => void
@@ -3661,20 +4022,16 @@ function PosicionDialog({
                 entran sin estos datos y se conocen cuando el gomero la coloca,
                 así que se completan/corrigen acá, en los dos modos. */}
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  Código de la cubierta (opcional)
-                </Label>
-                <Input
-                  value={modo === "nueva" ? numeroNueva : numeroStock}
-                  onChange={(e) =>
-                    modo === "nueva"
-                      ? setNumeroNueva(e.target.value)
-                      : setNumeroStock(e.target.value)
-                  }
-                  placeholder="Ej: 45"
-                />
-              </div>
+              <NumeroFuegoField
+                value={modo === "nueva" ? numeroNueva : numeroStock}
+                onChange={modo === "nueva" ? setNumeroNueva : setNumeroStock}
+                serie={serie}
+                valorActual={
+                  modo === "stock"
+                    ? (stock.find((x) => x.id === stockSel)?.numero ?? null)
+                    : null
+                }
+              />
               <div>
                 <Label className="text-xs text-muted-foreground">Medida</Label>
                 <Input
