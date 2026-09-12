@@ -639,6 +639,7 @@ export function NeumaticosModule({
                     dominioSel={unidadSel}
                     puedeEditar={puedeEditar}
                     onEditar={setEditNeu}
+                    onCargar={() => setCargaOpen(true)}
                   />
                 </TabsContent>
               </Tabs>
@@ -1078,9 +1079,9 @@ export function NeumaticosModule({
  * Selector del número de fuego.
  *
  * No es un input: la serie no se tipea. Las únicas opciones son el número que
- * sigue, los de la serie que faltan cargar (cubiertas marcadas que nunca se
- * dieron de alta) y dejarla sin marcar. Así no hay forma de repetir un número
- * ni de saltear la serie, que es lo que pasaba con el campo de texto libre.
+ * sigue y dejarla sin marcar. Así no hay forma de repetir un número, de
+ * saltear la serie ni de volver a uno anterior, que es lo que pasaba con el
+ * campo de texto libre.
  *
  * `valorActual` es el número que la cubierta ya tenía: se ofrece como opción
  * para poder editar el resto de los datos sin tocarlo, incluso cuando es un
@@ -1104,10 +1105,7 @@ function NumeroFuegoField({
   ayuda?: string
 }) {
   const actual = (valorActual ?? "").trim()
-  const esOpcionAparte =
-    actual !== "" &&
-    !serie.huecos.includes(parseNumeroFuego(actual)?.n ?? -1) &&
-    parseNumeroFuego(actual)?.n !== serie.proximo
+  const esOpcionAparte = actual !== "" && parseNumeroFuego(actual)?.n !== serie.proximo
 
   return (
     <div>
@@ -1127,16 +1125,11 @@ function NumeroFuegoField({
           {esOpcionAparte && (
             <SelectItem value={actual}>{actual} — el que ya tenía</SelectItem>
           )}
-          {serie.huecos.map((h) => (
-            <SelectItem key={h} value={String(h)}>
-              {h} — ya marcada, falta cargarla
-            </SelectItem>
-          ))}
         </SelectContent>
       </Select>
       <p className="mt-1 text-[11px] text-muted-foreground">
         {ayuda ??
-          `La serie va por el ${serie.ultimo ?? 0}. Si la cubierta ya viene marcada de antes, elegí su número de la lista; no se puede repetir ni saltear.`}
+          `La serie va por el ${serie.ultimo ?? 0}, así que el que sigue es el ${serie.proximo}. No se puede repetir, saltear ni volver a un número anterior.`}
       </p>
     </div>
   )
@@ -1166,12 +1159,15 @@ function MarcacionFuegoPanel({
   dominioSel,
   puedeEditar,
   onEditar,
+  onCargar,
 }: {
   neumaticos: Neumatico[]
   unidades: UnidadFlota[]
   dominioSel: string
   puedeEditar: boolean
   onEditar: (n: Neumatico) => void
+  /** Abre el alta de cubiertas, que ya viene con el próximo número. */
+  onCargar: () => void
 }) {
   const [filtro, setFiltro] = useState<string>(dominioSel || TODAS_LAS_UNIDADES)
 
@@ -1198,74 +1194,75 @@ function MarcacionFuegoPanel({
     return { marcadas: conNumero, sinMarcar: sin }
   }, [neumaticos, filtro])
 
+  // La última marcada sale de la flota entera, no de la lista filtrada:
+  // el KPI muestra en qué número quedó la serie, no la unidad.
+  const ultimaMarcada = useMemo(() => {
+    if (serie.ultimo == null) return null
+    return (
+      neumaticos.find((n) => parseNumeroFuego(n.numero)?.n === serie.ultimo) ?? null
+    )
+  }, [neumaticos, serie.ultimo])
+
   const [verTodas, setVerTodas] = useState(false)
   const visibles = verTodas ? marcadas : marcadas.slice(0, 12)
 
   return (
     <div className="space-y-4">
-      {/* Lo primero: en qué número quedó la serie y cuál hay que grabar */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-md border-2 border-primary/50 bg-primary/5 p-3">
+      {/* En qué número quedó la serie y cuál hay que grabar. Los tres son
+          botones: el número solo no sirve de nada si no lleva a la acción. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <button
+          type="button"
+          disabled={!puedeEditar}
+          onClick={onCargar}
+          className="rounded-md border-2 border-primary/50 bg-primary/5 p-3 text-left transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-primary/5"
+        >
           <p className="text-xs text-muted-foreground">Próximo número a marcar</p>
           <p className="text-3xl font-semibold tabular-nums text-foreground">
             {serie.proximo}
           </p>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            Se asigna solo al cargar una cubierta
+            {puedeEditar
+              ? "click para cargar la cubierta con este número"
+              : "se asigna solo al cargar una cubierta"}
           </p>
-        </div>
-        <div className="rounded-md border border-border p-3">
+        </button>
+
+        <button
+          type="button"
+          disabled={!ultimaMarcada}
+          onClick={() => ultimaMarcada && onEditar(ultimaMarcada)}
+          className="rounded-md border border-border p-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+        >
           <p className="text-xs text-muted-foreground">Último marcado</p>
           <p className="text-3xl font-semibold tabular-nums text-foreground">
             {serie.ultimo ?? "—"}
           </p>
-        </div>
-        <div className="rounded-md border border-border p-3">
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {ultimaMarcada
+              ? `${ubicacionCubierta(ultimaMarcada)} · click para abrir su ficha`
+              : "todavía no hay ninguna marcada"}
+          </p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setFiltro(TODAS_LAS_UNIDADES)
+            setVerTodas(true)
+          }}
+          className="rounded-md border border-border p-3 text-left transition-colors hover:bg-muted"
+        >
           <p className="text-xs text-muted-foreground">Marcadas en la serie</p>
           <p className="text-3xl font-semibold tabular-nums text-foreground">
             {serie.ocupados.size}
           </p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">en toda la flota</p>
-        </div>
-        <div className="rounded-md border border-border p-3">
-          <p className="text-xs text-muted-foreground">Sin cargar</p>
-          <p
-            className={cn(
-              "text-3xl font-semibold tabular-nums",
-              serie.huecos.length > 0 ? "text-amber-600" : "text-foreground"
-            )}
-          >
-            {serie.huecos.length}
-          </p>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            números de la serie que faltan
+            en toda la flota · click para verlas todas
           </p>
-        </div>
+        </button>
       </div>
 
-      {/* Los huecos son cubiertas que existen y nunca se cargaron, no números
-          libres. Por eso se listan acá: son las únicas alternativas que el alta
-          acepta además del próximo. */}
-      {serie.huecos.length > 0 && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
-          <p className="text-sm font-medium text-foreground">
-            Números de la serie que no figuran en el sistema
-          </p>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {serie.huecos.map((h) => (
-              <Badge key={h} variant="outline" className="tabular-nums">
-                {h}
-              </Badge>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            No están libres: son cubiertas marcadas que nunca se dieron de alta (el
-            auxilio, las que salieron de una unidad, las del acoplado). Al cargar una
-            cubierta que ya viene marcada se elige de esta lista; ninguna otra se puede
-            tipear.
-          </p>
-        </div>
-      )}
 
       {/* Filtro por unidad */}
       <div className="flex flex-wrap items-center gap-2">

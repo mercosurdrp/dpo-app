@@ -14,6 +14,10 @@
  *   "080"  → la misma (los ceros a la izquierda no cuentan)
  *   "27R"  → la 27 después de recaparse; sigue siendo la 27, no un número nuevo
  *
+ * La serie va SIEMPRE hacia adelante. Los números anteriores que no figuran en
+ * el sistema (cubiertas viejas que nunca se cargaron) no se reutilizan: se
+ * arranca del último marcado + 1 y no se vuelve atrás.
+ *
  * Lo que NO es de la serie: los códigos de 4 o 5 dígitos que entraron con la
  * importación de Cloudfleet (1073, 1131, 13290…) son números de serie del
  * fabricante, y los "TMP_14…TMP_21" son marcadores de esa misma importación
@@ -59,13 +63,6 @@ export interface SerieFuego {
   ultimo: number | null
   /** El que hay que marcar en la próxima cubierta. */
   proximo: number
-  /**
-   * Números de la serie que no figuran en el sistema. No están libres: son
-   * cubiertas que existen y nunca se cargaron (el auxilio del OJA, las que
-   * salieron de una unidad, las del acoplado). Por eso se pueden elegir al
-   * dar de alta, pero sólo de esta lista.
-   */
-  huecos: number[]
 }
 
 /** Estado de la serie a partir de todas las cubiertas del sistema. */
@@ -80,9 +77,7 @@ export function analizarSerieFuego(cubiertas: CubiertaConNumero[]): SerieFuego {
   }
   const usados = [...ocupados.keys()].sort((a, b) => a - b)
   const ultimo = usados.length > 0 ? usados[usados.length - 1] : null
-  const huecos: number[] = []
-  for (let i = 1; i < (ultimo ?? 0); i++) if (!ocupados.has(i)) huecos.push(i)
-  return { ocupados, ultimo, proximo: (ultimo ?? 0) + 1, huecos }
+  return { ocupados, ultimo, proximo: (ultimo ?? 0) + 1 }
 }
 
 /** Los `cantidad` números que siguen, para una carga de varias cubiertas. */
@@ -100,9 +95,9 @@ function ocupadoPorOtro(serie: SerieFuego, n: number, idPropio?: string): boolea
 export type ValidacionFuego = { ok: true } | { ok: false; error: string }
 
 /**
- * Un número sólo vale si es el que sigue en la serie o uno de los huecos —
- * nunca uno repetido ni uno salteado. Vacío también vale: una cubierta puede
- * entrar al stock sin marcar y marcarse después.
+ * Un número sólo vale si es el que sigue en la serie: ni repetido, ni salteado,
+ * ni uno anterior que haya quedado sin usar. Vacío también vale: una cubierta
+ * puede entrar al stock sin marcar y marcarse después.
  */
 export function validarNumeroFuego(
   raw: string | null | undefined,
@@ -130,14 +125,9 @@ export function validarNumeroFuego(
     }
   }
   if (p.n === serie.proximo) return { ok: true }
-  if (serie.huecos.includes(p.n)) return { ok: true }
   return {
     ok: false,
-    error:
-      `La serie va por el ${serie.ultimo ?? 0}: el número que sigue es el ${serie.proximo}. ` +
-      (serie.huecos.length > 0
-        ? `Si la cubierta ya viene marcada, los únicos anteriores sin cargar son: ${serie.huecos.join(", ")}.`
-        : `No hay números anteriores sin cargar.`),
+    error: `La serie va por el ${serie.ultimo ?? 0}: el único número que se puede marcar es el ${serie.proximo}.`,
   }
 }
 
@@ -148,17 +138,14 @@ export function validarNumeroFuego(
 export function validarLoteFuego(numeros: string[], serie: SerieFuego): ValidacionFuego {
   const ocupados = new Map(serie.ocupados)
   let proximo = serie.proximo
-  const huecos = [...serie.huecos]
   for (const raw of numeros) {
-    const parcial: SerieFuego = { ocupados, ultimo: proximo - 1, proximo, huecos }
+    const parcial: SerieFuego = { ocupados, ultimo: proximo - 1, proximo }
     const v = validarNumeroFuego(raw, parcial)
     if (!v.ok) return v
     const p = parseNumeroFuego(raw)
     if (!p) continue
     ocupados.set(p.n, [...(ocupados.get(p.n) ?? []), "nuevo"])
-    const iHueco = huecos.indexOf(p.n)
-    if (iHueco >= 0) huecos.splice(iHueco, 1)
-    else proximo = p.n + 1
+    proximo = p.n + 1
   }
   return { ok: true }
 }

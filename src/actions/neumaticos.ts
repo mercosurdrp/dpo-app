@@ -67,9 +67,8 @@ function hoyArgentina(): string {
 
 /**
  * Estado de la serie de fuego, leído de la base. Se pide entera (dos columnas
- * de todas las cubiertas) porque la serie es de toda la flota: para saber cuál
- * es el próximo número y qué huecos quedan hay que mirarlas todas, no sólo las
- * de una unidad.
+ * de todas las cubiertas) porque la serie es de toda la flota: el próximo
+ * número sale del más alto marcado en cualquier unidad, no sólo en una.
  */
 async function cargarSerieFuego(
   supabase: Awaited<ReturnType<typeof createClient>>
