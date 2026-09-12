@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { Gauge, TriangleAlert } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Select,
@@ -60,6 +61,25 @@ const TIPO_LABEL: Record<string, string> = {
 type Vista = "cubiertas" | "unidades" | "ejes" | "marcas" | "evolucion"
 
 /**
+ * Cada cuántos km se expresa el desgaste. El cálculo es siempre el mismo
+ * (mm cada 1.000 km, que es como sale de la regresión): esto cambia sólo cómo
+ * se muestra. A 1.000 km el número es legible de una; cada 100 km es la unidad
+ * con la que se habla en el taller; por km hace falta para comparar dos gomas
+ * que se gastan casi igual.
+ */
+const ESCALAS = [
+  { km: 1000, label: "cada 1.000 km", corto: "mm/1.000 km", dec: 2 },
+  { km: 100, label: "cada 100 km", corto: "mm/100 km", dec: 3 },
+  { km: 1, label: "por km", corto: "mm/km", dec: 5 },
+] as const
+
+type Escala = (typeof ESCALAS)[number]
+
+/** Pasa una tasa (mm/1.000 km) a la escala elegida. */
+const enEscala = (mmPorMilKm: number | null | undefined, e: Escala) =>
+  mmPorMilKm == null ? null : (mmPorMilKm * e.km) / 1000
+
+/**
  * Debajo de esta cantidad de cubiertas con tasa, el promedio de la flota no es
  * un promedio de la flota y el tablero lo dice. No es un número fino: es el
  * orden de "más de dos unidades completas", que es lo mínimo para que una
@@ -85,6 +105,10 @@ export function DesgastePorKmCard({
    *  esos son de la flota y tienen que seguir siendo comparables. */
   const [filtroUnidad, setFiltroUnidad] = useState<string>(TODAS)
   const [periodo, setPeriodo] = useState<PeriodoDesgaste>("todo")
+  const [escalaKm, setEscalaKm] = useState<number>(1000)
+  /** En "Por marca": el promedio de la marca o cada cubierta por separado. */
+  const [marcaDetalle, setMarcaDetalle] = useState(false)
+  const escala = ESCALAS.find((e) => e.km === escalaKm) ?? ESCALAS[0]
 
   const filas = useMemo(() => data.periodos[periodo] ?? [], [data.periodos, periodo])
   const conTasa = useMemo(() => filas.filter((f) => f.mmPorMilKm != null), [filas])
@@ -107,23 +131,28 @@ export function DesgastePorKmCard({
     [conTasa]
   )
 
-  /** Unidades que HOY tienen alguna cubierta con tasa: no tiene sentido ofrecer
-   *  en el filtro una unidad que dejaría la tabla vacía. */
-  const unidadesConTasa = useMemo(
+  /** Todas las unidades con cubiertas instaladas, tengan tasa o no. Antes se
+   *  ofrecían sólo las que ya tenían tasa y el selector mostraba dos de las
+   *  dieciséis; elegir una sin tasa ahora muestra sus cubiertas con el motivo
+   *  por el que todavía no se puede medir, que es la información que falta. */
+  const unidades = useMemo(
     () =>
-      [...new Set(conTasa.map((f) => f.cubierta.dominio).filter((d): d is string => !!d))].sort(
+      [...new Set(filas.map((f) => f.cubierta.dominio).filter((d): d is string => !!d))].sort(
         (a, b) => a.localeCompare(b)
       ),
-    [conTasa]
+    [filas]
   )
 
-  const rankingFiltrado = useMemo(
-    () =>
-      filtroUnidad === TODAS
-        ? ranking
-        : ranking.filter((f) => f.cubierta.dominio === filtroUnidad),
-    [ranking, filtroUnidad]
-  )
+  const rankingFiltrado = useMemo(() => {
+    if (filtroUnidad === TODAS) return ranking
+    // Con la unidad elegida se listan TODAS sus cubiertas: primero las que
+    // tienen tasa, y atrás las que no, con el motivo en la última columna.
+    const conTasaU = ranking.filter((f) => f.cubierta.dominio === filtroUnidad)
+    const sinTasaU = filas.filter(
+      (f) => f.cubierta.dominio === filtroUnidad && f.mmPorMilKm == null
+    )
+    return [...conTasaU, ...sinTasaU]
+  }, [ranking, filas, filtroUnidad])
 
   // Las que se gastan mucho más rápido que sus pares del mismo camión: el
   // síntoma no es la goma, es alineación, presión o falta de rotación.
@@ -169,7 +198,7 @@ export function DesgastePorKmCard({
             </Badge>
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Milímetros de dibujo que se consumen cada 1.000 km, calculados con las
+            Milímetros de dibujo que se consumen {escala.label}, calculados con las
             mediciones de la ronda mensual. Cada cubierta se mide dentro de su tramo de
             vida: un recapado reinicia la cuenta, y el auxilio no entra porque no rueda.
             Sólo cuentan las rondas con calibre (desde julio/2026): el dibujo que se
@@ -180,6 +209,24 @@ export function DesgastePorKmCard({
             número (ver `PeriodoDesgaste`): se muestra recién cuando haya más de
             una, y cada opción dice cuántas cubiertas quedan con dato para que
             achicar el período sea una decisión informada y no una sorpresa. */}
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Cada cuántos km se expresa la tasa. No cambia el cálculo, sólo la
+              unidad en la que se lee. */}
+          <Select
+            value={String(escalaKm)}
+            onValueChange={(v) => v && setEscalaKm(Number(v))}
+          >
+            <SelectTrigger className="w-40 shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ESCALAS.map((e) => (
+                <SelectItem key={e.km} value={String(e.km)}>
+                  Desgaste {e.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         {PERIODOS_DESGASTE.length > 1 ? (
           <Select value={periodo} onValueChange={(v) => v && setPeriodo(v as PeriodoDesgaste)}>
             <SelectTrigger className="w-56 shrink-0">
@@ -201,6 +248,7 @@ export function DesgastePorKmCard({
             {PERIODO_DESGASTE_LABEL[periodo]}
           </Badge>
         )}
+        </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -226,8 +274,8 @@ export function DesgastePorKmCard({
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Dato
                 label="Promedio de la flota"
-                valor={`${fmt(promFlota, 2)} mm`}
-                sub="cada 1.000 km"
+                valor={`${fmt(enEscala(promFlota, escala), escala.dec)} mm`}
+                sub={escala.label}
               />
               <Dato
                 label="Rendimiento"
@@ -312,20 +360,26 @@ export function DesgastePorKmCard({
               </TabsList>
             </Tabs>
 
-            {vista === "cubiertas" && unidadesConTasa.length > 1 && (
+            {vista === "cubiertas" && unidades.length > 1 && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">Unidad</span>
                 <Select value={filtroUnidad} onValueChange={(v) => v && setFiltroUnidad(v)}>
-                  <SelectTrigger className="h-8 w-44">
+                  <SelectTrigger className="h-8 w-52">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={TODAS}>Todas ({ranking.length})</SelectItem>
-                    {unidadesConTasa.map((u) => (
-                      <SelectItem key={u} value={u}>
-                        {u} ({ranking.filter((f) => f.cubierta.dominio === u).length})
-                      </SelectItem>
-                    ))}
+                    <SelectItem value={TODAS}>
+                      Todas ({ranking.length} con dato)
+                    </SelectItem>
+                    {unidades.map((u) => {
+                      const conDato = ranking.filter((f) => f.cubierta.dominio === u).length
+                      const total = filas.filter((f) => f.cubierta.dominio === u).length
+                      return (
+                        <SelectItem key={u} value={u}>
+                          {u} ({conDato}/{total} con dato)
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -335,6 +389,7 @@ export function DesgastePorKmCard({
               <TablaCubiertas
                 filas={rankingFiltrado}
                 pares={pares}
+                escala={escala}
                 dominioSel={dominioSel}
                 onIrAUnidad={onIrAUnidad}
               />
@@ -345,6 +400,7 @@ export function DesgastePorKmCard({
                 titulo="Unidad"
                 filas={promedios}
                 promFlota={promFlota}
+                escala={escala}
                 dominioSel={dominioSel}
                 onClickClave={onIrAUnidad}
               />
@@ -360,6 +416,7 @@ export function DesgastePorKmCard({
                   clave: TIPO_LABEL[g.clave] ?? g.clave,
                 }))}
                 extraTitulo="Nuevas vs recapadas"
+                escala={escala}
               />
             )}
 
@@ -372,7 +429,39 @@ export function DesgastePorKmCard({
             )}
 
             {vista === "marcas" && (
-              <TablaGrupo titulo="Marca" filas={porMarca(filas)} promFlota={promFlota} />
+              <div className="space-y-3">
+                {/* El promedio de la marca junta todas sus cubiertas en un solo
+                    número; para decidir una compra hace falta ver si ese número
+                    es parejo o lo hace una sola goma. */}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={!marcaDetalle ? "default" : "outline"}
+                    onClick={() => setMarcaDetalle(false)}
+                  >
+                    Promedio por marca
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={marcaDetalle ? "default" : "outline"}
+                    onClick={() => setMarcaDetalle(true)}
+                  >
+                    Cubierta por cubierta
+                  </Button>
+                </div>
+                {marcaDetalle ? (
+                  <MarcasDetalle filas={conTasa} promFlota={promFlota} escala={escala} />
+                ) : (
+                  <TablaGrupo
+                    titulo="Marca"
+                    filas={porMarca(filas)}
+                    promFlota={promFlota}
+                    escala={escala}
+                  />
+                )}
+              </div>
             )}
 
             {/* Próximos cambios según el ritmo medido, no según el km teórico */}
@@ -444,11 +533,13 @@ function Dato({
 function TablaCubiertas({
   filas,
   pares,
+  escala,
   dominioSel,
   onIrAUnidad,
 }: {
   filas: FilaDesgaste[]
   pares: PromedioDesgaste[]
+  escala: Escala
   dominioSel?: string
   onIrAUnidad?: (dominio: string) => void
 }) {
@@ -461,7 +552,7 @@ function TablaCubiertas({
             <th>Pos.</th>
             <th>Cubierta</th>
             <th>Marca</th>
-            <th className="text-right">mm/1.000 km</th>
+            <th className="text-right">{escala.corto}</th>
             <th className="text-right" title="Contra el promedio de las cubiertas de la misma unidad y el mismo eje">
               vs. pares
             </th>
@@ -503,7 +594,9 @@ function TablaCubiertas({
                 <td className="max-w-[14rem] truncate text-muted-foreground">
                   {f.cubierta.marca || "—"}
                 </td>
-                <td className="text-right font-medium tabular-nums">{fmt(f.mmPorMilKm, 2)}</td>
+                <td className="text-right font-medium tabular-nums">
+                  {fmt(enEscala(f.mmPorMilKm, escala), escala.dec)}
+                </td>
                 <td
                   className={cn(
                     "text-right tabular-nums",
@@ -535,9 +628,17 @@ function TablaCubiertas({
                 </td>
                 <td
                   className="text-right tabular-nums text-muted-foreground pr-1"
-                  title={`${f.puntos} mediciones · ${f.desde} → ${f.hasta}`}
+                  title={
+                    f.mmPorMilKm == null
+                      ? "Todavía no se puede calcular la tasa de esta cubierta"
+                      : `${f.puntos} mediciones · ${f.desde} → ${f.hasta}`
+                  }
                 >
-                  {fmt(f.kmMedidos)} km
+                  {f.mmPorMilKm == null
+                    ? f.motivo
+                      ? MOTIVO_SIN_TASA_LABEL[f.motivo]
+                      : "sin dato"
+                    : `${fmt(f.kmMedidos)} km`}
                 </td>
               </tr>
             )
@@ -552,6 +653,7 @@ function TablaGrupo({
   titulo,
   filas,
   promFlota,
+  escala,
   dominioSel,
   onClickClave,
   extra,
@@ -560,6 +662,7 @@ function TablaGrupo({
   titulo: string
   filas: PromedioDesgaste[]
   promFlota: number | null
+  escala: Escala
   dominioSel?: string
   onClickClave?: (clave: string) => void
   extra?: PromedioDesgaste[]
@@ -573,12 +676,121 @@ function TablaGrupo({
         filas={filas}
         max={max}
         promFlota={promFlota}
+        escala={escala}
         dominioSel={dominioSel}
         onClickClave={onClickClave}
       />
       {extra && extra.length > 0 && (
-        <Barras titulo={extraTitulo ?? ""} filas={extra} max={max} promFlota={promFlota} />
+        <Barras
+          titulo={extraTitulo ?? ""}
+          filas={extra}
+          max={max}
+          promFlota={promFlota}
+          escala={escala}
+        />
       )}
+    </div>
+  )
+}
+
+/**
+ * "Por marca" abierto cubierta por cubierta.
+ *
+ * El promedio de una marca junta todas sus cubiertas en un solo número, y ese
+ * número puede estar hecho por una sola goma que anda mal. Para decidir una
+ * compra hace falta ver si la marca es pareja: acá cada marca muestra sus
+ * cubiertas por separado, de la que más rápido se gasta a la que menos, con el
+ * promedio de la marca al lado del título.
+ */
+function MarcasDetalle({
+  filas,
+  promFlota,
+  escala,
+}: {
+  filas: FilaDesgaste[]
+  promFlota: number | null
+  escala: Escala
+}) {
+  const grupos = useMemo(() => {
+    const m = new Map<string, FilaDesgaste[]>()
+    for (const f of filas) {
+      if (f.mmPorMilKm == null) continue
+      const marca = f.cubierta.marca?.trim() || "Sin marca"
+      const arr = m.get(marca)
+      if (arr) arr.push(f)
+      else m.set(marca, [f])
+    }
+    return [...m.entries()]
+      .map(([marca, fs]) => ({
+        marca,
+        filas: [...fs].sort((a, b) => (b.mmPorMilKm ?? 0) - (a.mmPorMilKm ?? 0)),
+        // Promedio simple de las cubiertas de la marca, sólo para ordenar los
+        // grupos: el ponderado de verdad es el que muestra "Promedio por marca".
+        prom: fs.reduce((a, f) => a + (f.mmPorMilKm ?? 0), 0) / fs.length,
+      }))
+      .sort((a, b) => b.prom - a.prom)
+  }, [filas])
+
+  // La barra más larga es la misma para todas las marcas: si cada grupo se
+  // escalara solo, dos gomas muy distintas se verían iguales.
+  const max = grupos.reduce(
+    (m, g) => Math.max(m, ...g.filas.map((f) => f.mmPorMilKm ?? 0)),
+    0
+  )
+
+  if (grupos.length === 0)
+    return <p className="text-sm text-muted-foreground">Sin datos suficientes.</p>
+
+  return (
+    <div className="space-y-4">
+      {grupos.map((g) => (
+        <div key={g.marca} className="space-y-1.5">
+          <p className="flex items-baseline gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+            <span className="font-medium text-foreground">{g.marca}</span>
+            <span>
+              {g.filas.length} cubierta{g.filas.length === 1 ? "" : "s"} ·{" "}
+              {fmt(enEscala(g.prom, escala), escala.dec)} mm {escala.label} de promedio
+            </span>
+          </p>
+          {g.filas.map((f) => {
+            const peor = promFlota != null && (f.mmPorMilKm ?? 0) > promFlota
+            return (
+              <div
+                key={f.neumatico_id}
+                className="flex items-center gap-2 rounded-md px-1.5 py-1"
+              >
+                <span className="w-32 shrink-0 truncate text-sm text-foreground">
+                  <span className="font-medium">{f.cubierta.numero || "s/n"}</span>{" "}
+                  <span className="text-muted-foreground">
+                    {f.cubierta.dominio} {f.cubierta.posicion}
+                  </span>
+                </span>
+                <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn(
+                      "h-full rounded-full",
+                      peor ? "bg-amber-500" : "bg-sky-500"
+                    )}
+                    style={{
+                      width: `${max > 0 ? ((f.mmPorMilKm ?? 0) / max) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+                <span className="w-16 shrink-0 text-right text-sm font-medium tabular-nums text-foreground">
+                  {fmt(enEscala(f.mmPorMilKm, escala), escala.dec)}
+                </span>
+                <span
+                  className="w-28 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground"
+                  title={`${f.puntos} mediciones · ${f.desde} → ${f.hasta}`}
+                >
+                  {fmt(f.kmMedidos)} km
+                  {f.r2 != null && ` · R² ${f.r2.toFixed(2)}`}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      ))}
     </div>
   )
 }
@@ -588,6 +800,7 @@ function Barras({
   filas,
   max,
   promFlota,
+  escala,
   dominioSel,
   onClickClave,
 }: {
@@ -595,6 +808,7 @@ function Barras({
   filas: PromedioDesgaste[]
   max: number
   promFlota: number | null
+  escala: Escala
   dominioSel?: string
   onClickClave?: (clave: string) => void
 }) {
@@ -627,7 +841,7 @@ function Barras({
               />
             </div>
             <span className="w-16 shrink-0 text-right text-sm font-medium tabular-nums text-foreground">
-              {fmt(f.mmPorMilKm, 2)}
+              {fmt(enEscala(f.mmPorMilKm, escala), escala.dec)}
             </span>
             <span
               className="w-28 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground"
