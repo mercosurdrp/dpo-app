@@ -1375,9 +1375,9 @@ function MarcacionFuegoPanel({
             Sin número de fuego ({sinMarcar.length})
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Cubiertas cargadas sin marcar, o con el número de serie del fabricante que
-            trajo la importación de Cloudfleet. Editá cada una para ponerle el número que
-            le corresponde.
+            Cubiertas que todavía no tienen número de la serie. Se identifican por
+            dónde están: los códigos que trajo la importación de Cloudfleet no son
+            marcaciones de fuego, así que no se muestran. Tocá una para marcarla.
           </p>
           <div className="mt-2 flex flex-wrap gap-1">
             {sinMarcar.map((n) => (
@@ -1389,11 +1389,12 @@ function MarcacionFuegoPanel({
                 disabled={!puedeEditar}
                 onClick={() => onEditar(n)}
               >
-                {n.numero || "s/n"}
-                <span className="ml-1 text-muted-foreground">
-                  {n.dominio ?? NEUMATICO_ESTADO_LABEL[n.estado]}
-                  {n.posicion ? ` ${n.posicion}` : ""}
-                </span>
+                {n.estado === "instalado" && n.dominio
+                  ? `${n.dominio}${n.posicion ? ` · ${n.posicion}` : ""}`
+                  : NEUMATICO_ESTADO_LABEL[n.estado]}
+                {n.marca && (
+                  <span className="ml-1 text-muted-foreground">{n.marca}</span>
+                )}
               </Button>
             ))}
           </div>
