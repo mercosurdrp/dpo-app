@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { AlertTriangle, CheckCircle2, Loader2, Package, Target, Truck } from "lucide-react"
 import { pesoLimiteKg } from "@/lib/sla-cumplimiento"
-import { CAPACIDAD_CEQ, OBJETIVO_CEQ } from "@/lib/ocupacion-bodega"
+import { CAPACIDAD_CEQ, OBJETIVO_CEQ, OBJETIVO_PCT } from "@/lib/ocupacion-bodega"
 import {
   Dialog,
   DialogContent,
@@ -97,10 +97,11 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
             )}
           </DialogTitle>
           <DialogDescription>
-            Detalle por camión del día. En el tablero el 100% es el objetivo de{" "}
-            {fmtN(data?.minimo ?? OBJETIVO_CEQ)} CEq por viaje; acá se ve además cuánto
+            Detalle por camión del día. El tablero muestra el «% de la bodega»: cuánto
             del camión se llenó de verdad, sobre los{" "}
-            {fmtN(data?.capacidad ?? CAPACIDAD_CEQ)} CEq que entran en la bodega.
+            {fmtN(data?.capacidad ?? CAPACIDAD_CEQ)} CEq que entran en la bodega. La meta
+            es el objetivo de carga de {fmtN(data?.minimo ?? OBJETIVO_CEQ)} CEq por viaje,
+            que en esa escala son {fmtN(OBJETIVO_PCT, 1)}%.
           </DialogDescription>
         </DialogHeader>
 
