@@ -203,6 +203,8 @@ export interface FilaAsistenciaEmpleado {
   empleadoId: string
   capacitacionId: string
   presente: boolean
+  /** Resultado del examen. Sólo lo usa la adherencia por persona. */
+  resultado?: "aprobado" | "desaprobado" | "pendiente" | null
 }
 
 export interface EmpleadoAsistencia {
@@ -289,6 +291,143 @@ export function asistenciaPorEmpleado(
       (a, b) =>
         (a.pct ?? 0) - (b.pct ?? 0) ||
         b.ausente - a.ausente ||
+        a.nombre.localeCompare(b.nombre)
+    )
+}
+
+// ═══════════════════════════════════════════
+// Adherencia por persona
+// ═══════════════════════════════════════════
+
+export interface PilarPersona {
+  pilar: string
+  convocado: number
+  aprobado: number
+  /** aprobado / convocado, 0-100. */
+  pct: number | null
+}
+
+export interface PersonaAdherencia {
+  empleadoId: string
+  nombre: string
+  legajo: number | null
+  sector: string | null
+  /** Capacitaciones dictadas a las que se lo convocó. */
+  convocado: number
+  asistio: number
+  falto: number
+  /** Rindió el examen (aprobado o desaprobado). */
+  rindio: number
+  aprobado: number
+  desaprobado: number
+  /** Convocado, sin examen rendido todavía. */
+  pendiente: number
+  /** asistio / convocado, 0-100. */
+  pctAsistencia: number | null
+  /**
+   * aprobado / convocado, 0-100. Es la adherencia individual: de todo lo que
+   * le tocaba, cuánto completó de verdad.
+   */
+  pctAdherencia: number | null
+  enMetaAsistencia: boolean
+  enMetaAdherencia: boolean
+  porPilar: PilarPersona[]
+}
+
+/**
+ * Adherencia por persona: de las capacitaciones **dictadas** a las que se
+ * convocó a cada empleado, cuántas completó (aprobó el examen).
+ *
+ * Es el mismo criterio con el que el módulo da una capacitación por cumplida
+ * —la define el % de aprobados—, pero mirado por persona en vez de por
+ * capacitación. Convive con la asistencia: se puede ir a la charla y no rendir,
+ * y ahí la asistencia da bien y la adherencia no.
+ *
+ * Mismo universo que el resto del panel (dictadas del año), así que los totales
+ * de las dos vistas cierran.
+ */
+export function adherenciaPorPersona(
+  filas: FilaAsistenciaEmpleado[],
+  empleados: EmpleadoRef[],
+  capacitaciones: ItemAsistencia[],
+  today: string = new Date().toISOString().slice(0, 10)
+): PersonaAdherencia[] {
+  const anio = Number(today.slice(0, 4))
+  const dictadas = new Map<string, ItemAsistencia>()
+  for (const c of capacitaciones) {
+    if (c.fecha?.slice(0, 4) === String(anio) && esDictada(c, today)) dictadas.set(c.id, c)
+  }
+
+  const refs = new Map(empleados.map((e) => [e.id, e]))
+  const acc = new Map<string, PersonaAdherencia & { pilares: Map<string, PilarPersona> }>()
+
+  for (const f of filas) {
+    const cap = dictadas.get(f.capacitacionId)
+    if (!cap) continue
+    const ref = refs.get(f.empleadoId)
+    const p =
+      acc.get(f.empleadoId) ??
+      {
+        empleadoId: f.empleadoId,
+        nombre: ref?.nombre ?? "Sin nombre",
+        legajo: ref?.legajo ?? null,
+        sector: ref?.sector ?? null,
+        convocado: 0,
+        asistio: 0,
+        falto: 0,
+        rindio: 0,
+        aprobado: 0,
+        desaprobado: 0,
+        pendiente: 0,
+        pctAsistencia: null,
+        pctAdherencia: null,
+        enMetaAsistencia: false,
+        enMetaAdherencia: false,
+        porPilar: [],
+        pilares: new Map<string, PilarPersona>(),
+      }
+
+    p.convocado++
+    if (f.presente) p.asistio++
+    else p.falto++
+    if (f.resultado === "aprobado") {
+      p.aprobado++
+      p.rindio++
+    } else if (f.resultado === "desaprobado") {
+      p.desaprobado++
+      p.rindio++
+    } else {
+      p.pendiente++
+    }
+
+    const pilar = normalizePilar(cap.pilar)
+    const acu = p.pilares.get(pilar) ?? { pilar, convocado: 0, aprobado: 0, pct: null }
+    acu.convocado++
+    if (f.resultado === "aprobado") acu.aprobado++
+    p.pilares.set(pilar, acu)
+
+    acc.set(f.empleadoId, p)
+  }
+
+  return [...acc.values()]
+    .map(({ pilares, ...p }) => {
+      const pctAsist = pct(p.asistio, p.convocado)
+      const pctAdh = pct(p.aprobado, p.convocado)
+      return {
+        ...p,
+        pctAsistencia: pctAsist,
+        pctAdherencia: pctAdh,
+        enMetaAsistencia: (pctAsist ?? 0) >= META_ASISTENCIA_PCT,
+        enMetaAdherencia: (pctAdh ?? 0) >= META_ASISTENCIA_PCT,
+        porPilar: [...pilares.values()]
+          .map((x) => ({ ...x, pct: pct(x.aprobado, x.convocado) }))
+          .sort((a, b) => a.pilar.localeCompare(b.pilar)),
+      }
+    })
+    .sort(
+      (a, b) =>
+        (a.pctAdherencia ?? 0) - (b.pctAdherencia ?? 0) ||
+        b.convocado - a.convocado ||
         a.nombre.localeCompare(b.nombre)
     )
 }

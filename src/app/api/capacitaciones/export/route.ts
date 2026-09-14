@@ -14,8 +14,10 @@ import {
 import { calcularAdherencia, type ItemAdherencia } from "@/lib/capacitacion-adherencia"
 import {
   META_ASISTENCIA_PCT,
+  adherenciaPorPersona,
   asistenciaPorEmpleado,
   calcularAsistencia,
+  normalizePilar,
   pctAsistencia,
   type EmpleadoRef,
   type FilaAsistenciaEmpleado,
@@ -216,6 +218,7 @@ export async function GET(_req: NextRequest) {
           empleadoId: a.empleado_id,
           capacitacionId: c.id,
           presente: !!a.presente,
+          resultado: (a.resultado as ResultadoCapacitacion) ?? null,
         })
         if (a.empleado && !empleadosRef.has(a.empleado.id)) {
           empleadosRef.set(a.empleado.id, {
@@ -344,6 +347,11 @@ export async function GET(_req: NextRequest) {
       wb,
       hojaAsistencia(itemsAsistencia, filasEmpleado, [...empleadosRef.values()], today),
       "Asistencia"
+    )
+    XLSX.utils.book_append_sheet(
+      wb,
+      hojaAdherenciaPersona(itemsAsistencia, filasEmpleado, [...empleadosRef.values()], today),
+      "Adherencia por Persona"
     )
 
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer
@@ -574,6 +582,144 @@ function hojaAsistencia(
     { wch: 12 },
     { wch: 14 },
     { wch: 10 },
+  ]
+  return ws
+}
+
+/**
+ * Hoja de adherencia por persona: de las capacitaciones dictadas a las que se
+ * convocó a cada empleado, a cuántas fue y cuántas completó (aprobó).
+ *
+ * Son dos lecturas distintas y por eso van las dos: se puede ir a la charla y
+ * no rendir el examen. La adherencia individual usa el mismo criterio con el
+ * que el módulo da una capacitación por cumplida (aprobados), pero por persona.
+ * Las columnas de pilar muestran el cumplimiento de cada uno: aprobadas sobre
+ * convocadas de ese pilar.
+ */
+function hojaAdherenciaPersona(
+  items: ItemAsistencia[],
+  filas: FilaAsistenciaEmpleado[],
+  empleados: EmpleadoRef[],
+  today: string
+) {
+  const personas = adherenciaPorPersona(filas, empleados, items, today)
+  const anio = Number(today.slice(0, 4))
+
+  // Los pilares que realmente tienen capacitaciones dictadas este año.
+  const pilares = [
+    ...new Set(
+      items
+        .filter(
+          (c) =>
+            c.fecha?.slice(0, 4) === String(anio) &&
+            c.estadoReal !== "cancelada" &&
+            c.fecha <= today &&
+            c.convocados > 0
+        )
+        .map((c) => normalizePilar(c.pilar))
+    ),
+  ].sort((a, b) => a.localeCompare(b))
+
+  const totales = personas.reduce(
+    (acc, p) => {
+      acc.convocado += p.convocado
+      acc.asistio += p.asistio
+      acc.aprobado += p.aprobado
+      acc.pendiente += p.pendiente
+      return acc
+    },
+    { convocado: 0, asistio: 0, aprobado: 0, pendiente: 0 }
+  )
+  const pctTotalAsist =
+    totales.convocado > 0 ? Math.round((totales.asistio / totales.convocado) * 100) : null
+  const pctTotalAdh =
+    totales.convocado > 0 ? Math.round((totales.aprobado / totales.convocado) * 100) : null
+
+  const cuerpo: (string | number | null)[][] = [
+    [`ADHERENCIA POR PERSONA ${anio}`],
+    [
+      `Corte al ${today}. Meta: ${META_ASISTENCIA_PCT} %. ${personas.length} empleados con al menos una convocatoria a capacitaciones dictadas.`,
+    ],
+    [],
+    ["INDICADOR", "VALOR", "DETALLE"],
+    [
+      "Asistencia del plantel (%)",
+      pctTotalAsist,
+      `${totales.asistio} asistencias sobre ${totales.convocado} convocatorias`,
+    ],
+    [
+      "Adherencia del plantel (%)",
+      pctTotalAdh,
+      `${totales.aprobado} capacitaciones completadas (aprobadas) sobre ${totales.convocado} convocatorias`,
+    ],
+    [
+      `Empleados al ${META_ASISTENCIA_PCT} % de adherencia`,
+      personas.filter((p) => p.enMetaAdherencia).length,
+      `De ${personas.length} · bajo la meta: ${personas.filter((p) => !p.enMetaAdherencia).length}`,
+    ],
+    ["Pendientes de rendir", totales.pendiente, "Convocatorias sin examen rendido todavía"],
+    [],
+    ["DETALLE POR PERSONA — DE PEOR A MEJOR ADHERENCIA"],
+    [
+      "Empleado",
+      "Legajo",
+      "Sector",
+      "Convocado a",
+      "Asistió",
+      "Faltó",
+      "% Asistencia",
+      "Rindió",
+      "Aprobó",
+      "Desaprobó",
+      "Pendiente",
+      "% Adherencia",
+      "En meta",
+      ...pilares.map((p) => `${p} %`),
+    ],
+    ...personas.map((p) => {
+      const porPilar = new Map(p.porPilar.map((x) => [x.pilar, x]))
+      return [
+        p.nombre,
+        p.legajo,
+        p.sector ?? "",
+        p.convocado,
+        p.asistio,
+        p.falto,
+        p.pctAsistencia,
+        p.rindio,
+        p.aprobado,
+        p.desaprobado,
+        p.pendiente,
+        p.pctAdherencia,
+        p.enMetaAdherencia ? "Sí" : "No",
+        // Celda vacía = a esa persona no la convocaron a ese pilar.
+        ...pilares.map((nombre) => porPilar.get(nombre)?.pct ?? null),
+      ]
+    }),
+    [],
+    ["Definiciones: Convocado a = capacitaciones dictadas en las que figura como asistente ·"],
+    ["Asistió = marcado presente · Aprobó = rindió y aprobó el examen ·"],
+    ["% Adherencia = aprobadas / convocadas: el mismo criterio con el que una capacitación se da por cumplida, mirado por persona ·"],
+    ["Columnas de pilar = aprobadas sobre convocadas de ese pilar; vacío = no lo convocaron a ese pilar ·"],
+    ["Dictada = no cancelada, fecha ≤ hoy y con al menos un convocado."],
+  ]
+
+  const ws = XLSX.utils.aoa_to_sheet(cuerpo)
+  ws["!cols"] = [
+    { wch: 32 },
+    { wch: 10 },
+    { wch: 18 },
+    { wch: 12 },
+    { wch: 9 },
+    { wch: 8 },
+    { wch: 13 },
+    { wch: 9 },
+    { wch: 9 },
+    { wch: 11 },
+    { wch: 11 },
+    { wch: 13 },
+    { wch: 9 },
+    ...pilares.map(() => ({ wch: 13 })),
   ]
   return ws
 }
