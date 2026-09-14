@@ -11,13 +11,12 @@
 import type { DiaCalendario } from "../_components/client"
 import { intensidadDia, intensidadMax, type Intensidad } from "./intensidad"
 
-// Un EVENTO DE EMPRESA (ej. Expoagro) queda FIJO: sus días siempre integran un
-// período sugerido aunque no junten las tres P. Se marcan con tipo='empresa'
-// en pc_feriados.
-const esEventoEmpresa = (d: DiaCalendario) => d.tipo_feriado === "empresa"
+// Los eventos de empresa (Expoagro, tipo='empresa' en pc_feriados) ya NO fijan
+// período: se ven en el calendario como feriado, pero sólo las tres P abren un
+// período (Sebastián, 14/09/2026: "Expoagro no la marques como crítica").
 
-// Un día CRÍTICO abre un período: PPP o evento de empresa.
-const esCritico = (d: DiaCalendario) => intensidadDia(d) === "CRITICO" || esEventoEmpresa(d)
+// Un día CRÍTICO abre un período: PPP.
+const esCritico = (d: DiaCalendario) => intensidadDia(d) === "CRITICO"
 // Un día de ATENCIÓN (PP) integra el período pero nunca lo abre.
 const esAtencion = (d: DiaCalendario) => intensidadDia(d) === "ATENCION"
 // Día que forma parte de un bloque.
@@ -141,8 +140,8 @@ function generarNombreYMotivo(
 
 /**
  * Devuelve los períodos críticos detectados (bloques de 1–7 días). Un bloque
- * existe sólo si tiene al menos un día PPP (o un evento de empresa); los días
- * PP pegados a él lo integran, pero solos no forman período.
+ * existe sólo si tiene al menos un día PPP; los días PP pegados a él lo
+ * integran, pero solos no forman período.
  */
 export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[] {
   // Lista plana de feriados del rango — el tooltip ya viene marcado por día,
