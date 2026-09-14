@@ -85,10 +85,15 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   { key: "tlp", label: "TLP", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "Ceq/hh", mejorSi: "mayor", metaDefault: 34 },
   { key: "wnp", label: "WNP", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "HL/HH", mejorSi: "mayor", metaDefault: 6 },
   // FGLI (Full Goods Loss Index) desde el 2026-09-14 (pedido del usuario):
-  // tercera rama de VLC/HL, abierta en WQI (almacén) y DQI (distribución).
-  // Es DERIVADO: FGLI = WQI + DQI en PPM, que suman exacto porque los dos van
-  // sobre los mismos HL entregados del depósito. Meta 2.400 = 2.200 + 200.
-  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 2400 },
+  // tercera rama de VLC/HL. Cadena FGLI → TQI → WQI + DQI, todo en PPM sobre
+  // los mismos HL entregados del depósito (por eso las sumas son exactas):
+  //   FGLI = TQI + vencidos + diferencias de inventario   (SIN faltantes:
+  //          definición de Sebastián, 2026-09-14; el FGLI de la reunión de
+  //          warehouse sí los incluye y va en HL, es otro indicador)
+  //   TQI  = WQI + DQI (roturas de almacén + roturas de distribución)
+  // Meta 2.500 = TQI 2.400 + ~100 de inventario (presupuesto: 1,03 HL/mes de
+  // diferencias sobre ~9.000 HL entregados; vencidos presupuestados en 0).
+  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 2500 },
   { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.4 },
 
   // ---- Operacional ----
@@ -109,13 +114,8 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // del almacén (deposito-esteban): si se toca uno solo, cada pantalla muestra
   // una meta distinta. La que MANDA es la fila 2026 de `sueno_kpi_valores`.
   { key: "prod_picking", label: "Prod Picking", nivel: "operacional", rama: "productividad", parentKey: "wnp", unidad: "Bul/HH", mejorSi: "mayor", metaDefault: 290 },
-  // WQI y DQI abren el FGLI (2026-09-14). WQI colgaba de Prod Picking como
-  // nodo de estación desde el 2026-07-30; se MUEVE (misma key, misma serie en
-  // `sueno_kpi_valores` y mismo endpoint del depósito), no se duplica: un KPI
-  // no puede colgar de dos padres. DQI es el mismo indicador de /indicadores/dqi
-  // (DPO Entrega 1.4): roturas en distribución ÷ HL entregados × 1M.
-  { key: "wqi", label: "WQI", nivel: "operacional", rama: "productividad", parentKey: "fgli", unidad: "PPM", mejorSi: "menor", metaDefault: 2200 },
-  { key: "dqi", label: "DQI", nivel: "operacional", rama: "productividad", parentKey: "fgli", unidad: "PPM", mejorSi: "menor", metaDefault: 200 },
+  // TQI = roturas totales (WQI + DQI). Meta 2.400 = 2.200 + 200.
+  { key: "tqi", label: "TQI", nivel: "operacional", rama: "productividad", parentKey: "fgli", unidad: "PPM", mejorSi: "menor", metaDefault: 2400 },
   { key: "rechazo", label: "Rechazo", nivel: "operacional", rama: "cliente", parentKey: "in_full", unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
 
   // ---- Estación de trabajo / Tarea ----
@@ -126,6 +126,13 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // del depósito sigue vivo, así que no se pierde la serie; simplemente ya no
   // se dibuja (mismo criterio que `comportamientos`).
   { key: "precision_picking", label: "Precisión Picking", nivel: "estacion", rama: "productividad", parentKey: "prod_picking", unidad: "%", mejorSi: "mayor", metaDefault: 99.8 },
+  // WQI y DQI abren el TQI (2026-09-14). WQI colgaba de Prod Picking desde el
+  // 2026-07-30; se MUEVE (misma key, misma serie en `sueno_kpi_valores` y
+  // mismo endpoint del depósito), no se duplica: un KPI no puede colgar de dos
+  // padres. DQI es el mismo indicador de /indicadores/dqi (DPO Entrega 1.4):
+  // roturas en distribución ÷ HL entregados × 1M.
+  { key: "wqi", label: "WQI", nivel: "estacion", rama: "productividad", parentKey: "tqi", unidad: "PPM", mejorSi: "menor", metaDefault: 2200 },
+  { key: "dqi", label: "DQI", nivel: "estacion", rama: "productividad", parentKey: "tqi", unidad: "PPM", mejorSi: "menor", metaDefault: 200 },
   // % de pedidos del período que terminaron en ese rechazo (veces cliente×fecha
   // ÷ pedidos). Medían la CANTIDAD acumulada del año, que no se puede
   // semaforizar: contra una meta fija siempre termina en rojo, y no es

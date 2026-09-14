@@ -8,7 +8,10 @@
  *      `precision_picking` (%)      ← /api/productividad/precision-resumen
  *      `wqi`               (PPM)    ← /api/productividad/wqi-resumen
  *      `dqi`               (PPM)    ← /api/dqi (el mismo de /indicadores/dqi)
- *      `fgli`              (PPM)    = wqi + dqi (derivado, sin fetch propio)
+ *      `tqi`               (PPM)    = wqi + dqi (derivado, sin fetch propio)
+ *      `fgli`              (PPM)    = tqi + inventario (vencidos + diferencias
+ *                                     de inventario) ← /api/indicadores/serie-diaria,
+ *                                     UN pedido por mes del año (~100 KB c/u)
  *
  * 🚨 Cada entrada de acá es UN fetch más en el render del home (el árbol NO
  * está bajo Suspense y corta a los 5s), así que el endpoint tiene que estar
@@ -27,6 +30,10 @@ const DEPOSITO_API_BASE =
   process.env.DEPOSITO_API_URL ?? "https://deposito-regionpampeana.vercel.app"
 
 const TIMEOUT_MS = 5000
+// `/api/indicadores/serie-diaria` re-arma el mes (movimientos + Sheets) y mide
+// 1,5-5 s en caliente: con el timeout genérico se caía de a ratos. Mismo margen
+// que usa `warehouse/auto-indicadores.ts`.
+const SERIE_DIARIA_TIMEOUT_MS = 20_000
 const TTL_MS = 60 * 60 * 1000 // 1h: el blob del WMS se regenera 1 vez al día
 
 export interface ResumenExternoMes {
@@ -34,14 +41,15 @@ export interface ResumenExternoMes {
   valor: number | null
   /**
    * Tamaño del mes: nº de registros (picking), horas-hombre (WNP), bultos
-   * pickeados (precisión), HL afectados por rotura (WQI) o el WQI del mes
-   * (FGLI). null cuando el endpoint no lo informa (DQI).
+   * pickeados (precisión), HL afectados por rotura (WQI) o el primer sumando
+   * de un KPI derivado (WQI en el TQI, TQI en el FGLI). null cuando el
+   * endpoint no lo informa (DQI).
    */
   registros: number | null
   /**
    * 2º dato del mes, según el KPI: bultos con error (precisión), HL
-   * entregados (WQI) o el DQI del mes (FGLI) — la otra pata del cociente / de
-   * la suma.
+   * entregados (WQI) o el segundo sumando de un KPI derivado (DQI en el TQI,
+   * inventario en el FGLI) — la otra pata del cociente / de la suma.
    */
   bultos?: number
 }
@@ -119,16 +127,31 @@ export const KPI_EXTERNOS: Record<
       "el acumulado ponderado del tablero del depósito, no el promedio de los " +
       "meses. Fuente: depósito (deposito-esteban /api/dqi).",
   },
+  tqi: {
+    resumen: fetchTqiResumen,
+    explicacion:
+      "TQI = WQI + DQI, en PPM: roturas de almacén más roturas de distribución " +
+      "sobre los HL entregados. Los dos índices comparten el denominador, así que " +
+      "la suma es exacta (mes a mes y en el año). El detalle muestra el WQI y el " +
+      "DQI de cada mes que lo componen. Si alguno de los dos no está disponible, " +
+      "el TQI no se calcula.",
+    detalleLabel: "WQI",
+    detalle2Label: "DQI",
+  },
   fgli: {
     resumen: fetchFgliResumen,
     explicacion:
-      "FGLI (Full Goods Loss Index) = WQI + DQI, en PPM: roturas de almacén más " +
-      "roturas de distribución sobre los HL entregados. Los dos índices comparten " +
-      "el denominador, así que la suma es exacta (mes a mes y en el año). El " +
-      "detalle muestra el WQI y el DQI de cada mes que lo componen. Si alguno de " +
-      "los dos no está disponible, el FGLI no se calcula.",
-    detalleLabel: "WQI",
-    detalle2Label: "DQI",
+      "FGLI (Full Goods Loss Index) = TQI + pérdidas de inventario, en PPM sobre " +
+      "los HL entregados. Inventario = vencidos (obsolescencia) + diferencia neta " +
+      "del recuento mensual (faltantes − sobrantes reales; lo marcado como error " +
+      "de proceso no suma). NO incluye faltantes de entrega. Ojo: la diferencia de " +
+      "inventario entra entera el último día operativo del mes, cuando cierra el " +
+      "recuento, así que el mes en curso queda incompleto hasta unos días después. " +
+      "El detalle muestra el TQI y el inventario de cada mes. Fuente: depósito " +
+      "(deposito-esteban, serie diaria de pérdidas). Distinto del FGLI en HL de la " +
+      "reunión de warehouse, que sí suma los faltantes.",
+    detalleLabel: "TQI",
+    detalle2Label: "Inventario",
   },
 }
 
@@ -142,7 +165,7 @@ const cache = new Map<string, { value: unknown; expiresAt: number }>()
 // paralelo y el FGLI vuelve a pedir el WQI y el DQI que ya están en vuelo.
 const enVuelo = new Map<string, Promise<unknown>>()
 
-function fetchJsonCached<T>(url: string): Promise<T | null> {
+function fetchJsonCached<T>(url: string, timeoutMs = TIMEOUT_MS): Promise<T | null> {
   const hit = cache.get(url)
   if (hit && hit.expiresAt > Date.now()) return Promise.resolve(hit.value as T | null)
   const pendiente = enVuelo.get(url)
@@ -152,7 +175,7 @@ function fetchJsonCached<T>(url: string): Promise<T | null> {
     try {
       const res = await fetch(url, {
         cache: "no-store",
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       })
       if (!res.ok) return null
       const data = (await res.json()) as T
@@ -222,39 +245,131 @@ async function fetchDqiResumen(anio: number): Promise<ResumenExterno | null> {
   }
 }
 
+const r1 = (n: number) => Math.round(n * 10) / 10
+
 /**
- * FGLI = WQI + DQI. Derivado en memoria de los dos resúmenes: los dos son
- * "HL afectados ÷ HL entregados × 1M" con el MISMO denominador (el HL
- * entregado del depósito, neto de notas de crédito), así que los PPM se suman
- * exacto, mes a mes y en el acumulado del año. Sin uno de los dos no hay FGLI
- * (null → la card cae al valor persistido en la tabla).
+ * Suma dos resúmenes en PPM que comparten denominador (los HL entregados del
+ * depósito, netos de notas de crédito): los PPM se suman exacto, mes a mes y en
+ * el acumulado del año. Un mes vale solo si los dos sumandos lo tienen; el año
+ * ídem. El detalle del resultado guarda los dos sumandos (`registros` = a,
+ * `bultos` = b) para que el modal muestre la composición.
  */
-async function fetchFgliResumen(anio: number): Promise<ResumenExterno | null> {
-  const [wqi, dqi] = await Promise.all([fetchWqiResumen(anio), fetchDqiResumen(anio)])
-  if (!wqi || !dqi) return null
-  const r1 = (n: number) => Math.round(n * 10) / 10
-  const dqiPorMes = new Map(dqi.meses.map((m) => [m.mes, m.valor]))
-  const meses: ResumenExternoMes[] = wqi.meses.map((w) => {
-    const d = dqiPorMes.get(w.mes) ?? null
-    const ambos = w.valor != null && d != null
+function sumarResumenes(
+  anio: number,
+  a: ResumenExterno,
+  b: ResumenExterno,
+): ResumenExterno {
+  const bPorMes = new Map(b.meses.map((m) => [m.mes, m.valor]))
+  const meses: ResumenExternoMes[] = a.meses.map((m) => {
+    const vb = bPorMes.get(m.mes) ?? null
+    const ambos = m.valor != null && vb != null
     return {
-      mes: w.mes,
-      valor: ambos ? r1((w.valor as number) + (d as number)) : null,
-      registros: w.valor,
-      bultos: d ?? undefined,
+      mes: m.mes,
+      valor: ambos ? r1((m.valor as number) + (vb as number)) : null,
+      registros: m.valor,
+      bultos: vb ?? undefined,
     }
   })
-  const anual =
-    wqi.promedio_anual != null && dqi.promedio_anual != null
-      ? r1(wqi.promedio_anual + dqi.promedio_anual)
-      : null
   return {
     anio,
-    promedio_anual: anual,
-    registros_anual: wqi.registros_anual,
-    generado_en: wqi.generado_en ?? dqi.generado_en,
+    promedio_anual:
+      a.promedio_anual != null && b.promedio_anual != null
+        ? r1(a.promedio_anual + b.promedio_anual)
+        : null,
+    registros_anual: a.registros_anual,
+    generado_en: a.generado_en ?? b.generado_en,
     meses,
   }
+}
+
+/** TQI = WQI + DQI (roturas de almacén + roturas de distribución). */
+async function fetchTqiResumen(anio: number): Promise<ResumenExterno | null> {
+  const [wqi, dqi] = await Promise.all([fetchWqiResumen(anio), fetchDqiResumen(anio)])
+  if (!wqi || !dqi) return null
+  return sumarResumenes(anio, wqi, dqi)
+}
+
+/**
+ * Pérdidas de INVENTARIO en PPM = (vencidos + diferencia neta del recuento)
+ * ÷ HL entregados × 1M, por mes y acumulado del año.
+ *
+ * No hay resumen anual en el depósito: se lee `/api/indicadores/serie-diaria`
+ * de cada mes del año (~100 KB y 1,5-5 s cada uno, en paralelo y cacheados
+ * 1 h). Las series vienen ACUMULADAS en el mes (MTD), así que el total del mes
+ * es el último día con dato; el HL entregado sí viene por día y se suma. Si un
+ * mes no responde, ese mes (y el acumulado anual) quedan en null: el FGLI cae
+ * al valor persistido en la tabla, que el cron de respaldo escribe a diario.
+ */
+interface SerieDiariaInventario {
+  vencidos?: Record<string, number | null>
+  diferencias_hl?: Record<string, number | null>
+  hl_entregado_dia?: Record<string, number | null>
+}
+
+function ultimoConDato(serie: Record<string, number | null> | undefined): number | null {
+  if (!serie) return null
+  let ultimo: number | null = null
+  for (const fecha of Object.keys(serie).sort()) {
+    const v = serie[fecha]
+    if (v != null && Number.isFinite(v)) ultimo = v
+  }
+  return ultimo
+}
+
+async function fetchInventarioResumen(anio: number): Promise<ResumenExterno | null> {
+  const hoy = new Date()
+  if (anio > hoy.getFullYear()) return null
+  const ultimoMes = anio < hoy.getFullYear() ? 12 : hoy.getMonth() + 1
+  const series = await Promise.all(
+    Array.from({ length: ultimoMes }, (_, i) =>
+      fetchJsonCached<SerieDiariaInventario>(
+        `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${anio}&month=${i + 1}`,
+        SERIE_DIARIA_TIMEOUT_MS,
+      ),
+    ),
+  )
+  let perdidoAnual = 0
+  let entregadoAnual = 0
+  let completo = true
+  const meses: ResumenExternoMes[] = series.map((s, i) => {
+    const vencidos = ultimoConDato(s?.vencidos)
+    const diferencias = ultimoConDato(s?.diferencias_hl)
+    const entregado = Object.values(s?.hl_entregado_dia ?? {}).reduce<number>(
+      (acc, v) => acc + (v ?? 0),
+      0,
+    )
+    if (!s || entregado <= 0) {
+      completo = false
+      return { mes: i + 1, valor: null, registros: null }
+    }
+    const perdido = (vencidos ?? 0) + (diferencias ?? 0)
+    perdidoAnual += perdido
+    entregadoAnual += entregado
+    return {
+      mes: i + 1,
+      valor: r1((perdido / entregado) * 1_000_000),
+      registros: Math.round(perdido * 100) / 100,
+      bultos: Math.round(entregado),
+    }
+  })
+  if (meses.every((m) => m.valor == null)) return null
+  return {
+    anio,
+    promedio_anual:
+      completo && entregadoAnual > 0
+        ? r1((perdidoAnual / entregadoAnual) * 1_000_000)
+        : null,
+    registros_anual: Math.round(perdidoAnual * 100) / 100,
+    generado_en: null,
+    meses,
+  }
+}
+
+/** FGLI = TQI + inventario (sin faltantes de entrega). */
+async function fetchFgliResumen(anio: number): Promise<ResumenExterno | null> {
+  const [tqi, inv] = await Promise.all([fetchTqiResumen(anio), fetchInventarioResumen(anio)])
+  if (!tqi || !inv) return null
+  return sumarResumenes(anio, tqi, inv)
 }
 
 /**
