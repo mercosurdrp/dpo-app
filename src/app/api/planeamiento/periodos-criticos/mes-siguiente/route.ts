@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getProfile } from "@/lib/session"
-import { intensidadDia, type Intensidad } from "@/app/(dashboard)/planeamiento/periodos-criticos/_lib/intensidad"
+import { intensidadDia, codigoP, type Intensidad } from "@/app/(dashboard)/planeamiento/periodos-criticos/_lib/intensidad"
 
 export const dynamic = "force-dynamic"
 
@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic"
 // Calendario del MES SIGUIENTE a la fecha dada, para la revisión mensual de
 // períodos críticos en la reunión Ventas-Logística (R3.4.2). La reunión del
 // último martes de agosto tiene que mirar septiembre: cómo viene cada día según
-// lo observado en la misma fecha del año anterior (volumen contra la capacidad
-// de distribución, clientes, rechazo y ausentismo), y los feriados del mes.
+// lo observado en la misma fecha del año anterior (las P de volumen, rechazo y
+// ausentismo), y los feriados del mes.
 //
 // Si el mes ya empezó (revisión cargada tarde) se devuelve también el dato real
 // de los días que ya pasaron.
@@ -29,12 +29,11 @@ type Fila = {
   nombre_feriado: string | null
   tipo_feriado: string | null
   trigger_vol: boolean
-  trigger_cli: boolean
   trigger_otif: boolean
   trigger_aus: boolean
 }
 
-// Misma escala que el calendario del módulo (CRITICO / LIMITE / NORMAL).
+// Misma escala que el calendario del módulo (CRITICO / ATENCION / NORMAL).
 export type { Intensidad }
 
 export type DiaObservado = {
@@ -46,13 +45,15 @@ export type DiaObservado = {
   pct_rechazo: number
   pct_ausentismo: number
   trigger_vol: boolean
-  trigger_cli: boolean
   trigger_otif: boolean
   trigger_aus: boolean
+  /** "PPP" / "PP" / "P" / "" */
+  codigo: string
   intensidad: Intensidad
 }
 
 function observado(f: Fila): DiaObservado {
+  const triggers = { trigger_vol: !!f.trigger_vol, trigger_otif: !!f.trigger_otif, trigger_aus: !!f.trigger_aus }
   return {
     fecha: f.fecha,
     dia_semana: f.dia_semana,
@@ -61,11 +62,9 @@ function observado(f: Fila): DiaObservado {
     clientes_dia: Number(f.clientes_dia),
     pct_rechazo: Number(f.otif_estimado),
     pct_ausentismo: Number(f.pct_ausentismo),
-    trigger_vol: !!f.trigger_vol,
-    trigger_cli: !!f.trigger_cli,
-    trigger_otif: !!f.trigger_otif,
-    trigger_aus: !!f.trigger_aus,
-    intensidad: intensidadDia({ trigger_vol: !!f.trigger_vol, pct_capacidad: Number(f.pct_capacidad) }),
+    ...triggers,
+    codigo: codigoP(triggers),
+    intensidad: intensidadDia(triggers),
   }
 }
 
@@ -84,7 +83,7 @@ export type DiaMesSiguiente = {
 
 const COLS =
   "fecha, dow, dia_semana, hl, pct_capacidad, clientes_dia, otif_estimado, pct_ausentismo, " +
-  "es_feriado, nombre_feriado, tipo_feriado, trigger_vol, trigger_cli, trigger_otif, trigger_aus"
+  "es_feriado, nombre_feriado, tipo_feriado, trigger_vol, trigger_otif, trigger_aus"
 
 export async function GET(req: NextRequest) {
   const profile = await getProfile()
@@ -142,17 +141,18 @@ export async function GET(req: NextRequest) {
     }
   })
 
+  // Días críticos del año base: PPP.
   const criticosBase = dias
-    .filter((d) => d.base?.trigger_vol)
+    .filter((d) => d.base?.intensidad === "CRITICO")
     .map((d) => ({ fecha: d.fecha, dia_semana: d.dia_semana, base: d.base! }))
-  // Días a anticipar: los críticos y los que quedaron al límite.
+  // Días a anticipar: los PPP y los PP.
   const aAnticipar = dias
     .filter((d) => d.base && d.base.intensidad !== "NORMAL")
     .map((d) => ({ fecha: d.fecha, dia_semana: d.dia_semana, base: d.base! }))
 
   // Plan de acción del escalón más exigente del mes: es la sugerencia para
-  // hablar con Ventas. Sin días críticos ni al límite no hay plan que proponer.
-  const peor: Intensidad | null = criticosBase.length > 0 ? "CRITICO" : aAnticipar.length > 0 ? "LIMITE" : null
+  // hablar con Ventas. Sin días PPP ni PP no hay plan que proponer.
+  const peor: Intensidad | null = criticosBase.length > 0 ? "CRITICO" : aAnticipar.length > 0 ? "ATENCION" : null
   const planes = (planesRaw ?? []) as { codigo: string; descripcion: string; plan_texto: string }[]
   const plan = peor ? planes.find((p) => p.codigo === peor) ?? null : null
 

@@ -28,27 +28,25 @@ export type DiaCalendario = {
   pct_rechazo: number
   otif_estimado: number
   pct_ausentismo: number
-  clasif_vol: "PICO" | "NORMAL"   // superó la capacidad de distribución, o no
-  pct_capacidad: number           // hl / capacidad (1 = justo la capacidad)
+  pct_capacidad: number           // hl / capacidad (1 = justo la capacidad); dato, no decide color
   es_feriado: boolean
   nombre_feriado: string | null
   tipo_feriado: string | null   // nacional | provincial | empresa
-  // Triggers booleanos (modelo Mercosur)
+  // Los tres indicadores: cada uno da una P cuando cruza su umbral.
   trigger_vol: boolean
-  trigger_cli: boolean
   trigger_otif: boolean
   trigger_aus: boolean
-  trigger_count: number
-  contexto_count: number     // cuántas de las otras 3 acompañan al volumen
-  estatus: "CRITICO" | "NORMAL"
+  trigger_count: number         // 0–3
+  codigo: string                // "PPP" / "PP" / "P" / ""
+  estatus: "CRITICO" | "NORMAL" // CRITICO = PPP
 }
 
-// Lo único configurable fuera de la capacidad y el contexto es el año vigente.
+// Lo único configurable fuera de los umbrales es el año vigente.
 export type CfgPC = {
   anio: number
 }
 
-// `codigo` es una Intensidad: hay un plan por escalón (CRITICO, LIMITE, NORMAL).
+// `codigo` es una Intensidad: hay un plan por escalón (CRITICO, ATENCION, NORMAL).
 export type PlanAccion = {
   codigo: string
   descripcion: string
@@ -62,10 +60,9 @@ export type UmbralesPC = {
   pct_ocupacion: number
   /** …y el HL que sale de multiplicarlos. Lo calcula la base (columna generada). */
   vol_pico: number
-  // Variables de contexto: agravan el día crítico, no lo crean.
-  clientes: number
-  otif_min: number        // tasa de rechazo máxima
-  ausentismo_max: number
+  // Los otros dos indicadores.
+  otif_min: number        // tasa de rechazo máxima del día
+  ausentismo_max: number  // % de ausentes máximo del día
 }
 
 const MESES = [
@@ -99,40 +96,24 @@ const fmtHL = (n: number) =>
 const fmtPct = (n: number) =>
   (n * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%"
 
-// La escala (CRITICO / LIMITE / NORMAL) vive en _lib/intensidad.ts porque también
-// la usan la API del mes siguiente y la sección de la reunión. Acá se re-exporta
-// para que las pestañas sigan importando desde "./client".
+// La escala (CRITICO / ATENCION / NORMAL, el "juego de las P") vive en
+// _lib/intensidad.ts porque también la usan las APIs del mes siguiente y de
+// próximos focos, y la sección de la reunión. Acá se re-exporta para que las
+// pestañas sigan importando desde "./client".
 export {
-  intensidadDia, intensidadMax, INTENSIDAD_BG, INTENSIDAD_LABEL, PCT_LIMITE,
+  intensidadDia, intensidadMax, cantidadP, codigoP, INDICADORES,
+  INTENSIDAD_BG, INTENSIDAD_LABEL, INTENSIDAD_CODIGO,
   type Intensidad,
 } from "../_lib/intensidad"
-import { intensidadDia, INTENSIDAD_BG, INTENSIDAD_LABEL, PCT_LIMITE } from "../_lib/intensidad"
-
-/** Las 3 variables de contexto que cruzaron (todas menos volumen). */
-export type ConTriggers = Pick<
-  DiaCalendario,
-  "trigger_vol" | "trigger_cli" | "trigger_otif" | "trigger_aus"
->
-
-/** Cuántas variables de contexto cruzaron. Se muestra, no decide el color. */
-export function contextoDia(d: ConTriggers): number {
-  return (d.trigger_cli ? 1 : 0) + (d.trigger_otif ? 1 : 0) + (d.trigger_aus ? 1 : 0)
-}
+import {
+  intensidadDia, codigoP, INDICADORES, INTENSIDAD_BG, INTENSIDAD_LABEL,
+} from "../_lib/intensidad"
 
 function estiloCelda(d: DiaCalendario): string {
   if (d.hl === 0 && d.dow !== 0) return "bg-slate-100 text-slate-400"  // sin datos
   if (d.dow === 0) return "bg-slate-100 text-slate-400"               // domingo
   return INTENSIDAD_BG[intensidadDia(d)]
 }
-
-// Etiquetas humanas de los triggers (para tooltip). El volumen va primero: es
-// el único que define criticidad.
-const TRIGGER_LABELS: Array<[keyof DiaCalendario, string]> = [
-  ["trigger_vol", "Volumen sobre la capacidad"],
-  ["trigger_cli", "Clientes > umbral"],
-  ["trigger_otif", "Rechazo > umbral"],
-  ["trigger_aus", "Ausentismo ≥ umbral"],
-]
 
 function MesGrid({ mes, dias }: { mes: number; dias: DiaCalendario[] }) {
   // Construir 6 semanas x 7 días (dom..sáb) con dias del mes
@@ -176,8 +157,8 @@ function DiaCell({ d }: { d: DiaCalendario | null }) {
   const fecha = new Date(d.fecha + "T00:00:00")
   const cls = estiloCelda(d)
   const dayNum = fecha.getDate()
-  const triggersActivos = TRIGGER_LABELS.filter(([k]) => d[k] === true)
   const conDatos = d.hl > 0 && d.dow !== 0
+  const codigo = conDatos ? codigoP(d) : ""
 
   return (
     <Tooltip>
@@ -186,6 +167,12 @@ function DiaCell({ d }: { d: DiaCalendario | null }) {
           <div
             className={`relative aspect-square rounded flex flex-col items-center justify-center leading-none cursor-default ${cls} ${d.es_feriado ? "ring-2 ring-yellow-400" : ""}`}
           >
+            {/* Las P del día, arriba a la derecha: el "juego de las P" a simple vista. */}
+            {codigo && (
+              <span className="absolute right-0.5 top-0.5 text-[9px] font-bold tracking-tight opacity-90">
+                {codigo}
+              </span>
+            )}
             <span className="text-[15px] font-semibold">{dayNum}</span>
             {conDatos && <span className="mt-0.5 text-[9px] opacity-80">{fmtHL(d.hl)}</span>}
           </div>
@@ -197,9 +184,9 @@ function DiaCell({ d }: { d: DiaCalendario | null }) {
             <span className="font-semibold">
               {d.dia_semana} {fecha.toLocaleDateString("es-AR")}
             </span>
-            {intensidadDia(d) !== "NORMAL" && (
+            {conDatos && (
               <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${INTENSIDAD_BG[intensidadDia(d)]}`}>
-                {INTENSIDAD_LABEL[intensidadDia(d)]}
+                {INTENSIDAD_LABEL[intensidadDia(d)]}{codigo ? ` · ${codigo}` : ""}
               </span>
             )}
           </div>
@@ -215,11 +202,13 @@ function DiaCell({ d }: { d: DiaCalendario | null }) {
             <span>Rechazo:</span><span className="text-right"><b>{fmtPct(d.otif_estimado)}</b></span>
             <span>Ausentismo:</span><span className="text-right"><b>{fmtPct(d.pct_ausentismo)}</b></span>
           </div>
-          {triggersActivos.length > 0 && (
+          {conDatos && (
             <div className="mt-1 pt-1 border-t border-slate-200">
-              <div className="text-[10px] uppercase text-slate-500 mb-0.5">Variables cruzadas</div>
-              {triggersActivos.map(([k, label]) => (
-                <div key={k as string} className="text-[10px]">• {label}</div>
+              <div className="text-[10px] uppercase text-slate-500 mb-0.5">Indicadores</div>
+              {INDICADORES.map(([k, label]) => (
+                <div key={k} className={`text-[10px] ${d[k] ? "font-semibold" : "opacity-60"}`}>
+                  {d[k] ? "P" : "–"} {label}
+                </div>
               ))}
             </div>
           )}
@@ -265,14 +254,14 @@ export function PeriodosCriticosClient({
   const diasActivos = diasPorAnio[anioActivo] ?? []
 
   const conteo = useMemo(() => {
-    const c = { criticos: 0, limite: 0, normales: 0, sin_datos: 0 }
+    const c = { criticos: 0, atencion: 0, normales: 0, sin_datos: 0 }
     for (const d of diasActivos) {
       if (d.dow === 0) continue                      // domingo: no se reparte
       if (d.hl === 0) { c.sin_datos++; continue }
       switch (intensidadDia(d)) {
-        case "CRITICO": c.criticos++; break
-        case "LIMITE":  c.limite++; break
-        default:        c.normales++
+        case "CRITICO":  c.criticos++; break
+        case "ATENCION": c.atencion++; break
+        default:         c.normales++
       }
     }
     return c
@@ -283,8 +272,9 @@ export function PeriodosCriticosClient({
       <header>
         <h1 className="text-2xl font-semibold text-slate-900">Períodos Críticos</h1>
         <p className="text-sm text-slate-600">
-          Pilar Planeamiento · Bloque 3.4 — Un día es crítico cuando el volumen supera la capacidad de
-          distribución. Clientes, rechazo y ausentismo se cruzan como contexto: agravan el día, no lo vuelven crítico.
+          Pilar Planeamiento · Bloque 3.4 — Tres indicadores, una P por cada uno que cruza su umbral:
+          volumen (llega a la capacidad de distribución), rechazo y ausentismo. Un día es <b>crítico</b> cuando
+          junta las tres (PPP); con dos (PP) queda en atención.
         </p>
       </header>
 
@@ -303,12 +293,12 @@ export function PeriodosCriticosClient({
             </select>
           </label>
           <span className="text-xs text-slate-600">
-            <b>{conteo.criticos}</b> días críticos · superan {fmtHL(umbrales.vol_pico)} HL de capacidad
+            <b>{conteo.criticos}</b> días críticos (PPP) · <b>{conteo.atencion}</b> en atención (PP)
           </span>
           <div className="ml-auto flex items-center gap-3 text-xs">
-            <Legend color="bg-red-600" label={`Crítico: supera la capacidad (${conteo.criticos})`} />
-            <Legend color="bg-amber-300" label={`Al límite: ${Math.round(PCT_LIMITE * 100)}–100% (${conteo.limite})`} />
-            <Legend color="bg-emerald-500/80" label={`Normal (${conteo.normales})`} />
+            <Legend color="bg-red-600" label={`Crítico · PPP (${conteo.criticos})`} />
+            <Legend color="bg-amber-300" label={`Atención · PP (${conteo.atencion})`} />
+            <Legend color="bg-emerald-500/80" label={`Normal · P o nada (${conteo.normales})`} />
             <Legend color="bg-slate-100 border border-slate-300" label={`s/datos (${conteo.sin_datos})`} />
           </div>
         </CardContent>
@@ -393,15 +383,19 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 // ============================================================================
-// Card inline con la capacidad de distribución y los targets de contexto,
-// editables sin salir del calendario. Mismo endpoint que el tab Configuración.
+// Card inline con los umbrales de los tres indicadores, editables sin salir
+// del calendario. Mismo endpoint que el tab Configuración.
 // ============================================================================
+
+// El ausentismo diario se calcula sobre la dotación del sector (30 personas),
+// así que viene en escalones de 1/30: conviene leer el umbral en "ausentes".
+const DOTACION_AUSENTISMO = 30
+
 export function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
   const router = useRouter()
   const [camiones, setCamiones] = useState(umbrales.camiones)
   const [hlCam, setHlCam] = useState(umbrales.hl_por_camion)
   const [ocup, setOcup] = useState(umbrales.pct_ocupacion)
-  const [cli, setCli] = useState(umbrales.clientes)
   const [otif, setOtif] = useState(umbrales.otif_min)
   const [aus, setAus] = useState(umbrales.ausentismo_max)
   const [saving, setSaving] = useState(false)
@@ -409,12 +403,12 @@ export function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
 
   // Mismo cálculo que la columna generada de la base, para ver el HL al tipear.
   const capacidad = Math.round(camiones * hlCam * ocup)
+  const ausentes = Math.ceil(aus * DOTACION_AUSENTISMO - 1e-9)
 
   const dirty =
     camiones !== umbrales.camiones ||
     hlCam !== umbrales.hl_por_camion ||
     ocup !== umbrales.pct_ocupacion ||
-    cli !== umbrales.clientes ||
     otif !== umbrales.otif_min ||
     aus !== umbrales.ausentismo_max
 
@@ -426,7 +420,7 @@ export function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           camiones, hl_por_camion: hlCam, pct_ocupacion: ocup,
-          clientes: cli, otif_min: otif, ausentismo_max: aus,
+          otif_min: otif, ausentismo_max: aus,
         }),
       })
       if (!res.ok) {
@@ -448,7 +442,7 @@ export function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
       <CardContent className="p-3 space-y-2">
         <div className="flex flex-wrap items-end gap-2">
           <div className="text-xs font-semibold text-slate-700 mr-1">
-            Capacidad de distribución <span className="font-normal text-slate-500">(define el día crítico)</span>:
+            P de volumen <span className="font-normal text-slate-500">(los HL del día llegan a la capacidad)</span>:
           </div>
           <UInput label="Camiones" value={camiones} onChange={setCamiones} step={1} min={1} max={200} integer />
           <span className="pb-1.5 text-slate-400">×</span>
@@ -473,11 +467,13 @@ export function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
         </div>
         <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-2">
           <div className="text-xs font-semibold text-slate-700 mr-1">
-            Contexto <span className="font-normal text-slate-500">(agrava el día, no lo vuelve crítico)</span>:
+            P de rechazo y P de ausentismo <span className="font-normal text-slate-500">(PPP = crítico · PP = atención)</span>:
           </div>
-          <UInput label="Clientes >" value={cli} onChange={setCli} step={10} integer />
-          <UInput label="Rechazo >" value={otif} onChange={setOtif} step={0.01} pct />
-          <UInput label="Ausentismo ≥" value={aus} onChange={setAus} step={0.005} pct />
+          <UInput label="Rechazo del día >" value={otif} onChange={setOtif} step={0.005} pct />
+          <UInput label="Ausentismo del día ≥" value={aus} onChange={setAus} step={0.0333} pct />
+          <span className="pb-1.5 text-[10px] text-slate-500">
+            = {ausentes} ausente{ausentes === 1 ? "" : "s"} de {DOTACION_AUSENTISMO}
+          </span>
         </div>
       </CardContent>
     </Card>
@@ -595,7 +591,7 @@ function ResumenAnio({ anio, dias }: { anio: number; dias: DiaCalendario[] }) {
   const conDatos = dias.filter((d) => d.hl > 0).length
   return (
     <div className="text-xs text-slate-600 border-l border-slate-200 pl-3">
-      <b className="text-slate-900">{anio}:</b> {criticos} críticos · {conDatos} días con datos
+      <b className="text-slate-900">{anio}:</b> {criticos} críticos (PPP) · {conDatos} días con datos
     </div>
   )
 }

@@ -15,7 +15,7 @@ import { INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
 import { INTENSIDAD_DESC } from "../_lib/intensidad"
 
 // Un plan por escalón de la escala del calendario, del más al menos exigente.
-const CODIGOS: Intensidad[] = ["CRITICO", "LIMITE", "NORMAL"]
+const CODIGOS: Intensidad[] = ["CRITICO", "ATENCION", "NORMAL"]
 const CODIGO_DESC = INTENSIDAD_DESC
 
 export function ConfiguracionTab({
@@ -71,8 +71,8 @@ function AnioCard({ cfg }: { cfg: CfgPC }) {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Año vigente</CardTitle>
         <p className="text-xs text-slate-500">
-          Año que abre el calendario por defecto. El criterio de día crítico es uno solo y se
-          define abajo: el volumen del día contra la capacidad de distribución.
+          Año que abre el calendario por defecto. El criterio de día crítico se define abajo: las
+          tres P (volumen, rechazo y ausentismo) cruzadas el mismo día.
         </p>
       </CardHeader>
       <CardContent className="flex flex-wrap items-end gap-3">
@@ -98,7 +98,6 @@ function UmbralesCard({ umbrales }: { umbrales: UmbralesPC }) {
   const [camiones, setCamiones] = useState(umbrales.camiones)
   const [hlCam, setHlCam] = useState(umbrales.hl_por_camion)
   const [ocup, setOcup] = useState(umbrales.pct_ocupacion)
-  const [clientes, setCli] = useState(umbrales.clientes)
   const [otif_min, setOtif] = useState(umbrales.otif_min)
   const [aus_max, setAus] = useState(umbrales.ausentismo_max)
   const [guardando, setGuardando] = useState(false)
@@ -118,7 +117,6 @@ function UmbralesCard({ umbrales }: { umbrales: UmbralesPC }) {
           camiones,
           hl_por_camion: hlCam,
           pct_ocupacion: ocup,
-          clientes,
           otif_min,
           ausentismo_max: aus_max,
         }),
@@ -139,10 +137,11 @@ function UmbralesCard({ umbrales }: { umbrales: UmbralesPC }) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Capacidad de distribución y contexto</CardTitle>
+        <CardTitle className="text-base">Umbrales de los tres indicadores</CardTitle>
         <p className="text-xs text-slate-500">
-          Un día es CRÍTICO cuando sus HL superan la capacidad. Clientes, rechazo y ausentismo se
-          cruzan igual en el calendario, pero sólo agravan el día: no lo vuelven crítico.
+          Cada indicador da una P cuando el día cruza su umbral: volumen (llega a la capacidad de
+          distribución), rechazo y ausentismo. PPP = crítico (rojo), PP = atención (amarillo),
+          P o nada = normal (verde).
         </p>
         <ExplicacionUmbrales />
       </CardHeader>
@@ -156,9 +155,11 @@ function UmbralesCard({ umbrales }: { umbrales: UmbralesPC }) {
             {capacidad.toLocaleString("es-AR")} HL
           </span>
         </div>
-        <NumField label="Clientes" value={clientes} onChange={setCli} step={10} min={0} max={2000} integer />
-        <NumField label="Rechazo máx" value={otif_min} onChange={setOtif} step={0.01} min={0} max={1} suffix="(0–1)" />
-        <NumField label="Ausentismo max" value={aus_max} onChange={setAus} step={0.005} min={0} max={1} suffix="(0–1)" />
+        <NumField label="Rechazo del día >" value={otif_min} onChange={setOtif} step={0.005} min={0} max={1} suffix="(0–1)" />
+        <NumField label="Ausentismo del día ≥" value={aus_max} onChange={setAus} step={0.0333} min={0} max={1} suffix="(0–1)" />
+        <div className="flex flex-col justify-end pb-1 text-[11px] text-slate-500">
+          El ausentismo diario va en escalones de 1/30: 0,0333 = 1 ausente, 0,0667 = 2, 0,10 = 3.
+        </div>
         <div className="flex items-end">
           <Button onClick={guardar} disabled={guardando} size="sm" className="w-full">
             <Save className="w-4 h-4 mr-1" /> Guardar
@@ -264,7 +265,7 @@ function PlanesAccionCard({ planes }: { planes: PlanAccion[] }) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Planes de acción por código</CardTitle>
+        <CardTitle className="text-base">Planes de acción por escalón</CardTitle>
         <p className="text-xs text-slate-500">
           Texto que se sugiere en cada período crítico según su escalón en el calendario. Editable libremente.
         </p>
