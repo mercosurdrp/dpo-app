@@ -342,8 +342,9 @@ export function PeriodosTab({
             </span>
           </CardTitle>
           <p className="text-xs text-slate-500">
-            Salen de {anioBase}: bloques de días que juntaron las tres P (rojo: volumen, rechazo y
-            ausentismo cruzados) o dos de tres (amarillo), de hasta una semana.
+            Salen de {anioBase}: sólo los bloques con al menos un día PPP (volumen, rechazo y
+            ausentismo cruzados el mismo día), de hasta una semana; los días PP pegados al bloque lo
+            integran, pero solos no forman período.
             Cada tarjeta trae lo observado ese período y el plan de acción de su escalón. Marcá como{" "}
             <b>foco</b> los que el equipo va a preparar: el foco guarda el nombre, la prioridad y
             qué preparar, y es lo que se repasa en la reunión mensual Ventas-Logística.
@@ -354,8 +355,9 @@ export function PeriodosTab({
       {filas.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center text-sm text-slate-500">
-            No se identificaron períodos críticos en {anioBase} con los umbrales actuales. Ajustalos en
-            el encabezado si querés un criterio más o menos sensible, o agregá un período a mano.
+            Ningún día de {anioBase} juntó las tres P con los umbrales actuales. Bajá alguno en el
+            encabezado del calendario (el popup «¿de dónde salen?» muestra cuántos días PPP da cada
+            valor), o agregá un período a mano.
           </CardContent>
         </Card>
       ) : (

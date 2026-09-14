@@ -1,11 +1,12 @@
 // Detección automática de períodos críticos a partir del calendario diario.
 //
 // R3.4.1: identificar períodos para anticipar. Un período es una SEMANA que
-// aprieta, no una celda roja suelta: lo abren los días CRÍTICOS (PPP: volumen,
-// rechazo y ausentismo cruzados el mismo día) y lo completan los días de
-// ATENCIÓN (PP: dos de tres). Una corrida de días PP sin ningún PPP también es
-// período si dura al menos 2 días. Un solo indicador no abre período. Los
-// bloques van de 1 a 7 días (con gaps cortos) y se nombran por feriado/temporada.
+// aprieta, no una celda roja suelta: lo abren SÓLO los días CRÍTICOS (PPP:
+// volumen, rechazo y ausentismo cruzados el mismo día) y lo completan los días
+// de ATENCIÓN (PP: dos de tres) que tengan alrededor. Sin ningún PPP no hay
+// período, por más PP que haya (Sebastián, 14/09/2026: "en los períodos sólo
+// quiero ver críticos"). Los bloques van de 1 a 7 días (con gaps cortos) y se
+// nombran por feriado/temporada.
 
 import type { DiaCalendario } from "../_components/client"
 import { intensidadDia, intensidadMax, type Intensidad } from "./intensidad"
@@ -17,12 +18,10 @@ const esEventoEmpresa = (d: DiaCalendario) => d.tipo_feriado === "empresa"
 
 // Un día CRÍTICO abre un período: PPP o evento de empresa.
 const esCritico = (d: DiaCalendario) => intensidadDia(d) === "CRITICO" || esEventoEmpresa(d)
-// Un día de ATENCIÓN (PP) integra el período pero no lo abre solo.
+// Un día de ATENCIÓN (PP) integra el período pero nunca lo abre.
 const esAtencion = (d: DiaCalendario) => intensidadDia(d) === "ATENCION"
 // Día que forma parte de un bloque.
 const esAncla = (d: DiaCalendario) => esCritico(d) || esAtencion(d)
-// Una corrida sólo de días PP necesita esta cantidad para ser período.
-const MIN_ATENCION_SOLOS = 2
 
 export type PeriodoCritico = {
   /** "{añoMM}-{idx}" para listar y trackear. */
@@ -141,10 +140,9 @@ function generarNombreYMotivo(
 }
 
 /**
- * Devuelve los períodos críticos detectados (bloques de 1–7 días). Un día
- * integra un período si juntó las tres P (o es evento de empresa) o dos de
- * tres. Un bloque sin ningún día crítico necesita al menos MIN_ATENCION_SOLOS
- * días de atención.
+ * Devuelve los períodos críticos detectados (bloques de 1–7 días). Un bloque
+ * existe sólo si tiene al menos un día PPP (o un evento de empresa); los días
+ * PP pegados a él lo integran, pero solos no forman período.
  */
 export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[] {
   // Lista plana de feriados del rango — el tooltip ya viene marcado por día,
@@ -196,7 +194,7 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
   if (actual.length > 0) bloques.push(actual)
 
   return bloques
-    .filter((b) => b.some(esCritico) || b.filter(esAtencion).length >= MIN_ATENCION_SOLOS)
+    .filter((b) => b.some(esCritico))
     .map((bloque, i) => {
     const cercano = feriadoCercano(bloque, feriados)
     const { nombre, motivo } = generarNombreYMotivo(bloque, cercano)
