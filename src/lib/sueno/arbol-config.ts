@@ -84,6 +84,11 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   { key: "lti", label: "LTI", nivel: "gestion", rama: "seguridad", parentKey: "tri", unidad: "cant.", mejorSi: "menor", metaDefault: 0 },
   { key: "tlp", label: "TLP", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "Ceq/hh", mejorSi: "mayor", metaDefault: 34 },
   { key: "wnp", label: "WNP", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "HL/HH", mejorSi: "mayor", metaDefault: 6 },
+  // FGLI (Full Goods Loss Index) desde el 2026-09-14 (pedido del usuario):
+  // tercera rama de VLC/HL, abierta en WQI (almacén) y DQI (distribución).
+  // Es DERIVADO: FGLI = WQI + DQI en PPM, que suman exacto porque los dos van
+  // sobre los mismos HL entregados del depósito. Meta 2.400 = 2.200 + 200.
+  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 2400 },
   { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.4 },
 
   // ---- Operacional ----
@@ -104,6 +109,13 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // del almacén (deposito-esteban): si se toca uno solo, cada pantalla muestra
   // una meta distinta. La que MANDA es la fila 2026 de `sueno_kpi_valores`.
   { key: "prod_picking", label: "Prod Picking", nivel: "operacional", rama: "productividad", parentKey: "wnp", unidad: "Bul/HH", mejorSi: "mayor", metaDefault: 290 },
+  // WQI y DQI abren el FGLI (2026-09-14). WQI colgaba de Prod Picking como
+  // nodo de estación desde el 2026-07-30; se MUEVE (misma key, misma serie en
+  // `sueno_kpi_valores` y mismo endpoint del depósito), no se duplica: un KPI
+  // no puede colgar de dos padres. DQI es el mismo indicador de /indicadores/dqi
+  // (DPO Entrega 1.4): roturas en distribución ÷ HL entregados × 1M.
+  { key: "wqi", label: "WQI", nivel: "operacional", rama: "productividad", parentKey: "fgli", unidad: "PPM", mejorSi: "menor", metaDefault: 2200 },
+  { key: "dqi", label: "DQI", nivel: "operacional", rama: "productividad", parentKey: "fgli", unidad: "PPM", mejorSi: "menor", metaDefault: 200 },
   { key: "rechazo", label: "Rechazo", nivel: "operacional", rama: "cliente", parentKey: "in_full", unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
 
   // ---- Estación de trabajo / Tarea ----
@@ -114,7 +126,6 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // del depósito sigue vivo, así que no se pierde la serie; simplemente ya no
   // se dibuja (mismo criterio que `comportamientos`).
   { key: "precision_picking", label: "Precisión Picking", nivel: "estacion", rama: "productividad", parentKey: "prod_picking", unidad: "%", mejorSi: "mayor", metaDefault: 99.8 },
-  { key: "wqi", label: "WQI", nivel: "estacion", rama: "productividad", parentKey: "prod_picking", unidad: "PPM", mejorSi: "menor", metaDefault: 2200 },
   // % de pedidos del período que terminaron en ese rechazo (veces cliente×fecha
   // ÷ pedidos). Medían la CANTIDAD acumulada del año, que no se puede
   // semaforizar: contra una meta fija siempre termina en rojo, y no es
@@ -122,6 +133,13 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // Ver 20260722160000_sueno_rechazos_cerrado_sin_dinero_pct.sql.
   { key: "sin_dinero", label: "Sin Dinero", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "%", mejorSi: "menor", metaDefault: 1.5 },
   { key: "cerrado", label: "Cerrado", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "%", mejorSi: "menor", metaDefault: 0.5 },
+  // Los dos motivos de ALMACÉN (2026-09-14, pedido del usuario), con la misma
+  // lógica que Sin Dinero / Cerrado: refresh, detalle, % del total, ranking de
+  // clientes, PDF y plan. Un motivo nuevo se suma en `sueno_rechazo_patron`
+  // (SQL) + `RECHAZO_KPIS` (rechazo-tipos.ts) + acá. Metas: 0,10 % (2026 YTD
+  // dio 0,15 % y 0,13 %). Ver 20260914120000_sueno_rechazos_almacen_fgli.sql.
+  { key: "sin_stock", label: "Sin Stock", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "%", mejorSi: "menor", metaDefault: 0.1 },
+  { key: "fecha_corta", label: "Fecha Corta", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "%", mejorSi: "menor", metaDefault: 0.1 },
 ]
 
 /** KPIs estratégicos (raíces del árbol), en orden de rama. */
