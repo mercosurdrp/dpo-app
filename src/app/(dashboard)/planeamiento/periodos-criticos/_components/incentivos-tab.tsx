@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
-import { Gift, FileText, Megaphone, Plus, Pencil, Trash2, CheckCircle2, Upload, Trophy, Camera, Printer } from "lucide-react"
+import { Gift, FileText, FileCheck2, Megaphone, Plus, Pencil, Trash2, CheckCircle2, Upload, Trophy, Camera, Printer } from "lucide-react"
 import { createClient as createSupabaseBrowser } from "@/lib/supabase/client"
 
 // Sube un archivo DIRECTO a Storage desde el navegador (bypass del límite de
@@ -19,7 +19,7 @@ import { createClient as createSupabaseBrowser } from "@/lib/supabase/client"
 // con ella; devuelve el path guardado.
 async function subirArchivoDirecto(
   file: File,
-  slot: "programa" | "comunicado",
+  slot: "programa" | "aprobacion" | "comunicado",
 ): Promise<string> {
   const up = await fetch(`${API}/programa`, {
     method: "POST",
@@ -47,6 +47,8 @@ function urlExterna(link: string): string {
   return `https://${l}`
 }
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+const fmtFechaCorta = (iso: string) =>
+  new Date(iso + "T12:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })
 const AMBITOS = ["Choferes", "Ayudantes", "Warehouse"] as const
 
 /** KPI del programa: habilitante no puntúa pero sin cumplirlo no se cobra. */
@@ -66,6 +68,9 @@ type Programa = {
   comunicado: boolean; comunicado_fecha: string | null
   comunicado_url: string | null; comunicado_nombre: string | null; comunicado_nota: string | null
   comunicado_link: string | null
+  // Aprobación de gerencia firmada (evidencia R3.4.4).
+  aprobacion_url: string | null; aprobacion_nombre: string | null
+  aprobacion_fecha: string | null; aprobacion_nota: string | null
 }
 type Registro = {
   id: string; anio: number; mes: number; ambito: string
@@ -324,10 +329,14 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
   const [comFecha, setComFecha] = useState(prog.comunicado_fecha ?? "")
   const [comNota, setComNota] = useState(prog.comunicado_nota ?? "")
   const [comLink, setComLink] = useState(prog.comunicado_link ?? "")
+  const [aprFecha, setAprFecha] = useState(prog.aprobacion_fecha ?? "")
+  const [aprNota, setAprNota] = useState(prog.aprobacion_nota ?? "")
   const [guardando, setGuardando] = useState(false)
   const pptRef = useRef<HTMLInputElement>(null)
+  const aprRef = useRef<HTMLInputElement>(null)
   const comRef = useRef<HTMLInputElement>(null)
   const [pptSel, setPptSel] = useState<string | null>(null)
+  const [aprSel, setAprSel] = useState<string | null>(null)
   const [comSel, setComSel] = useState<string | null>(null)
 
   async function guardar() {
@@ -340,6 +349,8 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
       fd.set("comunicado_fecha", comFecha)
       fd.set("comunicado_nota", comNota)
       fd.set("comunicado_link", comLink)
+      fd.set("aprobacion_fecha", aprFecha)
+      fd.set("aprobacion_nota", aprNota)
       // Los archivos se suben DIRECTO a Storage (evita el tope de 4.5MB); al PUT
       // solo le mandamos el path resultante.
       const pptFile = pptRef.current?.files?.[0]
@@ -347,6 +358,12 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
         const path = await subirArchivoDirecto(pptFile, "programa")
         fd.set("archivo_path", path)
         fd.set("archivo_nombre", pptFile.name)
+      }
+      const aprFile = aprRef.current?.files?.[0]
+      if (aprFile) {
+        const path = await subirArchivoDirecto(aprFile, "aprobacion")
+        fd.set("aprobacion_path", path)
+        fd.set("aprobacion_nombre", aprFile.name)
       }
       const comFile = comRef.current?.files?.[0]
       if (comFile) {
@@ -359,6 +376,7 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
       if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
       onSaved(j.programa)
       setPptSel(null)
+      setAprSel(null)
       setComSel(null)
       toast.success("Programa guardado")
     } catch (e) {
@@ -403,7 +421,34 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
           )}
         </div>
 
-        {/* Comunicación al equipo */}
+        {/* Aprobación de gerencia: el programa firmado por quien lo autoriza. */}
+        <div className="border-t pt-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <FileCheck2 className="w-4 h-4 text-emerald-700" />
+            <span className="text-xs font-semibold text-slate-700">Aprobación de gerencia</span>
+            {prog.aprobacion_url
+              ? <Badge className="bg-emerald-600 text-white text-[10px] gap-1"><CheckCircle2 className="w-3 h-3" /> aprobado{prog.aprobacion_fecha ? ` el ${fmtFechaCorta(prog.aprobacion_fecha)}` : ""}</Badge>
+              : <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-300">sin aprobación cargada</Badge>}
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-xs flex items-center gap-1.5">Fecha de firma
+              <Input type="date" value={aprFecha} onChange={(e) => setAprFecha(e.target.value)} className="h-8 w-auto" />
+            </label>
+            <label className="text-xs flex items-center gap-1 cursor-pointer text-slate-600">
+              Archivo firmado <Upload className="w-3.5 h-3.5" /> <input ref={aprRef} type="file" className="text-xs" onChange={(e) => setAprSel(e.target.files?.[0]?.name ?? null)} />
+            </label>
+            {prog.aprobacion_url && <a href={prog.aprobacion_url} target="_blank" rel="noopener" className="text-xs text-violet-700 underline">{prog.aprobacion_nombre || "ver archivo"}</a>}
+            {aprSel && (
+              <span className="w-full text-[11px] font-medium text-amber-700">
+                ⚠ «{aprSel}» elegido — apretá <b>Guardar</b> para subirlo.
+              </span>
+            )}
+          </div>
+          <p className="text-[10px] text-slate-400 -mt-1">El programa impreso y firmado por gerencia (foto o PDF). Es la evidencia de que el incentivo está autorizado.</p>
+          <Textarea value={aprNota} onChange={(e) => setAprNota(e.target.value)} rows={2} placeholder="Nota: quién lo aprobó y con qué alcance" className="text-xs" />
+        </div>
+
+        {/* Comunicación al equipo: el comunicado con la planilla de firmas. */}
         <div className="border-t pt-3 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <Megaphone className="w-4 h-4 text-amber-600" />
@@ -430,7 +475,7 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
               <Input type="date" value={comFecha} onChange={(e) => setComFecha(e.target.value)} className="h-8 w-auto" />
             </label>
             <label className="text-xs flex items-center gap-1 cursor-pointer text-slate-600">
-              Archivo <Upload className="w-3.5 h-3.5" /> <input ref={comRef} type="file" className="text-xs" onChange={(e) => setComSel(e.target.files?.[0]?.name ?? null)} />
+              Comunicado firmado por los empleados <Upload className="w-3.5 h-3.5" /> <input ref={comRef} type="file" className="text-xs" onChange={(e) => setComSel(e.target.files?.[0]?.name ?? null)} />
             </label>
             {prog.comunicado_url && <a href={prog.comunicado_url} target="_blank" rel="noopener" className="text-xs text-violet-700 underline">{prog.comunicado_nombre || "ver archivo"}</a>}
             {comSel && (
@@ -439,7 +484,7 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
               </span>
             )}
           </div>
-          <p className="text-[10px] text-slate-400 -mt-1">Se acepta cualquier formato: foto, PDF, Word/Excel, PPT, etc.</p>
+          <p className="text-[10px] text-slate-400 -mt-1">La planilla de firmas del comunicado, escaneada o en foto. Se acepta cualquier formato.</p>
           <div className="flex items-center gap-2">
             <Label className="text-xs shrink-0">Link</Label>
             <Input value={comLink} onChange={(e) => setComLink(e.target.value)} placeholder="https://… (mail, video de YouTube/Drive, etc.)" className="h-8 text-xs" />
