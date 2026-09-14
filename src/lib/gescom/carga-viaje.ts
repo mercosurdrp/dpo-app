@@ -17,6 +17,11 @@ import {
 // la OB arrastró el mismo bug (solo Chess) hasta agosto — por eso esta lógica
 // vive acá y NO se duplica por indicador.
 //
+// El PESO llegó tarde (septiembre 2026): la partición en `*_chess` / `*_gescom`
+// de agosto se olvidó de los kg, así que el 17% de bultos que reparte Gestión
+// pesaba 0 y la columna "Peso (kg)" del detalle de la matinal mostraba camiones
+// livianísimos. Se calcula igual que el CEq, con `chess_articulos.peso_bulto`.
+//
 // Los choferes marcados `venta_directa` (mayoreo, no reparto) quedan afuera —
 // igual que en el indicador de rechazos.
 
@@ -28,6 +33,8 @@ export interface CargaGescomViaje {
   ceq: number
   bultos: number
   hl: number
+  /** kg = bultos × peso_bulto. Solo SKUs con peso conocido. */
+  peso: number
 }
 
 /** Carga de Gestión por viaje: clave `PATENTE|fecha`. */
@@ -37,7 +44,7 @@ export async function cargaGescomPorViaje(
   hasta: string,
 ): Promise<Map<string, CargaGescomViaje>> {
   const [factores, choferes, checklists] = await Promise.all([
-    ceqFactores(supabase),
+    factoresArticulo(supabase),
     loadChoferesGescom(supabase),
     loadChecklistDominios(supabase, desde, hasta),
   ])
@@ -77,9 +84,10 @@ export async function cargaGescomPorViaje(
       if (!patente) continue
 
       const key = `${patente}|${r.fecha}`
-      const slot = out.get(key) ?? { ceq: 0, bultos: 0, hl: 0 }
-      const factor = factores.get(Number(r.id_articulo))
-      if (factor) slot.ceq += bultos * factor
+      const slot = out.get(key) ?? { ceq: 0, bultos: 0, hl: 0, peso: 0 }
+      const art = factores.get(Number(r.id_articulo))
+      if (art?.ceq) slot.ceq += bultos * art.ceq
+      if (art?.pesoBulto) slot.peso += bultos * art.pesoBulto
       slot.bultos += bultos
       slot.hl += Math.abs(Number(r.hl) || 0)
       out.set(key, slot)
@@ -91,19 +99,36 @@ export async function cargaGescomPorViaje(
   return out
 }
 
-/** `chess_articulos.ceq_factor` (= 120 / bultos_pallet) por artículo. */
-async function ceqFactores(supabase: SupabaseClient): Promise<Map<number, number>> {
-  const out = new Map<number, number>()
+/**
+ * Maestro por artículo: `ceq_factor` (= 120 / bultos_pallet) y `peso_bulto` (kg).
+ * Se traen juntos porque es el mismo barrido de `chess_articulos`; un artículo
+ * puede tener uno y no el otro, así que el filtro pide cualquiera de los dos.
+ */
+async function factoresArticulo(
+  supabase: SupabaseClient,
+): Promise<Map<number, { ceq: number | null; pesoBulto: number | null }>> {
+  const out = new Map<number, { ceq: number | null; pesoBulto: number | null }>()
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from("chess_articulos")
-      .select("id_articulo, ceq_factor")
-      .not("ceq_factor", "is", null)
+      .select("id_articulo, ceq_factor, peso_bulto")
+      .or("ceq_factor.not.is.null,peso_bulto.not.is.null")
       .order("id_articulo")
       .range(from, from + PAGE - 1)
     if (error) throw new Error(error.message)
-    const rows = (data ?? []) as { id_articulo: number; ceq_factor: number }[]
-    for (const r of rows) out.set(Number(r.id_articulo), Number(r.ceq_factor))
+    const rows = (data ?? []) as {
+      id_articulo: number
+      ceq_factor: number | null
+      peso_bulto: number | null
+    }[]
+    for (const r of rows) {
+      const ceq = Number(r.ceq_factor)
+      const peso = Number(r.peso_bulto)
+      out.set(Number(r.id_articulo), {
+        ceq: r.ceq_factor != null && ceq > 0 ? ceq : null,
+        pesoBulto: r.peso_bulto != null && peso > 0 ? peso : null,
+      })
+    }
     if (rows.length < PAGE) break
   }
   return out

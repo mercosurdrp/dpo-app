@@ -82,7 +82,6 @@ export default async function PeriodosCriticosPage() {
         hl_por_camion: Number(umbralesRow.hl_por_camion),
         pct_ocupacion: Number(umbralesRow.pct_ocupacion),
         vol_pico: Number(umbralesRow.vol_pico),
-        clientes: Number(umbralesRow.clientes),
         otif_min: Number(umbralesRow.otif_min),
         ausentismo_max: Number(umbralesRow.ausentismo_max),
       }
@@ -91,8 +90,7 @@ export default async function PeriodosCriticosPage() {
         hl_por_camion: 72,
         pct_ocupacion: 0.9,
         vol_pico: 648,
-        clientes: 425,
-        otif_min: 0.03,
+        otif_min: 0.02,
         ausentismo_max: 0.1,
       }
 

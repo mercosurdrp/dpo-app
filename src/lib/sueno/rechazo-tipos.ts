@@ -1,8 +1,13 @@
-// Tipos del detalle fino de rechazos del Árbol del Sueño (Sin Dinero / Cerrado).
-// Archivo sin "use server": seguro para exportar tipos y constantes.
+// Tipos del detalle fino de rechazos del Árbol del Sueño (Sin Dinero / Cerrado
+// / Sin Stock / Fecha Corta). Archivo sin "use server": seguro para exportar
+// tipos y constantes.
 
-/** KPIs del árbol que tienen el detalle enriquecido de rechazos. */
-export const RECHAZO_KPIS = ["sin_dinero", "cerrado"] as const
+/**
+ * KPIs del árbol que tienen el detalle enriquecido de rechazos. Cada key tiene
+ * que existir también en `sueno_rechazo_patron` (SQL): ahí vive el ILIKE que
+ * usan el refresh, el detalle mensual, el % del total y el ranking.
+ */
+export const RECHAZO_KPIS = ["sin_dinero", "cerrado", "sin_stock", "fecha_corta"] as const
 export type RechazoKpiKey = (typeof RECHAZO_KPIS)[number]
 
 export function esRechazoKpi(key: string): key is RechazoKpiKey {
@@ -13,6 +18,9 @@ export function esRechazoKpi(key: string): key is RechazoKpiKey {
 export const KPI_MOTIVO: Record<RechazoKpiKey, { id: number; ds: string }> = {
   sin_dinero: { id: 6, ds: "SIN DINERO" },
   cerrado: { id: 1, ds: "CERRADO" },
+  // Motivos de ALMACÉN (categoría Logística en el catálogo, controlables).
+  sin_stock: { id: 13, ds: "SIN STOCK" },
+  fecha_corta: { id: 7, ds: "FECHA CORTA" },
 }
 
 export interface RechazoPctMes {

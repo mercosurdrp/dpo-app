@@ -8,6 +8,8 @@
  * Rango: la API GESCOM no filtra por fecha; el sync localiza las últimas páginas y filtra
  * por `fechaEntrega` en [fechaDesde, fechaHasta]. Default cron: últimos 30 días → hoy.
  * `modo: "full"` (o `?full=1`) recorre TODO el histórico (backfill inicial, lento).
+ * `solo_ob: true` saltea el sync y solo re-imputa la carga de Gestión a los viajes
+ * (`ocupacion_bodega_diaria.*_gescom`) con lo ya guardado — backfill barato.
  */
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -93,6 +95,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as {
       fechaDesde?: string; fechaHasta?: string; modo?: "recientes" | "full"; paginas?: number
+      solo_ob?: boolean
     }
 
     let fechaDesdeStr = body.fechaDesde
@@ -114,6 +117,25 @@ export async function POST(request: NextRequest) {
     console.log(`[gescom-sync] start source=${source} modo=${modo} desde=${fechaDesdeStr} hasta=${fechaHastaStr}`)
 
     const supabase = createAdminClient()
+
+    // `solo_ob`: re-imputa la carga de Gestión a los viajes desde lo que YA está
+    // en `ventas_diarias_camion_sku`, sin volver a pegarle a la API de GESCOM.
+    // Para backfills del histórico (ej. el peso, que se empezó a guardar en
+    // septiembre 2026) sin re-correr el sync pesado de rechazos.
+    if (body.solo_ob) {
+      const ob = await recalcCargaGescomOB(supabase, fechaDesdeStr, fechaHastaStr)
+      await updateIndicadorOB(supabase)
+      const durationMs = Date.now() - startedAt
+      console.log(
+        `[gescom-sync] solo_ob desde=${fechaDesdeStr} hasta=${fechaHastaStr} ` +
+        `viajes=${ob.viajes} ceq=${ob.ceqGescom} reseteados=${ob.reseteados} duration_ms=${durationMs}`,
+      )
+      return NextResponse.json({
+        success: true, source, solo_ob: true,
+        date_from: fechaDesdeStr, date_to: fechaHastaStr,
+        ocupacion_bodega_gescom: ob, duration_ms: durationMs,
+      })
+    }
     const r = await syncGescomRechazos({
       supabase, creds, desde: fechaDesdeStr, hasta: fechaHastaStr, modo, paginas: body.paginas,
     })

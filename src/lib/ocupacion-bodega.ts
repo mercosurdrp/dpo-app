@@ -13,9 +13,12 @@
  * De ahí salen DOS porcentajes distintos, y confundirlos fue el problema
  * original:
  * - `cumplimientoPct` (sobre el objetivo): el 100% significa "llegamos". Es el
- *   número de gestión y va en los tableros, con semáforo.
+ *   número de gestión y va en el árbol de KPI y el cuadro mensual.
  * - `obPct` (sobre la capacidad): cuánto del camión se llenó de verdad. Es el
- *   dato físico y vive en el detalle, donde hay lugar para explicarlo.
+ *   dato físico. Va en el detalle del día y, desde el 14/09/2026, también en el
+ *   tablero de reuniones, para que el número del tablero y el del modal sean el
+ *   mismo. Ahí la meta no puede ser 100 (ningún viaje llena el camión): se usa
+ *   `OBJETIVO_PCT`, el objetivo de carga expresado en % de la bodega.
  *
  * El porcentaje se calcula acá y no en la base: la columna generada
  * `ob_pct_target` de `ocupacion_bodega_diaria` sigue dividiendo por su valor

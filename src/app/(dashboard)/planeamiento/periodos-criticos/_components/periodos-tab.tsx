@@ -17,7 +17,7 @@ import {
 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import type { DiaCalendario, PlanAccion, Intensidad } from "./client"
-import { intensidadDia, intensidadMax, INTENSIDAD_BG, INTENSIDAD_LABEL, PCT_LIMITE } from "./client"
+import { intensidadDia, intensidadMax, codigoP, INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
 import { detectarPeriodosCriticos, type PeriodoCritico } from "../_lib/detectar-periodos"
 
 // Período de foco que define el equipo (tabla pc_periodos_foco)
@@ -57,19 +57,12 @@ type VarP = {
   valor: (d: DiaCalendario) => string
 }
 
-// El Volumen es el único que define el período crítico; Clientes y Rechazo
-// acompañan como contexto. Son las que mira el tooltip.
+// Los tres indicadores del "juego de las P". Son los que mira el tooltip.
 const VARIABLES_P: VarP[] = [
   { label: "Volumen", trigger: "trigger_vol", valor: (d) => `${fmtHL(d.hl)} HL · ${fmtPct(d.pct_capacidad)} de la capacidad` },
-  { label: "Clientes", trigger: "trigger_cli", valor: (d) => String(d.clientes_dia) },
   { label: "Rechazo", trigger: "trigger_otif", valor: (d) => fmtPct(d.otif_estimado) },
+  { label: "Ausentismo", trigger: "trigger_aus", valor: (d) => fmtPct(d.pct_ausentismo) },
 ]
-
-// El ausentismo también es contexto: se muestra como dato aparte porque suele
-// estar activo casi todo el mes.
-const VAR_AUSENTISMO: VarP = {
-  label: "Ausentismo", trigger: "trigger_aus", valor: (d) => fmtPct(d.pct_ausentismo),
-}
 
 // Proyecta una fecha 'YYYY-MM-DD' de un año a otro (mismo mes/día).
 // 29-feb cae a 28-feb si el año destino no es bisiesto.
@@ -86,7 +79,7 @@ function proyectarFecha(f: string, anioDestino: number): string {
 // Prioridad del foco según la intensidad del período.
 function prioridadDeIntensidad(i: Intensidad): PeriodoFoco["prioridad"] {
   if (i === "CRITICO") return "alta"
-  if (i === "LIMITE") return "media"
+  if (i === "ATENCION") return "media"
   return "baja"
 }
 
@@ -122,8 +115,8 @@ function periodoDesdeFoco(f: PeriodoFoco, diasBase: DiaCalendario[], anioBase: n
     fechaInicio: ini,
     fechaFin: fin,
     cantDias: dias.length,
-    cantDiasCriticos: dias.filter((d) => d.trigger_vol).length,
-    cantDiasLimite: dias.filter((d) => intensidadDia(d) === "LIMITE").length,
+    cantDiasCriticos: dias.filter((d) => intensidadDia(d) === "CRITICO").length,
+    cantDiasAtencion: dias.filter((d) => intensidadDia(d) === "ATENCION").length,
     intensidad: dias.length ? intensidadMax(dias) : "NORMAL",
     hlMax: num(dias.map((d) => Number(d.hl))),
     hlAcum: dias.reduce((s, d) => s + Number(d.hl), 0),
@@ -149,8 +142,8 @@ export function PeriodosTab({
   planes: PlanAccion[]
 }) {
   // Concepto R3.4.1: los períodos críticos NO son una cuota a cumplir. Se
-  // IDENTIFICAN mirando el comportamiento del AÑO ANTERIOR (volumen, OTIF,
-  // ausentismo, #clientes) para anticipar la operación del año en curso.
+  // IDENTIFICAN mirando el comportamiento del AÑO ANTERIOR (volumen, rechazo,
+  // ausentismo) para anticipar la operación del año en curso.
   const anioBase = anioAnticipar - 1
   const diasBase = useMemo(() => diasPorAnio[anioBase] ?? [], [diasPorAnio, anioBase])
 
@@ -349,8 +342,9 @@ export function PeriodosTab({
             </span>
           </CardTitle>
           <p className="text-xs text-slate-500">
-            Salen de {anioBase}: bloques de días que superaron la capacidad de distribución (rojo) o
-            quedaron al límite, {Math.round(PCT_LIMITE * 100)}% o más (amarillo), de hasta una semana.
+            Salen de {anioBase}: sólo los bloques con al menos un día PPP (volumen, rechazo y
+            ausentismo cruzados el mismo día), de hasta una semana; los días PP pegados al bloque lo
+            integran, pero solos no forman período.
             Cada tarjeta trae lo observado ese período y el plan de acción de su escalón. Marcá como{" "}
             <b>foco</b> los que el equipo va a preparar: el foco guarda el nombre, la prioridad y
             qué preparar, y es lo que se repasa en la reunión mensual Ventas-Logística.
@@ -361,8 +355,9 @@ export function PeriodosTab({
       {filas.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center text-sm text-slate-500">
-            No se identificaron períodos críticos en {anioBase} con la capacidad actual. Ajustala en
-            el encabezado si querés un criterio más o menos sensible, o agregá un período a mano.
+            Ningún día de {anioBase} juntó las tres P con los umbrales actuales. Bajá alguno en el
+            encabezado del calendario (el popup «¿de dónde salen?» muestra cuántos días PPP da cada
+            valor), o agregá un período a mano.
           </CardContent>
         </Card>
       ) : (
@@ -377,7 +372,7 @@ export function PeriodosTab({
                   <span className="text-xs text-slate-500">
                     {g.filas.length} período{g.filas.length === 1 ? "" : "s"}
                     {g.enFoco > 0 && ` · ${g.enFoco} en foco`}
-                    {g.criticos > 0 && ` · ${g.criticos} día${g.criticos === 1 ? "" : "s"} sobre la capacidad en ${anioBase}`}
+                    {g.criticos > 0 && ` · ${g.criticos} día${g.criticos === 1 ? "" : "s"} PPP en ${anioBase}`}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -442,16 +437,15 @@ function PeriodoCard({
   // Día más exigente del período (el de más HL) → de ahí tomamos el valor
   // puntual de cada variable en el tooltip.
   const diaPico = p.dias.find((d) => d.fecha === p.diaPico) ?? p.dias[0]
-  // Para cada variable contamos en cuántos días del período cruzó su umbral.
+  // Para cada indicador contamos en cuántos días del período cruzó su umbral.
   const diasCruzados = (v: VarP) => p.dias.filter((d) => d[v.trigger] === true).length
-  const ausDias = p.dias.filter((d) => d.trigger_aus === true).length
   const intensidad = p.intensidad
 
   async function copiarPlan() {
     const texto =
       `Período crítico ${indice} a anticipar en ${anioAnticipar}: ${titulo}\n` +
       `Ventana ${fmtFecha(fila.ini)} → ${fmtFecha(fila.fin)} (observado en ${anioBase}: ${fmtFecha(p.fechaInicio)} → ${fmtFecha(p.fechaFin)})\n` +
-      `${INTENSIDAD_LABEL[intensidad]} · ${p.cantDiasCriticos} días sobre la capacidad · ${p.cantDiasLimite} al límite (pico ${fmtPct(p.pctCapacidadMax)})\n` +
+      `${INTENSIDAD_LABEL[intensidad]} · ${p.cantDiasCriticos} días PPP · ${p.cantDiasAtencion} días PP (pico ${fmtHL(p.hlMax)} HL, ${fmtPct(p.pctCapacidadMax)} de la capacidad)\n` +
       (foco ? `Prioridad ${foco.prioridad}. Foco: ${foco.foco}\n` : "") +
       (plan ? `\n${plan.descripcion}\n\n${plan.plan_texto}` : "")
     await navigator.clipboard.writeText(texto)
@@ -519,7 +513,7 @@ function PeriodoCard({
               {foco ? `foco ${anioAnticipar}` : `a anticipar ${anioAnticipar}`}
             </Badge>
             <span className="text-xs text-slate-500">
-              ({p.cantDias}d · {p.cantDiasCriticos} críticos{p.cantDiasLimite > 0 ? ` · ${p.cantDiasLimite} al límite` : ""})
+              ({p.cantDias}d · {p.cantDiasCriticos} PPP{p.cantDiasAtencion > 0 ? ` · ${p.cantDiasAtencion} PP` : ""})
             </span>
           </div>
           <p className="text-[11px] text-slate-400 pl-6">
@@ -568,10 +562,11 @@ function PeriodoCard({
                       ? INTENSIDAD_BG[intensidadDia(d)]
                       : "bg-slate-100 text-slate-500"
                   }`}
-                  title={`${d.dia_semana} ${d.fecha} · ${fmtHL(d.hl)} HL · ${fmtPct(d.pct_capacidad)} · cli ${d.clientes_dia} · ${INTENSIDAD_LABEL[intensidadDia(d)]}`}
+                  title={`${d.dia_semana} ${d.fecha} · ${fmtHL(d.hl)} HL · ${fmtPct(d.pct_capacidad)} · rechazo ${fmtPct(d.otif_estimado)} · ausentismo ${fmtPct(d.pct_ausentismo)} · ${INTENSIDAD_LABEL[intensidadDia(d)]}`}
                 >
                   {d.fecha === p.diaPico && <Star className="w-3 h-3" />}
                   {fmtFecha(d.fecha)}
+                  {codigoP(d) && <span className="text-[9px] font-bold opacity-80">{codigoP(d)}</span>}
                 </span>
               ))}
             </div>
@@ -610,7 +605,7 @@ function PeriodoCard({
         <div className="space-y-1 min-w-[230px]">
           <div className="flex items-center justify-between gap-3">
             <span className="font-semibold">
-              {p.cantDiasCriticos} sobre la capacidad · {p.cantDiasLimite} al límite · {p.cantDias} días
+              {p.cantDiasCriticos} PPP · {p.cantDiasAtencion} PP · {p.cantDias} días
             </span>
             <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${INTENSIDAD_BG[intensidad]}`}>
               {INTENSIDAD_LABEL[intensidad]}
@@ -633,12 +628,8 @@ function PeriodoCard({
               )
             })}
           </div>
-          <div className="flex items-center justify-between gap-4 text-[10px] opacity-70 pt-1 border-t border-white/15">
-            <span>{VAR_AUSENTISMO.label} (secundario)</span>
-            <span>{diaPico ? VAR_AUSENTISMO.valor(diaPico) : "—"}{ausDias > 0 && ` · ${ausDias}d`}</span>
-          </div>
           <div className="text-[10px] opacity-60 pt-1 border-t border-white/15">
-            ✗ = cruzó su umbral. Crítico = el volumen supera la capacidad de distribución; al límite = llega al {Math.round(PCT_LIMITE * 100)}%. Clientes, rechazo y ausentismo son contexto.
+            ✗ = cruzó su umbral en algún día del período (valor del día pico). Crítico = los tres el mismo día (PPP); atención = dos de tres (PP).
           </div>
         </div>
       </TooltipContent>

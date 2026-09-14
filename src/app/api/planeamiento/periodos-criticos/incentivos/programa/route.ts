@@ -18,7 +18,7 @@ async function signed(supabase: Awaited<ReturnType<typeof createClient>>, path: 
   return data?.signedUrl ?? null
 }
 
-// GET → programa de incentivos de temporada alta, con sus KPIs y las URLs
+// GET → programa de incentivos de períodos críticos, con sus KPIs y las URLs
 // públicas resueltas. Los KPIs son filas (pc_incentivos_kpis) y no prosa dentro
 // de `descripcion`: R3.4.4 pide demostrar a qué indicadores está conectado el
 // incentivo, con su meta.

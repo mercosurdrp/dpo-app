@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getProfile } from "@/lib/session"
 import {
+  intensidadDia,
   intensidadMax,
   type Intensidad,
 } from "@/app/(dashboard)/planeamiento/periodos-criticos/_lib/intensidad"
@@ -12,10 +13,10 @@ export const dynamic = "force-dynamic"
 // Críticos) que aún no terminaron, para la reunión logística-ventas.
 //
 // Cada foco viene con lo observado en la misma ventana del año anterior
-// (cuántos días superaron la capacidad, cuántos quedaron al límite, el pico) y
-// con el PLAN DE ACCIÓN de su escalón, para que la reunión tenga la sugerencia
-// a mano y no haya que ir a buscarla a Planeamiento. Devuelve también `hoy`
-// (fecha ARG) para que el front calcule "en X días".
+// (cuántos días PPP, cuántos PP, el pico de HL) y con el PLAN DE ACCIÓN de su
+// escalón, para que la reunión tenga la sugerencia a mano y no haya que ir a
+// buscarla a Planeamiento. Devuelve también `hoy` (fecha ARG) para que el
+// front calcule "en X días".
 
 export type PlanAccion = { codigo: string; descripcion: string; plan_texto: string }
 
@@ -29,11 +30,18 @@ export type FocoProximo = {
   foco: string | null
   /** Escalón del período según el año anterior (el peor día de la ventana). */
   intensidad: Intensidad
-  base: { criticos: number; limite: number; hl_max: number; pct_max: number } | null
+  base: { criticos: number; atencion: number; hl_max: number; pct_max: number } | null
   plan: PlanAccion | null
 }
 
-type Fila = { fecha: string; hl: number; pct_capacidad: number; trigger_vol: boolean }
+type Fila = {
+  fecha: string
+  hl: number
+  pct_capacidad: number
+  trigger_vol: boolean
+  trigger_otif: boolean
+  trigger_aus: boolean
+}
 
 // Misma fecha del año anterior (29/2 → 28/2 si hace falta).
 function proyectar(f: string, anio: number): string {
@@ -71,7 +79,7 @@ export async function GET() {
   for (const a of anios) {
     const { data } = await supabase
       .from("v_pc_calendario_dia_multianio")
-      .select("fecha, hl, pct_capacidad, trigger_vol")
+      .select("fecha, hl, pct_capacidad, trigger_vol, trigger_otif, trigger_aus")
       .eq("anio", a)
       .neq("dow", 0)
     for (const f of (data ?? []) as unknown as Fila[]) base.set(f.fecha, f)
@@ -81,16 +89,14 @@ export async function GET() {
     const ini = proyectar(f.fecha_inicio, f.anio - 1)
     const fin = proyectar(f.fecha_fin, f.anio - 1)
     const dias = [...base.values()].filter((d) => d.fecha >= ini && d.fecha <= fin)
-    const intensidad: Intensidad = dias.length
-      ? intensidadMax(dias.map((d) => ({ trigger_vol: !!d.trigger_vol, pct_capacidad: Number(d.pct_capacidad) })))
-      : "NORMAL"
+    const intensidad: Intensidad = dias.length ? intensidadMax(dias) : "NORMAL"
     return {
       ...f,
       intensidad,
       base: dias.length
         ? {
-            criticos: dias.filter((d) => d.trigger_vol).length,
-            limite: dias.filter((d) => !d.trigger_vol && Number(d.pct_capacidad) >= 0.9).length,
+            criticos: dias.filter((d) => intensidadDia(d) === "CRITICO").length,
+            atencion: dias.filter((d) => intensidadDia(d) === "ATENCION").length,
             hl_max: Math.max(...dias.map((d) => Number(d.hl))),
             pct_max: Math.max(...dias.map((d) => Number(d.pct_capacidad))),
           }

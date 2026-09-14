@@ -225,11 +225,12 @@ export async function recalcOcupacionBodegaDia(
 
   // 4) Upsert en ocupacion_bodega_diaria — SOLO la parte Chess. La parte de
   //    Gestión la escribe `recalcCargaGescomOB` en `*_gescom`; los totales
-  //    (`ceq_total`, `bultos_total`, `hl_total`, `ob_pct_target`) son columnas
-  //    generadas. OJO: `ob_pct_target` divide por el target viejo y quedó sin
+  //    (`ceq_total`, `bultos_total`, `hl_total`, `peso_total`, `ob_pct_target`)
+  //    son columnas generadas. OJO: `ob_pct_target` divide por el target viejo y quedó sin
   //    uso — la ocupación se calcula en la app con `@/lib/ocupacion-bodega`;
   //    no volver a leerla para mostrar porcentajes. Las demás son columnas
-  //    GENERADAS = chess + gescom (migración 20260810120000).
+  //    GENERADAS = chess + gescom (migraciones 20260810120000 y, para el peso,
+  //    20260914120000).
   let ceqTotal = 0
   const rows = [...agg.entries()].map(([patente, d]) => {
     ceqTotal += d.ceq
@@ -239,7 +240,7 @@ export async function recalcOcupacionBodegaDia(
       ceq_chess: Math.round(d.ceq * 100) / 100,
       bultos_chess: Math.round(d.bultos * 100) / 100,
       hl_chess: Math.round(d.hl * 10000) / 10000,
-      peso_total: Math.round(d.peso * 100) / 100,
+      peso_chess: Math.round(d.peso * 100) / 100,
       lineas: d.lineas,
       skus_distintos: d.skus.size,
     }
@@ -294,6 +295,7 @@ export async function recalcCargaGescomOB(
       ceq_gescom: Math.round(c.ceq * 100) / 100,
       bultos_gescom: Math.round(c.bultos * 100) / 100,
       hl_gescom: Math.round(c.hl * 10000) / 10000,
+      peso_gescom: Math.round(c.peso * 100) / 100,
     }
   })
 
@@ -305,7 +307,7 @@ export async function recalcCargaGescomOB(
     .select("fecha, patente")
     .gte("fecha", desde)
     .lte("fecha", hasta)
-    .gt("ceq_gescom", 0)
+    .or("bultos_gescom.gt.0,ceq_gescom.gt.0,peso_gescom.gt.0")
   if (errEx) console.error(`[ob-gescom] read existentes: ${errEx.message}`)
   let reseteados = 0
   for (const e of (existentes ?? []) as { fecha: string; patente: string }[]) {
@@ -316,6 +318,7 @@ export async function recalcCargaGescomOB(
       ceq_gescom: 0,
       bultos_gescom: 0,
       hl_gescom: 0,
+      peso_gescom: 0,
     })
     reseteados++
   }

@@ -95,6 +95,15 @@ import {
   estadoDerivado,
   formatDuracion,
 } from "@/lib/capacitacion-estado"
+import { META_ASISTENCIA_PCT, pctAsistencia } from "@/lib/capacitacion-asistencia"
+
+/** Semáforo de asistencia contra la meta: en meta / cerca / lejos. */
+function colorAsistencia(pct: number | null | undefined): string {
+  if (pct === null || pct === undefined) return "#94A3B8"
+  if (pct >= META_ASISTENCIA_PCT) return "#10B981"
+  if (pct >= META_ASISTENCIA_PCT - 20) return "#F59E0B"
+  return "#EF4444"
+}
 
 interface DpoHierarchyPilar {
   id: string
@@ -161,7 +170,10 @@ export function CapacitacionDetailClient({
     const aprobados = cap.asistencias.filter((a) => a.resultado === "aprobado").length
     const desaprobados = cap.asistencias.filter((a) => a.resultado === "desaprobado").length
     const pctAprobados = total > 0 ? Math.round((aprobados / total) * 100) : null
-    return { total, presentes, aprobados, desaprobados, pctAprobados }
+    // Asistencia: presentes sobre convocados, con la misma definición que el
+    // panel de /capacitaciones (meta 90 %).
+    const pctPresentes = pctAsistencia({ convocados: total, presentes })
+    return { total, presentes, aprobados, desaprobados, pctAprobados, pctPresentes }
   }, [cap.asistencias])
 
   // El estado que se muestra es el mismo que calcula el listado: lo manda el
@@ -551,13 +563,18 @@ export function CapacitacionDetailClient({
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard label="Inscriptos" value={stats.total} color="#6366F1" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard label="Convocados" value={stats.total} color="#6366F1" />
         <StatCard label="Presentes" value={stats.presentes} color="#3B82F6" />
+        <StatCard
+          label={`% Asistencia (meta ${META_ASISTENCIA_PCT} %)`}
+          value={stats.pctPresentes != null ? `${stats.pctPresentes}%` : "—"}
+          color={colorAsistencia(stats.pctPresentes)}
+        />
         <StatCard label="Aprobados" value={stats.aprobados} color="#10B981" />
         <StatCard label="Desaprobados" value={stats.desaprobados} color="#EF4444" />
         <StatCard
-          label="% Aprobados / Inscriptos"
+          label="% Aprobados / Convocados"
           value={stats.pctAprobados != null ? `${stats.pctAprobados}%` : "—"}
           color="#0EA5E9"
         />

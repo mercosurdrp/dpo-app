@@ -372,7 +372,7 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
     <Card className="border-l-4 border-l-violet-600">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2"><Gift className="w-4 h-4 text-violet-600" /> {prog.nombre}</CardTitle>
-        <p className="text-xs text-slate-500">R3.4.4 — programa de incentivos de temporada alta, su comunicación al equipo y la participación.</p>
+        <p className="text-xs text-slate-500">R3.4.4 — programa de incentivos de períodos críticos, su comunicación al equipo y la participación.</p>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid sm:grid-cols-[160px_1fr] gap-3 items-start">

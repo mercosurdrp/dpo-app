@@ -51,11 +51,16 @@ export async function GET(request: NextRequest) {
   const sb = admin as unknown as Parameters<typeof tlpAnual>[0]
 
   // Cada cálculo por separado y tolerante a fallos: un error no tumba a los otros.
-  const [tlp, pdv, ruta, wnp] = await Promise.all([
+  // FGLI y TQI entran al respaldo el 2026-09-14: el FGLI lee la serie diaria
+  // del depósito de CADA mes del año (la fuente más lenta del árbol) y es el
+  // que más chances tiene de quedar en null en un render frío.
+  const [tlp, pdv, ruta, wnp, fgli, tqi] = await Promise.all([
     tlpAnual(sb, year).catch(() => null),
     tiempoPdvAnual(sb, year).catch(() => null),
     tiempoRutaAnual(sb, year).catch(() => null),
     KPI_EXTERNOS.wnp.resumen(year).catch(() => null),
+    KPI_EXTERNOS.fgli.resumen(year).catch(() => null),
+    KPI_EXTERNOS.tqi.resumen(year).catch(() => null),
   ])
 
   const valores: { kpi_key: string; valor_ytd: number }[] = []
@@ -64,6 +69,10 @@ export async function GET(request: NextRequest) {
   if (ruta?.ytd != null) valores.push({ kpi_key: "tiempo_ruta", valor_ytd: ruta.ytd })
   if (wnp?.promedio_anual != null)
     valores.push({ kpi_key: "wnp", valor_ytd: wnp.promedio_anual })
+  if (fgli?.promedio_anual != null)
+    valores.push({ kpi_key: "fgli", valor_ytd: fgli.promedio_anual })
+  if (tqi?.promedio_anual != null)
+    valores.push({ kpi_key: "tqi", valor_ytd: tqi.promedio_anual })
 
   const now = new Date().toISOString()
   const escritos: string[] = []
@@ -82,7 +91,7 @@ export async function GET(request: NextRequest) {
     else escritos.push(v.kpi_key)
   }
 
-  const saltados = ["tlp", "tiempo_pdv", "tiempo_ruta", "wnp"].filter(
+  const saltados = ["tlp", "tiempo_pdv", "tiempo_ruta", "wnp", "fgli", "tqi"].filter(
     (k) => !escritos.includes(k),
   )
 

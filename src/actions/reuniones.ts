@@ -38,7 +38,7 @@ import {
 import { buildPampeanaFoxtrotSerie } from "@/lib/foxtrot/auto-indicadores-pampeana"
 import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
-import { OBJETIVO_CEQ, cumplimientoPct } from "@/lib/ocupacion-bodega"
+import { OBJETIVO_PCT, obPct } from "@/lib/ocupacion-bodega"
 import { getMetaSueno } from "@/lib/sueno/meta"
 import { getDqiDiarioMes, getDqiPpmMes } from "@/actions/dqi"
 import { getAusentismoSerieEventos } from "@/actions/ausentismo"
@@ -3589,13 +3589,16 @@ async function getIndicadoresMesCore(
 
     // 7d-bis. Indicador AUTO "Ocupación de Bodega" — todos los tipos salvo warehouse.
     //   Lee ocupacion_bodega_diaria (alimentado por el cron de rechazos).
-    //   Valor diario = AVG(ceq_total) / OBJETIVO_CEQ × 100 — cuánto se cumplió
-    //   del objetivo de carga (100% = los 600 CEq del objetivo).
-    //   MTD = (Σ ceq / (OBJETIVO_CEQ × Σ viajes)) × 100 (ponderado por viaje).
-    //   Unidad: % · Meta: 100 · mejor_si=mayor.
-    //   🚨 Acá va el cumplimiento y NO la ocupación física sobre 1440: en un
-    //   tablero, un 35% se lee como "vamos mal" cuando en realidad ningún viaje
-    //   llena el camión. La ocupación real vive en el diálogo del día.
+    //   Valor diario = AVG(ceq_total) / CAPACIDAD_CEQ × 100 — cuánto del camión
+    //   se llenó de verdad (100% = bodega llena, 1440 CEq).
+    //   MTD = (Σ ceq / (CAPACIDAD_CEQ × Σ viajes)) × 100 (ponderado por viaje).
+    //   Unidad: % · Meta: OBJETIVO_PCT (41,7%) · mejor_si=mayor.
+    //   🚨 La meta NO es 100: acá va la ocupación FÍSICA, la misma que el
+    //   diálogo del día muestra como "% de la bodega" (pedido de Fausto,
+    //   14/09/2026 — antes el tablero mostraba el cumplimiento sobre los 600
+    //   CEq objetivo y no coincidía con el número del modal). Como ningún viaje
+    //   llena el camión, el 100% no es alcanzable: el verde se pinta contra el
+    //   objetivo de carga expresado en % de la bodega (600/1440).
     if (tipo !== "warehouse" && tipo !== "presupuesto") {
       const { data: obRaw, error: errOB } = await (pOcupacionBodega ??
         qOcupacionBodega())
@@ -3616,22 +3619,22 @@ async function getIndicadoresMesCore(
           if (cnt === 0) {
             valoresOB[f] = null
           } else {
-            const pctDia = cumplimientoPct(sumPorFecha[f] / cnt)
+            const pctDia = obPct(sumPorFecha[f] / cnt)
             valoresOB[f] = { reunion_id: "", valor: Math.round(pctDia * 10) / 10, observacion: null }
             sumCeqMtd += sumPorFecha[f]
             countMtd += cnt
           }
         }
         const mtdOB = countMtd > 0
-          ? Math.round(cumplimientoPct(sumCeqMtd / countMtd) * 10) / 10
+          ? Math.round(obPct(sumCeqMtd / countMtd) * 10) / 10
           : null
 
         indicadoresAuto.push({
           id: "auto_ocupacion_bodega",
           nombre: "Ocupación de Bodega",
           unidad: "%",
-          // El 100% es el objetivo cumplido: los OBJETIVO_CEQ por viaje.
-          meta: 100,
+          // El objetivo de carga (600 CEq) expresado como % de la bodega.
+          meta: Math.round(OBJETIVO_PCT * 10) / 10,
           orden: -1,
           agregacion: "promedio",
           valores: valoresOB,

@@ -8,8 +8,8 @@
  * en la reunión del último martes del mes y deja cuatro cosas registradas:
  *
  *   1. El calendario del MES SIGUIENTE, día por día, con lo observado en la
- *      misma fecha del año anterior (volumen contra la capacidad, clientes,
- *      rechazo, ausentismo) y los feriados: cómo afrontamos el mes que viene.
+ *      misma fecha del año anterior (las P de volumen, rechazo y ausentismo)
+ *      y los feriados: cómo afrontamos el mes que viene.
  *   2. Los períodos de foco definidos por el equipo (el largo plazo).
  *   3. Una foto como evidencia de que se revisaron.
  *   4. Un action log con los compromisos que surgieron.
@@ -42,7 +42,7 @@ import type { FocoProximo, PlanAccion } from "@/app/api/planeamiento/periodos-cr
 import {
   INTENSIDAD_BG,
   INTENSIDAD_LABEL,
-  PCT_LIMITE,
+  type Intensidad,
 } from "@/app/(dashboard)/planeamiento/periodos-criticos/_lib/intensidad"
 
 /** Mismo shape que espera SeccionGaleriaFotos para el selector de responsable. */
@@ -137,11 +137,9 @@ function CalendarioMesSiguiente({ fecha }: { fecha: string }) {
             {nombreMes} {data.anio} — cómo viene el mes
           </p>
           <p className="text-[11px] text-slate-500">
-            Cada día muestra lo observado en la misma fecha de {data.anio_base}
-            {data.capacidad != null && (
-              <> contra la capacidad de distribución de {fmtHL(data.capacidad)} HL</>
-            )}
-            . El día de la semana puede no coincidir.
+            Cada día muestra las P que juntó en la misma fecha de {data.anio_base}: volumen
+            {data.capacidad != null && <> (capacidad {fmtHL(data.capacidad)} HL)</>}, rechazo y
+            ausentismo. El día de la semana puede no coincidir.
             {yaHayReal && " Los días que ya pasaron muestran el dato real."}
           </p>
         </div>
@@ -152,8 +150,8 @@ function CalendarioMesSiguiente({ fecha }: { fecha: string }) {
               : "bg-emerald-600 text-[10px]"
           }
         >
-          {data.criticos_base.length} día{data.criticos_base.length === 1 ? "" : "s"} sobre la
-          capacidad en {nombreMes} {data.anio_base}
+          {data.criticos_base.length} día{data.criticos_base.length === 1 ? "" : "s"} PPP
+          en {nombreMes} {data.anio_base}
         </Badge>
       </div>
 
@@ -174,9 +172,9 @@ function CalendarioMesSiguiente({ fecha }: { fecha: string }) {
       </TooltipProvider>
 
       <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-slate-600">
-        <Leyenda color="bg-red-600" label="Crítico: supera la capacidad" />
-        <Leyenda color="bg-amber-300" label={`Al límite: ${Math.round(PCT_LIMITE * 100)}–100%`} />
-        <Leyenda color="bg-emerald-500/80" label="Normal" />
+        <Leyenda color="bg-red-600" label="Crítico · PPP" />
+        <Leyenda color="bg-amber-300" label="Atención · PP" />
+        <Leyenda color="bg-emerald-500/80" label="Normal · P o nada" />
         <span className="flex items-center gap-1">
           <span className="inline-block size-3 rounded-sm ring-2 ring-yellow-400" /> Feriado
         </span>
@@ -185,9 +183,9 @@ function CalendarioMesSiguiente({ fecha }: { fecha: string }) {
       {data.plan && (
         <PlanParaVentas
           titulo={`Para hablar con Ventas: ${nombreMes} ${data.anio}`}
-          intensidad={data.criticos_base.length > 0 ? "CRITICO" : "LIMITE"}
+          intensidad={data.criticos_base.length > 0 ? "CRITICO" : "ATENCION"}
           plan={data.plan}
-          contexto={`${nombreMes} ${data.anio} · según ${data.anio_base}: ${data.a_anticipar.map((c) => `${fmtDiaMes(c.fecha)} (${fmtHL(c.base.hl)} HL, ${fmtPct(c.base.pct_capacidad)})`).join(", ")}`}
+          contexto={`${nombreMes} ${data.anio} · según ${data.anio_base}: ${data.a_anticipar.map((c) => `${fmtDiaMes(c.fecha)} (${c.base.codigo}, ${fmtHL(c.base.hl)} HL)`).join(", ")}`}
         />
       )}
 
@@ -198,23 +196,21 @@ function CalendarioMesSiguiente({ fecha }: { fecha: string }) {
               Días a anticipar (según {data.anio_base})
             </p>
             {data.a_anticipar.length === 0 ? (
-              <p className="text-slate-500">Ningún día superó ni rozó la capacidad.</p>
+              <p className="text-slate-500">Ningún día juntó dos P.</p>
             ) : (
               <ul className="space-y-0.5">
                 {data.a_anticipar.map((c) => (
                   <li key={c.fecha} className="flex items-center gap-2">
                     <span className={`rounded px-1 text-[9px] font-bold ${INTENSIDAD_BG[c.base.intensidad]}`}>
-                      {INTENSIDAD_LABEL[c.base.intensidad]}
+                      {c.base.codigo}
                     </span>
                     <span className="font-medium text-slate-800">{fmtDiaMes(c.fecha)}</span>
                     <span className="text-slate-600">
                       {fmtHL(c.base.hl)} HL · {fmtPct(c.base.pct_capacidad)} de la capacidad
                     </span>
-                    {(c.base.trigger_cli || c.base.trigger_otif || c.base.trigger_aus) && (
-                      <span className="text-[10px] text-slate-500">
-                        · además{c.base.trigger_cli ? " clientes" : ""}{c.base.trigger_otif ? " rechazo" : ""}{c.base.trigger_aus ? " ausentismo" : ""}
-                      </span>
-                    )}
+                    <span className="text-[10px] text-slate-500">
+                      ·{c.base.trigger_vol ? " volumen" : ""}{c.base.trigger_otif ? " rechazo" : ""}{c.base.trigger_aus ? " ausentismo" : ""}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -252,7 +248,7 @@ function PlanParaVentas({
   contexto,
 }: {
   titulo: string
-  intensidad: "CRITICO" | "LIMITE" | "NORMAL"
+  intensidad: Intensidad
   plan: PlanAccion
   contexto: string
 }) {
@@ -319,6 +315,9 @@ function CeldaDia({ d }: { d: DiaMesSiguiente | null }) {
               d.es_feriado ? "ring-2 ring-yellow-400" : ""
             }`}
           >
+            {!sinDato && v.codigo && (
+              <span className="absolute right-0.5 top-0.5 text-[8px] font-bold opacity-90">{v.codigo}</span>
+            )}
             <span className="text-[13px] font-semibold">{d.dia}</span>
             {!sinDato && (
               <span className="mt-0.5 text-[8px] opacity-80">{fmtHL(v.hl)}</span>
@@ -332,11 +331,11 @@ function CeldaDia({ d }: { d: DiaMesSiguiente | null }) {
             <span className="font-semibold">
               {d.dia_semana} {fmtDiaMes(d.fecha)}
             </span>
-            {v && !sinDato && v.intensidad !== "NORMAL" && (
+            {v && !sinDato && (
               <span
                 className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${INTENSIDAD_BG[v.intensidad]}`}
               >
-                {INTENSIDAD_LABEL[v.intensidad]}
+                {INTENSIDAD_LABEL[v.intensidad]}{v.codigo ? ` · ${v.codigo}` : ""}
               </span>
             )}
           </div>
@@ -547,8 +546,8 @@ export function SeccionPeriodosCriticos({
                         <span className={`mr-1 rounded px-1 py-0.5 text-[10px] font-bold ${INTENSIDAD_BG[p.intensidad]}`}>
                           {INTENSIDAD_LABEL[p.intensidad]}
                         </span>
-                        En {p.anio - 1}: {p.base.criticos} día{p.base.criticos === 1 ? "" : "s"} sobre la capacidad
-                        {p.base.limite > 0 && `, ${p.base.limite} al límite`} · pico {fmtHL(p.base.hl_max)} HL ({fmtPct(p.base.pct_max)})
+                        En {p.anio - 1}: {p.base.criticos} día{p.base.criticos === 1 ? "" : "s"} PPP
+                        {p.base.atencion > 0 && `, ${p.base.atencion} PP`} · pico {fmtHL(p.base.hl_max)} HL ({fmtPct(p.base.pct_max)} de la capacidad)
                       </p>
                     )}
                     {p.plan && p.intensidad !== "NORMAL" && (

@@ -247,6 +247,10 @@ const EXPLICACION: Record<string, string> = {
     "% de los pedidos que terminó rechazado por «Sin dinero» = veces ÷ pedidos del período. Cada cliente × fecha cuenta 1 (los artículos de un mismo rechazo no suman aparte; el mismo cliente en otra fecha vuelve a contar). Los pedidos salen de las ventas por cliente, que ya incluyen los rechazados. Por mes, con la cantidad de veces al lado.",
   cerrado:
     "% de los pedidos que terminó rechazado por «Cerrado» = veces ÷ pedidos del período. Cada cliente × fecha cuenta 1 (los artículos de un mismo rechazo no suman aparte; el mismo cliente en otra fecha vuelve a contar). Los pedidos salen de las ventas por cliente, que ya incluyen los rechazados. Por mes, con la cantidad de veces al lado.",
+  sin_stock:
+    "% de los pedidos que terminó rechazado por «Sin stock» (motivo de ALMACÉN: el producto facturado no estaba para cargar) = veces ÷ pedidos del período. Cada cliente × fecha cuenta 1 (los artículos de un mismo rechazo no suman aparte). Los pedidos salen de las ventas por cliente, que ya incluyen los rechazados. Por mes, con la cantidad de veces al lado.",
+  fecha_corta:
+    "% de los pedidos que terminó rechazado por «Fecha corta» (motivo de ALMACÉN: el cliente rechaza producto por vencimiento próximo, falla del FEFO del depósito) = veces ÷ pedidos del período. Cada cliente × fecha cuenta 1 (los artículos de un mismo rechazo no suman aparte). Los pedidos salen de las ventas por cliente, que ya incluyen los rechazados. Por mes, con la cantidad de veces al lado.",
 }
 
 /** Encabezado de la columna "detalle" del modal para KPIs automáticos
@@ -259,6 +263,8 @@ const DETALLE_LABEL: Record<string, string> = {
   comportamientos_flota: "Total actos del mes",
   sin_dinero: "Veces",
   cerrado: "Veces",
+  sin_stock: "Veces",
+  fecha_corta: "Veces",
 }
 
 export interface SuenoDetalleMes {
