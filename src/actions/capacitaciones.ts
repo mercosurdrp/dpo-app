@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import { CLAVE_ESTADO_MANUAL, parseEstadosManuales } from "@/lib/capacitacion-estado"
+import type { EmpleadoRef, FilaAsistenciaEmpleado } from "@/lib/capacitacion-asistencia"
 import { createAdminClient } from "@/lib/supabase/admin"
 import type {
   Capacitacion,
@@ -145,6 +146,69 @@ export async function getCapacitaciones(): Promise<
     return { data: enriched }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error loading capacitaciones" }
+  }
+}
+
+/**
+ * Asistencia individual: quién fue convocado a cada capacitación y si estuvo.
+ *
+ * Devuelve las filas crudas (empleado × capacitación) y el padrón de empleados
+ * que aparecen en ellas. El corte por "capacitación ya dictada" lo hace el
+ * cliente con `asistenciaPorEmpleado`, contra el mismo `hoy` y las mismas
+ * capacitaciones que usa el resto de la pantalla: así el ranking individual y
+ * el KPI general no pueden dar distinto.
+ */
+export async function getAsistenciaEmpleados(): Promise<
+  { data: { filas: FilaAsistenciaEmpleado[]; empleados: EmpleadoRef[] } } | { error: string }
+> {
+  try {
+    await requireRole(["admin", "auditor"])
+    const supabase = await createClient()
+
+    type Row = {
+      empleado_id: string
+      capacitacion_id: string
+      presente: boolean
+      empleado: { id: string; nombre: string; legajo: number | null; sector: string | null } | null
+    }
+
+    const filas: FilaAsistenciaEmpleado[] = []
+    const empleados = new Map<string, EmpleadoRef>()
+    const PAGE_SIZE = 1000
+    let from = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from("asistencias")
+        .select("empleado_id, capacitacion_id, presente, empleado:empleados(id, nombre, legajo, sector)")
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1)
+
+      if (error) return { error: error.message }
+      const batch = (data ?? []) as unknown as Row[]
+      for (const r of batch) {
+        filas.push({
+          empleadoId: r.empleado_id,
+          capacitacionId: r.capacitacion_id,
+          presente: !!r.presente,
+        })
+        if (r.empleado && !empleados.has(r.empleado.id)) {
+          empleados.set(r.empleado.id, {
+            id: r.empleado.id,
+            nombre: r.empleado.nombre,
+            legajo: r.empleado.legajo,
+            sector: r.empleado.sector,
+          })
+        }
+      }
+      if (batch.length < PAGE_SIZE) break
+      from += PAGE_SIZE
+    }
+
+    return { data: { filas, empleados: [...empleados.values()] } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error loading asistencia por empleado",
+    }
   }
 }
 

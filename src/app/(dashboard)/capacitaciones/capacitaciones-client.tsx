@@ -18,6 +18,7 @@ import {
   FileDown,
   CheckCircle2,
   ChevronDown,
+  UserCheck,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -49,6 +50,13 @@ import type { CapacitacionConResumen, EstadoCapacitacion } from "@/types/databas
 import { esEstadoManual, estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
 import { CapacitacionesCalendario } from "./capacitaciones-calendario"
 import { CapacitacionesAdherencia } from "./capacitaciones-adherencia"
+import { CapacitacionesAsistencia } from "./capacitaciones-asistencia"
+import {
+  META_ASISTENCIA_PCT,
+  pctAsistencia,
+  type EmpleadoRef,
+  type FilaAsistenciaEmpleado,
+} from "@/lib/capacitacion-asistencia"
 
 /** Sin fecha cargada la tarjeta mostraba "Invalid Date". */
 function fmtFecha(fecha: string | null | undefined): string {
@@ -60,6 +68,8 @@ function fmtFecha(fecha: string | null | undefined): string {
 interface Props {
   capacitaciones: CapacitacionConResumen[]
   canEdit: boolean
+  /** Asistencia individual. Null para quien no puede verla (no es admin/auditor). */
+  asistenciaPorEmpleado: { filas: FilaAsistenciaEmpleado[]; empleados: EmpleadoRef[] } | null
 }
 
 const estadoOptions: { value: string; label: string }[] = [
@@ -100,7 +110,11 @@ function normalizePilar(pilar: string | null): string {
     : SIN_PILAR
 }
 
-export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props) {
+export function CapacitacionesClient({
+  capacitaciones: initial,
+  canEdit,
+  asistenciaPorEmpleado,
+}: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [capacitaciones, setCapacitaciones] = useState(initial)
@@ -137,6 +151,21 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
         estadoManual: esEstadoManual(c),
       })),
     [capacitaciones]
+  )
+
+  // Mismo insumo que el panel de asistencia: convocados = asistentes cargados.
+  const itemsAsistencia = useMemo(
+    () =>
+      withDerived.map((c) => ({
+        id: c.id,
+        titulo: c.titulo,
+        fecha: c.fecha,
+        pilar: c.pilar,
+        estadoReal: c.estadoReal,
+        convocados: c.total_asistentes,
+        presentes: c.presentes,
+      })),
+    [withDerived]
   )
 
   const filtered = useMemo(() => {
@@ -447,6 +476,13 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
       {/* Adherencia al cronograma (Gantt) — meta 90 % a fin de año */}
       <CapacitacionesAdherencia capacitaciones={withDerived} hoy={hoy} />
 
+      {/* Asistencia por capacitación — meta 90 % de presentismo */}
+      <CapacitacionesAsistencia
+        capacitaciones={itemsAsistencia}
+        hoy={hoy}
+        porEmpleado={asistenciaPorEmpleado}
+      />
+
       {/* Avance de completadas por pilar */}
       {avancePorPilar.length > 0 && (
         <Card>
@@ -712,6 +748,32 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                     ) : (
                       <span className="text-slate-400">Sin inscriptos</span>
                     )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="size-3.5" />
+                    {(() => {
+                      const pct = pctAsistencia({
+                        convocados: cap.total_asistentes,
+                        presentes: cap.presentes,
+                      })
+                      if (pct === null) {
+                        return <span className="text-slate-400">Sin convocados</span>
+                      }
+                      const color =
+                        pct >= META_ASISTENCIA_PCT
+                          ? "#10B981"
+                          : pct >= META_ASISTENCIA_PCT - 20
+                            ? "#F59E0B"
+                            : "#EF4444"
+                      return (
+                        <span title={`Meta de asistencia: ${META_ASISTENCIA_PCT} %`}>
+                          <span className="font-semibold" style={{ color }}>
+                            {pct}%
+                          </span>{" "}
+                          asistencia ({cap.presentes}/{cap.total_asistentes})
+                        </span>
+                      )
+                    })()}
                   </div>
                   {cap.lugar && (
                     <div className="flex items-center gap-2">

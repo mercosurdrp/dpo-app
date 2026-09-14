@@ -12,6 +12,15 @@ import {
   parseEstadosManuales,
 } from "@/lib/capacitacion-estado"
 import { calcularAdherencia, type ItemAdherencia } from "@/lib/capacitacion-adherencia"
+import {
+  META_ASISTENCIA_PCT,
+  asistenciaPorEmpleado,
+  calcularAsistencia,
+  pctAsistencia,
+  type EmpleadoRef,
+  type FilaAsistenciaEmpleado,
+  type ItemAsistencia,
+} from "@/lib/capacitacion-asistencia"
 import { HAY_PAC, META_CUMPLIMIENTO, PAC_2026_ORIGEN, PAC_2026_TOTAL } from "@/lib/pac-2026"
 import type {
   Capacitacion,
@@ -163,11 +172,16 @@ export async function GET(_req: NextRequest) {
     type Row = Record<string, string | number | null>
     const rows: Row[] = []
     const itemsAdherencia: ItemAdherencia[] = []
+    const itemsAsistencia: ItemAsistencia[] = []
+    const filasEmpleado: FilaAsistenciaEmpleado[] = []
+    const empleadosRef = new Map<string, EmpleadoRef>()
 
     const today = new Date().toISOString().slice(0, 10)
     for (const c of caps) {
       const list = asistByCap.get(c.id) ?? []
       const aprobados = list.filter((a) => a.resultado === "aprobado").length
+      const presentes = list.filter((a) => a.presente).length
+      const pctAsist = pctAsistencia({ convocados: list.length, presentes })
       const entradaEstado = {
         estado: c.estado,
         total_asistentes: list.length,
@@ -186,6 +200,32 @@ export async function GET(_req: NextRequest) {
         estadoReal,
         estadoManual,
       })
+      itemsAsistencia.push({
+        id: c.id,
+        titulo: c.titulo,
+        fecha: c.fecha,
+        pilar: c.pilar,
+        // La asistencia sólo saca de la medición las dadas de baja, no las que
+        // todavía no cerraron: una capacitación dictada se mide igual.
+        estadoReal: c.estado === "cancelada" ? "cancelada" : estadoReal,
+        convocados: list.length,
+        presentes,
+      })
+      for (const a of list) {
+        filasEmpleado.push({
+          empleadoId: a.empleado_id,
+          capacitacionId: c.id,
+          presente: !!a.presente,
+        })
+        if (a.empleado && !empleadosRef.has(a.empleado.id)) {
+          empleadosRef.set(a.empleado.id, {
+            id: a.empleado.id,
+            nombre: a.empleado.nombre,
+            legajo: a.empleado.legajo ?? null,
+            sector: a.empleado.sector ?? null,
+          })
+        }
+      }
       const base = {
         Capacitación: c.titulo,
         Pilar: c.pilar ?? "",
@@ -197,6 +237,9 @@ export async function GET(_req: NextRequest) {
         Lugar: c.lugar ?? "",
         Descripción: c.descripcion ?? "",
         Visible: fmtBool(c.visible),
+        Convocados: list.length,
+        "Presentes (total)": presentes,
+        "% Asistencia": pctAsist,
       }
 
       if (list.length === 0) {
@@ -256,6 +299,9 @@ export async function GET(_req: NextRequest) {
         "Lugar",
         "Descripción",
         "Visible",
+        "Convocados",
+        "Presentes (total)",
+        "% Asistencia",
         "Empleado",
         "Legajo",
         "Sector",
@@ -278,6 +324,9 @@ export async function GET(_req: NextRequest) {
       { wch: 22 },
       { wch: 40 },
       { wch: 8 },
+      { wch: 12 },
+      { wch: 16 },
+      { wch: 13 },
       { wch: 28 },
       { wch: 10 },
       { wch: 16 },
@@ -291,6 +340,11 @@ export async function GET(_req: NextRequest) {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Capacitaciones")
     XLSX.utils.book_append_sheet(wb, hojaAdherencia(itemsAdherencia, today), "Adherencia Cronograma")
+    XLSX.utils.book_append_sheet(
+      wb,
+      hojaAsistencia(itemsAsistencia, filasEmpleado, [...empleadosRef.values()], today),
+      "Asistencia"
+    )
 
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer
 
@@ -416,5 +470,110 @@ function hojaAdherencia(items: ItemAdherencia[], today: string) {
   ]
   const ws = XLSX.utils.aoa_to_sheet(filas)
   ws["!cols"] = [{ wch: 42 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }]
+  return ws
+}
+
+/**
+ * Hoja de asistencia: mismos números y mismas definiciones que el panel de
+ * /capacitaciones (`calcularAsistencia` / `asistenciaPorEmpleado`), para que la
+ * pantalla y este Excel no se contradigan.
+ */
+function hojaAsistencia(
+  items: ItemAsistencia[],
+  filas: FilaAsistenciaEmpleado[],
+  empleados: EmpleadoRef[],
+  today: string
+) {
+  const a = calcularAsistencia(items, today)
+  const porEmpleado = asistenciaPorEmpleado(filas, empleados, items, today)
+
+  const cuerpo: (string | number | null)[][] = [
+    [`ASISTENCIA A LAS CAPACITACIONES ${a.anio}`],
+    [`Corte al ${today}. Meta: ${META_ASISTENCIA_PCT} % de presentismo.`],
+    [],
+    ["INDICADOR", "VALOR", "DETALLE"],
+    [
+      "Asistencia YTD (%)",
+      a.pctYtd,
+      `${a.presentes} presentes de ${a.convocados} convocados en ${a.dictadas} capacitaciones dictadas`,
+    ],
+    ["Ausencias", a.ausentes, "Convocados que no asistieron"],
+    [
+      `Capacitaciones al ${META_ASISTENCIA_PCT} % (%)`,
+      a.pctEnMeta,
+      `${a.enMeta} de ${a.dictadas} dictadas llegan a la meta`,
+    ],
+    [
+      `Presencias que faltaron para el ${META_ASISTENCIA_PCT} %`,
+      a.faltanParaMeta,
+      a.faltanParaMeta === 0 ? "Meta alcanzada" : `Sobre ${a.convocados} convocados`,
+    ],
+    [],
+    ["MES A MES"],
+    ["Mes", "Dictadas", "En meta", "Convocados", "Presentes", "Ausentes", "Asistencia %"],
+    ...a.porMes.map((m) => [
+      MESES_CORTOS[m.mes],
+      m.dictadas,
+      m.enMeta,
+      m.convocados,
+      m.presentes,
+      m.ausentes,
+      m.pct,
+    ]),
+    [],
+    ["POR PILAR"],
+    ["Pilar", "Dictadas", "En meta", "Convocados", "Presentes", "Ausentes", "Asistencia %"],
+    ...a.porPilar.map((p) => [
+      p.pilar,
+      p.dictadas,
+      p.enMeta,
+      p.convocados,
+      p.presentes,
+      p.ausentes,
+      p.pct,
+    ]),
+    [],
+    ["POR CAPACITACIÓN — DICTADAS"],
+    ["Capacitación", "Pilar", "Fecha", "Convocados", "Presentes", "Ausentes", "Asistencia %", "En meta"],
+    ...a.detalle.map((c) => [
+      c.titulo,
+      c.pilar ?? "",
+      c.fecha,
+      c.convocados,
+      c.presentes,
+      c.ausentes,
+      c.pct,
+      c.enMeta ? "Sí" : "No",
+    ]),
+    [],
+    ["POR EMPLEADO — DE PEOR A MEJOR ASISTENCIA"],
+    ["Empleado", "Legajo", "Sector", "Convocado a", "Asistió", "Faltó", "Asistencia %", "En meta"],
+    ...porEmpleado.map((e) => [
+      e.nombre,
+      e.legajo,
+      e.sector ?? "",
+      e.convocado,
+      e.presente,
+      e.ausente,
+      e.pct,
+      e.enMeta ? "Sí" : "No",
+    ]),
+    [],
+    ["Definiciones: Convocados = asistentes cargados en la capacitación · Presentes = marcados presentes"],
+    ["(a mano o al rendir el examen en la app) · Dictada = no cancelada, fecha ≤ hoy y con al menos un convocado ·"],
+    [`En meta = la capacitación llega al ${META_ASISTENCIA_PCT} % de asistencia · La asistencia YTD pondera por tamaño.`],
+  ]
+
+  const ws = XLSX.utils.aoa_to_sheet(cuerpo)
+  ws["!cols"] = [
+    { wch: 42 },
+    { wch: 14 },
+    { wch: 22 },
+    { wch: 14 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 10 },
+  ]
   return ws
 }

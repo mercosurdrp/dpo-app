@@ -1,4 +1,4 @@
-import { getCapacitaciones } from "@/actions/capacitaciones"
+import { getAsistenciaEmpleados, getCapacitaciones } from "@/actions/capacitaciones"
 import { getProfile } from "@/lib/session"
 import { CapacitacionesClient } from "./capacitaciones-client"
 
@@ -16,5 +16,15 @@ export default async function CapacitacionesPage() {
 
   const canEdit = profile?.role === "admin" || profile?.role === "auditor"
 
-  return <CapacitacionesClient capacitaciones={result.data} canEdit={canEdit} />
+  // La asistencia individual (quién faltó a qué) sólo la ve admin/auditor.
+  const asistencia = canEdit ? await getAsistenciaEmpleados() : null
+  const porEmpleado = asistencia && !("error" in asistencia) ? asistencia.data : null
+
+  return (
+    <CapacitacionesClient
+      capacitaciones={result.data}
+      canEdit={canEdit}
+      asistenciaPorEmpleado={porEmpleado}
+    />
+  )
 }
