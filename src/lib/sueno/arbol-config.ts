@@ -86,14 +86,19 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   { key: "wnp", label: "WNP", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "HL/HH", mejorSi: "mayor", metaDefault: 6 },
   // FGLI (Full Goods Loss Index) desde el 2026-09-14 (pedido del usuario):
   // tercera rama de VLC/HL. Cadena FGLI → TQI → WQI + DQI, todo en PPM sobre
-  // los mismos HL entregados del depósito (por eso las sumas son exactas):
-  //   FGLI = TQI + vencidos + diferencias de inventario   (SIN faltantes:
-  //          definición de Sebastián, 2026-09-14; el FGLI de la reunión de
-  //          warehouse sí los incluye y va en HL, es otro indicador)
-  //   TQI  = WQI + DQI (roturas de almacén + roturas de distribución)
-  // Meta 2.500 = TQI 2.400 + ~100 de inventario (presupuesto: 1,03 HL/mes de
-  // diferencias sobre ~9.000 HL entregados; vencidos presupuestados en 0).
-  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 2500 },
+  // los HL entregados del depósito, pero en DOS bases distintas (definición de
+  // Sebastián, 2026-09-14):
+  //   FGLI = HL PERDIDOS (rotura + vencidos + diferencia de inventario), merma
+  //          final. SIN faltantes de entrega (el FGLI en HL de la reunión de
+  //          warehouse sí los suma; es otro indicador).
+  //   TQI  = HL PERDIDOS por rotura (almacén + distribución), merma final.
+  //   WQI / DQI = lo que se AFECTA, incluido lo que entra a reempaque y se
+  //          recupera (pedido de auditoría). Por eso son mucho más altos que
+  //          su padre: NO son sumandos del TQI.
+  // Metas en PPM sacadas del presupuesto 2026 del depósito (HL/mes de roturas
+  // y diferencias sobre los HL entregados ene-sep): TQI 388 → 400, FGLI 523 →
+  // 520. Real 2026 ene-sep: TQI 514 y FGLI 605 (enero solo: 1.469 / 1.486).
+  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 520 },
   { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.4 },
 
   // ---- Operacional ----
@@ -114,8 +119,8 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // del almacén (deposito-esteban): si se toca uno solo, cada pantalla muestra
   // una meta distinta. La que MANDA es la fila 2026 de `sueno_kpi_valores`.
   { key: "prod_picking", label: "Prod Picking", nivel: "operacional", rama: "productividad", parentKey: "wnp", unidad: "Bul/HH", mejorSi: "mayor", metaDefault: 290 },
-  // TQI = roturas totales (WQI + DQI). Meta 2.400 = 2.200 + 200.
-  { key: "tqi", label: "TQI", nivel: "operacional", rama: "productividad", parentKey: "fgli", unidad: "PPM", mejorSi: "menor", metaDefault: 2400 },
+  // TQI = HL rotos que se descartan (almacén + distribución) ÷ HL entregados.
+  { key: "tqi", label: "TQI", nivel: "operacional", rama: "productividad", parentKey: "fgli", unidad: "PPM", mejorSi: "menor", metaDefault: 400 },
   { key: "rechazo", label: "Rechazo", nivel: "operacional", rama: "cliente", parentKey: "in_full", unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
 
   // ---- Estación de trabajo / Tarea ----
