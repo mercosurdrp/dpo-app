@@ -6,11 +6,11 @@ export const dynamic = "force-dynamic"
 
 // PATCH /api/planeamiento/periodos-criticos/umbrales
 //
-// Actualiza los targets del calendario. El de volumen no se carga a mano: sale
-// de la flota (camiones × HL por camión × % ocupación de bodega) y la base lo
-// recalcula sola en `vol_pico`, que es columna generada. Los otros tres
-// (clientes, rechazo, ausentismo) sólo agravan la severidad del día crítico.
-// Solo admin/admin_rrhh/supervisor.
+// Actualiza los umbrales de los tres indicadores del calendario. El de volumen
+// no se carga a mano: sale de la flota (camiones × HL por camión × % ocupación
+// de bodega) y la base lo recalcula sola en `vol_pico`, que es columna generada.
+// Rechazo y ausentismo son los otros dos: cada uno da una P cuando el día lo
+// cruza; PPP = crítico. Solo admin/admin_rrhh/supervisor.
 export async function PATCH(req: NextRequest) {
   const profile = await getProfile()
   if (!profile) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
@@ -26,7 +26,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const patch: Record<string, number> = {}
-  for (const k of ["camiones", "hl_por_camion", "pct_ocupacion", "clientes", "otif_min", "ausentismo_max"]) {
+  for (const k of ["camiones", "hl_por_camion", "pct_ocupacion", "otif_min", "ausentismo_max"]) {
     if (body[k] != null) patch[k] = Number(body[k])
   }
   if (Object.keys(patch).length === 0) {

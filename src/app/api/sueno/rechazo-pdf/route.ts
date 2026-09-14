@@ -1,9 +1,10 @@
 /**
- * PDF "Detalle de rechazos del Árbol del Sueño" — Sin Dinero / Cerrado.
+ * PDF "Detalle de rechazos del Árbol del Sueño" — un motivo de `RECHAZO_KPIS`
+ * (Sin Dinero / Cerrado / Sin Stock / Fecha Corta).
  * Clona el patrón de `src/app/api/rechazos/periodo-pdf/route.ts` reusando los
  * helpers de `../../rechazos/_pdf-helpers`.
  *
- * GET /api/sueno/rechazo-pdf?kpi=sin_dinero|cerrado&anio=YYYY[&mes=1..12]
+ * GET /api/sueno/rechazo-pdf?kpi=sin_dinero|cerrado|sin_stock|fecha_corta&anio=YYYY[&mes=1..12]
  */
 import { NextResponse, type NextRequest } from "next/server"
 import PDFDocument from "pdfkit"
@@ -34,6 +35,8 @@ export const dynamic = "force-dynamic"
 const KPI_LABEL: Record<string, string> = {
   sin_dinero: "Sin Dinero",
   cerrado: "Cerrado",
+  sin_stock: "Sin Stock",
+  fecha_corta: "Fecha Corta",
 }
 const MESES_LARGO = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",

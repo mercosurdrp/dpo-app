@@ -11,11 +11,10 @@ import type { DiaCalendario } from "./client"
 import { intensidadDia, intensidadMax, INTENSIDAD_BG, INTENSIDAD_LABEL } from "./client"
 import { detectarPeriodosCriticos, type PeriodoCritico } from "../_lib/detectar-periodos"
 
-// Las 4 variables que pueden gatillar, con su etiqueta corta.
+// Los 3 indicadores que dan P, con su etiqueta corta.
 const VARS: [keyof DiaCalendario, string][] = [
   ["trigger_vol", "Vol"],
-  ["trigger_cli", "Cli"],
-  ["trigger_otif", "OTIF"],
+  ["trigger_otif", "Rech"],
   ["trigger_aus", "Aus"],
 ]
 
@@ -174,12 +173,12 @@ function CruceCard({
       ? `${pctVol > 0 ? "+" : ""}${Math.round(pctVol)}%`
       : null
 
-  // Veredicto por CANTIDAD DE DÍAS que superaron la capacidad (3 estados:
-  // mejoró/empeoró/igual), siempre mirando el año más nuevo respecto al más viejo:
+  // Veredicto por CANTIDAD DE DÍAS PPP (3 estados: mejoró/empeoró/igual),
+  // siempre mirando el año más nuevo respecto al más viejo:
   //  - normal: base=viejo, comparar=nuevo → nuevo (critB) vs viejo (critA)
   //  - inverso: base=nuevo (crítico), comparar=viejo → nuevo (critA) vs viejo (critB)
-  const critA = p.dias.filter((d) => d.trigger_vol).length
-  const critB = diasB.filter((d) => d.trigger_vol).length
+  const critA = p.dias.filter((d) => intensidadDia(d) === "CRITICO").length
+  const critB = diasB.filter((d) => intensidadDia(d) === "CRITICO").length
   const nuevoVars = inverso ? critA : critB
   const viejoVars = inverso ? critB : critA
   const veredicto = !hayDatosB
