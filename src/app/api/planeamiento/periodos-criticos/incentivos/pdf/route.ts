@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic"
 
 // GET /api/planeamiento/periodos-criticos/incentivos/pdf?id=1
 //
-// Comunicado del programa de incentivos de temporada alta (R3.4.4), armado en
+// Comunicado del programa de incentivos de períodos críticos (R3.4.4), armado en
 // el momento con lo que está cargado en la app: nombre, vigencia, descripción,
 // indicadores con su meta, y una planilla de firmas «Tomé conocimiento» para
 // que quede la evidencia de que se comunicó a todo el equipo. Se abre inline
