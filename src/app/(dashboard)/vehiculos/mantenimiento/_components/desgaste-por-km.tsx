@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { Gauge, TriangleAlert } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -13,10 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import {
   DESVIO_ALERTA_PCT,
+  MIN_KM_TRAMO,
   MOTIVO_SIN_TASA_LABEL,
   PERIODOS_DESGASTE,
   PERIODO_DESGASTE_LABEL,
@@ -42,12 +42,22 @@ import { EvolucionProfundidad } from "./evolucion-profundidad"
 //
 // Vive fuera de `neumaticos-module.tsx` a propósito: ese archivo ya pasa las
 // 4.700 líneas.
+//
+// 🚨 La forma de la pantalla sale de un problema concreto: al 14/09/2026 sólo 2
+// de 108 cubiertas instaladas tienen tasa propia. Con cinco solapas, cuatro
+// números y dos selectores, la pantalla prometía mucho más de lo que el dato
+// daba y no se entendía. Ahora hay UN corte a la vez, un gráfico de barras
+// transversales y la tabla del mismo corte debajo; la evolución mensual —que es
+// el único dato firme hoy— queda siempre a la vista al pie.
 
 const fmt = (n: number | null | undefined, dec = 0) =>
   n == null ? "—" : n.toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec })
 
 const fmtFecha = (f: string | null) =>
   f ? new Date(f + "T12:00:00").toLocaleDateString("es-AR", { month: "short", year: "numeric" }) : "—"
+
+const fmtDia = (f: string | null | undefined) =>
+  f ? new Date(f + "T12:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" }) : "—"
 
 const EJE_LABEL: Record<string, string> = {
   direccional: "Direccional",
@@ -58,7 +68,15 @@ const TIPO_LABEL: Record<string, string> = {
   recapado: "Recapadas",
 }
 
-type Vista = "cubiertas" | "unidades" | "ejes" | "marcas" | "evolucion"
+type Vista = "cubiertas" | "unidades" | "ejes" | "tipos" | "marcas"
+
+const VISTAS: Array<{ v: Vista; label: string; cap: string }> = [
+  { v: "cubiertas", label: "Cubierta", cap: "La que más rápido se gasta arriba" },
+  { v: "unidades", label: "Unidad", cap: "Una recta por camión, con todos sus puntos" },
+  { v: "ejes", label: "Eje", cap: "Direccional contra tracción" },
+  { v: "tipos", label: "Nueva o recapada", cap: "Lo que rinde una recapada contra una nueva" },
+  { v: "marcas", label: "Marca", cap: "Una recta por marca, con todas sus cubiertas" },
+]
 
 /**
  * Cada cuántos km se expresa el desgaste. El cálculo es siempre el mismo
@@ -68,9 +86,9 @@ type Vista = "cubiertas" | "unidades" | "ejes" | "marcas" | "evolucion"
  * que se gastan casi igual.
  */
 const ESCALAS = [
-  { km: 1000, label: "cada 1.000 km", corto: "mm/1.000 km", dec: 2 },
-  { km: 100, label: "cada 100 km", corto: "mm/100 km", dec: 3 },
   { km: 1, label: "por km", corto: "mm/km", dec: 5 },
+  { km: 100, label: "cada 100 km", corto: "mm/100 km", dec: 3 },
+  { km: 1000, label: "cada 1.000 km", corto: "mm/1.000 km", dec: 2 },
 ] as const
 
 type Escala = (typeof ESCALAS)[number]
@@ -90,6 +108,31 @@ const COBERTURA_MINIMA = 12
 /** Valor del filtro de unidad cuando no se acota a ninguna. */
 const TODAS = "__todas__"
 
+/**
+ * Cuánta confianza merece una barra. Se dibuja en la FORMA de la barra además
+ * del texto, porque la columna "confianza" es justamente la que no se lee: una
+ * cubierta medida sobre 752 km y otra sobre 22.895 se veían igual de firmes.
+ */
+type Confianza = "firme" | "orientativo" | "imposible"
+
+const CONFIANZA_CHIP: Record<Confianza, string> = {
+  firme: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  orientativo: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  imposible: "border-destructive/40 bg-destructive/10 text-destructive",
+}
+
+/** Una fila del gráfico, venga de una cubierta o de un grupo. */
+interface Barra {
+  id: string
+  titulo: string
+  sub: string
+  /** mm/1.000 km. Cuando `confianza` no es "firme" es un valor orientativo. */
+  valor: number | null
+  confianza: Confianza
+  etiqueta: string
+  dominio?: string | null
+}
+
 export function DesgastePorKmCard({
   data,
   dominioSel,
@@ -105,13 +148,15 @@ export function DesgastePorKmCard({
    *  esos son de la flota y tienen que seguir siendo comparables. */
   const [filtroUnidad, setFiltroUnidad] = useState<string>(TODAS)
   const [periodo, setPeriodo] = useState<PeriodoDesgaste>("todo")
-  const [escalaKm, setEscalaKm] = useState<number>(1000)
-  /** En "Por marca": el promedio de la marca o cada cubierta por separado. */
-  const [marcaDetalle, setMarcaDetalle] = useState(false)
-  const escala = ESCALAS.find((e) => e.km === escalaKm) ?? ESCALAS[0]
+  const [escalaKm, setEscalaKm] = useState<number>(100)
+  /** Fila resaltada: se pinta a la vez en la barra y en la tabla. */
+  const [sel, setSel] = useState<string | null>(null)
+  const escala = ESCALAS.find((e) => e.km === escalaKm) ?? ESCALAS[1]
 
   const filas = useMemo(() => data.periodos[periodo] ?? [], [data.periodos, periodo])
   const conTasa = useMemo(() => filas.filter((f) => f.mmPorMilKm != null), [filas])
+  /** Las que tienen dos puntos de ronda con km: las únicas que se pueden dibujar. */
+  const medibles = useMemo(() => filas.filter((f) => f.tramoPuntos.length >= 2), [filas])
   // 🚨 Los agrupados van sobre TODAS las filas, no sobre `conTasa`: la tasa de
   // un grupo se ajusta juntando los puntos de sus cubiertas, y las que no
   // llegan al piso individual son justamente las que el agregado rescata. Con
@@ -124,17 +169,7 @@ export function DesgastePorKmCard({
   const kmPorMmFlota =
     promFlota != null && promFlota > 0 ? Math.round(1_000 / promFlota) : null
 
-  // Ranking de cubiertas, la que más rápido se gasta primero.
-  const ranking = useMemo(
-    () =>
-      [...conTasa].sort((a, b) => (b.mmPorMilKm ?? 0) - (a.mmPorMilKm ?? 0)),
-    [conTasa]
-  )
-
-  /** Todas las unidades con cubiertas instaladas, tengan tasa o no. Antes se
-   *  ofrecían sólo las que ya tenían tasa y el selector mostraba dos de las
-   *  dieciséis; elegir una sin tasa ahora muestra sus cubiertas con el motivo
-   *  por el que todavía no se puede medir, que es la información que falta. */
+  /** Todas las unidades con cubiertas instaladas, tengan tasa o no. */
   const unidades = useMemo(
     () =>
       [...new Set(filas.map((f) => f.cubierta.dominio).filter((d): d is string => !!d))].sort(
@@ -143,29 +178,55 @@ export function DesgastePorKmCard({
     [filas]
   )
 
-  const rankingFiltrado = useMemo(() => {
-    if (filtroUnidad === TODAS) return ranking
-    // Con la unidad elegida se listan TODAS sus cubiertas: primero las que
-    // tienen tasa, y atrás las que no, con el motivo en la última columna.
-    const conTasaU = ranking.filter((f) => f.cubierta.dominio === filtroUnidad)
-    const sinTasaU = filas.filter(
-      (f) => f.cubierta.dominio === filtroUnidad && f.mmPorMilKm == null
-    )
-    return [...conTasaU, ...sinTasaU]
-  }, [ranking, filas, filtroUnidad])
+  /** Las cubiertas que se dibujan, ya ordenadas y filtradas por unidad. */
+  const cubiertasVisibles = useMemo(() => {
+    const base =
+      filtroUnidad === TODAS
+        ? medibles
+        : medibles.filter((f) => f.cubierta.dominio === filtroUnidad)
+    return [...base].sort((a, b) => (tasaVisible(b) ?? -1) - (tasaVisible(a) ?? -1))
+  }, [medibles, filtroUnidad])
+
+  /** Con la unidad elegida se listan también sus cubiertas sin tramo, con el motivo. */
+  const sinTramoDeUnidad = useMemo(
+    () =>
+      filtroUnidad === TODAS
+        ? []
+        : filas.filter(
+            (f) => f.cubierta.dominio === filtroUnidad && f.tramoPuntos.length < 2
+          ),
+    [filas, filtroUnidad]
+  )
+
+  const grupos: PromedioDesgaste[] = useMemo(() => {
+    if (vista === "unidades") return promedios
+    if (vista === "ejes")
+      return porEje(filas).map((g) => ({ ...g, clave: EJE_LABEL[g.clave] ?? g.clave }))
+    if (vista === "tipos")
+      return porTipo(filas).map((g) => ({ ...g, clave: TIPO_LABEL[g.clave] ?? g.clave }))
+    if (vista === "marcas") return porMarca(filas)
+    return []
+  }, [vista, promedios, filas])
+
+  /** El modelo único que come el gráfico, venga de cubiertas o de grupos. */
+  const barras: Barra[] = useMemo(() => {
+    if (vista === "cubiertas") return cubiertasVisibles.map(barraDeCubierta)
+    return grupos.map(barraDeGrupo)
+  }, [vista, cubiertasVisibles, grupos])
 
   // Las que se gastan mucho más rápido que sus pares del mismo camión: el
   // síntoma no es la goma, es alineación, presión o falta de rotación.
   const desviadas = useMemo(
     () =>
-      ranking
+      conTasa
         .map((f) => ({ fila: f, desvio: desvioContraPares(f, pares) }))
-        .filter((r) => r.desvio != null && r.desvio >= DESVIO_ALERTA_PCT),
-    [ranking, pares]
+        .filter((r) => r.desvio != null && r.desvio >= DESVIO_ALERTA_PCT)
+        .sort((a, b) => (b.desvio ?? 0) - (a.desvio ?? 0)),
+    [conTasa, pares]
   )
 
-  // Por qué las demás no tienen tasa. Se muestra: un tablero que dice "66
-  // cubiertas" sin decir qué pasa con las otras 42 se lee como si esas 42
+  // Por qué las demás no tienen tasa. Se muestra: un tablero que dice "2
+  // cubiertas" sin decir qué pasa con las otras 106 se lee como si esas 106
   // estuvieran bien.
   const sinTasa = useMemo(() => {
     const m = new Map<MotivoSinTasa, number>()
@@ -187,9 +248,11 @@ export function DesgastePorKmCard({
 
   if (filas.length === 0 && data.evolucion.length === 0) return null
 
+  const capVista = VISTAS.find((v) => v.v === vista)?.cap ?? ""
+
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
+      <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <CardTitle className="flex items-center gap-2 text-base">
             <Gauge className="size-4 text-muted-foreground" /> Desgaste por km
@@ -207,26 +270,7 @@ export function DesgastePorKmCard({
         </div>
         {/* Con una sola ventana el selector ofrecería tres veces el mismo
             número (ver `PeriodoDesgaste`): se muestra recién cuando haya más de
-            una, y cada opción dice cuántas cubiertas quedan con dato para que
-            achicar el período sea una decisión informada y no una sorpresa. */}
-        <div className="flex shrink-0 items-center gap-2">
-          {/* Cada cuántos km se expresa la tasa. No cambia el cálculo, sólo la
-              unidad en la que se lee. */}
-          <Select
-            value={String(escalaKm)}
-            onValueChange={(v) => v && setEscalaKm(Number(v))}
-          >
-            <SelectTrigger className="w-40 shrink-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ESCALAS.map((e) => (
-                <SelectItem key={e.km} value={String(e.km)}>
-                  Desgaste {e.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            una, y cada opción dice cuántas cubiertas quedan con dato. */}
         {PERIODOS_DESGASTE.length > 1 ? (
           <Select value={periodo} onValueChange={(v) => v && setPeriodo(v as PeriodoDesgaste)}>
             <SelectTrigger className="w-56 shrink-0">
@@ -244,264 +288,290 @@ export function DesgastePorKmCard({
             </SelectContent>
           </Select>
         ) : (
-          <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
+          <Badge variant="outline" className="shrink-0 self-start text-[10px] font-normal">
             {PERIODO_DESGASTE_LABEL[periodo]}
           </Badge>
         )}
-        </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {conTasa.length === 0 ? (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Todavía ninguna cubierta acumula km suficientes entre dos rondas como
-              para medir el desgaste, y no hay atajo: la goma se gasta más despacio de
-              lo que un mes de rodaje puede mostrar. Mientras tanto, la lectura buena
-              es la profundidad ronda por ronda de acá abajo. Se llena solo a medida
-              que se cargue la ronda mensual completa, con las 16 unidades.
-            </p>
-            {/* La evolución no depende de la tasa: son profundidades medidas. */}
-            <EvolucionProfundidad
-              puntos={data.evolucion}
-              dominioSel={dominioSel}
-              onIrAUnidad={onIrAUnidad}
-            />
+        {/* ---------------------------------------------------- cabecera */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Dato
+            label="Promedio de la flota"
+            valor={`${fmt(enEscala(promFlota, escala), escala.dec)} mm`}
+            sub={escala.label}
+          />
+          <Dato
+            label="Rendimiento"
+            valor={kmPorMmFlota != null ? `${fmt(kmPorMmFlota)} km` : "—"}
+            sub="por cada mm de goma"
+          />
+          <Dato
+            label="Cubiertas con ritmo"
+            valor={`${conTasa.length}/${filas.length}`}
+            sub={`medidas dos veces y con ${fmt(MIN_KM_TRAMO)} km o más`}
+            alerta={conTasa.length < COBERTURA_MINIMA}
+          />
+          <Dato
+            label="Desgaste desparejo"
+            valor={String(desviadas.length)}
+            sub={`+${DESVIO_ALERTA_PCT}% sobre sus pares de eje`}
+            alerta={desviadas.length > 0}
+          />
+        </div>
+
+        {/* 🚨 El promedio de la flota es ponderado por km: con pocas cubiertas
+            medidas lo dictan una o dos, y se lee como si fuera de la flota
+            entera. Pasó al revés y por eso está este aviso: hasta el
+            25/08/2026 el tablero mostraba un promedio armado sobre 33
+            cubiertas que arrancaban de un valor nominal de alta. */}
+        {conTasa.length < COBERTURA_MINIMA && (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+            Este promedio sale de{" "}
+            <span className="font-medium text-foreground">
+              {conTasa.length} de {filas.length} cubiertas
+            </span>
+            : todavía no es el desgaste de la flota. Hacen falta varias rondas seguidas
+            con la flota completa —entre dos rondas un camión hace ~2.000 km y el dibujo
+            se gasta menos de lo que dispersa el calibre—. Mientras tanto la lectura
+            firme es la profundidad ronda por ronda, al pie.
+          </p>
+        )}
+
+        {/* Aviso accionable: estas no son un problema de goma */}
+        {desviadas.length > 0 && (
+          <div className="flex gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="min-w-0 text-xs">
+              <p className="font-medium text-foreground">
+                {desviadas.length} cubierta{desviadas.length > 1 ? "s se gastan" : " se gasta"}{" "}
+                mucho más rápido que sus pares del mismo eje
+              </p>
+              <p className="mt-0.5 text-muted-foreground">
+                Se compara cada cubierta contra las de su misma unidad y su mismo eje.
+                Cuando dos gomas que comparten camión y eje se gastan a ritmos distintos,
+                el problema no suele ser la goma: mirá alineación, presión y si la
+                rotación está al día.
+              </p>
+              <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums text-muted-foreground">
+                {desviadas.slice(0, 6).map(({ fila, desvio }) => (
+                  <span key={fila.neumatico_id}>
+                    <span className="font-medium text-foreground">
+                      {fila.cubierta.dominio} {fila.cubierta.posicion}
+                    </span>{" "}
+                    +{desvio}%
+                  </span>
+                ))}
+              </p>
+            </div>
           </div>
+        )}
+
+        {/* --------------------------------------------------- controles */}
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+          <Control label="Ver por">
+            <Segmented
+              opciones={VISTAS.map((v) => ({ valor: v.v, label: v.label }))}
+              valor={vista}
+              onChange={(v) => {
+                setVista(v as Vista)
+                setSel(null)
+              }}
+            />
+          </Control>
+          <Control label="Escala">
+            <Segmented
+              opciones={ESCALAS.map((e) => ({ valor: String(e.km), label: e.label }))}
+              valor={String(escalaKm)}
+              onChange={(v) => setEscalaKm(Number(v))}
+            />
+          </Control>
+          {vista === "cubiertas" && unidades.length > 1 && (
+            <Control label="Unidad">
+              <Select
+                value={filtroUnidad}
+                onValueChange={(v) => {
+                  if (!v) return
+                  setFiltroUnidad(v)
+                  setSel(null)
+                }}
+              >
+                <SelectTrigger className="h-8 w-52">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={TODAS}>
+                    Todas ({medibles.length} medibles)
+                  </SelectItem>
+                  {unidades.map((u) => {
+                    const medible = medibles.filter((f) => f.cubierta.dominio === u).length
+                    const total = filas.filter((f) => f.cubierta.dominio === u).length
+                    return (
+                      <SelectItem key={u} value={u}>
+                        {u} ({medible}/{total} medibles)
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+            </Control>
+          )}
+        </div>
+
+        {/* ----------------------------------------------------- gráfico */}
+        {barras.length === 0 ? (
+          <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+            Todavía no hay dos rondas medidas con km en este corte. La lectura que sí
+            sirve hoy es la profundidad ronda por ronda, acá abajo.
+          </p>
         ) : (
           <>
-            {/* Cabecera de números */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Dato
-                label="Promedio de la flota"
-                valor={`${fmt(enEscala(promFlota, escala), escala.dec)} mm`}
-                sub={escala.label}
-              />
-              <Dato
-                label="Rendimiento"
-                valor={kmPorMmFlota != null ? `${fmt(kmPorMmFlota)} km` : "—"}
-                sub="por cada mm de goma"
-              />
-              <Dato
-                label="Cubiertas con dato"
-                valor={`${conTasa.length}/${filas.length}`}
-                sub="instaladas medidas en dos rondas"
-                alerta={conTasa.length < COBERTURA_MINIMA}
-              />
-              <Dato
-                label="Desgaste desparejo"
-                valor={String(desviadas.length)}
-                sub={`+${DESVIO_ALERTA_PCT}% sobre sus pares de eje`}
-                alerta={desviadas.length > 0}
-              />
-            </div>
+            <Barras
+              barras={barras}
+              promFlota={promFlota}
+              escala={escala}
+              cap={capVista}
+              sel={sel}
+              dominioSel={dominioSel}
+              onSel={(id) => setSel((prev) => (prev === id ? null : id))}
+            />
 
-            {/* 🚨 El promedio de la flota es ponderado por km: con pocas cubiertas
-                medidas lo dictan una o dos, y se lee como si fuera de la flota
-                entera. Pasó al revés y por eso está este aviso: hasta el
-                25/08/2026 el tablero mostraba un promedio armado sobre 33
-                cubiertas que arrancaban de un valor nominal de alta. */}
-            {conTasa.length < COBERTURA_MINIMA && (
-              <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
-                Este promedio sale de {conTasa.length} de {filas.length} cubiertas: todavía
-                no es el desgaste de la flota. Hacen falta varias rondas seguidas con la
-                flota completa —entre dos rondas un camión hace ~2.000 km y el dibujo se
-                gasta menos de lo que dispersa el calibre—. Mientras tanto la lectura
-                buena es la profundidad ronda por ronda, en Evolución.
-              </p>
-            )}
-
-            {/* Aviso accionable: estas no son un problema de goma */}
-            {desviadas.length > 0 && (
-              <div className="flex gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                <div className="min-w-0 text-xs">
-                  <p className="font-medium text-foreground">
-                    {desviadas.length} cubierta{desviadas.length > 1 ? "s se gastan" : " se gasta"}{" "}
-                    mucho más rápido que sus pares del mismo eje
-                  </p>
-                  <p className="mt-0.5 text-muted-foreground">
-                    Se compara cada cubierta contra las de su misma unidad y su mismo eje.
-                    Cuando dos gomas que comparten camión y eje se gastan a ritmos distintos,
-                    el problema no suele ser la goma: mirá alineación, presión y si la
-                    rotación está al día.
-                  </p>
-                  <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums text-muted-foreground">
-                    {desviadas.slice(0, 6).map(({ fila, desvio }) => (
-                      <span key={fila.neumatico_id}>
-                        <span className="font-medium text-foreground">
-                          {fila.cubierta.dominio} {fila.cubierta.posicion}
-                        </span>{" "}
-                        +{desvio}%
-                      </span>
-                    ))}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <Tabs value={vista} onValueChange={(v) => setVista(v as Vista)}>
-              <TabsList className="h-9">
-                <TabsTrigger value="cubiertas" className="text-xs">
-                  Por cubierta
-                </TabsTrigger>
-                <TabsTrigger value="unidades" className="text-xs">
-                  Por unidad
-                </TabsTrigger>
-                <TabsTrigger value="ejes" className="text-xs">
-                  Por eje
-                </TabsTrigger>
-                <TabsTrigger value="marcas" className="text-xs">
-                  Por marca
-                </TabsTrigger>
-                <TabsTrigger value="evolucion" className="text-xs">
-                  Evolución mensual
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-
-            {vista === "cubiertas" && unidades.length > 1 && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Unidad</span>
-                <Select value={filtroUnidad} onValueChange={(v) => v && setFiltroUnidad(v)}>
-                  <SelectTrigger className="h-8 w-52">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={TODAS}>
-                      Todas ({ranking.length} con dato)
-                    </SelectItem>
-                    {unidades.map((u) => {
-                      const conDato = ranking.filter((f) => f.cubierta.dominio === u).length
-                      const total = filas.filter((f) => f.cubierta.dominio === u).length
-                      return (
-                        <SelectItem key={u} value={u}>
-                          {u} ({conDato}/{total} con dato)
-                        </SelectItem>
-                      )
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {vista === "cubiertas" && (
+            {/* ------------------------------------------------- tabla */}
+            {vista === "cubiertas" ? (
               <TablaCubiertas
-                filas={rankingFiltrado}
+                filas={cubiertasVisibles}
+                sinTramo={sinTramoDeUnidad}
                 pares={pares}
                 escala={escala}
+                sel={sel}
                 dominioSel={dominioSel}
+                onSel={(id) => setSel((prev) => (prev === id ? null : id))}
                 onIrAUnidad={onIrAUnidad}
               />
-            )}
-
-            {vista === "unidades" && (
+            ) : (
               <TablaGrupo
-                titulo="Unidad"
-                filas={promedios}
-                promFlota={promFlota}
+                titulo={VISTAS.find((v) => v.v === vista)?.label ?? ""}
+                filas={grupos}
                 escala={escala}
+                sel={sel}
                 dominioSel={dominioSel}
-                onClickClave={onIrAUnidad}
+                onSel={(id) => setSel((prev) => (prev === id ? null : id))}
+                onClickClave={vista === "unidades" ? onIrAUnidad : undefined}
               />
-            )}
-
-            {vista === "ejes" && (
-              <TablaGrupo
-                titulo="Eje"
-                filas={porEje(filas).map((g) => ({ ...g, clave: EJE_LABEL[g.clave] ?? g.clave }))}
-                promFlota={promFlota}
-                extra={porTipo(filas).map((g) => ({
-                  ...g,
-                  clave: TIPO_LABEL[g.clave] ?? g.clave,
-                }))}
-                extraTitulo="Nuevas vs recapadas"
-                escala={escala}
-              />
-            )}
-
-            {vista === "evolucion" && (
-              <EvolucionProfundidad
-                puntos={data.evolucion}
-                dominioSel={dominioSel}
-                onIrAUnidad={onIrAUnidad}
-              />
-            )}
-
-            {vista === "marcas" && (
-              <div className="space-y-3">
-                {/* El promedio de la marca junta todas sus cubiertas en un solo
-                    número; para decidir una compra hace falta ver si ese número
-                    es parejo o lo hace una sola goma. */}
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={!marcaDetalle ? "default" : "outline"}
-                    onClick={() => setMarcaDetalle(false)}
-                  >
-                    Promedio por marca
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={marcaDetalle ? "default" : "outline"}
-                    onClick={() => setMarcaDetalle(true)}
-                  >
-                    Cubierta por cubierta
-                  </Button>
-                </div>
-                {marcaDetalle ? (
-                  <MarcasDetalle filas={conTasa} promFlota={promFlota} escala={escala} />
-                ) : (
-                  <TablaGrupo
-                    titulo="Marca"
-                    filas={porMarca(filas)}
-                    promFlota={promFlota}
-                    escala={escala}
-                  />
-                )}
-              </div>
-            )}
-
-            {/* Próximos cambios según el ritmo medido, no según el km teórico */}
-            {proximas.length > 0 && (
-              <div className="rounded-md border border-border p-3">
-                <p className="text-xs font-medium text-foreground">
-                  Próximas a llegar a {PROF_OBJETIVO_MM} mm (al ritmo medido)
-                </p>
-                <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums text-muted-foreground">
-                  {proximas.map((f) => (
-                    <span key={f.neumatico_id}>
-                      <span className="font-medium text-foreground">
-                        {f.cubierta.dominio} {f.cubierta.posicion}
-                      </span>{" "}
-                      {fmt(f.kmHastaCambio)} km
-                      {f.fechaCambio ? ` · ${fmtFecha(f.fechaCambio)}` : " · sin ritmo de km/día"}
-                    </span>
-                  ))}
-                </div>
-              </div>
             )}
           </>
         )}
 
-        {sinTasa.length > 0 && (
-          <p className="text-[11px] text-muted-foreground">
-            Sin tasa:{" "}
-            {sinTasa.map(([motivo, n], i) => (
-              <span key={motivo}>
-                {i > 0 && " · "}
-                {n} {MOTIVO_SIN_TASA_LABEL[motivo].toLowerCase()}
-              </span>
-            ))}
-            .
-          </p>
+        {/* Próximos cambios según el ritmo medido, no según el km teórico */}
+        {proximas.length > 0 && (
+          <div className="rounded-md border border-border p-3">
+            <p className="text-xs font-medium text-foreground">
+              Próximas a llegar a {PROF_OBJETIVO_MM} mm (al ritmo medido)
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums text-muted-foreground">
+              {proximas.map((f) => (
+                <span key={f.neumatico_id}>
+                  <span className="font-medium text-foreground">
+                    {f.cubierta.dominio} {f.cubierta.posicion}
+                  </span>{" "}
+                  {fmt(f.kmHastaCambio)} km
+                  {f.fechaCambio ? ` · ${fmtFecha(f.fechaCambio)}` : " · sin ritmo de km/día"}
+                </span>
+              ))}
+            </div>
+          </div>
         )}
+
+        {/* Por qué las demás no tienen ritmo: contadas y explicadas, no escondidas */}
+        {sinTasa.length > 0 && (
+          <div className="space-y-2 border-t border-border pt-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              Las otras {sinTasa.reduce((a, [, n]) => a + n, 0)} · por qué no tienen ritmo
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              {sinTasa.map(([motivo, n]) => (
+                <div key={motivo} className="rounded-md border border-border p-2.5">
+                  <p className="text-lg font-semibold tabular-nums">{n}</p>
+                  <p className="text-[11px] leading-tight text-muted-foreground">
+                    {MOTIVO_SIN_TASA_LABEL[motivo]}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* La evolución no depende de la tasa: son profundidades medidas. Es lo
+            único firme hoy, así que queda siempre a la vista y sin cambios. */}
+        <div className="space-y-2 border-t border-border pt-3">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            Evolución mensual
+          </p>
+          <EvolucionProfundidad
+            puntos={data.evolucion}
+            dominioSel={dominioSel}
+            onIrAUnidad={onIrAUnidad}
+          />
+        </div>
       </CardContent>
     </Card>
   )
 }
+
+// ------------------------------------------------------------ modelo de barra
+
+/**
+ * La tasa que se muestra de una cubierta. Cuando el cálculo no la da —tramo
+ * corto, desgaste por debajo del piso— se cae al observado (mm medidos sobre km
+ * medidos), que es orientativo y se dibuja rayado. Sin esto la pantalla no
+ * mostraba NADA de nueve de las once cubiertas que sí se midieron dos veces.
+ */
+function tasaVisible(f: FilaDesgaste): number | null {
+  if (f.mmPorMilKm != null) return f.mmPorMilKm
+  if (f.kmMedidos != null && f.kmMedidos > 0 && f.mmObservados != null && f.mmObservados > 0)
+    return Math.round((f.mmObservados / f.kmMedidos) * 1_000 * 1000) / 1000
+  return null
+}
+
+function confianzaDe(f: FilaDesgaste): { c: Confianza; etiqueta: string } {
+  if (f.mmPorMilKm != null) return { c: "firme", etiqueta: "Confirmado" }
+  if (f.mmObservados != null && f.mmObservados < 0)
+    return { c: "imposible", etiqueta: "Midió más" }
+  if (f.motivo === "tramo_corto") return { c: "orientativo", etiqueta: "Tramo corto" }
+  if (f.motivo === "sin_desgaste") return { c: "orientativo", etiqueta: "Bajo el mínimo" }
+  return { c: "orientativo", etiqueta: f.motivo ? MOTIVO_SIN_TASA_LABEL[f.motivo] : "Sin dato" }
+}
+
+function barraDeCubierta(f: FilaDesgaste): Barra {
+  const { c, etiqueta } = confianzaDe(f)
+  return {
+    id: f.neumatico_id,
+    titulo: `${f.cubierta.dominio ?? "—"} ${f.cubierta.posicion ?? ""}`.trim(),
+    sub: `${f.cubierta.marca || "sin marca"}${f.cubierta.numero ? ` · N° ${f.cubierta.numero}` : ""}`,
+    valor: tasaVisible(f),
+    confianza: c,
+    etiqueta,
+    dominio: f.cubierta.dominio,
+  }
+}
+
+function barraDeGrupo(g: PromedioDesgaste): Barra {
+  // R² dice qué tan bien la recta explica las mediciones del grupo. Con menos
+  // de tres puntos no existe, y ahí lo que manda son los km del ajuste.
+  const firme = g.kmMedidos >= MIN_KM_TRAMO && (g.r2 == null || g.r2 >= 0.5)
+  return {
+    id: g.clave,
+    titulo: g.clave,
+    sub: `${g.cubiertas} cubierta${g.cubiertas === 1 ? "" : "s"} · ${fmt(g.kmMedidos)} km`,
+    valor: g.mmPorMilKm,
+    confianza: firme ? "firme" : "orientativo",
+    etiqueta: firme ? "Confirmado" : "Ajuste flojo",
+    dominio: g.clave,
+  }
+}
+
+// ------------------------------------------------------------------ piezas
 
 function Dato({
   label,
@@ -530,76 +600,354 @@ function Dato({
   )
 }
 
+function Control({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      {children}
+    </div>
+  )
+}
+
+function Segmented({
+  opciones,
+  valor,
+  onChange,
+}: {
+  opciones: Array<{ valor: string; label: string }>
+  valor: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap overflow-hidden rounded-md border border-border">
+      {opciones.map((o, i) => (
+        <Button
+          key={o.valor}
+          type="button"
+          size="sm"
+          variant={valor === o.valor ? "default" : "ghost"}
+          aria-pressed={valor === o.valor}
+          className={cn(
+            "h-8 rounded-none px-3 text-xs",
+            i > 0 && "border-l border-border"
+          )}
+          onClick={() => onChange(o.valor)}
+        >
+          {o.label}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+/** Chip de confianza: el mismo vocabulario en la barra y en la tabla. */
+function ChipConfianza({ c, texto }: { c: Confianza; texto: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded border px-1.5 py-0 text-[10px] font-medium uppercase tracking-wide",
+        CONFIANZA_CHIP[c]
+      )}
+    >
+      <span className="size-1.5 rounded-full bg-current" />
+      {texto}
+    </span>
+  )
+}
+
+/**
+ * El gráfico: barras transversales, la más rápida arriba, con la línea del
+ * promedio de la flota cruzando todo.
+ *
+ * 🚨 La confianza va en la FORMA de la barra, no sólo en una columna de texto:
+ * llena = ritmo confirmado, rayada = tramo demasiado corto (orientativo),
+ * rayada en rojo = la cubierta midió MÁS goma que la ronda anterior, que es
+ * imposible y hay que corregir. Antes una cubierta medida sobre 752 km se veía
+ * igual de firme que una medida sobre 22.895.
+ */
+function Barras({
+  barras,
+  promFlota,
+  escala,
+  cap,
+  sel,
+  dominioSel,
+  onSel,
+}: {
+  barras: Barra[]
+  promFlota: number | null
+  escala: Escala
+  cap: string
+  sel: string | null
+  dominioSel?: string
+  onSel: (id: string) => void
+}) {
+  const max = Math.max(
+    promFlota ?? 0,
+    ...barras.map((b) => b.valor ?? 0),
+    Number.EPSILON
+  )
+  const ratio = promFlota != null && max > 0 ? promFlota / max : null
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span>{cap}</span>
+        <span>{escala.corto}</span>
+      </div>
+
+      <div className="relative [--lbl:7.5rem] [--val:4.5rem] sm:[--lbl:12rem] sm:[--val:5.5rem]">
+        {barras.map((b) => {
+          const pct = b.valor == null ? 4 : Math.max(1.5, (b.valor / max) * 100)
+          return (
+            <div
+              key={b.id}
+              role="button"
+              tabIndex={0}
+              aria-label={`${b.titulo}: ${fmt(enEscala(b.valor, escala), escala.dec)} ${escala.corto}`}
+              onClick={() => onSel(b.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  onSel(b.id)
+                }
+              }}
+              className={cn(
+                "grid cursor-pointer items-center gap-3 rounded-md px-1.5 py-1",
+                "grid-cols-[var(--lbl)_1fr_var(--val)]",
+                "hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
+                sel === b.id && "bg-muted",
+                sel !== b.id && dominioSel && b.dominio === dominioSel && "bg-primary/5"
+              )}
+            >
+              <span className="min-w-0 leading-tight">
+                <span className="block truncate text-xs font-medium text-foreground">
+                  {b.titulo}
+                </span>
+                <span className="block truncate text-[10px] text-muted-foreground">
+                  {b.sub}
+                </span>
+              </span>
+              <span className="relative block h-4 rounded-sm bg-muted">
+                <span
+                  className={cn(
+                    "absolute inset-y-0 left-0 rounded-sm",
+                    b.confianza === "imposible"
+                      ? "text-destructive"
+                      : "text-sky-600 dark:text-sky-400",
+                    b.confianza === "firme" && "bg-current"
+                  )}
+                  style={{
+                    width: `${pct}%`,
+                    ...(b.confianza === "firme"
+                      ? {}
+                      : {
+                          backgroundImage:
+                            "repeating-linear-gradient(135deg, currentColor 0 4px, transparent 4px 8px)",
+                          boxShadow: "inset 0 0 0 1px currentColor",
+                        }),
+                  }}
+                />
+              </span>
+              <span
+                className={cn(
+                  "text-right text-xs tabular-nums",
+                  b.valor == null ? "text-muted-foreground" : "font-medium text-foreground"
+                )}
+              >
+                {fmt(enEscala(b.valor, escala), escala.dec)}
+              </span>
+            </div>
+          )
+        })}
+
+        {/* Promedio de la flota cruzando el gráfico: cada barra se lee contra
+            esta línea. El cálculo del left replica el grid de arriba. */}
+        {ratio != null && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 border-l-2 border-dashed border-amber-500"
+            style={{
+              left: `calc(0.375rem + var(--lbl) + 0.75rem + (100% - var(--lbl) - var(--val) - 2.25rem) * ${ratio})`,
+            }}
+          >
+            <span className="absolute -top-0.5 left-1 whitespace-nowrap bg-card px-1 text-[10px] tabular-nums text-amber-600 dark:text-amber-400">
+              flota {fmt(enEscala(promFlota, escala), escala.dec)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-[10px] text-muted-foreground">
+        <Leyenda clase="bg-sky-600 dark:bg-sky-400">Ritmo confirmado</Leyenda>
+        <Leyenda clase="text-sky-600 dark:text-sky-400" rayado>
+          Tramo corto · orientativo
+        </Leyenda>
+        <Leyenda clase="text-destructive" rayado>
+          Midió igual o más que antes
+        </Leyenda>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-0 border-l-2 border-dashed border-amber-500" />
+          Promedio de la flota
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function Leyenda({
+  clase,
+  rayado,
+  children,
+}: {
+  clase: string
+  rayado?: boolean
+  children: ReactNode
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        className={cn("inline-block h-2.5 w-5 rounded-sm", clase)}
+        style={
+          rayado
+            ? {
+                backgroundImage:
+                  "repeating-linear-gradient(135deg, currentColor 0 4px, transparent 4px 8px)",
+                boxShadow: "inset 0 0 0 1px currentColor",
+              }
+            : undefined
+        }
+      />
+      {children}
+    </span>
+  )
+}
+
+/**
+ * La tabla por cubierta muestra LAS DOS MEDICIONES y los km entre ellas, no
+ * sólo el resultado. Sin eso el ritmo es un número que aparece de la nada y no
+ * hay forma de discutirlo contra el papel de la ronda.
+ */
 function TablaCubiertas({
   filas,
+  sinTramo,
   pares,
   escala,
+  sel,
   dominioSel,
+  onSel,
   onIrAUnidad,
 }: {
   filas: FilaDesgaste[]
+  sinTramo: FilaDesgaste[]
   pares: PromedioDesgaste[]
   escala: Escala
+  sel: string | null
   dominioSel?: string
+  onSel: (id: string) => void
   onIrAUnidad?: (dominio: string) => void
 }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-md border border-border">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-            <th className="py-2">Unidad</th>
-            <th>Pos.</th>
-            <th>Cubierta</th>
-            <th>Marca</th>
-            <th className="text-right">{escala.corto}</th>
-            <th className="text-right" title="Contra el promedio de las cubiertas de la misma unidad y el mismo eje">
+            <th className="px-2 py-2">Cubierta</th>
+            <th className="px-2">Marca</th>
+            <th className="px-2">Eje</th>
+            <th className="px-2 text-right">1ª medición</th>
+            <th className="px-2 text-right">2ª medición</th>
+            <th className="px-2 text-right">Gastó</th>
+            <th className="px-2 text-right">Rodó</th>
+            <th className="px-2 text-right">{escala.corto}</th>
+            <th
+              className="px-2 text-right"
+              title="Contra el promedio de las cubiertas de la misma unidad y el mismo eje"
+            >
               vs. pares
             </th>
-            <th className="text-right">Km/mm</th>
-            <th className="text-right">Prof. act.</th>
-            <th className="text-right">Km a {PROF_OBJETIVO_MM} mm</th>
-            <th className="text-right">Cambio est.</th>
-            <th className="text-right pr-1">Medido sobre</th>
+            <th className="px-2 text-right">Km a {PROF_OBJETIVO_MM} mm</th>
+            <th className="px-2">Confianza</th>
           </tr>
         </thead>
         <tbody>
-          {filas.map((f, i) => {
+          {filas.map((f) => {
+            const p0 = f.tramoPuntos[0]
+            const p1 = f.tramoPuntos[f.tramoPuntos.length - 1]
             const desvio = desvioContraPares(f, pares)
             const critico = desvio != null && desvio >= DESVIO_ALERTA_PCT
+            const { c, etiqueta } = confianzaDe(f)
+            const mm = f.mmObservados ?? null
             return (
               <tr
                 key={f.neumatico_id}
+                onClick={() => onSel(f.neumatico_id)}
                 className={cn(
-                  "border-b last:border-0",
-                  i % 2 === 1 && "bg-muted/40",
-                  dominioSel && f.cubierta.dominio === dominioSel && "bg-primary/5"
+                  "cursor-pointer border-b last:border-0 hover:bg-muted/60",
+                  sel === f.neumatico_id && "bg-muted",
+                  sel !== f.neumatico_id &&
+                    dominioSel &&
+                    f.cubierta.dominio === dominioSel &&
+                    "bg-primary/5"
                 )}
               >
-                <td className="py-2">
+                <td className="px-2 py-2">
                   {f.cubierta.dominio && onIrAUnidad ? (
                     <button
                       className="font-medium text-foreground hover:underline"
-                      onClick={() => onIrAUnidad(f.cubierta.dominio!)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onIrAUnidad(f.cubierta.dominio!)
+                      }}
                       title="Abrir el diagrama de la unidad"
                     >
                       {f.cubierta.dominio}
                     </button>
                   ) : (
                     <span className="font-medium">{f.cubierta.dominio ?? "—"}</span>
-                  )}
+                  )}{" "}
+                  <span className="font-medium">{f.cubierta.posicion || ""}</span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    N° {f.cubierta.numero || "s/n"}
+                  </span>
                 </td>
-                <td className="font-medium">{f.cubierta.posicion || "—"}</td>
-                <td className="text-muted-foreground">{f.cubierta.numero || "—"}</td>
-                <td className="max-w-[14rem] truncate text-muted-foreground">
+                <td className="max-w-[12rem] truncate px-2 text-muted-foreground">
                   {f.cubierta.marca || "—"}
                 </td>
-                <td className="text-right font-medium tabular-nums">
-                  {fmt(enEscala(f.mmPorMilKm, escala), escala.dec)}
+                <td className="px-2 text-muted-foreground">
+                  {f.cubierta.eje ? EJE_LABEL[f.cubierta.eje] ?? f.cubierta.eje : "—"}
+                </td>
+                <td className="px-2 text-right tabular-nums">
+                  {fmt(p0?.prof, 2)} mm
+                  <span className="block text-[11px] text-muted-foreground">
+                    {fmtDia(p0?.fecha)} · {fmt(p0?.km)} km
+                  </span>
+                </td>
+                <td className="px-2 text-right tabular-nums">
+                  {fmt(p1?.prof, 2)} mm
+                  <span className="block text-[11px] text-muted-foreground">
+                    {fmtDia(p1?.fecha)} · {fmt(p1?.km)} km
+                  </span>
                 </td>
                 <td
                   className={cn(
-                    "text-right tabular-nums",
+                    "px-2 text-right tabular-nums",
+                    mm != null && mm < 0 && "font-medium text-destructive"
+                  )}
+                >
+                  {mm == null ? "—" : `${mm < 0 ? "+" : ""}${fmt(Math.abs(mm), 2)} mm`}
+                </td>
+                <td className="px-2 text-right tabular-nums text-muted-foreground">
+                  {fmt(f.kmMedidos)} km
+                </td>
+                <td className="px-2 text-right font-medium tabular-nums">
+                  {fmt(enEscala(tasaVisible(f), escala), escala.dec)}
+                </td>
+                <td
+                  className={cn(
+                    "px-2 text-right tabular-nums",
                     critico
                       ? "font-medium text-amber-600 dark:text-amber-400"
                       : "text-muted-foreground"
@@ -607,42 +955,36 @@ function TablaCubiertas({
                 >
                   {desvio == null ? "—" : `${desvio > 0 ? "+" : ""}${desvio}%`}
                 </td>
-                <td className="text-right tabular-nums text-muted-foreground">
-                  {fmt(f.kmPorMm)}
-                </td>
-                <td className="text-right tabular-nums text-muted-foreground">
-                  {fmt(f.cubierta.profundidad_actual_mm, 1)}
-                </td>
-                <td
-                  className={cn(
-                    "text-right tabular-nums",
-                    f.kmHastaCambio != null && f.kmHastaCambio <= 5_000
-                      ? "font-medium text-destructive"
-                      : "text-foreground"
-                  )}
-                >
-                  {fmt(f.kmHastaCambio)}
-                </td>
-                <td className="text-right capitalize tabular-nums text-muted-foreground">
-                  {fmtFecha(f.fechaCambio)}
-                </td>
-                <td
-                  className="text-right tabular-nums text-muted-foreground pr-1"
-                  title={
-                    f.mmPorMilKm == null
-                      ? "Todavía no se puede calcular la tasa de esta cubierta"
-                      : `${f.puntos} mediciones · ${f.desde} → ${f.hasta}`
-                  }
-                >
-                  {f.mmPorMilKm == null
-                    ? f.motivo
-                      ? MOTIVO_SIN_TASA_LABEL[f.motivo]
-                      : "sin dato"
-                    : `${fmt(f.kmMedidos)} km`}
+                <td className="px-2 text-right tabular-nums">{fmt(f.kmHastaCambio)}</td>
+                <td className="px-2">
+                  <ChipConfianza c={c} texto={etiqueta} />
                 </td>
               </tr>
             )
           })}
+
+          {/* Con una unidad elegida, sus cubiertas que todavía no se pueden
+              medir van acá con el motivo: es la información que falta saber. */}
+          {sinTramo.map((f) => (
+            <tr key={f.neumatico_id} className="border-b last:border-0 text-muted-foreground">
+              <td className="px-2 py-2">
+                <span className="font-medium">
+                  {f.cubierta.dominio} {f.cubierta.posicion || ""}
+                </span>
+                <span className="block text-[11px]">N° {f.cubierta.numero || "s/n"}</span>
+              </td>
+              <td className="max-w-[12rem] truncate px-2">{f.cubierta.marca || "—"}</td>
+              <td className="px-2">
+                {f.cubierta.eje ? EJE_LABEL[f.cubierta.eje] ?? f.cubierta.eje : "—"}
+              </td>
+              <td className="px-2 text-center text-[11px]" colSpan={7}>
+                {f.motivo ? MOTIVO_SIN_TASA_LABEL[f.motivo] : "Sin dato"}
+              </td>
+              <td className="px-2">
+                <ChipConfianza c="orientativo" texto="Sin medir" />
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -652,212 +994,95 @@ function TablaCubiertas({
 function TablaGrupo({
   titulo,
   filas,
-  promFlota,
   escala,
+  sel,
   dominioSel,
+  onSel,
   onClickClave,
-  extra,
-  extraTitulo,
 }: {
   titulo: string
   filas: PromedioDesgaste[]
-  promFlota: number | null
   escala: Escala
+  sel: string | null
   dominioSel?: string
+  onSel: (id: string) => void
   onClickClave?: (clave: string) => void
-  extra?: PromedioDesgaste[]
-  extraTitulo?: string
 }) {
-  const max = filas.reduce((m, f) => Math.max(m, f.mmPorMilKm), 0)
   return (
-    <div className="space-y-4">
-      <Barras
-        titulo={titulo}
-        filas={filas}
-        max={max}
-        promFlota={promFlota}
-        escala={escala}
-        dominioSel={dominioSel}
-        onClickClave={onClickClave}
-      />
-      {extra && extra.length > 0 && (
-        <Barras
-          titulo={extraTitulo ?? ""}
-          filas={extra}
-          max={max}
-          promFlota={promFlota}
-          escala={escala}
-        />
-      )}
-    </div>
-  )
-}
-
-/**
- * "Por marca" abierto cubierta por cubierta.
- *
- * El promedio de una marca junta todas sus cubiertas en un solo número, y ese
- * número puede estar hecho por una sola goma que anda mal. Para decidir una
- * compra hace falta ver si la marca es pareja: acá cada marca muestra sus
- * cubiertas por separado, de la que más rápido se gasta a la que menos, con el
- * promedio de la marca al lado del título.
- */
-function MarcasDetalle({
-  filas,
-  promFlota,
-  escala,
-}: {
-  filas: FilaDesgaste[]
-  promFlota: number | null
-  escala: Escala
-}) {
-  const grupos = useMemo(() => {
-    const m = new Map<string, FilaDesgaste[]>()
-    for (const f of filas) {
-      if (f.mmPorMilKm == null) continue
-      const marca = f.cubierta.marca?.trim() || "Sin marca"
-      const arr = m.get(marca)
-      if (arr) arr.push(f)
-      else m.set(marca, [f])
-    }
-    return [...m.entries()]
-      .map(([marca, fs]) => ({
-        marca,
-        filas: [...fs].sort((a, b) => (b.mmPorMilKm ?? 0) - (a.mmPorMilKm ?? 0)),
-        // Promedio simple de las cubiertas de la marca, sólo para ordenar los
-        // grupos: el ponderado de verdad es el que muestra "Promedio por marca".
-        prom: fs.reduce((a, f) => a + (f.mmPorMilKm ?? 0), 0) / fs.length,
-      }))
-      .sort((a, b) => b.prom - a.prom)
-  }, [filas])
-
-  // La barra más larga es la misma para todas las marcas: si cada grupo se
-  // escalara solo, dos gomas muy distintas se verían iguales.
-  const max = grupos.reduce(
-    (m, g) => Math.max(m, ...g.filas.map((f) => f.mmPorMilKm ?? 0)),
-    0
-  )
-
-  if (grupos.length === 0)
-    return <p className="text-sm text-muted-foreground">Sin datos suficientes.</p>
-
-  return (
-    <div className="space-y-4">
-      {grupos.map((g) => (
-        <div key={g.marca} className="space-y-1.5">
-          <p className="flex items-baseline gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-            <span className="font-medium text-foreground">{g.marca}</span>
-            <span>
-              {g.filas.length} cubierta{g.filas.length === 1 ? "" : "s"} ·{" "}
-              {fmt(enEscala(g.prom, escala), escala.dec)} mm {escala.label} de promedio
-            </span>
-          </p>
-          {g.filas.map((f) => {
-            const peor = promFlota != null && (f.mmPorMilKm ?? 0) > promFlota
+    <div className="overflow-x-auto rounded-md border border-border">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+            <th className="px-2 py-2">{titulo}</th>
+            <th className="px-2 text-right">Cubiertas</th>
+            <th className="px-2 text-right">Km medidos</th>
+            <th className="px-2 text-right">Mediciones</th>
+            <th className="px-2 text-right">{escala.corto}</th>
+            <th className="px-2 text-right">Km por mm</th>
+            <th
+              className="px-2 text-right"
+              title="Qué tan bien la recta explica las mediciones. Con menos de tres puntos no existe."
+            >
+              R²
+            </th>
+            <th className="px-2">Confianza</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filas.map((g) => {
+            const b = barraDeGrupo(g)
             return (
-              <div
-                key={f.neumatico_id}
-                className="flex items-center gap-2 rounded-md px-1.5 py-1"
+              <tr
+                key={g.clave}
+                onClick={() => onSel(g.clave)}
+                className={cn(
+                  "cursor-pointer border-b last:border-0 hover:bg-muted/60",
+                  sel === g.clave && "bg-muted",
+                  sel !== g.clave && dominioSel === g.clave && "bg-primary/5"
+                )}
               >
-                <span className="w-32 shrink-0 truncate text-sm text-foreground">
-                  <span className="font-medium">{f.cubierta.numero || "s/n"}</span>{" "}
-                  <span className="text-muted-foreground">
-                    {f.cubierta.dominio} {f.cubierta.posicion}
-                  </span>
-                </span>
-                <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn(
-                      "h-full rounded-full",
-                      peor ? "bg-amber-500" : "bg-sky-500"
-                    )}
-                    style={{
-                      width: `${max > 0 ? ((f.mmPorMilKm ?? 0) / max) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-                <span className="w-16 shrink-0 text-right text-sm font-medium tabular-nums text-foreground">
-                  {fmt(enEscala(f.mmPorMilKm, escala), escala.dec)}
-                </span>
-                <span
-                  className="w-28 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground"
-                  title={`${f.puntos} mediciones · ${f.desde} → ${f.hasta}`}
-                >
-                  {fmt(f.kmMedidos)} km
-                  {f.r2 != null && ` · R² ${f.r2.toFixed(2)}`}
-                </span>
-              </div>
+                <td className="px-2 py-2 font-medium">
+                  {onClickClave ? (
+                    <button
+                      className="hover:underline"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onClickClave(g.clave)
+                      }}
+                      title="Abrir el diagrama de la unidad"
+                    >
+                      {g.clave}
+                    </button>
+                  ) : (
+                    g.clave
+                  )}
+                </td>
+                <td className="px-2 text-right tabular-nums text-muted-foreground">
+                  {g.cubiertas}
+                </td>
+                <td className="px-2 text-right tabular-nums text-muted-foreground">
+                  {fmt(g.kmMedidos)}
+                </td>
+                <td className="px-2 text-right tabular-nums text-muted-foreground">
+                  {g.puntos}
+                </td>
+                <td className="px-2 text-right font-medium tabular-nums">
+                  {fmt(enEscala(g.mmPorMilKm, escala), escala.dec)}
+                </td>
+                <td className="px-2 text-right tabular-nums text-muted-foreground">
+                  {g.mmPorMilKm > 0 ? fmt(Math.round(1_000 / g.mmPorMilKm)) : "—"}
+                </td>
+                <td className="px-2 text-right tabular-nums text-muted-foreground">
+                  {g.r2 == null ? "—" : g.r2.toFixed(2)}
+                </td>
+                <td className="px-2">
+                  <ChipConfianza c={b.confianza} texto={b.etiqueta} />
+                </td>
+              </tr>
             )
           })}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function Barras({
-  titulo,
-  filas,
-  max,
-  promFlota,
-  escala,
-  dominioSel,
-  onClickClave,
-}: {
-  titulo: string
-  filas: PromedioDesgaste[]
-  max: number
-  promFlota: number | null
-  escala: Escala
-  dominioSel?: string
-  onClickClave?: (clave: string) => void
-}) {
-  if (filas.length === 0)
-    return <p className="text-sm text-muted-foreground">Sin datos suficientes.</p>
-  return (
-    <div className="space-y-1.5">
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{titulo}</p>
-      {filas.map((f) => {
-        // Peor que el promedio de la flota = ámbar. No es una falla, es dónde
-        // mirar primero.
-        const peor = promFlota != null && f.mmPorMilKm > promFlota
-        return (
-          <div
-            key={f.clave}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-1.5 py-1",
-              dominioSel === f.clave && "bg-primary/5",
-              onClickClave && "cursor-pointer hover:bg-muted"
-            )}
-            onClick={onClickClave ? () => onClickClave(f.clave) : undefined}
-          >
-            <span className="w-32 shrink-0 truncate text-sm font-medium text-foreground">
-              {f.clave}
-            </span>
-            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn("h-full rounded-full", peor ? "bg-amber-500" : "bg-sky-500")}
-                style={{ width: `${max > 0 ? (f.mmPorMilKm / max) * 100 : 0}%` }}
-              />
-            </div>
-            <span className="w-16 shrink-0 text-right text-sm font-medium tabular-nums text-foreground">
-              {fmt(enEscala(f.mmPorMilKm, escala), escala.dec)}
-            </span>
-            <span
-              className="w-28 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground"
-              title={
-                "Cubiertas y km que entraron en el ajuste" +
-                (f.r2 != null
-                  ? ` · R² ${f.r2.toFixed(2)} (qué tan bien la recta explica las mediciones)`
-                  : " · hacen falta 3 mediciones para saber si la tendencia es real")
-              }
-            >
-              {f.cubiertas} cub. · {fmt(f.kmMedidos)} km
-              {f.r2 != null && ` · R² ${f.r2.toFixed(2)}`}
-            </span>
-          </div>
-        )
-      })}
+        </tbody>
+      </table>
     </div>
   )
 }
