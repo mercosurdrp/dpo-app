@@ -488,7 +488,8 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                   vs. el mismo {periodo.en_curso ? "tramo" : "semestre"} del año anterior (<strong>{periodo.sem_prev_desde} → {periodo.sem_prev_hasta}</strong>).
                   {periodo.en_curso ? " Semestre EN CURSO: la foto avanza con cada día de ventas hasta cerrarlo." : " Semestre cerrado: el análisis queda congelado (corrida DPO)."}
                   Umbral de facturación alta/baja = <strong>{fmtMoneda(umbral_ingresos)}</strong>,
-                  el corte que deja el clúster Ganador en su tope de <strong>{data.max_ganadores} PDV</strong>:
+                  el corte que deja el clúster Ganador en su tope de <strong>{data.max_ganadores} PDV</strong>{" "}
+                  (el {Math.round(data.pct_ganadores * 100)} % de la cartera analizada):
                   es la facturación del cliente Nº {data.max_ganadores} entre los que crecen, así los
                   Ganadores son siempre los que más facturan.
                 </p>
@@ -1572,7 +1573,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
             <p>
               Matriz <strong>Valor × Costo</strong>: cruza la <strong>facturación del semestre</strong>{" "}
               (alta/baja, corte <strong>{fmtMoneda(umbral_ingresos)}</strong>: el que deja el clúster
-              Ganador en su tope de {data.max_ganadores} PDV) con el{" "}
+              Ganador en su tope de {data.max_ganadores} PDV, el {Math.round(data.pct_ganadores * 100)} % de la cartera) con el{" "}
               <strong>costo logístico $/HL del año</strong> (alto/bajo, corte = mediana{" "}
               <strong>{fmtMoneda(umbral_costo)}</strong>). Cada cuadrante tiene una acción recomendada.
             </p>

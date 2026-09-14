@@ -13,7 +13,8 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import {
-  MAX_GANADORES,
+  PCT_GANADORES,
+  topeGanadores,
   MIN_RECHAZOS_BAJA,
   RMD_MINIMO_BAJA,
   umbralFacturacionAlta,
@@ -47,8 +48,8 @@ const MOTIVOS_CULPA_CLIENTE = new Set(["SIN DINERO", "CERRADO", "SIN ENVASES"])
 const DROP_BAJO = 3 // bultos por visita por debajo de esto = caro de servir
 const RMD_BAJO = 4.5 // RMD promedio por debajo de esto = mal servicio
 
-// Las reglas del clúster Ganador y de la baja por servicio (tope de 200, umbral
-// de rechazos, piso de RMD) viven en `clusterizacion-tipos.ts` porque la
+// Las reglas del clúster Ganador y de la baja por servicio (tope del 5 % de la
+// cartera, umbral de rechazos, piso de RMD) viven en `clusterizacion-tipos.ts` porque la
 // priorización de entrega usa exactamente las mismas: ver el import de arriba.
 
 function mediana(valores: number[]): number {
@@ -309,7 +310,8 @@ export async function getClusterizacion(
       data: {
         periodo,
         umbral_ingresos: 0,
-        max_ganadores: MAX_GANADORES,
+        max_ganadores: 0,
+        pct_ganadores: PCT_GANADORES,
         min_rechazos_baja: MIN_RECHAZOS_BAJA,
         rmd_minimo_baja: RMD_MINIMO_BAJA,
         umbral_costo: 0,
@@ -401,12 +403,14 @@ export async function getClusterizacion(
   // Umbral de costo = mediana del $/HL del año (separa "caro" de "barato").
   const umbralCosto = mediana([...costoHlMap.values()])
 
-  // Umbral de facturación alta = la facturación del cliente Nº MAX_GANADORES en
+  // Umbral de facturación alta = la facturación del cliente Nº `maxGanadores` en
   // el ranking de los que crecen (antes era la mediana, que partía la cartera al
-  // medio). Con esto el clúster Ganador queda acotado al tope y lo integran los
-  // que más facturan, que es lo que pidió la auditoría.
+  // medio). El tope es el 5 % de la cartera analizada: así el clúster Ganador
+  // queda acotado y lo integran los que más facturan, que es lo que pidió la auditoría.
+  const maxGanadores = topeGanadores(conDrop.length)
   const umbral = umbralFacturacionAlta(
     conDrop.filter(crecePositivoDe).map((r) => r.facturacion_sem),
+    maxGanadores,
   )
 
   const clientes: ClienteClusterizado[] = conDrop.map((r) => {
@@ -625,7 +629,8 @@ export async function getClusterizacion(
     data: {
       periodo,
       umbral_ingresos: umbral,
-      max_ganadores: MAX_GANADORES,
+      max_ganadores: maxGanadores,
+      pct_ganadores: PCT_GANADORES,
       min_rechazos_baja: MIN_RECHAZOS_BAJA,
       rmd_minimo_baja: RMD_MINIMO_BAJA,
       umbral_costo: umbralCosto,
