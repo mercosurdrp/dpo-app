@@ -7,6 +7,15 @@ import {
 } from "@/actions/reuniones"
 import { getSectoresAlmacen, getVehiculosActivos } from "@/actions/s5"
 import { listarRubrosMantenimiento } from "@/actions/mantenimiento-edilicio"
+import { listIniciativas } from "@/actions/presupuesto-iniciativas"
+import { listResponsablesPosibles as listResponsablesPresupuesto } from "@/actions/presupuesto"
+import { getEjecucionPorRubro } from "@/actions/presupuesto-generador"
+import { getKpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
+import { getKpiCombustible } from "@/actions/presupuesto-combustible-kpi"
+import {
+  anioIniciativasDe,
+  type IniciativasAhorroReunionData,
+} from "@/lib/reuniones-iniciativas-ahorro"
 import { getProfile } from "@/lib/session"
 import { ReunionDetallePageClient } from "./reunion-detalle-page-client"
 
@@ -43,6 +52,30 @@ export default async function ReunionDetallePage({
 
   if (!profile) redirect("/login")
 
+  // Reunión de Iniciativas de Ahorro: su temario son las iniciativas del año
+  // con el mismo bloque de /presupuesto, así que se leen acá (server) las
+  // mismas cuatro cosas que lee esa página. Depende del tipo, por eso va
+  // después del detalle y no en el Promise.all de arriba.
+  let iniciativasAhorro: IniciativasAhorroReunionData | null = null
+  if ("data" in detalleRes && detalleRes.data.tipo === "iniciativas-ahorro") {
+    const anio = anioIniciativasDe(detalleRes.data.fecha)
+    const [iniRes, ejecRes, perdRes, combRes, respPresRes] = await Promise.all([
+      listIniciativas(anio),
+      getEjecucionPorRubro(anio),
+      getKpiPerdidas(anio),
+      getKpiCombustible(anio),
+      listResponsablesPresupuesto(),
+    ])
+    iniciativasAhorro = {
+      anio,
+      iniciativas: "data" in iniRes ? iniRes.data : [],
+      ejecucionRubros: "data" in ejecRes ? ejecRes.data : {},
+      kpiPerdidas: "data" in perdRes ? perdRes.data : {},
+      kpiCombustible: "data" in combRes ? combRes.data : {},
+      responsables: "data" in respPresRes ? respPresRes.data : [],
+    }
+  }
+
   if ("error" in detalleRes) {
     return (
       <div>
@@ -62,6 +95,7 @@ export default async function ReunionDetallePage({
       sectoresAlmacen={"data" in sectoresRes ? sectoresRes.data : []}
       vehiculos={"data" in vehiculosRes ? vehiculosRes.data : []}
       rubrosMantenimiento={rubrosRes.data ?? []}
+      iniciativasAhorro={iniciativasAhorro}
       puedeEditar={puedeEditar}
       currentProfileId={profile.id}
       currentRole={profile.role}

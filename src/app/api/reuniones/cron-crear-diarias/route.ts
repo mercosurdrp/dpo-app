@@ -51,6 +51,28 @@ function segundoLunesTarget(iso: string): string {
 }
 
 /**
+ * Fecha objetivo de la reunión de Iniciativas de Ahorro para el mes de `iso`
+ * (regla_especial = 'segundo_dia_habil'): el 2º día hábil (lunes a viernes)
+ * del mes. Si el 1 cae viernes, el 2º hábil es el lunes 4; si cae sábado, el
+ * martes 3. No contempla feriados, igual que el resto de las reglas.
+ * Devuelve "YYYY-MM-DD".
+ */
+function segundoDiaHabilTarget(iso: string): string {
+  const [y, m] = iso.split("-").map(Number)
+  let habiles = 0
+  for (let dia = 1; dia <= 7; dia++) {
+    const dow = new Date(Date.UTC(y, m - 1, dia)).getUTCDay() // 0 = dom, 6 = sáb
+    if (dow === 0 || dow === 6) continue
+    habiles++
+    if (habiles === 2) {
+      return `${y}-${String(m).padStart(2, "0")}-${String(dia).padStart(2, "0")}`
+    }
+  }
+  // Inalcanzable: en 7 días corridos siempre hay al menos 5 hábiles.
+  return `${y}-${String(m).padStart(2, "0")}-02`
+}
+
+/**
  * Devuelve el día actual en zona ARG en formato { iso: "YYYY-MM-DD", weekday: 1..7 }
  * (1 = lunes, ..., 7 = domingo).
  */
@@ -103,6 +125,11 @@ export async function GET(req: Request) {
       }
     } else if (t.regla_especial === "segundo_lunes") {
       if (segundoLunesTarget(hoyIso) !== hoyIso) {
+        skipped.push({ tipo: t.tipo, motivo: "fuera_de_fecha_objetivo" })
+        continue
+      }
+    } else if (t.regla_especial === "segundo_dia_habil") {
+      if (segundoDiaHabilTarget(hoyIso) !== hoyIso) {
         skipped.push({ tipo: t.tipo, motivo: "fuera_de_fecha_objetivo" })
         continue
       }
