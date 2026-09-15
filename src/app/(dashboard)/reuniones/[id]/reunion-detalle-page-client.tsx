@@ -88,6 +88,8 @@ import {
 } from "@/components/reuniones/seccion-pedidos-problemas"
 import { SeccionDesviosPresupuesto } from "@/components/reuniones/seccion-desvios-presupuesto"
 import { SeccionIniciativasAhorro } from "@/components/reuniones/seccion-iniciativas-ahorro"
+import { SeccionCostoLogistico } from "@/components/reuniones/seccion-costo-logistico"
+import type { CostoLogisticoReunionData } from "@/actions/reuniones-costo-logistico"
 import type { IniciativasAhorroReunionData } from "@/lib/reuniones-iniciativas-ahorro"
 import { SeccionInspeccionEdilicia } from "@/components/reuniones/seccion-inspeccion-edilicia"
 import { SeccionArchivosReunion } from "@/components/reuniones/seccion-archivos-reunion"
@@ -194,6 +196,8 @@ interface Props {
   rubrosMantenimiento: RubroOpt[]
   /** Sólo en la reunión de Iniciativas de Ahorro; null en el resto. */
   iniciativasAhorro?: IniciativasAhorroReunionData | null
+  /** Sólo en la 1ª Reunión de Presupuesto del mes; null en el resto. */
+  costoLogistico?: CostoLogisticoReunionData | null
   puedeEditar: boolean
   currentProfileId: string | null
   currentRole: UserRole
@@ -880,6 +884,7 @@ export function ReunionDetallePageClient({
   vehiculos,
   rubrosMantenimiento,
   iniciativasAhorro = null,
+  costoLogistico = null,
   puedeEditar,
   currentProfileId,
   currentRole,
@@ -1415,6 +1420,13 @@ export function ReunionDetallePageClient({
           los compromisos. */}
       {detalle.tipo === "presupuesto" && (
         <SeccionDesviosPresupuesto fechaReunion={detalle.fecha} />
+      )}
+
+      {/* 1ª Reunión de Presupuesto: costo logístico del mes cerrado ($/HL) y
+          peso por ciudad. Contexto para leer los desvíos de Distribución y
+          Almacén. La página no lo carga en la reunión de seguimiento. */}
+      {detalle.tipo === "presupuesto" && costoLogistico && (
+        <SeccionCostoLogistico data={costoLogistico} />
       )}
 
       {/* Reunión de Iniciativas de Ahorro: las iniciativas del año con su

@@ -104,6 +104,7 @@ INSERT INTO reuniones_tor_docs (tipo, frecuencia, contenido) VALUES
   "entradas": [
     "EERR del mes cerrado cargado en /presupuesto",
     "Desvíos generados por rubro (presupuestado, real, % de desvío, responsable)",
+    "Costo logístico del mes cerrado ($/HL, vs. mes anterior y YTD) y peso de cada ciudad en el costo (Planeamiento → Costo por PDV)",
     "Action Log de la reunión anterior",
     "Planes de acción abiertos vinculados a desvíos"
   ],
@@ -118,7 +119,7 @@ INSERT INTO reuniones_tor_docs (tipo, frecuencia, contenido) VALUES
     "Desvío por rubro (verde < 5 %, ámbar < 15 %, rojo ≥ 15 %)",
     "Cantidad de desvíos rojos del mes",
     "% de compromisos cumplidos a la reunión de seguimiento",
-    "Costo logístico VLC/HL del mes y YTD"
+    "Costo logístico VLC/HL del mes y YTD, y $/HL por ciudad"
   ],
   "temario": [
     {
@@ -128,6 +129,10 @@ INSERT INTO reuniones_tor_docs (tipo, frecuencia, contenido) VALUES
     {
       "tema": "1ª reunión — Cierre del mes anterior: EERR y desvíos por rubro",
       "quien": "Analista de Presupuesto"
+    },
+    {
+      "tema": "1ª reunión — Costo logístico del mes: $/HL, tendencia y cómo pesa cada ciudad",
+      "quien": "JDL"
     },
     {
       "tema": "1ª reunión — Causa de cada desvío rojo y ámbar",

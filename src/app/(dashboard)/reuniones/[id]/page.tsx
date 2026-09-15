@@ -16,6 +16,14 @@ import {
   anioIniciativasDe,
   type IniciativasAhorroReunionData,
 } from "@/lib/reuniones-iniciativas-ahorro"
+import {
+  esSeguimientoPresupuesto,
+  mesCierreDe,
+} from "@/lib/reuniones-presupuesto"
+import {
+  getCostoLogisticoReunion,
+  type CostoLogisticoReunionData,
+} from "@/actions/reuniones-costo-logistico"
 import { getProfile } from "@/lib/session"
 import { ReunionDetallePageClient } from "./reunion-detalle-page-client"
 
@@ -76,6 +84,20 @@ export default async function ReunionDetallePage({
     }
   }
 
+  // Reunión de Presupuesto, 1er encuentro del mes (el de los desvíos): costo
+  // logístico del mes cerrado, $/HL y peso por ciudad. En el seguimiento (+7
+  // días) no va: ahí sólo se revisan los compromisos.
+  let costoLogistico: CostoLogisticoReunionData | null = null
+  if (
+    "data" in detalleRes &&
+    detalleRes.data.tipo === "presupuesto" &&
+    !esSeguimientoPresupuesto(detalleRes.data.fecha)
+  ) {
+    const { anio, mes } = mesCierreDe(detalleRes.data.fecha)
+    const res = await getCostoLogisticoReunion(anio, mes)
+    if ("data" in res) costoLogistico = res.data
+  }
+
   if ("error" in detalleRes) {
     return (
       <div>
@@ -96,6 +118,7 @@ export default async function ReunionDetallePage({
       vehiculos={"data" in vehiculosRes ? vehiculosRes.data : []}
       rubrosMantenimiento={rubrosRes.data ?? []}
       iniciativasAhorro={iniciativasAhorro}
+      costoLogistico={costoLogistico}
       puedeEditar={puedeEditar}
       currentProfileId={profile.id}
       currentRole={profile.role}

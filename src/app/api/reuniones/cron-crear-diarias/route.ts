@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+// Calendario de Presupuesto (1er hábil desde el 16 y +7 días): compartido con
+// la página de la reunión, que necesita saber cuál de las dos es.
+import { presupuestoTargets } from "@/lib/reuniones-presupuesto"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -9,28 +12,6 @@ interface ReunionTipoConfigRow {
   nombre: string
   dias_semana: number[]
   regla_especial: string | null
-}
-
-/**
- * Fechas objetivo de las reuniones de Presupuesto para el mes de `iso`
- * (regla_especial = 'quincena_2'):
- *   1) Primer día hábil a partir del 16 (si el 16 cae sáb/dom → lunes).
- *   2) Una semana después de esa primera reunión (+7 días; al conservar el
- *      día de semana de un hábil, sigue siendo hábil).
- * Devuelve ["YYYY-MM-DD", "YYYY-MM-DD"].
- */
-function presupuestoTargets(iso: string): string[] {
-  const [y, m] = iso.split("-").map(Number)
-  // El 16 del mes (índice de mes 0-based) en UTC para evitar corrimientos.
-  const d16 = new Date(Date.UTC(y, m - 1, 16))
-  const dow = d16.getUTCDay() // 0 = dom, 6 = sáb
-  const offset = dow === 6 ? 2 : dow === 0 ? 1 : 0
-  const primera = new Date(Date.UTC(y, m - 1, 16 + offset))
-  const segunda = new Date(primera)
-  segunda.setUTCDate(segunda.getUTCDate() + 7)
-  const fmt = (d: Date) =>
-    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
-  return [fmt(primera), fmt(segunda)]
 }
 
 /**
