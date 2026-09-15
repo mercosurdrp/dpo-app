@@ -3529,6 +3529,7 @@ export type TipoReunion =
   | "warehouse"
   | "presupuesto"
   | "mantenimiento"
+  | "iniciativas-ahorro"
 
 // --- TOR (Términos de Referencia) por tipo de reunión ---
 

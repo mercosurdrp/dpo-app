@@ -106,6 +106,10 @@ const DESTINOS_POR_TIPO: Record<
     { value: "5s_almacen", label: "5S Almacén" },
     { value: "mantenimiento_edilicio", label: "Mantenimiento Edilicio" },
   ],
+  "iniciativas-ahorro": [
+    // Reunión de iniciativas de ahorro: compromisos simples (default).
+    { value: "simple", label: "Simple" },
+  ],
 }
 
 export function ActividadFormDialog({

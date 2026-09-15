@@ -87,6 +87,10 @@ import {
   SECCION_PEDIDOS_PROBLEMAS,
 } from "@/components/reuniones/seccion-pedidos-problemas"
 import { SeccionDesviosPresupuesto } from "@/components/reuniones/seccion-desvios-presupuesto"
+import { SeccionIniciativasAhorro } from "@/components/reuniones/seccion-iniciativas-ahorro"
+import { SeccionCostoLogistico } from "@/components/reuniones/seccion-costo-logistico"
+import type { CostoLogisticoReunionData } from "@/actions/reuniones-costo-logistico"
+import type { IniciativasAhorroReunionData } from "@/lib/reuniones-iniciativas-ahorro"
 import { SeccionInspeccionEdilicia } from "@/components/reuniones/seccion-inspeccion-edilicia"
 import { SeccionArchivosReunion } from "@/components/reuniones/seccion-archivos-reunion"
 import { SeccionParticipacionCruzada } from "@/components/reuniones/seccion-participacion-cruzada"
@@ -190,6 +194,10 @@ interface Props {
   sectoresAlmacen: SectorOpt[]
   vehiculos: VehiculoOpt[]
   rubrosMantenimiento: RubroOpt[]
+  /** Sólo en la reunión de Iniciativas de Ahorro; null en el resto. */
+  iniciativasAhorro?: IniciativasAhorroReunionData | null
+  /** Sólo en la 1ª Reunión de Presupuesto del mes; null en el resto. */
+  costoLogistico?: CostoLogisticoReunionData | null
   puedeEditar: boolean
   currentProfileId: string | null
   currentRole: UserRole
@@ -202,6 +210,7 @@ const TIPO_LABELS: Record<TipoReunion, string> = {
   warehouse: "Warehouse",
   presupuesto: "Presupuesto",
   mantenimiento: "Mantenimiento",
+  "iniciativas-ahorro": "Iniciativas de Ahorro",
 }
 
 function formatFechaLarga(iso: string | null): string {
@@ -874,6 +883,8 @@ export function ReunionDetallePageClient({
   sectoresAlmacen,
   vehiculos,
   rubrosMantenimiento,
+  iniciativasAhorro = null,
+  costoLogistico = null,
   puedeEditar,
   currentProfileId,
   currentRole,
@@ -1385,7 +1396,9 @@ export function ReunionDetallePageClient({
 
       {/* ETAPA 1: SEGURIDAD — no aplica a Ventas-Logística (todo por secciones)
           ni a Presupuesto, que sólo revisa desvíos y compromisos. */}
-      {detalle.tipo !== "logistica-ventas" && detalle.tipo !== "presupuesto" && (
+      {detalle.tipo !== "logistica-ventas" &&
+        detalle.tipo !== "presupuesto" &&
+        detalle.tipo !== "iniciativas-ahorro" && (
         <EtapaSeguridad
           fechaReunion={detalle.fecha}
           currentProfileId={currentProfileId}
@@ -1409,6 +1422,22 @@ export function ReunionDetallePageClient({
         <SeccionDesviosPresupuesto fechaReunion={detalle.fecha} />
       )}
 
+      {/* 1ª Reunión de Presupuesto: costo logístico del mes cerrado ($/HL) y
+          peso por ciudad. Contexto para leer los desvíos de Distribución y
+          Almacén. La página no lo carga en la reunión de seguimiento. */}
+      {detalle.tipo === "presupuesto" && costoLogistico && (
+        <SeccionCostoLogistico data={costoLogistico} />
+      )}
+
+      {/* Reunión de Iniciativas de Ahorro: las iniciativas del año con su
+          ahorro y KPI. Es el temario, igual que los desvíos en Presupuesto. */}
+      {detalle.tipo === "iniciativas-ahorro" && iniciativasAhorro && (
+        <SeccionIniciativasAhorro
+          data={iniciativasAhorro}
+          puedeEditar={puedeEditar}
+        />
+      )}
+
       {/* INSPECCIÓN EDILICIA — reunión mensual de Mantenimiento. La recorrida se
           completa en la app de mantenimiento; acá queda el registro de que se
           hizo, que es lo que pide el punto 1.7 del DPO. */}
@@ -1428,7 +1457,8 @@ export function ReunionDetallePageClient({
 
       {/* Minuta y adjuntos — por ahora sólo en Presupuesto, que es la reunión
           que se arma por un tema puntual y deja un documento de lo hablado. */}
-      {detalle.tipo === "presupuesto" && (
+      {(detalle.tipo === "presupuesto" ||
+        detalle.tipo === "iniciativas-ahorro") && (
         <SeccionArchivosReunion
           reunionId={detalle.id}
           archivos={detalle.archivos}
@@ -1747,7 +1777,9 @@ export function ReunionDetallePageClient({
       {/* ETAPA 3: TABLERO DE CONTROL — no aplica a Ventas-Logística (todo por
           secciones) ni a Presupuesto: no tiene indicadores configurados (mostraba
           un tablero vacío) y su temario son los desvíos. */}
-      {detalle.tipo !== "logistica-ventas" && detalle.tipo !== "presupuesto" && (
+      {detalle.tipo !== "logistica-ventas" &&
+        detalle.tipo !== "presupuesto" &&
+        detalle.tipo !== "iniciativas-ahorro" && (
       <Card className="border-blue-200 bg-blue-50/30">
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
           <CardTitle className="flex items-center gap-2 text-lg font-bold text-blue-900">
