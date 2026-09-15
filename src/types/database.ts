@@ -2680,6 +2680,10 @@ export interface S5AyudantesConfig {
   prod_target: number
   /** Pal/HH que vale 100 puntos de productividad (maquinistas). */
   prod_target_maq: number
+  /** Peso de los reportes de seguridad (actos inseguros cargados por el operario). */
+  peso_reportes: number
+  /** Reportes POR MES que valen 100 puntos (se escala por la ventana). */
+  tope_reportes: number
   meses_ventana: number
 }
 
@@ -2701,9 +2705,16 @@ export interface S5AyudanteDepositoRow {
   productividad_maq: number | null
   /** Puntaje 0-100 combinado (promedio de picking y maquinista disponibles). */
   productividad_score: number | null
+  /** Reportes de seguridad de tipo acto inseguro cargados por el operario en la ventana. */
+  reportes_cant: number
+  reportes_score: number
   score: number
   /** Posición sugerida por la fórmula (1..3) o null si fuera del podio. */
   posicion_sugerida: number | null
+  /** false si tuvo ausentismo en la ventana: conserva el score pero no entra al podio. */
+  elegible: boolean
+  /** Detalle legible de por qué no es elegible (ej. "Ausencia 22/8 (1 día)"). */
+  no_elegible_motivo: string | null
 }
 
 export type S5PremioArea = "deposito" | "distribucion"

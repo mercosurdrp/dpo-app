@@ -255,6 +255,8 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
     tope_errores: String(data.config.tope_errores),
     prod_target: String(data.config.prod_target),
     prod_target_maq: String(data.config.prod_target_maq),
+    peso_reportes: String(data.config.peso_reportes),
+    tope_reportes: String(data.config.tope_reportes),
     meses_ventana: String(data.config.meses_ventana),
   })
 
@@ -361,6 +363,8 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
       tope_errores: Number(cfg.tope_errores),
       prod_target: Number(cfg.prod_target),
       prod_target_maq: Number(cfg.prod_target_maq),
+      peso_reportes: Number(cfg.peso_reportes),
+      tope_reportes: Number(cfg.tope_reportes),
       meses_ventana: Number(cfg.meses_ventana),
     }
     if (Object.values(nums).some((n) => !Number.isFinite(n))) {
@@ -384,24 +388,28 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
   )
 
   // Aporte de cada componente al score final = (peso × valor) / Σ pesos
-  // presentes. Los tres aportes suman exactamente el Score. Refleja la misma
-  // reponderación que hace el server.
+  // presentes. Los aportes suman exactamente el Score. Refleja la misma
+  // reponderación que hace el server (los reportes siempre están presentes).
+  type AporteKey = "e" | "s" | "p" | "r"
   function aportes(r: S5RankingDepositoData["ranking"][number]) {
     const c = data.config
-    const parts: Array<{ k: "e" | "s" | "p"; w: number; v: number }> = []
+    const parts: Array<{ k: AporteKey; w: number; v: number }> = []
     if (r.errores_score != null && c.peso_errores > 0)
       parts.push({ k: "e", w: c.peso_errores, v: r.errores_score })
     if (r.nota_5s != null && c.peso_5s > 0)
       parts.push({ k: "s", w: c.peso_5s, v: r.nota_5s })
     if (r.productividad_score != null && c.peso_productividad > 0)
       parts.push({ k: "p", w: c.peso_productividad, v: r.productividad_score })
+    if ((c.peso_reportes ?? 0) > 0)
+      parts.push({ k: "r", w: c.peso_reportes, v: r.reportes_score ?? 0 })
     const tw = parts.reduce((a, p) => a + p.w, 0)
-    const get = (k: "e" | "s" | "p") => {
+    const get = (k: AporteKey) => {
       const p = parts.find((x) => x.k === k)
       return p && tw > 0 ? (p.w * p.v) / tw : null
     }
-    return { e: get("e"), s: get("s"), p: get("p") }
+    return { e: get("e"), s: get("s"), p: get("p"), r: get("r") }
   }
+  const topeReportesVentana = (data.config.tope_reportes ?? 0) * ventana
 
   return (
     <div className="space-y-5">
@@ -412,7 +420,7 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
             <Package className="size-6 text-blue-600" /> Ranking de ayudantes
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Ganadores cada 2 meses · 5S del sector + errores de picking
+            Ganadores cada 2 meses · 5S del sector + errores de picking + reportes de seguridad
             {data.config.peso_productividad > 0 ? " + productividad" : " (productividad próximamente)"}.
           </p>
         </div>
@@ -564,6 +572,10 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                 {" "}Errores: <strong>0 errores = 100 pts</strong> y baja lineal hasta{" "}
                 <strong>{data.config.tope_errores} por mes = 0 pts</strong>. Quien
                 pickeó y no tiene errores cargados cuenta como cero.
+                {" "}Reportes: actos inseguros cargados por el ayudante en la app;{" "}
+                <strong>{topeReportesVentana} en el período = 100 pts</strong>, sin
+                reportes = 0. Quien tuvo <strong>ausentismo</strong> en el período
+                (cualquier motivo) conserva su score pero <strong>no entra al podio</strong>.
               </p>
               <Table>
                 <TableHeader>
@@ -573,6 +585,7 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                     <TableHead className="text-right">5S</TableHead>
                     <TableHead className="text-right">Errores (cant.)</TableHead>
                     <TableHead className="text-right">Productividad</TableHead>
+                    <TableHead className="text-right">Reportes seg.</TableHead>
                     <TableHead className="text-right">Score</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -580,7 +593,16 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                   {data.ranking.map((r, i) => {
                     const ap = aportes(r)
                     return (
-                    <TableRow key={r.empleado_id ?? r.nombre} className={r.posicion_sugerida ? "bg-amber-50/40" : ""}>
+                    <TableRow
+                      key={r.empleado_id ?? r.nombre}
+                      className={
+                        r.posicion_sugerida
+                          ? "bg-amber-50/40"
+                          : r.elegible === false
+                            ? "bg-red-50/40 text-muted-foreground"
+                            : ""
+                      }
+                    >
                       <TableCell className="text-muted-foreground align-top">
                         {r.posicion_sugerida ? (
                           <Badge className="bg-amber-500 hover:bg-amber-500">{r.posicion_sugerida}°</Badge>
@@ -601,6 +623,11 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                             <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>
                           ))}
                         </div>
+                        {r.elegible === false && (
+                          <div className="pt-1 text-[11px] font-medium text-red-600">
+                            No elegible · ausentismo: {r.no_elegible_motivo}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right align-top">
                         {r.nota_5s != null ? (
@@ -657,6 +684,17 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                           "—"
                         )}
                       </TableCell>
+                      <TableCell className="text-right align-top">
+                        <div>
+                          {r.reportes_cant ?? 0}
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            ({(r.reportes_score ?? 0).toFixed(0)})
+                          </span>
+                        </div>
+                        {ap.r != null && (
+                          <div className="text-[11px] text-emerald-600">+{ap.r.toFixed(1)}</div>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right align-top font-bold">{r.score.toFixed(1)}</TableCell>
                     </TableRow>
                     )
@@ -687,6 +725,8 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                   ["tope_errores", "Tope errores POR MES (= 0 pts)"],
                   ["prod_target", "Target picking (bul/HH = 100)"],
                   ["prod_target_maq", "Target maquinista (Pal/HH = 100)"],
+                  ["peso_reportes", "Peso reportes de seguridad"],
+                  ["tope_reportes", "Tope reportes POR MES (= 100 pts)"],
                   ["meses_ventana", "Meses de ventana"],
                 ].map(([key, label]) => (
                   <div key={key} className="space-y-1">
@@ -703,8 +743,10 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
               <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
                 <Info className="mt-0.5 size-3.5 shrink-0" />
                 Los pesos se reponderan automáticamente para quien no tenga alguna
-                métrica. El podio sugerido son los 3 mejores por score (sin reservar
-                puestos): subí el peso de errores/productividad si querés que pesen
+                métrica (los reportes de seguridad cuentan siempre: sin reportes = 0).
+                El podio sugerido son los 3 mejores por score entre los elegibles
+                (sin reservar puestos); cualquier ausentismo en el período deja fuera
+                del podio. Subí el peso de errores/productividad si querés que pesen
                 más que la auditoría.
               </p>
               <div className="mt-3">
