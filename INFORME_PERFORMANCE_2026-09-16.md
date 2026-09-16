@@ -265,6 +265,37 @@ real, y los tres commits se mergearon a `main` y se pushearon: como el proyecto
 es **GitHub-connected**, ese push ya dispara el deploy de producción solo (no
 hace falta `vercel --prod`, sería un deployment duplicado).
 
+### Resultado, verificado en producción después del deploy
+
+La región efectivamente cambió: el header pasó de `gru1::iad1::` a
+**`gru1::pdx1::`**. La función ahora corre al lado de la base.
+
+El endpoint que había dado 102 s:
+
+| | antes | después |
+|---|---:|---:|
+| 1ª llamada (fría) | **102,6 s** | **1,9 s** |
+| 2ª | 16,8 s | 0,82 s |
+| 3ª | 7,9 s | 0,84 s |
+
+Y el flujo completo con una sesión real (usuario de prueba creado, usado y
+borrado), pidiéndole páginas a producción desde Argentina:
+
+| página | 1ª (fría) | 2ª | 3ª |
+|---|---:|---:|---:|
+| `/` | 14,0 s | 975 ms | 852 ms |
+| `/mis-tareas` | 1,08 s | 1,00 s | 931 ms |
+| `/indicadores/rechazos` | 1,05 s | 546 ms | 864 ms |
+| `/vehiculos` | 1,70 s | 1,26 s | 1,14 s |
+
+Las tres devolvieron 200 con sesión y 307 a `/login` sin ella, así que el
+cambio de auth funciona de punta a punta en producción. Esos tiempos incluyen
+~200 ms de latencia Argentina → edge, que no se puede evitar.
+
+**Lo que queda a la vista:** los 14 s de la primera carga de `/`. Eso ya no es
+la base ni la región, es el **cold start de la lambda**, y es exactamente lo que
+ataca Fluid Compute. Es el pendiente número 2 de abajo.
+
 ### Falta — en orden de impacto
 
 1. **Subir el compute de Supabase.** Es la palanca más grande que queda, y la
