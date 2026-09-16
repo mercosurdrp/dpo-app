@@ -67,6 +67,43 @@ const DOMINIOS_INTERVENIDOS_POR_KPI: Record<string, string[]> = {
 }
 
 /**
+ * Iniciativas de VIAJES: las que ahorran km porque se va menos veces a un
+ * destino. El KPI es viajes por semana a la localidad (Foxtrot: rutas del día
+ * con paradas completadas en esa localidad, la haga la ruta que la haga), y
+ * el ahorro son los viajes que no se hicieron contra la línea base, en km y
+ * de ahí en litros y en plata.
+ *
+ * 🚨 Colón: la línea base NO es 5. Desde abril de 2026 se fue 4 días por
+ * semana (mar-vie); el quinto día de la ruta 10 era un reparto local de ~75 km
+ * en San Nicolás/Ramallo, no un viaje a Colón. El esquema de 3 días (mar/mié/
+ * vie) se sostiene desde la semana del 10/08/2026, la misma fecha del plan
+ * territorial 5.1. El viaje son ~280 km lo haga la 10, la 26, la 14 o la 12.
+ */
+interface KpiViajesConfig {
+  /** `localidad` de `bot_clientes_cache` (en mayúsculas, como está cargada). */
+  localidad: string
+  /** km de ida y vuelta de un viaje (plan de Foxtrot, promedio 2026). */
+  kmViaje: number
+  /** Paradas mínimas en la localidad para que una ruta cuente como viaje. */
+  minParadas: number
+  /**
+   * km/l con el que se valorizan los km evitados: la línea base de la flota
+   * de distribución (Q2-2026, misma que la iniciativa de limitadores). Se
+   * usa la base y no el real del mes para no mezclar dos iniciativas.
+   */
+  rendimientoBase: number
+}
+
+const VIAJES_POR_KPI: Record<string, KpiViajesConfig> = {
+  "VIAJES A COLÓN POR SEMANA": {
+    localidad: "COLON",
+    kmViaje: 280,
+    minParadas: 5,
+    rendimientoBase: 3.53,
+  },
+}
+
+/**
  * Piso de rendimiento plausible para un camión de reparto/larga distancia. El
  * techo no es fijo: es 1,4× la mediana del camión (`esCargaSinRegistrar`).
  */
@@ -92,6 +129,18 @@ export interface AhorroCombustibleMes {
   /** $/litro Axion neto de IVA. null si el año no tiene la serie cargada. */
   precioLitro: number | null
   pesos: number | null
+  /**
+   * Sólo en modo viajes: la cuenta completa del mes, para auditar. Los km de
+   * arriba son los EVITADOS (viajes evitados × km por viaje), no recorridos.
+   */
+  viajes?: {
+    semanas: number
+    viajesBase: number
+    viajesReales: number
+    viajesEvitados: number
+    kmViaje: number
+    rendimientoBase: number
+  }
 }
 
 export interface AhorroCombustible {
@@ -106,8 +155,14 @@ export interface AhorroCombustible {
 
 export interface KpiCombustibleMes {
   mes: number
-  /** km/l del grupo completo. null si el mes no tuvo cargas válidas. */
+  /**
+   * km/l del grupo completo (modo rendimiento) o viajes por semana (modo
+   * viajes). null si el mes no tuvo dato.
+   */
   real: number | null
+  /** Modo viajes: viajes contados y semanas hábiles computadas del mes. */
+  viajes?: number
+  semanas?: number
   /** km/l de los camiones ya intervenidos. null si no hay dato ese mes. */
   intervenidos: number | null
   /** km/l de los camiones sin intervenir (grupo de control). */
@@ -118,6 +173,10 @@ export interface KpiCombustibleMes {
 }
 
 export interface KpiCombustible {
+  /** Qué mide la serie: km/l de un grupo de camiones o viajes por semana. */
+  modo: "rendimiento" | "viajes"
+  /** Modo viajes: a dónde se viaja y cuánto es el viaje. */
+  viajes?: { localidad: string; kmViaje: number; rendimientoBase: number }
   meses: KpiCombustibleMes[]
   /** Acumulado del año: razón de sumas, no promedio de los meses. */
   realAcum: number | null
@@ -369,6 +428,7 @@ export async function getKpiCombustible(
     }
 
     out[kpi] = {
+      modo: "rendimiento",
       meses,
       realAcum: ratio(tot.km, tot.litros),
       intervenidosAcum: ratio(tot.kmInt, tot.litrosInt),
@@ -380,5 +440,231 @@ export async function getKpiCombustible(
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Modo viajes: viajes por semana a una localidad, contados en Foxtrot.
+  // ---------------------------------------------------------------------
+  for (const [kpi, cfg] of Object.entries(VIAJES_POR_KPI)) {
+    const serie = await serieViajes(supabase, anio, cfg)
+    if ("error" in serie) return { error: serie.error }
+    const { viajesPorDia, desdeDatos, hastaDatos } = serie.data
+    if (!desdeDatos || !hastaDatos) continue
+
+    const viajesEntre = (d1: string, d2: string) => {
+      let n = 0
+      for (const [f, v] of viajesPorDia) if (f >= d1 && f <= d2) n += v
+      return n
+    }
+
+    const meses: KpiCombustibleMes[] = []
+    let totViajes = 0
+    let totSemanas = 0
+    for (let mes = 1; mes <= 12; mes++) {
+      const ini = `${anio}-${String(mes).padStart(2, "0")}-01`
+      const fin = finDeMes(anio, mes)
+      // Sólo meses con datos de Foxtrot: antes del primer día sincronizado el
+      // cero no es "no se fue", es "no hay dato".
+      const d1 = ini < desdeDatos ? desdeDatos : ini
+      const d2 = fin > hastaDatos ? hastaDatos : fin
+      if (d1 > d2) continue
+      const semanas = diasHabiles(d1, d2) / 5
+      if (semanas <= 0) continue
+      const viajes = viajesEntre(d1, d2)
+      totViajes += viajes
+      totSemanas += semanas
+      meses.push({
+        mes,
+        real: Math.round((viajes / semanas) * 100) / 100,
+        viajes,
+        semanas: Math.round(semanas * 10) / 10,
+        intervenidos: null,
+        control: null,
+        km: viajes * cfg.kmViaje,
+        litros: 0,
+        cargas: viajes,
+      })
+    }
+    if (meses.length === 0) continue
+
+    // Ahorro: viajes evitados contra la línea base desde el día del cambio de
+    // esquema (inclusive: el esquema rige desde ese lunes, no hay "carga del
+    // mismo día" como en combustible).
+    let ahorro: AhorroCombustible | null = null
+    const iniDef = iniPorKpi.get(kpi)
+    if (iniDef?.fecha_implementacion && iniDef.lineaBase && iniDef.lineaBase > 0) {
+      const base = iniDef.lineaBase
+      const desde = iniDef.fecha_implementacion
+      const mesesAhorro: AhorroCombustibleMes[] = []
+      for (const m of meses) {
+        const ini = `${anio}-${String(m.mes).padStart(2, "0")}-01`
+        const fin = finDeMes(anio, m.mes)
+        const d1 = ini < desde ? desde : ini
+        const d2 = fin > hastaDatos ? hastaDatos : fin
+        if (d1 > d2) continue
+        const semanas = diasHabiles(d1, d2) / 5
+        if (semanas <= 0) continue
+        const viajesReales = viajesEntre(d1, d2)
+        const viajesBase = base * semanas
+        const viajesEvitados = viajesBase - viajesReales
+        const km = viajesEvitados * cfg.kmViaje
+        const litrosEvitados = km / cfg.rendimientoBase
+        const precioLitro = preciosGasoil?.[m.mes - 1] ?? null
+        mesesAhorro.push({
+          mes: m.mes,
+          km: Math.round(km),
+          litros: 0,
+          litrosBase: Math.round(litrosEvitados),
+          litrosEvitados: Math.round(litrosEvitados),
+          precioLitro,
+          pesos:
+            precioLitro !== null ? Math.round(litrosEvitados * precioLitro) : null,
+          viajes: {
+            semanas: Math.round(semanas * 10) / 10,
+            viajesBase: Math.round(viajesBase * 10) / 10,
+            viajesReales,
+            viajesEvitados: Math.round(viajesEvitados * 10) / 10,
+            kmViaje: cfg.kmViaje,
+            rendimientoBase: cfg.rendimientoBase,
+          },
+        })
+      }
+      if (mesesAhorro.length > 0) {
+        const conPrecio = mesesAhorro.filter((m) => m.pesos !== null)
+        ahorro = {
+          desde,
+          lineaBase: base,
+          meses: mesesAhorro,
+          litrosEvitadosAcum: mesesAhorro.reduce((s, m) => s + m.litrosEvitados, 0),
+          pesosAcum:
+            conPrecio.length > 0
+              ? conPrecio.reduce((s, m) => s + (m.pesos ?? 0), 0)
+              : null,
+        }
+      }
+    }
+
+    out[kpi] = {
+      modo: "viajes",
+      viajes: {
+        localidad: cfg.localidad,
+        kmViaje: cfg.kmViaje,
+        rendimientoBase: cfg.rendimientoBase,
+      },
+      meses,
+      realAcum:
+        totSemanas > 0 ? Math.round((totViajes / totSemanas) * 100) / 100 : null,
+      intervenidosAcum: null,
+      controlAcum: null,
+      dominios: [],
+      dominiosIntervenidos: [],
+      cargasDescartadas: 0,
+      ahorro,
+    }
+  }
+
   return { data: out }
+}
+
+function finDeMes(anio: number, mes: number): string {
+  const d = new Date(Date.UTC(anio, mes, 0))
+  return d.toISOString().slice(0, 10)
+}
+
+/** Días lunes a viernes entre dos fechas ISO, ambas inclusive. */
+function diasHabiles(d1: string, d2: string): number {
+  let n = 0
+  const cur = new Date(`${d1}T12:00:00Z`)
+  const fin = new Date(`${d2}T12:00:00Z`)
+  while (cur <= fin) {
+    const dow = cur.getUTCDay()
+    if (dow >= 1 && dow <= 5) n++
+    cur.setUTCDate(cur.getUTCDate() + 1)
+  }
+  return n
+}
+
+/**
+ * Viajes por día a la localidad: rutas de Foxtrot con al menos `minParadas`
+ * paradas completadas ahí ese día. `desdeDatos`/`hastaDatos` son el primer y
+ * último día con rutas sincronizadas en el año, para no contar como cero los
+ * días que Foxtrot todavía no trajo.
+ */
+async function serieViajes(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  anio: number,
+  cfg: KpiViajesConfig,
+): Promise<
+  Result<{
+    viajesPorDia: Map<string, number>
+    desdeDatos: string | null
+    hastaDatos: string | null
+  }>
+> {
+  // El corte es el día ANTERIOR al último con paradas completadas. La ruta de
+  // hoy ya existe en Foxtrot antes de que el camión vuelva, y el último día
+  // sincronizado queda a medias hasta la sincronización siguiente (el 15/09/
+  // 2026 la ruta 10 tenía 285 km planificados a Colón y cero paradas
+  // completadas mientras otras rutas del día ya figuraban cerradas): contarlo
+  // como "día sin viaje" inflaba el ahorro del mes en curso.
+  const [primera, ultima] = await Promise.all([
+    supabase
+      .from("foxtrot_waypoints_visita")
+      .select("fecha")
+      .eq("status", "COMPLETED")
+      .gte("fecha", `${anio}-01-01`)
+      .lte("fecha", `${anio}-12-31`)
+      .order("fecha", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("foxtrot_waypoints_visita")
+      .select("fecha")
+      .eq("status", "COMPLETED")
+      .gte("fecha", `${anio}-01-01`)
+      .lte("fecha", `${anio}-12-31`)
+      .order("fecha", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+  if (primera.error) return { error: `No se pudo leer Foxtrot: ${primera.error.message}` }
+  if (ultima.error) return { error: `No se pudo leer Foxtrot: ${ultima.error.message}` }
+  const ultimaFecha = (ultima.data as { fecha: string } | null)?.fecha ?? null
+  let hastaDatos: string | null = null
+  if (ultimaFecha !== null) {
+    const d = new Date(`${ultimaFecha}T12:00:00Z`)
+    d.setUTCDate(d.getUTCDate() - 1)
+    hastaDatos = d.toISOString().slice(0, 10)
+  }
+
+  const paradasPorRuta = new Map<string, { fecha: string; n: number }>()
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("v_tiempo_ruta_ciclos")
+      .select("route_id, fecha")
+      .eq("localidad", cfg.localidad)
+      .gte("fecha", `${anio}-01-01`)
+      .lte("fecha", `${anio}-12-31`)
+      .range(from, from + PAGE - 1)
+    if (error) return { error: `No se pudieron leer las paradas: ${error.message}` }
+    for (const r of (data ?? []) as { route_id: string; fecha: string }[]) {
+      const cur = paradasPorRuta.get(r.route_id) ?? { fecha: r.fecha, n: 0 }
+      cur.n++
+      paradasPorRuta.set(r.route_id, cur)
+    }
+    if (!data || data.length < PAGE) break
+  }
+
+  const viajesPorDia = new Map<string, number>()
+  for (const { fecha, n } of paradasPorRuta.values()) {
+    if (n < cfg.minParadas) continue
+    viajesPorDia.set(fecha, (viajesPorDia.get(fecha) ?? 0) + 1)
+  }
+
+  return {
+    data: {
+      viajesPorDia,
+      desdeDatos: (primera.data as { fecha: string } | null)?.fecha ?? null,
+      hastaDatos,
+    },
+  }
 }

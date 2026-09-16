@@ -420,22 +420,31 @@ function KpiCombustibleBlock({
   lineaBase,
   objetivo,
   mesInstalacion,
+  mejorSi,
 }: {
   kpi: KpiCombustible
   unidad: string
   lineaBase: number | null
   objetivo: number | null
   mesInstalacion: number | null
+  mejorSi: "menor" | "mayor"
 }) {
+  const esViajes = kpi.modo === "viajes"
   const hayControl =
+    !esViajes &&
     kpi.dominiosIntervenidos.length > 0 &&
     kpi.dominiosIntervenidos.length < kpi.dominios.length
 
+  // "Mejor" depende del KPI: km/l sube, viajes por semana baja.
+  const mejora = (valor: number, ref: number) =>
+    mejorSi === "menor" ? valor <= ref : valor >= ref
   // Referencia contra la que se pinta el semáforo: el objetivo si está cargado,
   // si no la línea base (mejorar respecto del punto de partida).
   const referencia = objetivo ?? lineaBase
   const cumpleAcum =
-    kpi.realAcum !== null && referencia !== null && kpi.realAcum >= referencia
+    kpi.realAcum !== null &&
+    referencia !== null &&
+    mejora(kpi.realAcum, referencia)
   // La tira de meses se pinta contra la línea base: la pregunta ahí es si el
   // mes mejoró respecto del "antes", no si ya llegó al objetivo.
   const refMes = lineaBase ?? objetivo
@@ -478,7 +487,7 @@ function KpiCombustibleBlock({
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
         <span className="text-muted-foreground">
-          Rendimiento ({unidad})
+          {esViajes ? `Viajes por semana (${unidad})` : `Rendimiento (${unidad})`}
           {hayControl && (
             <span className="ml-1 text-xs opacity-70">
               · {kpi.dominiosIntervenidos.length} de {kpi.dominios.length}{" "}
@@ -517,7 +526,9 @@ function KpiCombustibleBlock({
               formatter={(v, n) => [
                 v === null ? "—" : `${formatNum(Number(v))} ${unidad}`,
                 n === "real"
-                  ? "Grupo"
+                  ? esViajes
+                    ? "Real"
+                    : "Grupo"
                   : n === "intervenidos"
                     ? "Con la mejora"
                     : n === "objetivo"
@@ -535,7 +546,7 @@ function KpiCombustibleBlock({
                 stroke="#0f172a"
                 strokeDasharray="2 2"
                 label={{
-                  value: "instalación",
+                  value: esViajes ? "cambio" : "instalación",
                   position: "insideTopRight",
                   fontSize: 10,
                   fill: "#0f172a",
@@ -605,7 +616,11 @@ function KpiCombustibleBlock({
           return (
             <span
               key={m.mes}
-              title={`${m.cargas} cargas · ${m.km.toLocaleString("es-AR")} km · ${m.litros.toLocaleString("es-AR")} lts${previo ? " · anterior a la instalación" : ""}`}
+              title={
+                esViajes
+                  ? `${m.viajes ?? 0} viajes en ${formatNum(m.semanas ?? 0)} semanas hábiles${previo ? " · anterior al cambio" : ""}`
+                  : `${m.cargas} cargas · ${m.km.toLocaleString("es-AR")} km · ${m.litros.toLocaleString("es-AR")} lts${previo ? " · anterior a la instalación" : ""}`
+              }
               className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize ${
                 ok
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -613,12 +628,21 @@ function KpiCombustibleBlock({
               } ${previo ? "opacity-50" : ""}`}
             >
               {MES_CORTO[m.mes]} {formatNum(m.real)}
-              <span className="ml-1 opacity-60">({m.cargas})</span>
+              <span className="ml-1 opacity-60">
+                ({esViajes ? `${m.viajes ?? 0} viajes` : m.cargas})
+              </span>
             </span>
           )
         })}
       </div>
       <p className="text-xs text-muted-foreground">
+        {esViajes && kpi.viajes && (
+          <>
+            Rutas de Foxtrot con reparto en {kpi.viajes.localidad}, la haga la
+            ruta que la haga · {kpi.viajes.kmViaje} km por viaje · semanas =
+            días hábiles ÷ 5
+          </>
+        )}
         {kpi.dominios.join(" · ")}
         {hayControl && (
           <>
@@ -1360,10 +1384,29 @@ export function IniciativasAhorroSection({
                             <span className="capitalize">
                               {MES_CORTO[m.mes]}
                             </span>
-                            : {m.km.toLocaleString("es-AR")} km ÷{" "}
-                            {formatNum(ahorroComb.lineaBase)} km/l ={" "}
-                            {m.litrosBase.toLocaleString("es-AR")} lts −{" "}
-                            {m.litros.toLocaleString("es-AR")} cargados ={" "}
+
+                            :{" "}
+                            {m.viajes ? (
+                              /* Viajes: base × semanas − viajes hechos = viajes
+                                 evitados, × km del viaje, ÷ km/l de la flota. */
+                              <>
+                                {formatNum(m.viajes.viajesBase)} −{" "}
+                                {m.viajes.viajesReales} viajes (
+                                {formatNum(ahorroComb.lineaBase)}/sem ×{" "}
+                                {formatNum(m.viajes.semanas)} sem) ={" "}
+                                {formatNum(m.viajes.viajesEvitados)} evitados ×{" "}
+                                {m.viajes.kmViaje} km ={" "}
+                                {m.km.toLocaleString("es-AR")} km ÷{" "}
+                                {formatNum(m.viajes.rendimientoBase)} km/l ={" "}
+                              </>
+                            ) : (
+                              <>
+                                {m.km.toLocaleString("es-AR")} km ÷{" "}
+                                {formatNum(ahorroComb.lineaBase)} km/l ={" "}
+                                {m.litrosBase.toLocaleString("es-AR")} lts −{" "}
+                                {m.litros.toLocaleString("es-AR")} cargados ={" "}
+                              </>
+                            )}
                             <strong
                               className={
                                 m.litrosEvitados >= 0
@@ -1477,6 +1520,7 @@ export function IniciativasAhorroSection({
                       lineaBase={ini.kpi_linea_base}
                       objetivo={ini.kpi_objetivo}
                       mesInstalacion={mesInstalacion}
+                      mejorSi={ini.kpi_mejor_si}
                     />
                   ) : (
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
