@@ -373,30 +373,37 @@ export function EstandaresFlota({
                     <span className="block text-xs font-semibold text-foreground">
                       {u.dominio}
                     </span>
+                    {/* El % mandatorio es el número que se mira: va en chapa de
+                        color y al tamaño del texto normal, no en 11px gris. */}
                     <span
                       className={cn(
-                        "block text-[11px] font-medium tabular-nums",
+                        "mt-1 inline-block rounded-md border px-1.5 py-0.5 text-sm font-bold tabular-nums",
                         pMand == null
-                          ? "text-muted-foreground/50"
+                          ? "border-border bg-muted text-muted-foreground"
                           : pMand >= 100
-                            ? "text-emerald-600 dark:text-emerald-400"
+                            ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
                             : pMand >= 90
-                              ? "text-amber-600 dark:text-amber-400"
-                              : "text-destructive"
+                              ? "border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                              : "border-destructive/40 bg-destructive/15 text-destructive"
                       )}
                       title="Conformidad en los ítems mandatorios de esta unidad"
                     >
                       M {pMand == null ? "—" : `${pMand.toFixed(0)}%`}
                     </span>
                     <span
-                      className="block text-[10px] tabular-nums text-muted-foreground"
+                      className={cn(
+                        "mt-0.5 block text-xs font-semibold tabular-nums",
+                        pExc == null
+                          ? "text-muted-foreground/60"
+                          : "text-sky-600 dark:text-sky-400"
+                      )}
                       title="Conformidad en los ítems de excelencia de esta unidad"
                     >
                       E {pExc == null ? "—" : `${pExc.toFixed(0)}%`}
                     </span>
                     {pend > 0 && (
                       <span
-                        className="block text-[10px] font-medium tabular-nums text-amber-600 dark:text-amber-400"
+                        className="block text-[11px] font-medium tabular-nums text-amber-600 dark:text-amber-400"
                         title={`${pend} ítem(s) sin evaluar`}
                       >
                         {pend} sin ver
@@ -436,8 +443,27 @@ export function EstandaresFlota({
                       </span>
                       <span className="text-xs text-muted-foreground">
                         {filas.length} ítem{filas.length === 1 ? "" : "s"}
-                        {pGrupo != null && ` · ${pGrupo.toFixed(1)}% de conformidad`}
                       </span>
+                      {/* La conformidad del grupo, resaltada: es el número que se
+                          reporta, no un detalle al final de la línea. */}
+                      {pGrupo != null && (
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-sm font-bold tabular-nums",
+                            pGrupo >= 100
+                              ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                              : pGrupo >= 90
+                                ? "border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                                : "border-destructive/40 bg-destructive/15 text-destructive"
+                          )}
+                          title="Conformidad del grupo: ítems en OK sobre los evaluados de todas las unidades"
+                        >
+                          {pGrupo.toFixed(1)}%
+                          <span className="text-[10px] font-medium uppercase tracking-wide opacity-70">
+                            conformidad
+                          </span>
+                        </span>
+                      )}
                     </span>
                   </td>
                 </tr>
