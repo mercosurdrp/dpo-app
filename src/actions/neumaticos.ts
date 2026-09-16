@@ -25,6 +25,7 @@ import {
   type PuntoEvolucion,
   type PuntoMedicion,
 } from "@/lib/vehiculos/desgaste-neumaticos"
+import { errorProfundidadQueSube } from "@/lib/vehiculos/profundidad-control"
 import {
   analizarSerieFuego,
   validarLoteFuego,
@@ -757,6 +758,41 @@ export async function registrarMedicionNeumatico(input: {
     const profile = await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
     const fecha = input.fecha ?? hoyArgentina()
+
+    // La goma no crece: una profundidad más alta que la anterior de la misma
+    // cubierta es tipeo o rueda equivocada. Mismo control que en la ronda del
+    // operador: errorProfundidadQueSube.
+    if (input.profundidad_mm != null) {
+      const [{ data: medPrevias }, { data: montajes }, { data: fichas }] = await Promise.all([
+        supabase
+          .from("mantenimiento_neumatico_mediciones")
+          .select("neumatico_id, fecha, profundidad_mm")
+          .eq("neumatico_id", input.neumatico_id)
+          .not("profundidad_mm", "is", null),
+        supabase
+          .from("mantenimiento_neumatico_movimientos")
+          .select("neumatico_id, fecha")
+          .eq("neumatico_id", input.neumatico_id)
+          .eq("tipo", "montaje"),
+        supabase
+          .from("mantenimiento_neumaticos")
+          .select("id, numero, posicion")
+          .eq("id", input.neumatico_id),
+      ])
+      const sube = errorProfundidadQueSube({
+        entradas: [
+          {
+            neumatico_id: input.neumatico_id,
+            profundidad_mm: input.profundidad_mm,
+            fecha,
+          },
+        ],
+        mediciones: medPrevias ?? [],
+        montajes: montajes ?? [],
+        fichas: fichas ?? [],
+      })
+      if (sube) return { error: sube }
+    }
 
     // Una cubierta tiene UNA medición por día: si ya hay una de hoy, se corrige
     // esa en vez de agregar otra fila. El 13/08 se cargaron 49 filas para 21

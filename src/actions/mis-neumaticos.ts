@@ -31,6 +31,7 @@ import {
 } from "@/lib/flota/neumaticos-control"
 import { fetchLecturas, kmActualPorDominio, addDays, daysBetween } from "@/lib/vehiculos/lecturas"
 import { TOLERANCIA_ODOMETRO_DIAS } from "@/lib/vehiculos/desgaste-neumaticos"
+import { errorProfundidadQueSube } from "@/lib/vehiculos/profundidad-control"
 
 export interface CubiertaMedir {
   id: string
@@ -319,6 +320,49 @@ export async function guardarMedicionesNeumaticos(
     const escritura = createAdminClient()
 
     const fecha = hoyArgentina()
+
+    // 🚨 Tercer control: la goma no crece. Una profundidad más alta que la
+    // anterior de la misma cubierta es tipeo o rueda equivocada, y no se puede
+    // dejar pasar: el desgaste por km corta el tramo ante cualquier salto hacia
+    // arriba, así que una medición mal cargada deja a esa cubierta sin tasa. En
+    // julio/2026 entró una ronda entera leída bajo y hubo que descartarla a
+    // mano. La comparación no cruza el último montaje: una cubierta que vuelve
+    // del recapador sí tiene más dibujo que antes.
+    const idsMedidos = filtradas
+      .filter((m) => m.profundidad_mm != null)
+      .map((m) => m.neumatico_id)
+    if (idsMedidos.length > 0) {
+      const [{ data: medPrevias }, { data: montajes }, { data: fichas }] = await Promise.all([
+        supabase
+          .from("mantenimiento_neumatico_mediciones")
+          .select("neumatico_id, fecha, profundidad_mm")
+          .in("neumatico_id", idsMedidos)
+          .not("profundidad_mm", "is", null),
+        supabase
+          .from("mantenimiento_neumatico_movimientos")
+          .select("neumatico_id, fecha")
+          .in("neumatico_id", idsMedidos)
+          .eq("tipo", "montaje"),
+        supabase
+          .from("mantenimiento_neumaticos")
+          .select("id, numero, posicion")
+          .in("id", idsMedidos),
+      ])
+      const sube = errorProfundidadQueSube({
+        entradas: filtradas
+          .filter((m) => m.profundidad_mm != null)
+          .map((m) => ({
+            neumatico_id: m.neumatico_id,
+            profundidad_mm: m.profundidad_mm as number,
+            fecha,
+          })),
+        mediciones: medPrevias ?? [],
+        montajes: montajes ?? [],
+        fichas: fichas ?? [],
+      })
+      if (sube) return { error: sube }
+    }
+
     // 🚨 El km de la medición no se le pide al que mide: sale del odómetro de
     // las lecturas reales. La pantalla nunca tuvo campo de km y por eso la ronda
     // de agosto/2026 entró entera sin km —68 de 68—, que es la mitad de lo que

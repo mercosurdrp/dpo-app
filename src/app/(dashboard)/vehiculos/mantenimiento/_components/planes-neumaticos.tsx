@@ -44,6 +44,13 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import {
@@ -60,6 +67,9 @@ import type { Neumatico } from "@/lib/vehiculos/neumaticos-tipos"
 import type { UnidadFlota } from "@/lib/vehiculos/disponibilidad-flota"
 
 const fmtMm = (mm: number) => `${mm.toFixed(1).replace(".", ",")} mm`
+
+/** Fecha corta (dd/mm) de una ISO, sin pasar por Date: no hay huso que corra el día. */
+const fmtDiaMes = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
 
 const hoyIso = () => new Date().toISOString().slice(0, 10)
 
@@ -101,6 +111,8 @@ interface UnidadRonda {
   dominio: string
   instaladas: number
   medidas: number
+  /** Fecha de la última medición del mes elegido: cuándo se hizo la ronda. */
+  ultima: string | null
 }
 
 const posicionDe = (n: Neumatico) => n.posicion ?? n.eje ?? "sin posición"
@@ -111,6 +123,8 @@ export function PlanesNeumaticos({
   planes,
   puedeEditar,
   onPlanCreado,
+  dominioSel,
+  onIrAUnidad,
 }: {
   neumaticos: Neumatico[]
   unidades: UnidadFlota[]
@@ -119,9 +133,30 @@ export function PlanesNeumaticos({
   puedeEditar: boolean
   /** Recarga la pantalla: el plan recién creado tiene que aparecer acá. */
   onPlanCreado: () => void
+  /** Unidad abierta en el diagrama de abajo, para marcarla en la ronda. */
+  dominioSel?: string
+  /** Click en una unidad de la ronda: la abre en el diagrama de abajo. */
+  onIrAUnidad?: (dominio: string) => void
 }) {
   const ym = hoyIso().slice(0, 7)
   const [armando, setArmando] = useState<"reposicion" | "medicion" | null>(null)
+
+  /**
+   * Mes de la ronda. Antes esto estaba duplicado en una card aparte
+   * ("Inspección mensual") que listaba lo mismo que este bloque; se unificó acá
+   * y el filtro se vino con ella: el mes en curso más los últimos 5, para poder
+   * revisar rondas pasadas sin salir de la pantalla.
+   */
+  const [mesRonda, setMesRonda] = useState(ym)
+  const mesesRonda = useMemo(() => {
+    const [y, m] = ym.split("-").map(Number)
+    return Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(y, m - 1 - i, 1)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    })
+  }, [ym])
+  /** La ronda de un mes cerrado no se toca: los planes sólo van sobre el actual. */
+  const esMesActual = mesRonda === ym
 
   const instaladas = useMemo(
     () => neumaticos.filter((n) => n.estado === "instalado" && n.dominio),
@@ -161,7 +196,7 @@ export function PlanesNeumaticos({
   const totalCriticas = porUnidad.reduce((a, u) => a + u.criticas.length, 0)
   const totalAlerta = porUnidad.reduce((a, u) => a + u.enAlerta.length, 0)
 
-  // ---- Medición: qué unidad cerró su ronda este mes y cuál no ----
+  // ---- Medición: qué unidad cerró su ronda en el mes elegido y cuál no ----
   const ronda = useMemo<UnidadRonda[]>(() => {
     const obligatorias = unidades.filter(
       (u) => u.tipo != null && (TIPOS_NEUMATICOS_OBLIGATORIOS as readonly string[]).includes(u.tipo),
@@ -169,29 +204,34 @@ export function PlanesNeumaticos({
     return obligatorias
       .map((u) => {
         const suyas = instaladas.filter((n) => n.dominio === u.dominio)
-        const medidas = suyas.filter((n) =>
-          (n.mediciones ?? []).some((m) => m.fecha.slice(0, 7) === ym),
-        ).length
-        return { dominio: u.dominio, instaladas: suyas.length, medidas }
+        let medidas = 0
+        let ultima: string | null = null
+        for (const n of suyas) {
+          const med = (n.mediciones ?? []).find((m) => m.fecha.slice(0, 7) === mesRonda)
+          if (!med) continue
+          medidas++
+          if (!ultima || med.fecha > ultima) ultima = med.fecha
+        }
+        return { dominio: u.dominio, instaladas: suyas.length, medidas, ultima }
       })
       .sort((a, b) => a.medidas - b.medidas || a.dominio.localeCompare(b.dominio, "es"))
-  }, [unidades, instaladas, ym])
+  }, [unidades, instaladas, mesRonda])
 
   const sinMedir = ronda.filter((u) => u.medidas === 0)
   const aMedias = ronda.filter((u) => u.medidas > 0 && u.medidas < u.instaladas)
   const completas = ronda.filter((u) => u.instaladas > 0 && u.medidas === u.instaladas)
 
-  /** Plan de este mes para ese KPI, si ya lo armaron. */
-  const planDelMes = (kpi: FlotaKpi) =>
+  /** Plan de un mes para ese KPI, si ya lo armaron. */
+  const planDelMes = (kpi: FlotaKpi, mes: string) =>
     planes.find(
       (p) =>
         p.kpi === kpi &&
-        p.year === Number(ym.slice(0, 4)) &&
-        p.mes === Number(ym.slice(5, 7)),
+        p.year === Number(mes.slice(0, 4)) &&
+        p.mes === Number(mes.slice(5, 7)),
     ) ?? null
 
-  const planReposicion = planDelMes("neumaticos_conformidad")
-  const planMedicion = planDelMes("neumaticos_medicion")
+  const planReposicion = planDelMes("neumaticos_conformidad", ym)
+  const planMedicion = planDelMes("neumaticos_medicion", mesRonda)
 
   // Una acción por UNIDAD, no por cubierta: el camión va a la gomería una vez y
   // le cambian las que haya que cambiarle.
@@ -212,7 +252,7 @@ export function PlanesNeumaticos({
 
   const itemsMedicion = (): ItemForm[] => [
     ...sinMedir.map((u) => ({
-      accion: `Medir las ${u.instaladas} cubiertas de ${u.dominio} — no entró en la ronda de ${fmtMesLargo(ym)}`,
+      accion: `Medir las ${u.instaladas} cubiertas de ${u.dominio} — no entró en la ronda de ${fmtMesLargo(mesRonda)}`,
       responsable: "",
       fecha: finDeMes(),
     })),
@@ -328,26 +368,61 @@ export function PlanesNeumaticos({
           <div className="space-y-3 rounded-lg border p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                <p className="flex items-center gap-1.5 text-sm font-medium capitalize text-foreground">
                   <Ruler className="size-3.5 text-muted-foreground" /> Ronda de{" "}
-                  {fmtMesLargo(ym)}
+                  {fmtMesLargo(mesRonda)}
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Camiones y autoelevadores. Sin la ronda completa no hay serie con qué
-                  calcular el desgaste.
+                  Una vez por mes se mide profundidad y presión de todas las cubiertas de
+                  camiones y autoelevadores. Clickeá una unidad para abrirla en el diagrama
+                  de abajo y cargar las mediciones.
                 </p>
               </div>
-              <Badge
-                variant="outline"
-                className={
-                  sinMedir.length === 0 && aMedias.length === 0
-                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                    : "border-destructive/30 bg-destructive/10 text-destructive"
-                }
-              >
-                {completas.length} de {ronda.length} unidades
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className={
+                    sinMedir.length === 0 && aMedias.length === 0
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                      : "border-destructive/30 bg-destructive/10 text-destructive"
+                  }
+                >
+                  {completas.length} de {ronda.length} unidades
+                </Badge>
+                <Select value={mesRonda} onValueChange={(v) => v && setMesRonda(v)}>
+                  <SelectTrigger className="h-8 w-36 capitalize">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mesesRonda.map((m) => (
+                      <SelectItem key={m} value={m} className="capitalize">
+                        {fmtMesLargo(m)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+
+            {/* Avance de la ronda: lo verde está hecho, lo que falta se lee en la barra. */}
+            {ronda.length > 0 && (
+              <div className="flex items-center gap-3">
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn(
+                      "h-full rounded-full",
+                      completas.length === ronda.length ? "bg-emerald-500" : "bg-sky-500",
+                    )}
+                    style={{
+                      width: `${Math.round((completas.length / ronda.length) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <span className="whitespace-nowrap text-xs font-medium tabular-nums text-foreground">
+                  {Math.round((completas.length / ronda.length) * 100)}%
+                </span>
+              </div>
+            )}
 
             {ronda.length === 0 ? (
               <p className="py-3 text-sm text-muted-foreground">
@@ -365,35 +440,51 @@ export function PlanesNeumaticos({
                           ? "a_medias"
                           : "completa"
                   return (
-                    <li
-                      key={u.dominio}
-                      className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-sm"
-                    >
-                      <span className="w-20 shrink-0 font-medium text-foreground">
-                        {u.dominio}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {u.medidas} de {u.instaladas} cubiertas
-                      </span>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "ml-auto shrink-0",
+                    <li key={u.dominio}>
+                      {/* Toda la fila es el acceso al diagrama: desde acá se elige la
+                          unidad que se va a medir, que es el paso siguiente de la ronda. */}
+                      <button
+                        type="button"
+                        disabled={!onIrAUnidad}
+                        onClick={() => onIrAUnidad?.(u.dominio)}
+                        title={
                           estado === "completa"
-                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                            : estado === "a_medias"
-                              ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                              : "border-destructive/30 bg-destructive/10 text-destructive",
+                            ? "Medida en el mes. Ir al diagrama de la unidad."
+                            : "Falta medirla. Ir al diagrama para cargar las mediciones."
+                        }
+                        className={cn(
+                          "flex w-full flex-wrap items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors",
+                          onIrAUnidad && "hover:bg-muted",
+                          dominioSel === u.dominio && "bg-primary/5 ring-1 ring-inset ring-primary/40",
                         )}
                       >
-                        {estado === "completa"
-                          ? "Medida"
-                          : estado === "a_medias"
-                            ? "A medias"
-                            : estado === "sin_medir"
-                              ? "Sin medir"
-                              : "Sin cubiertas"}
-                      </Badge>
+                        <span className="w-20 shrink-0 font-medium text-foreground">
+                          {u.dominio}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {u.medidas} de {u.instaladas} cubiertas
+                          {u.ultima && ` · ${fmtDiaMes(u.ultima)}`}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "ml-auto shrink-0",
+                            estado === "completa"
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                              : estado === "a_medias"
+                                ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                                : "border-destructive/30 bg-destructive/10 text-destructive",
+                          )}
+                        >
+                          {estado === "completa"
+                            ? "Medida"
+                            : estado === "a_medias"
+                              ? "A medias"
+                              : estado === "sin_medir"
+                                ? "Sin medir"
+                                : "Sin cubiertas"}
+                        </Badge>
+                      </button>
                     </li>
                   )
                 })}
@@ -402,11 +493,13 @@ export function PlanesNeumaticos({
 
             <PieDelBloque
               plan={planMedicion}
-              habilitado={puedeEditar && sinMedir.length + aMedias.length > 0}
+              habilitado={puedeEditar && esMesActual && sinMedir.length + aMedias.length > 0}
               motivoDeshabilitado={
                 sinMedir.length + aMedias.length === 0
                   ? "La ronda del mes está completa: no hay nada que reclamar."
-                  : null
+                  : !esMesActual
+                    ? `${fmtMesLargo(mesRonda)} ya pasó: el plan se arma sobre el mes en curso.`
+                    : null
               }
               onArmar={() => setArmando("medicion")}
               texto="Armar el plan de medición"
