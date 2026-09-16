@@ -54,7 +54,21 @@ fallback. El fallback es importante: si por lo que sea `getClaims()` no puede
 resolver, el código hace **exactamente lo que hacía antes**, con el mismo
 reintento ante fallas transitorias. No hay forma de que quede peor que hoy.
 
-Probado sin sesión: responde en 0 ms, devuelve null y redirige a `/login`.
+**Verificado con un JWT real del proyecto.** Creé un usuario de prueba, hice un
+login de verdad y comparé los dos caminos sobre la misma sesión:
+
+| | tiempo | user id |
+|---|---:|---|
+| `getClaims()` (nuevo) | **1 ms** | `60b78618…` |
+| `getUser()` (viejo) | **757 ms** | `60b78618…` |
+
+Mismo usuario, el `profile` y el rol se resuelven igual, y el usuario de prueba
+quedó borrado (se confirmó que no quedó nada). Los 757 ms están medidos desde
+Argentina; desde `iad1` serán bastante menos, pero la diferencia es estructural:
+una llamada de red contra una verificación criptográfica local.
+
+También probado sin sesión: responde en 0 ms, devuelve null y redirige a
+`/login`. De paso quedó confirmado que un trigger crea el `profile` solo.
 
 Bonus: `getEmpleadoIdFromAuth()` hacía un segundo `SELECT` a `profiles` para
 leer una columna que `getProfile()` ya había traído con su `select("*")`.
@@ -163,17 +177,23 @@ filtre por fecha y ordene sólo por `id`.
 scan garantizado en cada página. Un índice **parcial** (sólo las filas que son
 defecto, que son minoría) lo resuelve:
 
-> **637,5 ms → 2,2 ms — 284×**
+> **637,5 ms → 0,3 ms**
 
 **`radar_rechazos_cliente`** — filtra por `fecha_entrega`, pero los únicos
 índices de la tabla son por `snapshot_id`:
 
-> **70,6 ms → 3,3 ms — 21×**
+> **70,6 ms → 4,6 ms — 15×**
 
-Ambos los probé creándolos dentro de una transacción y haciendo `ROLLBACK`, así
-que **la base quedó intacta** y los números son medidos de verdad.
+Primero los probé creándolos dentro de una transacción con `ROLLBACK`, para
+tener los números sin tocar nada. **Aplicados en producción el 16/09** desde el
+SQL editor: los dos quedaron válidos, ocupan 16 kB y 40 kB, y el `EXPLAIN`
+confirma que el planner los usa.
 
-Quedaron en `APLICAR_EN_PAMPEANA_PERF_INDICES.sql`, listos para correr.
+Un detalle de lectura: la primera corrida del índice de checklist dio 73 ms y
+recién después bajó a 0,3 ms estable. Era el índice nuevo con la caché fría, no
+el número real.
+
+El script quedó versionado en `APLICAR_EN_PAMPEANA_PERF_INDICES.sql`.
 
 ---
 
@@ -238,19 +258,26 @@ Lo pongo para que no se pierda tiempo ahí:
 `npm run build` pasa (exit 0, compilado en 13,2 s) y `tsc --noEmit` no tira un
 solo error.
 
+| 6 | Los dos índices que faltaban | base de Pampeana | 637 ms → 0,3 ms y 70,6 ms → 4,6 ms |
+
+Los índices se aplicaron en producción, el cambio de auth se probó con un login
+real, y los tres commits se mergearon a `main` y se pushearon: como el proyecto
+es **GitHub-connected**, ese push ya dispara el deploy de producción solo (no
+hace falta `vercel --prod`, sería un deployment duplicado).
+
 ### Falta — en orden de impacto
 
-1. **Subir el compute de Supabase.** Es la palanca más grande que queda. Con
-   834 ms para contar 3 M de filas en memoria, la base está ahogada de CPU y
-   eso enlentece absolutamente todo. Requiere el dashboard y cuesta plata.
-2. **Correr `APLICAR_EN_PAMPEANA_PERF_INDICES.sql`.** 284× y 21×, medidos.
-   Dijiste que lo aplicás vos.
-3. **Activar Fluid Compute** en el proyecto de Vercel, si no está. Reduce cold
-   starts reusando instancias entre invocaciones. No lo pude verificar: el
-   token del CLI no estaba accesible (y está bien que así sea).
-4. **Probar el login** antes de deployar el cambio de auth. Es el cambio de
-   mayor impacto y toca la sesión. Tiene fallback al comportamiento viejo, así
-   que el riesgo es bajo, pero conviene verlo funcionando una vez.
+1. **Subir el compute de Supabase.** Es la palanca más grande que queda, y la
+   única que no se puede tocar desde el código. Con 834 ms para contar 3 M de
+   filas en memoria y un cache hit de 99,99 %, la base no tiene poca RAM: tiene
+   poca CPU, y eso enlentece absolutamente todo por parejo. Requiere el
+   dashboard de Supabase y cuesta plata, así que es una decisión tuya.
+2. **Activar Fluid Compute** en el proyecto de Vercel, si no está. Reduce cold
+   starts reusando instancias entre invocaciones. No lo pude verificar: el CLI
+   no lo expone y el token no estaba accesible (y está bien que así sea).
+3. **Limpieza opcional del bundle**: `echarts` genera un chunk SSR de 1 MB pese
+   a usarse sólo con `import()` dinámico en una pantalla, y conviven dos
+   librerías de gráficos. Es peso de descarga del browser, no de servidor.
 
 ### Dato de negocio que apareció de paso
 
