@@ -198,6 +198,7 @@ export async function getMisRechazos(): Promise<
           .eq("tipo", "egreso")
           .gte("fecha", desde)
           .lte("fecha", hasta)
+          .order("fecha", { ascending: true })
           .order("id")
           .range(a, b),
       ),
@@ -207,6 +208,7 @@ export async function getMisRechazos(): Promise<
           .select("fecha, ds_fletero_carga, bultos_rechazados, nombre_cliente, id_cliente, ds_rechazo")
           .gte("fecha", desde)
           .lte("fecha", hasta)
+          .order("fecha", { ascending: true })
           .order("id")
           .range(a, b),
       ),
@@ -216,6 +218,7 @@ export async function getMisRechazos(): Promise<
           .select("fecha, ds_fletero_carga, total_bultos")
           .gte("fecha", desde)
           .lte("fecha", hasta)
+          .order("fecha", { ascending: true })
           .order("id")
           .range(a, b),
       ),
@@ -226,6 +229,7 @@ export async function getMisRechazos(): Promise<
           .select("fecha, patente, chofer_empleado_id, ayudante1_empleado_id, ayudante2_empleado_id")
           .gte("fecha", desde)
           .lte("fecha", hasta)
+          .order("fecha", { ascending: true })
           .order("id")
           .range(a, b),
       ),

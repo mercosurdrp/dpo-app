@@ -27,6 +27,8 @@ export interface Profile {
   puede_asignar_tareas: boolean
   created_at: string
   updated_at: string
+  /** Link opcional al empleado de RRHH. `getProfile()` lo trae con el `select("*")`. */
+  empleado_id?: string | null
 }
 
 export interface Pilar {

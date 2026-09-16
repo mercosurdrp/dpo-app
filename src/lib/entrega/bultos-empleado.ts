@@ -103,6 +103,7 @@ export async function getBultosRangoEmpleados(
         .select("fecha, dominio, tipo, chofer, ayudante1, ayudante2")
         .gte("fecha", desde)
         .lte("fecha", hasta)
+        .order("fecha", { ascending: true })
         .order("id")
         .range(a, b),
     ),
@@ -112,6 +113,7 @@ export async function getBultosRangoEmpleados(
         .select("fecha, ds_fletero_carga, total_bultos")
         .gte("fecha", desde)
         .lte("fecha", hasta)
+        .order("fecha", { ascending: true })
         .order("id")
         .range(a, b),
     ),
@@ -125,6 +127,7 @@ export async function getBultosRangoEmpleados(
         .select("fecha, patente, chofer_empleado_id, ayudante1_empleado_id, ayudante2_empleado_id")
         .gte("fecha", desde)
         .lte("fecha", hasta)
+        .order("fecha", { ascending: true })
         .order("id")
         .range(a, b),
     ),

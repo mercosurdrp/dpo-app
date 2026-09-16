@@ -78,8 +78,15 @@ export async function getCuadroMensualIndicadores(): Promise<
 
   // PostgREST corta cada request en 1000 filas. ventas_diarias y rechazos
   // superan eso en el rango ene→hoy (≈2k y ≈7k filas), así que hay que paginar
-  // o las sumas quedan truncadas. Se ordena por id (uuid, único) para que la
-  // paginación sea estable entre requests.
+  // o las sumas quedan truncadas.
+  //
+  // Se ordena por la MISMA columna de fecha que filtra el WHERE y se desempata
+  // con el id: así el plan usa el índice de fecha y sale ordenado de ahí. Con
+  // `order(id)` a secas el índice no servía para ordenar, y Postgres resolvía
+  // cada página con un seq scan + sort de la tabla entera. Medido en
+  // `pg_stat_statements`: ventas_diarias_camion_sku acumulaba 11.031 seq scans
+  // y 1.030 millones de filas leídas sobre una tabla de 111.480 filas.
+  // El desempate por id (uuid, único) mantiene la paginación estable.
   async function ventasDiariasTodas() {
     const PAGE = 1000
     const rows: Array<{
@@ -94,6 +101,7 @@ export async function getCuadroMensualIndicadores(): Promise<
         .select("fecha, origen, total_hl, total_bultos")
         .gte("fecha", desde)
         .lte("fecha", hasta)
+        .order("fecha", { ascending: true })
         .order("id", { ascending: true })
         .range(from, from + PAGE - 1)
       if (error || !data || data.length === 0) break
@@ -118,6 +126,7 @@ export async function getCuadroMensualIndicadores(): Promise<
         .select("fecha, ds_documento, total_hl, total_bultos")
         .gte("fecha", desde)
         .lte("fecha", hasta)
+        .order("fecha", { ascending: true })
         .order("id", { ascending: true })
         .range(from, from + PAGE - 1)
       if (error || !data || data.length === 0) break
@@ -255,6 +264,7 @@ export async function getCuadroMensualIndicadores(): Promise<
         .eq("tipo", "egreso")
         .gte("fecha", desde)
         .lte("fecha", hasta)
+        .order("fecha", { ascending: true })
         .order("id", { ascending: true })
         .range(from, from + PAGE - 1)
       if (error || !data || data.length === 0) break
@@ -273,6 +283,7 @@ export async function getCuadroMensualIndicadores(): Promise<
         .select("fecha_venta, hl_rechazados")
         .gte("fecha_venta", desde)
         .lte("fecha_venta", hasta)
+        .order("fecha_venta", { ascending: true })
         .order("id", { ascending: true })
         .range(from, from + PAGE - 1)
       if (error || !data || data.length === 0) break
@@ -846,6 +857,7 @@ export async function getDetalleRechazosMes(
       )
       .gte("fecha_venta", desde)
       .lte("fecha_venta", hasta)
+      .order("fecha_venta", { ascending: true })
       .order("id", { ascending: true })
       .range(from, from + PAGE - 1)
     if (error) return { error: error.message }
@@ -926,6 +938,7 @@ export async function getDetalleBultosFamilia(
       .select("id_articulo, bultos")
       .gte("fecha", desde)
       .lte("fecha", hasta)
+      .order("fecha", { ascending: true })
       .order("id", { ascending: true })
       .range(from, from + PAGE - 1)
     if (error || !data || data.length === 0) break

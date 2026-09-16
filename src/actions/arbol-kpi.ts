@@ -108,6 +108,7 @@ async function cargarCalculadora() {
         .select("fecha, total_hl, total_bultos")
         .gte("fecha", desdeAnio)
         .lte("fecha", hoy)
+        .order("fecha", { ascending: true })
         .order("id", { ascending: true })
         .range(from, to),
   )
@@ -125,6 +126,7 @@ async function cargarCalculadora() {
       .select("fecha_venta, hl_rechazados, id_rechazo, ds_rechazo, id_cliente")
       .gte("fecha_venta", desdeAnio)
       .lte("fecha_venta", hoy)
+      .order("fecha_venta", { ascending: true })
       .order("id", { ascending: true })
       .range(from, to),
   )

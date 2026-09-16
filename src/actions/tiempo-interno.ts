@@ -129,7 +129,9 @@ export async function getTiKpis(filters?: {
         .eq("tipo", "retorno")
       if (filters?.fechaDesde) q = q.gte("fecha", filters.fechaDesde)
       if (filters?.fechaHasta) q = q.lte("fecha", filters.fechaHasta)
-      return q.order("id").range(f, t)
+      // Ordenar por `fecha` (indexada) y desempatar con el id: así cada página
+      // sale del índice en vez de un seq scan + sort de checklist_vehiculos.
+      return q.order("fecha", { ascending: true }).order("id").range(f, t)
     })
     retornos.sort((a, b) => a.fecha.localeCompare(b.fecha))
 
@@ -202,6 +204,7 @@ export async function getTiKpis(filters?: {
         .select("legajo,fecha_marca,tipo_marca")
         .eq("tipo_marca", "S")
         .gte("fecha_marca", desde)
+        .order("fecha_marca", { ascending: true })
         .order("id")
         .range(f, t),
     )
@@ -227,6 +230,7 @@ export async function getTiKpis(filters?: {
         .from("asistencia_marcas")
         .select("legajo")
         .gte("fecha_marca", desde)
+        .order("fecha_marca", { ascending: true })
         .order("id")
         .range(f, t),
     )

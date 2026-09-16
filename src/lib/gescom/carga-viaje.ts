@@ -58,6 +58,7 @@ export async function cargaGescomPorViaje(
       .eq("origen", "gestion")
       .gte("fecha", desde)
       .lte("fecha", hasta)
+      .order("fecha", { ascending: true })
       .order("id")
       .range(from, from + PAGE - 1)
     if (error) throw new Error(error.message)
