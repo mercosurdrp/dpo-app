@@ -141,12 +141,20 @@ Medido, con los datos reales:
 
 | consulta | antes | después | |
 |---|---:|---:|---|
-| `rechazos` (rango ene→sep) | 628 ms | **27 ms** | 23× |
-| `ventas_diarias_sku` | 274 ms | **90 ms** | 3× |
+| **`ventas_diarias_camion_sku`** (la peor) | **1.237 ms** | **17,5 ms** | **71×** |
+| `rechazos` (rango ene→sep) | 628 ms | 27 ms | 23× |
+| `ventas_diarias_sku` | 274 ms | 90 ms | 3× |
 
-Aplicado en 18 paginaciones de 7 archivos: `cuadro-mensual.ts` (6),
-`mis-rechazos.ts` (4), `arbol-kpi.ts` (2), `mi-entrega.ts` (2),
-`tiempo-interno.ts` (3), `mapeo-empleados.ts` (1).
+Aplicado en **33 paginaciones de 12 archivos**. El primer barrido cubrió
+`src/actions/` (18: `cuadro-mensual.ts` 6, `mis-rechazos.ts` 4, `arbol-kpi.ts`
+2, `mi-entrega.ts` 2, `tiempo-interno.ts` 3, `mapeo-empleados.ts` 1) y un
+segundo barrido encontró el mismo patrón en `src/lib/` (15:
+`choferes/detalle-chofer.ts` 4, `choferes/resumen-mes.ts` 4,
+`entrega/bultos-empleado.ts` 3, `gescom/carga-viaje.ts` 1, `tlp/calc.ts` 3) —
+ahí estaba justamente el caso de `ventas_diarias_camion_sku`.
+
+Una auditoría final del repo confirma que **no queda ninguna** paginación que
+filtre por fecha y ordene sólo por `id`.
 
 ### Causa B — dos índices que faltan (requiere SQL)
 
@@ -223,7 +231,7 @@ Lo pongo para que no se pierda tiempo ahí:
 |---|---|---|---|
 | 1 | JWT validado localmente con `getClaims()` | `src/lib/session.ts` | saca ~6,5 M de queries y ~45 min de CPU de la base |
 | 2 | Función en la misma región que la base | `vercel.json` | −70 ms por consulta, en todas las pantallas |
-| 3 | 18 paginaciones ordenan por la columna indexada | 7 archivos de `src/actions/` | 23× en `rechazos`, 3× en `ventas_diarias_sku` |
+| 3 | 33 paginaciones ordenan por la columna indexada | 12 archivos de `src/actions/` y `src/lib/` | **71×** en `ventas_diarias_camion_sku`, 23× en `rechazos` |
 | 4 | Home: consultas en paralelo, sin N+1, sin O(n²), sin `select("*")` | `src/actions/dashboard.ts` | chico hoy, evita que escale mal |
 | 5 | Se elimina un `SELECT` redundante a `profiles` | `src/lib/session.ts` | 1 round-trip menos por llamada |
 
