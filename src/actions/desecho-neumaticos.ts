@@ -22,6 +22,19 @@ import type { RetiroCubiertas } from "@/lib/vehiculos/neumaticos-tipos"
 // chatarra/otros (migración 20260711160000). "Cubiertas" no pasa la constraint.
 const MATERIAL_CUBIERTAS = "neumaticos"
 
+/**
+ * El path del archivo dentro del bucket a partir de su URL pública. Se guarda
+ * aparte de la URL porque es lo que identifica al certificado: dos retiros
+ * amparados por el mismo papel comparten path.
+ */
+function pathDeUrlPublica(url: string): string | null {
+  const marca = "/object/public/mantenimiento-evidencias/"
+  const i = url.indexOf(marca)
+  if (i === -1) return null
+  const path = url.slice(i + marca.length)
+  return path ? decodeURIComponent(path) : null
+}
+
 // ==================== LECTURA ====================
 
 /** Retiros de cubiertas ya registrados (los residuos de material Cubiertas). */
@@ -145,8 +158,17 @@ export async function registrarRetiroRecicladora(input: {
   /** La recicladora / quien se lleva las cubiertas. */
   proveedor: string
   neumatico_ids: string[]
-  /** Certificado de descarte que entrega la recicladora. */
+  /** Certificado de descarte nuevo, recién subido. */
   certificado_urls?: string[]
+  /**
+   * Certificado YA cargado que ampara este retiro. El operador no entrega un
+   * papel por viaje: entrega uno por varios cientos de unidades y se va
+   * descontando, así que el retiro reusa el archivo en vez de quedar "sin
+   * certificado".
+   */
+  certificado_existente?: { url: string; path: string | null } | null
+  /** Unidades que declara cubrir el certificado (tope, se carga una vez). */
+  certificado_unidades?: number | null
   observaciones?: string
 }): Promise<{ success: true; retiradas: number } | { error: string }> {
   try {
@@ -191,7 +213,17 @@ export async function registrarRetiroRecicladora(input: {
         unidad: "unidades",
         proveedor,
         numeros_fuego: codigos || null,
-        certificado_url: input.certificado_urls?.[0] ?? null,
+        // El certificado nuevo gana; si no vino ninguno, el retiro queda
+        // amparado por el que se eligió de los ya cargados.
+        certificado_url:
+          input.certificado_urls?.[0] ?? input.certificado_existente?.url ?? null,
+        certificado_path: input.certificado_urls?.[0]
+          ? pathDeUrlPublica(input.certificado_urls[0])
+          : (input.certificado_existente?.path ?? null),
+        certificado_unidades:
+          input.certificado_unidades != null && input.certificado_unidades > 0
+            ? Math.round(input.certificado_unidades)
+            : null,
         observaciones: input.observaciones?.trim() || null,
         created_by: profile.id,
       })

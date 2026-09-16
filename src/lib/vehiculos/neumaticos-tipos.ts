@@ -214,8 +214,33 @@ export interface RetiroCubiertas {
   /** Los códigos de las cubiertas retiradas, como los pide el registro. */
   numeros_fuego: string | null
   certificado_url: string | null
+  /** Archivo del certificado en el bucket: identifica al papel entre retiros. */
+  certificado_path: string | null
+  /**
+   * Unidades que declara cubrir el certificado. El operador entrega UNO que
+   * ampara varios cientos de cubiertas y se va descontando retiro a retiro, así
+   * que el tope se carga una vez —en el retiro que subió el archivo— y vale
+   * para todos los que reusan el mismo certificado.
+   */
+  certificado_unidades: number | null
   observaciones: string | null
   created_at: string
+}
+
+/** Un certificado de disposición final con lo que ya se le imputó. */
+export interface CertificadoDesecho {
+  url: string
+  path: string | null
+  /** Quién lo emitió (la recicladora del retiro que lo cargó). */
+  proveedor: string
+  /** Fecha del retiro con el que entró. */
+  fecha: string
+  /** Tope declarado, null si nadie lo cargó todavía. */
+  unidades: number | null
+  /** Cubiertas ya retiradas contra este certificado. */
+  usadas: number
+  /** Retiros que lo están usando. */
+  retiros: number
 }
 
 /** Las tres acciones del módulo de neumáticos, cada una con su intervalo de km. */

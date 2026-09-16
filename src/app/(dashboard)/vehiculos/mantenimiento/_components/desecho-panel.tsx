@@ -38,7 +38,11 @@ import {
   registrarRetiroRecicladora,
   volverDeDesecho,
 } from "@/actions/desecho-neumaticos"
-import type { Neumatico, RetiroCubiertas } from "@/lib/vehiculos/neumaticos-tipos"
+import type {
+  CertificadoDesecho,
+  Neumatico,
+  RetiroCubiertas,
+} from "@/lib/vehiculos/neumaticos-tipos"
 import { ProveedorPicker } from "./proveedor-picker"
 import {
   FacturaField,
@@ -91,6 +95,40 @@ export function DesechoPanel({
     .filter((r) => r.fecha?.slice(0, 4) === anio)
     .reduce((a, r) => a + Number(r.cantidad ?? 0), 0)
   const sinCertificado = retiros.filter((r) => !r.certificado_url).length
+
+  // Los certificados cargados con lo que ya se les imputó. El operador entrega
+  // UNO por varios cientos de unidades, no uno por viaje: lo que importa es
+  // cuánto queda, y eso se cuenta sumando las cubiertas de todos los retiros
+  // que comparten el archivo.
+  const certificados = useMemo<CertificadoDesecho[]>(() => {
+    const porArchivo = new Map<string, CertificadoDesecho>()
+    for (const r of retiros) {
+      if (!r.certificado_url) continue
+      const clave = r.certificado_path ?? r.certificado_url
+      const c =
+        porArchivo.get(clave) ??
+        ({
+          url: r.certificado_url,
+          path: r.certificado_path,
+          proveedor: r.proveedor,
+          fecha: r.fecha,
+          unidades: null,
+          usadas: 0,
+          retiros: 0,
+        } satisfies CertificadoDesecho)
+      c.usadas += Number(r.cantidad ?? 0)
+      c.retiros++
+      if (r.certificado_unidades != null)
+        c.unidades = Math.max(c.unidades ?? 0, r.certificado_unidades)
+      // El certificado "es" del retiro más viejo que lo trajo.
+      if (r.fecha && r.fecha < c.fecha) {
+        c.fecha = r.fecha
+        c.proveedor = r.proveedor
+      }
+      porArchivo.set(clave, c)
+    }
+    return Array.from(porArchivo.values()).sort((a, b) => b.fecha.localeCompare(a.fecha))
+  }, [retiros])
 
   return (
     <Card>
@@ -187,6 +225,83 @@ export function DesechoPanel({
           )}
         </div>
 
+        {/* Certificados de disposición final, con lo que queda de cada uno */}
+        {certificados.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">
+              Certificados de disposición final ({certificados.length})
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {certificados.map((c) => {
+                const queda = c.unidades != null ? c.unidades - c.usadas : null
+                const pct =
+                  c.unidades && c.unidades > 0
+                    ? Math.min(100, (c.usadas * 100) / c.unidades)
+                    : 0
+                return (
+                  <div key={c.path ?? c.url} className="rounded-md border p-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{c.proveedor}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Cargado el {fmtFecha(c.fecha)} · {c.retiros}{" "}
+                          {c.retiros === 1 ? "retiro" : "retiros"}
+                        </p>
+                      </div>
+                      <a
+                        href={c.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 text-xs font-medium text-primary hover:underline"
+                      >
+                        <Paperclip className="mr-0.5 inline size-3" /> Ver
+                      </a>
+                    </div>
+                    {c.unidades != null ? (
+                      <>
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={cn(
+                              "h-full rounded-full",
+                              pct >= 100
+                                ? "bg-destructive"
+                                : pct >= 80
+                                  ? "bg-amber-500"
+                                  : "bg-emerald-500"
+                            )}
+                            style={{ width: `${Math.max(2, pct)}%` }}
+                          />
+                        </div>
+                        <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+                          <strong className="font-semibold text-foreground">
+                            {c.usadas} de {c.unidades}
+                          </strong>{" "}
+                          unidades ·{" "}
+                          {queda! > 0 ? (
+                            <>quedan {queda}</>
+                          ) : (
+                            <span className="font-semibold text-destructive">
+                              agotado, pedí uno nuevo
+                            </span>
+                          )}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {c.usadas} {c.usadas === 1 ? "cubierta" : "cubiertas"} imputadas ·{" "}
+                        <span className="text-amber-700 dark:text-amber-500">
+                          sin tope declarado
+                        </span>
+                        : cargalo en el próximo retiro para saber cuánto queda
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Historial de retiros */}
         {retiros.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -263,6 +378,7 @@ export function DesechoPanel({
       {retiroOpen && (
         <RetiroDialog
           cubiertas={paraDesecho}
+          certificadosCargados={certificados}
           onClose={() => setRetiroOpen(false)}
           onDone={() => {
             setRetiroOpen(false)
@@ -401,10 +517,13 @@ function MarcarDesechoDialog({
 
 function RetiroDialog({
   cubiertas,
+  certificadosCargados,
   onClose,
   onDone,
 }: {
   cubiertas: Neumatico[]
+  /** Los certificados que ya están cargados, para reusar el que corresponda. */
+  certificadosCargados: CertificadoDesecho[]
   onClose: () => void
   onDone: () => void
 }) {
@@ -412,6 +531,20 @@ function RetiroDialog({
   const [proveedor, setProveedor] = useState("")
   const [obs, setObs] = useState("")
   const [certificados, setCertificados] = useState<File[]>([])
+  // Qué certificado ampara el retiro: uno ya cargado (lo normal, porque el
+  // operador entrega uno por varios cientos de unidades) o uno nuevo.
+  const primeroConSaldo =
+    certificadosCargados.find(
+      (c) => c.unidades == null || c.unidades - c.usadas > 0
+    ) ?? certificadosCargados[0]
+  const [certClave, setCertClave] = useState<string>(
+    primeroConSaldo ? (primeroConSaldo.path ?? primeroConSaldo.url) : "nuevo"
+  )
+  const certElegido =
+    certClave === "nuevo"
+      ? null
+      : (certificadosCargados.find((c) => (c.path ?? c.url) === certClave) ?? null)
+  const [unidades, setUnidades] = useState("")
   // Por defecto se lleva toda la bandeja: es lo que pasa en el patio.
   const [sel, setSel] = useState<Set<string>>(() => new Set(cubiertas.map((n) => n.id)))
   const [saving, setSaving] = useState(false)
@@ -436,6 +569,13 @@ function RetiroDialog({
       proveedor,
       neumatico_ids: [...sel],
       certificado_urls: urls,
+      certificado_existente: certElegido
+        ? { url: certElegido.url, path: certElegido.path }
+        : null,
+      // El tope se declara una sola vez: al subir el papel, o la primera vez que
+      // alguien lo sabe si el certificado ya estaba cargado sin él.
+      certificado_unidades:
+        certElegido?.unidades ?? (unidades.trim() ? Number(unidades) : null),
       observaciones: obs,
     })
     setSaving(false)
@@ -478,11 +618,113 @@ function RetiroDialog({
             </div>
           </div>
 
-          <FacturaField
-            files={certificados}
-            onChange={setCertificados}
-            label="Certificado de descarte (foto o PDF)"
-          />
+          {/* Certificado: no hace falta uno por retiro. El operador entrega uno
+              que ampara varios cientos de unidades y se va descontando, así que
+              lo normal es reusar el que ya está cargado. */}
+          <div className="rounded-md border border-border p-2.5">
+            <Label className="text-xs text-muted-foreground">
+              Certificado de disposición final
+            </Label>
+
+            {certificadosCargados.length > 0 && (
+              <div className="mt-1.5 space-y-1">
+                {certificadosCargados.map((c) => {
+                  const clave = c.path ?? c.url
+                  const queda = c.unidades != null ? c.unidades - c.usadas : null
+                  return (
+                    <label
+                      key={clave}
+                      className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted/40"
+                    >
+                      <input
+                        type="radio"
+                        name="certificado"
+                        className="size-3.5 accent-primary"
+                        checked={certClave === clave}
+                        onChange={() => setCertClave(clave)}
+                      />
+                      <span className="font-medium">{c.proveedor}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {fmtFecha(c.fecha)}
+                        {queda != null && (
+                          <>
+                            {" · "}
+                            {queda > 0 ? (
+                              <>quedan {queda} de {c.unidades}</>
+                            ) : (
+                              <span className="font-medium text-destructive">agotado</span>
+                            )}
+                          </>
+                        )}
+                      </span>
+                    </label>
+                  )
+                })}
+                <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted/40">
+                  <input
+                    type="radio"
+                    name="certificado"
+                    className="size-3.5 accent-primary"
+                    checked={certClave === "nuevo"}
+                    onChange={() => setCertClave("nuevo")}
+                  />
+                  <span>Subir un certificado nuevo</span>
+                </label>
+              </div>
+            )}
+
+            {certClave === "nuevo" && (
+              <div className="mt-2 space-y-2">
+                <FacturaField
+                  files={certificados}
+                  onChange={setCertificados}
+                  label="Archivo del certificado (foto o PDF)"
+                />
+              </div>
+            )}
+
+            {/* El tope: se pide cuando el certificado todavía no lo tiene. */}
+            {(certClave === "nuevo" || certElegido?.unidades == null) && (
+              <div className="mt-2">
+                <Label className="text-xs text-muted-foreground">
+                  ¿Cuántas unidades cubre? (opcional)
+                </Label>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  placeholder="300"
+                  value={unidades}
+                  onChange={(e) => setUnidades(e.target.value)}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Con esto el panel lleva la cuenta de cuánto queda y te avisa cuándo
+                  hay que pedir el próximo.
+                </p>
+              </div>
+            )}
+
+            {certElegido && certElegido.unidades != null && (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Va imputado a ese certificado: {certElegido.usadas} de{" "}
+                {certElegido.unidades} unidades usadas
+                {certElegido.unidades - certElegido.usadas - sel.size < 0 && (
+                  <span className="font-medium text-destructive">
+                    {" "}
+                    · con estas {sel.size} te pasás del tope
+                  </span>
+                )}
+                .
+              </p>
+            )}
+
+            {certificadosCargados.length === 0 && (
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                No hace falta uno por retiro: el que cargues acá queda disponible para
+                reusar en los próximos.
+              </p>
+            )}
+          </div>
 
           <div className="rounded-md border border-border">
             <div className="border-b bg-muted/50 px-3 py-2 text-sm font-medium">
