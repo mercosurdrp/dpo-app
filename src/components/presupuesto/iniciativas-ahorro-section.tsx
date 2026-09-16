@@ -38,6 +38,7 @@ import type {
   AhorroCombustible,
   KpiCombustible,
 } from "@/actions/presupuesto-combustible-kpi"
+import type { CostoHlMes } from "@/actions/presupuesto-costo-hl"
 import type { IniciativaAhorroConDetalle } from "@/types/database"
 import {
   ESTADO_BADGE_CLASS,
@@ -61,6 +62,8 @@ interface Props {
   kpiPerdidas: Record<string, KpiPerdidas>
   /** KPI físico de combustible (km/l), indexado por nombre de KPI. */
   kpiCombustible: Record<string, KpiCombustible>
+  /** Costo logístico por HL mes a mes (Cuadro mensual de indicadores). */
+  costoHl: Record<number, CostoHlMes>
   responsables: ResponsableOpt[]
   puedeEditar: boolean
 }
@@ -782,6 +785,98 @@ function ahorroCombustibleDe(
 }
 
 /**
+ * Aporte de la iniciativa al costo por HL: ahorro del mes ÷ HL distribuidos
+ * del mes. Es cuánto más alto habría sido el $/HL de ese mes sin la
+ * iniciativa (el pool habría tenido esos pesos de más sobre los mismos HL).
+ * No mide el costo real, que sube y baja por muchas cosas a la vez: mide lo
+ * que ESTA iniciativa le sacó.
+ *
+ * El acumulado es razón de sumas (Σ ahorro ÷ Σ HL), no promedio de meses, y
+ * corre desde la implementación: antes la iniciativa no existía. El % es el
+ * aporte sobre el $/HL de los mismos meses (Σ pool ÷ Σ HL).
+ */
+interface AporteHlMes {
+  mes: number
+  ahorro: number
+  hl: number | null
+  costoXHl: number | null
+  /** $/HL. null si el cuadro no tiene los HL del mes. */
+  aporte: number | null
+  /** % del $/HL del mes. null sin costo cargado. */
+  pct: number | null
+  parcial: boolean
+}
+
+function aporteCostoHl(
+  fuente: "eerr" | "manual",
+  ejec: EjecucionRubro | undefined,
+  ahorroComb: AhorroCombustible | null,
+  mesInicio: number,
+  costoHl: Record<number, CostoHlMes>,
+): {
+  meses: AporteHlMes[]
+  acum: { aporte: number; pct: number | null; costoXHl: number | null } | null
+} | null {
+  let ahorros: { mes: number; ahorro: number }[]
+  if (ahorroComb) {
+    ahorros = ahorroComb.meses
+      .filter((m) => m.pesos !== null)
+      .map((m) => ({ mes: m.mes, ahorro: m.pesos ?? 0 }))
+  } else if (fuente === "eerr" && ejec) {
+    ahorros = ejec.porMes
+      .filter((m) => m.mes >= mesInicio)
+      .map((m) => ({ mes: m.mes, ahorro: m.presup - m.real }))
+  } else {
+    return null
+  }
+  if (ahorros.length === 0) return null
+
+  const meses: AporteHlMes[] = ahorros.map(({ mes, ahorro }) => {
+    const c = costoHl[mes]
+    const hl = c?.hl ?? null
+    const costoXHl = c?.costoXHl ?? null
+    const aporte = hl !== null && hl > 0 ? ahorro / hl : null
+    return {
+      mes,
+      ahorro,
+      hl,
+      costoXHl,
+      aporte,
+      pct:
+        aporte !== null && costoXHl !== null && costoXHl > 0
+          ? (aporte / costoXHl) * 100
+          : null,
+      parcial: c?.parcial ?? false,
+    }
+  })
+
+  const conHl = meses.filter((m) => m.hl !== null && m.hl > 0)
+  if (conHl.length === 0) return { meses, acum: null }
+  const sumAhorro = conHl.reduce((a, m) => a + m.ahorro, 0)
+  const sumHl = conHl.reduce((a, m) => a + (m.hl ?? 0), 0)
+  const conPool = conHl.filter((m) => (costoHl[m.mes]?.pool ?? null) !== null)
+  const sumPool = conPool.reduce((a, m) => a + (costoHl[m.mes]?.pool ?? 0), 0)
+  const sumHlPool = conPool.reduce((a, m) => a + (m.hl ?? 0), 0)
+  const costoXHlAcum = sumHlPool > 0 ? sumPool / sumHlPool : null
+  const aporte = sumAhorro / sumHl
+  return {
+    meses,
+    acum: {
+      aporte,
+      costoXHl: costoXHlAcum,
+      pct:
+        costoXHlAcum !== null && costoXHlAcum > 0
+          ? (aporte / costoXHlAcum) * 100
+          : null,
+    },
+  }
+}
+
+function formatHl(n: number): string {
+  return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 1 }).format(n)
+}
+
+/**
  * Ahorro esperado a hoy para una iniciativa medida a diario (combustible): el
  * compromiso anual prorrateado por los DÍAS que corrieron desde la instalación
  * sobre los días que quedan de año. El prorrateo por meses cerrados del EERR no
@@ -911,6 +1006,7 @@ export function IniciativasAhorroSection({
   ejecucionRubros,
   kpiPerdidas,
   kpiCombustible,
+  costoHl,
   responsables,
   puedeEditar,
 }: Props) {
@@ -1159,6 +1255,13 @@ export function IniciativasAhorroSection({
                     gastoComputado,
                   )
                 : null
+            const aporteHl = aporteCostoHl(
+              fuente,
+              ejec,
+              ahorroComb,
+              mesInicio,
+              costoHl,
+            )
             const tipoLabel =
               ini.tipo === "otro" && ini.tipo_otro
                 ? ini.tipo_otro
@@ -1406,6 +1509,79 @@ export function IniciativasAhorroSection({
                       {qCerrados === 0 && " · el año todavía no cerró un trimestre"}
                     </p>
                   </div>
+
+                  {/* Aporte al costo por HL: qué le sacó la iniciativa al $/HL
+                      cada mes (verde mejoró, rojo empeoró) y el acumulado desde
+                      que se implementó. Los HL y el pool son los del Cuadro
+                      mensual de indicadores, para que se pueda cotejar. */}
+                  {aporteHl && (
+                    <div className="rounded-lg border p-3">
+                      <div className="text-xs text-muted-foreground">
+                        Aporte al costo por HL · ahorro del mes ÷ HL
+                        distribuidos del mes (Cuadro mensual de indicadores)
+                        {mesInicio > 1 && `, desde ${MES_NOMBRE[mesInicio]}`}
+                      </div>
+                      <p
+                        className={`mt-1 text-sm font-medium ${
+                          aporteHl.acum && aporteHl.acum.aporte < 0
+                            ? "text-red-600"
+                            : "text-slate-900"
+                        }`}
+                      >
+                        {aporteHl.acum ? (
+                          <>
+                            {aporteHl.acum.aporte >= 0 ? "−" : "+"}
+                            {formatHl(Math.abs(aporteHl.acum.aporte))} $/HL
+                            <span className="font-normal text-muted-foreground">
+                              {" "}
+                              acumulado
+                              {aporteHl.acum.pct !== null &&
+                              aporteHl.acum.costoXHl !== null
+                                ? ` · ${formatHl(Math.abs(aporteHl.acum.pct))}% del costo por HL de esos meses (${formatNum(Math.round(aporteHl.acum.costoXHl))} $/HL)`
+                                : " · sin costo cargado para el %"}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="font-normal text-muted-foreground">
+                            Sin HL del cuadro para estos meses
+                          </span>
+                        )}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {aporteHl.meses.map((m) => {
+                          const sinHl = m.aporte === null
+                          const mejora = m.ahorro > 0
+                          return (
+                            <span
+                              key={m.mes}
+                              title={
+                                sinHl
+                                  ? `${MES_NOMBRE[m.mes]}: ${formatMoney(m.ahorro)} ahorrados, sin HL en el cuadro`
+                                  : `${MES_NOMBRE[m.mes]}: ${formatMoney(m.ahorro)} ÷ ${formatNum(Math.round(m.hl ?? 0))} HL${m.parcial ? " (mes en curso, parcial)" : ""}${m.costoXHl !== null ? ` · costo del mes ${formatNum(Math.round(m.costoXHl))} $/HL` : " · sin costo cargado"}`
+                              }
+                              className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize tabular-nums ${
+                                sinHl
+                                  ? "border-slate-200 bg-slate-50 text-slate-500"
+                                  : mejora
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : "border-red-200 bg-red-50 text-red-700"
+                              } ${m.parcial ? "opacity-70" : ""}`}
+                            >
+                              {MES_CORTO[m.mes]}{" "}
+                              {sinHl
+                                ? "—"
+                                : `${mejora ? "−" : "+"}${formatHl(Math.abs(m.aporte ?? 0))} $/HL`}
+                              {!sinHl && m.pct !== null && (
+                                <span className="ml-1 opacity-60">
+                                  ({formatHl(Math.abs(m.pct))}%)
+                                </span>
+                              )}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* KPI comprometido: la métrica que mueve el ahorro. Si el
                       rubro tiene el KPI físico (lo perdido por HL vendido), va

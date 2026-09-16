@@ -2,6 +2,7 @@ import type { IniciativaAhorroConDetalle } from "@/types/database"
 import type { EjecucionRubro } from "@/actions/presupuesto-generador"
 import type { KpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
 import type { KpiCombustible } from "@/actions/presupuesto-combustible-kpi"
+import type { CostoHlMes } from "@/actions/presupuesto-costo-hl"
 
 /**
  * Reunión de Iniciativas de Ahorro (2º día hábil del mes, 10:00): qué
@@ -17,6 +18,7 @@ export interface IniciativasAhorroReunionData {
   ejecucionRubros: Record<string, EjecucionRubro>
   kpiPerdidas: Record<string, KpiPerdidas>
   kpiCombustible: Record<string, KpiCombustible>
+  costoHl: Record<number, CostoHlMes>
   responsables: { id: string; nombre: string; email: string }[]
 }
 

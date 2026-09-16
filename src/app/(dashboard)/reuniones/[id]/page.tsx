@@ -12,6 +12,7 @@ import { listResponsablesPosibles as listResponsablesPresupuesto } from "@/actio
 import { getEjecucionPorRubro } from "@/actions/presupuesto-generador"
 import { getKpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
 import { getKpiCombustible } from "@/actions/presupuesto-combustible-kpi"
+import { getCostoHlMensual } from "@/actions/presupuesto-costo-hl"
 import {
   anioIniciativasDe,
   type IniciativasAhorroReunionData,
@@ -67,11 +68,12 @@ export default async function ReunionDetallePage({
   let iniciativasAhorro: IniciativasAhorroReunionData | null = null
   if ("data" in detalleRes && detalleRes.data.tipo === "iniciativas-ahorro") {
     const anio = anioIniciativasDe(detalleRes.data.fecha)
-    const [iniRes, ejecRes, perdRes, combRes, respPresRes] = await Promise.all([
+    const [iniRes, ejecRes, perdRes, combRes, costoHlRes, respPresRes] = await Promise.all([
       listIniciativas(anio),
       getEjecucionPorRubro(anio),
       getKpiPerdidas(anio),
       getKpiCombustible(anio),
+      getCostoHlMensual(anio),
       listResponsablesPresupuesto(),
     ])
     iniciativasAhorro = {
@@ -80,6 +82,7 @@ export default async function ReunionDetallePage({
       ejecucionRubros: "data" in ejecRes ? ejecRes.data : {},
       kpiPerdidas: "data" in perdRes ? perdRes.data : {},
       kpiCombustible: "data" in combRes ? combRes.data : {},
+      costoHl: "data" in costoHlRes ? costoHlRes.data : {},
       responsables: "data" in respPresRes ? respPresRes.data : [],
     }
   }

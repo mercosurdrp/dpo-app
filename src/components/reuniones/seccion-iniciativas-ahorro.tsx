@@ -78,6 +78,7 @@ export function SeccionIniciativasAhorro({
           ejecucionRubros={data.ejecucionRubros}
           kpiPerdidas={data.kpiPerdidas}
           kpiCombustible={data.kpiCombustible}
+          costoHl={data.costoHl}
           responsables={data.responsables}
           puedeEditar={puedeEditar}
         />

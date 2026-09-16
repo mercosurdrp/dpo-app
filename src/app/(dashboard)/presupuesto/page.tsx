@@ -19,6 +19,10 @@ import {
   getKpiCombustible,
   type KpiCombustible,
 } from "@/actions/presupuesto-combustible-kpi"
+import {
+  getCostoHlMensual,
+  type CostoHlMes,
+} from "@/actions/presupuesto-costo-hl"
 import { listPlanesAccion } from "@/actions/presupuesto-planes-accion"
 import { listInversiones } from "@/actions/presupuesto-inversiones"
 import { getProfile } from "@/lib/session"
@@ -84,6 +88,7 @@ export default async function PresupuestoPage({
     ejecucionRes,
     kpiPerdidasRes,
     kpiCombustibleRes,
+    costoHlRes,
   ] = await Promise.all([
     getPresupuestoAnual(anioActivo),
     getEerrAnual(anioActivo),
@@ -115,6 +120,11 @@ export default async function PresupuestoPage({
     mostrarIniciativas
       ? getKpiCombustible(anioActivo)
       : Promise.resolve<{ data: Record<string, KpiCombustible> }>({ data: {} }),
+    // Costo por HL mes a mes (Cuadro mensual de indicadores): el aporte de
+    // cada iniciativa en $/HL. Si el cuadro falla, la tarjeta lo omite.
+    mostrarIniciativas
+      ? getCostoHlMensual(anioActivo)
+      : Promise.resolve<{ data: Record<number, CostoHlMes> }>({ data: {} }),
   ])
 
   if ("error" in tareasRes) {
@@ -143,6 +153,7 @@ export default async function PresupuestoPage({
       kpiCombustible={
         "data" in kpiCombustibleRes ? kpiCombustibleRes.data : {}
       }
+      costoHl={"data" in costoHlRes ? costoHlRes.data : {}}
       mostrarPlanesAccion={mostrarPlanesAccion}
       planesAccion={"data" in planesAccionRes ? planesAccionRes.data : []}
       mostrarInversiones={mostrarInversiones}
