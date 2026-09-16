@@ -436,6 +436,9 @@ function KpiCombustibleBlock({
   const referencia = objetivo ?? lineaBase
   const cumpleAcum =
     kpi.realAcum !== null && referencia !== null && kpi.realAcum >= referencia
+  // La tira de meses se pinta contra la línea base: la pregunta ahí es si el
+  // mes mejoró respecto del "antes", no si ya llegó al objetivo.
+  const refMes = lineaBase ?? objetivo
 
   const datos = kpi.meses.map((m) => ({
     mes: MES_CORTO[m.mes],
@@ -588,21 +591,26 @@ function KpiCombustibleBlock({
           </LineChart>
         </ResponsiveContainer>
       </div>
-      {/* Un mes con pocas cargas mueve el número varios puntos: el conteo va a
-          la vista para no leer como tendencia lo que es ruido de muestra. */}
+      {/* El color dice si el mes MEJORÓ contra la línea base (verde) o quedó
+          por debajo (rojo), como en las iniciativas de rubro: contra el objetivo
+          todos los meses salían grises y la tira no decía nada. Los meses
+          anteriores a la instalación van apagados: son el "antes". Un mes con
+          pocas cargas mueve el número varios puntos: el conteo va a la vista
+          para no leer como tendencia lo que es ruido de muestra. */}
       <div className="flex flex-wrap gap-1.5">
         {kpi.meses.map((m) => {
           const ok =
-            m.real !== null && referencia !== null && m.real >= referencia
+            m.real !== null && refMes !== null && m.real >= refMes
+          const previo = mesInstalacion !== null && m.mes < mesInstalacion
           return (
             <span
               key={m.mes}
-              title={`${m.cargas} cargas · ${m.km.toLocaleString("es-AR")} km · ${m.litros.toLocaleString("es-AR")} lts`}
+              title={`${m.cargas} cargas · ${m.km.toLocaleString("es-AR")} km · ${m.litros.toLocaleString("es-AR")} lts${previo ? " · anterior a la instalación" : ""}`}
               className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize ${
                 ok
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-slate-200 bg-slate-50 text-slate-600"
-              }`}
+                  : "border-red-200 bg-red-50 text-red-700"
+              } ${previo ? "opacity-50" : ""}`}
             >
               {MES_CORTO[m.mes]} {formatNum(m.real)}
               <span className="ml-1 opacity-60">({m.cargas})</span>

@@ -82,14 +82,31 @@ export async function loadChecklistDominios(
 /**
  * Patente del chofer GESCOM para una fecha: checklist del día (match por nombre,
  * tolera sufijos tipo "FRIAS ANGEL ERMINDO") → fallback `patente_default`.
+ *
  * Si el dominio del checklist difiere en 1 carácter del default, gana el default
- * (forma canónica Chess; los checklists tienen typos persistentes).
+ * (forma canónica Chess; los checklists tienen typos persistentes) — PERO sólo
+ * cuando ese dominio no es un camión real.
+ *
+ * `patentesValidas` son los dominios activos de `catalogo_vehiculos`. Sin ese
+ * freno, la heurística de typos se comía los cambios legítimos de unidad: la
+ * flota tiene tres camiones que difieren en una sola letra —AE908DF (Accelo),
+ * AE908DG y AE908DH (los dos Atego)— y son justo las patentes por defecto de
+ * RIVERO FEDERICO, RIVERO EZEQUIEL y SANDOVAL. Cuando uno de ellos se subía a
+ * otra unidad, el checklist decía la patente correcta y esta función la
+ * revertía a la default, así que las ventas y los rechazos de ese día se le
+ * imputaban a la persona equivocada (16/09/2026: 1.201 bultos mal asignados,
+ * 605 de ellos de un solo ayudante).
+ *
+ * El checklist del día es evidencia de qué camión manejó esa persona; la
+ * `patente_default` es apenas una suposición. Ante un dominio que existe y está
+ * activo en el catálogo, gana la evidencia.
  */
 export function patenteDeChofer(
   codigo: string,
   fecha: string,
   choferes: Map<string, ChoferGescom>,
   checklists: Map<string, string>,
+  patentesValidas?: Set<string>,
 ): string | null {
   const ch = choferes.get(codigo)
   if (!ch) return null
@@ -104,6 +121,26 @@ export function patenteDeChofer(
       }
     }
   }
-  if (delDia && ch.patenteDefault && casiIguales(delDia, ch.patenteDefault)) return ch.patenteDefault
+  if (
+    delDia &&
+    ch.patenteDefault &&
+    !patentesValidas?.has(delDia) &&
+    casiIguales(delDia, ch.patenteDefault)
+  ) {
+    return ch.patenteDefault
+  }
   return delDia ?? ch.patenteDefault
+}
+
+/** Dominios activos de `catalogo_vehiculos`, para distinguir un typo de un camión real. */
+export async function loadPatentesValidas(supabase: SupabaseClient): Promise<Set<string>> {
+  const { data } = await supabase
+    .from("catalogo_vehiculos")
+    .select("dominio")
+    .eq("active", true)
+  return new Set(
+    ((data ?? []) as { dominio: string | null }[])
+      .map((v) => normTexto(v.dominio ?? ""))
+      .filter(Boolean),
+  )
 }

@@ -27,6 +27,7 @@ import {
   type GescomCredentials, type GescomVenta, type GescomItem,
   gescomLogin, fetchVentasRecientes, fetchVentasPorRango, normalizarCodigoCliente,
 } from "@/lib/gescom/client"
+import { loadPatentesValidas } from "@/lib/gescom/patente-chofer"
 import { reconciliarComprobante } from "@/lib/sync/rechazos-sync"
 
 export const GESCOM_FLETERO = "GESTION"
@@ -188,14 +189,26 @@ function casiIguales(a: string, b: string): boolean {
 /**
  * Patente del chofer GESCOM para una fecha: checklist del día (match por nombre,
  * tolera sufijos tipo "FRIAS ANGEL ERMINDO") → fallback patente_default.
- * Si el dominio del checklist difiere en 1 carácter del default, gana el default
- * (forma canónica Chess; los checklists tienen typos persistentes).
+ *
+ * OJO: esta función es un duplicado de la de `src/lib/gescom/patente-chofer.ts`
+ * (este módulo mantiene su propio `ChoferGescom` y su propio
+ * `loadChecklistDominios`, que toma una lista de fechas en vez de un rango).
+ * Cualquier cambio de criterio va en los dos lados.
+ *
+ * `patentesValidas` son los dominios activos de `catalogo_vehiculos`. Sin ese
+ * freno, la heurística de typos se comía los cambios legítimos de unidad: la
+ * flota tiene tres camiones que difieren en una sola letra —AE908DF, AE908DG y
+ * AE908DH— y son justo las patentes por defecto de RIVERO FEDERICO, RIVERO
+ * EZEQUIEL y SANDOVAL. Cuando uno se subía a otra unidad, el checklist decía la
+ * patente correcta y esta función la revertía a la default, con lo cual los
+ * rechazos de ese día quedaban imputados a la persona equivocada.
  */
 function patenteDeChofer(
   codigo: string,
   fecha: string,
   choferes: Map<string, ChoferGescom>,
   checklists: Map<string, string>,
+  patentesValidas?: Set<string>,
 ): string | null {
   const ch = choferes.get(codigo)
   if (!ch) return null
@@ -210,7 +223,14 @@ function patenteDeChofer(
       }
     }
   }
-  if (delDia && ch.patenteDefault && casiIguales(delDia, ch.patenteDefault)) return ch.patenteDefault
+  if (
+    delDia &&
+    ch.patenteDefault &&
+    !patentesValidas?.has(delDia) &&
+    casiIguales(delDia, ch.patenteDefault)
+  ) {
+    return ch.patenteDefault
+  }
   return delDia ?? ch.patenteDefault
 }
 
@@ -518,15 +538,16 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
   // ---- ventas_diarias_cliente: cliente × chofer/día con patente derivada (mig 119) ----
   if (porDiaCliente.size > 0) {
     const fechas = [...new Set([...porDiaCliente.values()].map((c) => c.fecha))]
-    const [choferes, checklists] = await Promise.all([
+    const [choferes, checklists, patentesValidas] = await Promise.all([
       loadChoferesGescom(supabase),
       loadChecklistDominios(supabase, fechas),
+      loadPatentesValidas(supabase),
     ])
     const clienteRows = [...porDiaCliente.values()].map((c) => ({
       fecha: c.fecha,
       origen: "gestion",
       ds_fletero_carga: c.fletero,
-      patente: patenteDeChofer(c.codigoChofer, c.fecha, choferes, checklists),
+      patente: patenteDeChofer(c.codigoChofer, c.fecha, choferes, checklists, patentesValidas),
       id_cliente: c.idCliente,
       nombre_cliente: nombres.get(c.idCliente) ?? null,
       comprobantes: c.comprobantes,

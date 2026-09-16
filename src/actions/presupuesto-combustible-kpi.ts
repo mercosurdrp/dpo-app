@@ -39,7 +39,7 @@ type Result<T> = { data: T } | { error: string }
  * mano (no se lee de la tabla para que el KPI histórico no cambie solo).
  */
 const DOMINIOS_POR_KPI: Record<string, string[]> = {
-  "RENDIMIENTO COMBUSTIBLE LARGA DISTANCIA": [
+  "RENDIMIENTO COMBUSTIBLE FLOTA DE DISTRIBUCIÓN": [
     "AC165AJ",
     "AE591EI",
     "AE908DF",
@@ -63,7 +63,7 @@ const DOMINIOS_INTERVENIDOS_POR_KPI: Record<string, string[]> = {
   // Vacío a propósito: el 06-jul-2026 quedaron limitados los 11 camiones, así
   // que no hay grupo de control contra el cual separar una serie. La única
   // comparación posible es contra el Q2 previo a la instalación.
-  "RENDIMIENTO COMBUSTIBLE LARGA DISTANCIA": [],
+  "RENDIMIENTO COMBUSTIBLE FLOTA DE DISTRIBUCIÓN": [],
 }
 
 /**
