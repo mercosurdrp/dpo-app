@@ -492,6 +492,13 @@ export function NeumaticosModule({
         planes={planes}
         puedeEditar={puedeEditar}
         onPlanCreado={refresh}
+        dominioSel={unidadSel}
+        onIrAUnidad={(dominio) => {
+          setUnidadSel(dominio)
+          document
+            .getElementById("diagrama-unidad")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" })
+        }}
       />
 
       {puedeEditar && (
@@ -507,22 +514,9 @@ export function NeumaticosModule({
         </div>
       )}
 
-      {/* Inspección mensual: ronda de profundidad + presión de toda la flota */}
-      <InspeccionMensualCard
-        neumaticos={neumaticos}
-        unidades={unidades}
-        dominioSel={unidadSel}
-        onIrAUnidad={(dominio) => {
-          setUnidadSel(dominio)
-          document
-            .getElementById("diagrama-unidad")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" })
-        }}
-      />
-
       {/* Desgaste real: mm de dibujo por cada 1.000 km, del historial de la
-          ronda mensual de arriba. Va acá, entre la ronda y el diagrama, porque
-          es la lectura de lo que esa ronda produjo. */}
+          ronda mensual de "Planes de acción". Va acá, entre la ronda y el
+          diagrama, porque es la lectura de lo que esa ronda produjo. */}
       <DesgastePorKmCard
         data={desgaste}
         dominioSel={unidadSel}
@@ -536,17 +530,33 @@ export function NeumaticosModule({
 
       {/* Diagrama por unidad */}
       <Card id="diagrama-unidad">
-        {/* La unidad se elige en "Inspección mensual" (arriba): ahí están todas
-            listadas y el click trae hasta acá, así que no hace falta un segundo
-            selector. */}
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CircleDot className="size-4 text-muted-foreground" /> Diagrama de la unidad
-            {unidad && <span className="text-muted-foreground">· {unidad.dominio}</span>}
-          </CardTitle>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Elegí la unidad en <span className="font-medium text-foreground">Inspección mensual</span>.
-          </p>
+        {/* El click en la ronda de medición (arriba) trae hasta acá, pero esa
+            ronda lista sólo camiones y autoelevadores: el selector queda para
+            llegar a cualquier otra unidad de la flota. */}
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CircleDot className="size-4 text-muted-foreground" /> Diagrama de la unidad
+              {unidad && <span className="text-muted-foreground">· {unidad.dominio}</span>}
+            </CardTitle>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Elegí la unidad acá, o clickeala en la{" "}
+              <span className="font-medium text-foreground">Ronda</span> de los planes de
+              acción.
+            </p>
+          </div>
+          <Select value={unidadSel} onValueChange={(v) => v && setUnidadSel(v)}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Unidad" />
+            </SelectTrigger>
+            <SelectContent>
+              {unidades.map((u) => (
+                <SelectItem key={u.dominio} value={u.dominio}>
+                  {u.dominio}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </CardHeader>
         <CardContent>
           {!unidad ? (
@@ -1404,10 +1414,7 @@ function MarcacionFuegoPanel({
   )
 }
 
-// ==================== Inspección mensual ====================
-// Ronda mensual de la flota entera: una vez por mes se mide profundidad y
-// presión de TODAS las cubiertas instaladas. Esta card controla el avance de
-// la ronda del mes: qué unidades ya se midieron y cuáles faltan.
+// ==================== Meses ====================
 
 const MESES_LARGO = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -1415,213 +1422,6 @@ const MESES_LARGO = [
 ]
 const fmtMesLargo = (ym: string) =>
   `${MESES_LARGO[Number(ym.slice(5, 7)) - 1] ?? ym} ${ym.slice(0, 4)}`
-
-function InspeccionMensualCard({
-  neumaticos,
-  unidades,
-  dominioSel,
-  onIrAUnidad,
-}: {
-  neumaticos: Neumatico[]
-  unidades: UnidadFlota[]
-  /** Unidad abierta en el diagrama, para marcarla en el listado. */
-  dominioSel: string
-  onIrAUnidad: (dominio: string) => void
-}) {
-  const mesActual = hoyLocalISO().slice(0, 7)
-
-  // Meses elegibles: el actual + los últimos 5 (para revisar rondas pasadas).
-  const meses = useMemo(() => {
-    const [y, m] = mesActual.split("-").map(Number)
-    return Array.from({ length: 6 }, (_, i) => {
-      const d = new Date(y, m - 1 - i, 1)
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-    })
-  }, [mesActual])
-  const [mesSel, setMesSel] = useState(mesActual)
-
-  const filas = useMemo(() => {
-    const instaladasPorUnidad = new Map<string, Neumatico[]>()
-    for (const n of neumaticos) {
-      if (n.estado !== "instalado" || !n.dominio) continue
-      const arr = instaladasPorUnidad.get(n.dominio) ?? []
-      arr.push(n)
-      instaladasPorUnidad.set(n.dominio, arr)
-    }
-    return unidades
-      .filter((u) => (instaladasPorUnidad.get(u.dominio)?.length ?? 0) > 0)
-      .map((u) => {
-        const cubiertas = instaladasPorUnidad.get(u.dominio)!
-        let medidas = 0
-        let ultima: string | null = null
-        for (const n of cubiertas) {
-          const med = (n.mediciones ?? []).find(
-            (m) =>
-              m.fecha.slice(0, 7) === mesSel &&
-              (m.profundidad_mm != null || m.presion_psi != null)
-          )
-          if (med) {
-            medidas++
-            if (!ultima || med.fecha > ultima) ultima = med.fecha
-          }
-        }
-        return {
-          dominio: u.dominio,
-          total: cubiertas.length,
-          medidas,
-          ultima,
-          estado:
-            medidas === 0 ? "pendiente" : medidas < cubiertas.length ? "parcial" : "completa",
-        }
-      })
-      .sort((a, b) => a.dominio.localeCompare(b.dominio))
-  }, [neumaticos, unidades, mesSel])
-
-  const completas = filas.filter((f) => f.estado === "completa").length
-  const pct = filas.length > 0 ? Math.round((completas / filas.length) * 100) : 0
-
-  // Unidades sin cubiertas cargadas: no cuentan para el avance de la ronda (no
-  // hay nada que medir), pero se listan igual porque desde acá se elige la unidad
-  // del diagrama — si no, no habría forma de entrar a montarle la primera.
-  const sinCubiertas = useMemo(() => {
-    const conCubiertas = new Set(filas.map((f) => f.dominio))
-    return unidades
-      .filter((u) => !conCubiertas.has(u.dominio))
-      .map((u) => u.dominio)
-      .sort((a, b) => a.localeCompare(b))
-  }, [filas, unidades])
-
-  /**
-   * El color lo lleva el CUADRO de la unidad, no un cartelito al costado.
-   *
-   * Con 16 patentes en tres columnas, el badge obligaba a leer una por una para
-   * saber qué falta. Pintado el cuadro entero, la ronda del mes se lee de un
-   * golpe de vista: lo verde está hecho, lo blanco falta.
-   */
-  const CUADRO: Record<string, string> = {
-    completa:
-      "border-emerald-500/50 bg-emerald-500/10 hover:bg-emerald-500/20 dark:border-emerald-500/40",
-    parcial:
-      "border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 dark:border-amber-500/40",
-    pendiente: "border-border bg-card hover:bg-muted",
-  }
-  const BADGE: Record<string, string> = {
-    completa: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    parcial: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    pendiente: "bg-muted text-muted-foreground",
-  }
-  const LABEL: Record<string, string> = {
-    completa: "Completa",
-    parcial: "Parcial",
-    pendiente: "Pendiente",
-  }
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
-        <div>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Ruler className="size-4 text-muted-foreground" /> Inspección mensual
-          </CardTitle>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Una vez por mes se mide profundidad y presión de todas las cubiertas de la
-            flota. Clickeá una unidad para abrirla en el diagrama de abajo y cargar las
-            mediciones.
-          </p>
-        </div>
-        <Select value={mesSel} onValueChange={(v) => v && setMesSel(v)}>
-          <SelectTrigger className="w-44 capitalize">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {meses.map((ym) => (
-              <SelectItem key={ym} value={ym} className="capitalize">
-                {fmtMesLargo(ym)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {/* Avance de la ronda */}
-        <div className="flex items-center gap-3">
-          <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn(
-                "h-full rounded-full",
-                pct === 100 ? "bg-emerald-500" : "bg-sky-500"
-              )}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span className="whitespace-nowrap text-sm font-medium text-foreground">
-            {completas}/{filas.length} unidades · {pct}%
-          </span>
-        </div>
-
-        {filas.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No hay cubiertas instaladas cargadas en el módulo.
-          </p>
-        ) : (
-          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-            {filas.map((f) => (
-              <button
-                key={f.dominio}
-                className={cn(
-                  "flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left transition-colors",
-                  CUADRO[f.estado],
-                  // La unidad abierta en el diagrama se marca con el borde, sin
-                  // pisarle el color: si no, la elegida parecía siempre pendiente.
-                  dominioSel === f.dominio && "border-primary ring-1 ring-primary/40"
-                )}
-                onClick={() => onIrAUnidad(f.dominio)}
-                title={
-                  f.estado === "completa"
-                    ? "Medida este mes. Ir al diagrama de la unidad."
-                    : "Falta medirla este mes. Ir al diagrama para cargar mediciones."
-                }
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground">{f.dominio}</p>
-                  <p className="text-xs tabular-nums text-muted-foreground">
-                    {f.medidas}/{f.total} cubiertas
-                    {f.ultima && ` · ${fmtFecha(f.ultima)}`}
-                  </p>
-                </div>
-                {/* Lo verde ya se explica solo; el cartel queda para lo que falta. */}
-                {f.estado !== "completa" && (
-                  <Badge variant="outline" className={cn("shrink-0", BADGE[f.estado])}>
-                    {LABEL[f.estado]}
-                  </Badge>
-                )}
-              </button>
-            ))}
-            {sinCubiertas.map((dominio) => (
-              <button
-                key={dominio}
-                className={cn(
-                  "flex items-center justify-between gap-2 rounded-md border border-dashed border-border px-2.5 py-1.5 text-left transition-colors hover:bg-muted",
-                  dominioSel === dominio && "border-solid border-primary bg-primary/5"
-                )}
-                onClick={() => onIrAUnidad(dominio)}
-                title="Ir al diagrama de la unidad para montar cubiertas"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground">{dominio}</p>
-                  <p className="text-xs text-muted-foreground">sin cubiertas cargadas</p>
-                </div>
-                <Badge variant="outline" className="shrink-0 bg-muted text-muted-foreground">
-                  Sin cargar
-                </Badge>
-              </button>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
 
 // ==================== OT de neumáticos ====================
 
