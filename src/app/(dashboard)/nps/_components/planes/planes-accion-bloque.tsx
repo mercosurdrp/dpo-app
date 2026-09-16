@@ -483,22 +483,33 @@ export function PlanesAccionBloque({
     }
   }
 
+  // Los planes generales sobre la tasa de respuesta (folletos en PDV) son un
+  // plan de Cobertura: viven en esa solapa y no entran en este tablero, que
+  // es de planes centrados en el cliente. `planes` sigue completa para que el
+  // explorador y Cobertura reciban la lista entera al refrescar.
+  const planesPanel = useMemo(
+    () => planes.filter((p) => p.foco_driver !== TASA_FOCO),
+    [planes],
+  )
+
   // Opciones de filtro tomadas de los planes existentes.
   const driversEnPlanes = useMemo(
     () =>
-      [...new Set(planes.map((p) => p.foco_driver).filter(Boolean))] as string[],
-    [planes],
+      [
+        ...new Set(planesPanel.map((p) => p.foco_driver).filter(Boolean)),
+      ] as string[],
+    [planesPanel],
   )
   const responsablesEnPlanes = useMemo(
     () =>
       [
-        ...new Set(planes.map((p) => p.responsable_nombre).filter(Boolean)),
+        ...new Set(planesPanel.map((p) => p.responsable_nombre).filter(Boolean)),
       ] as string[],
-    [planes],
+    [planesPanel],
   )
 
   const planesFiltrados = useMemo(() => {
-    return planes.filter((p) => {
+    return planesPanel.filter((p) => {
       if (filtroDriver !== TODOS && p.foco_driver !== filtroDriver) return false
       if (
         filtroResponsable !== TODOS &&
@@ -507,7 +518,7 @@ export function PlanesAccionBloque({
         return false
       return true
     })
-  }, [planes, filtroDriver, filtroResponsable])
+  }, [planesPanel, filtroDriver, filtroResponsable])
 
   // En la lista además aplica el filtro de estado (el tablero ya separa por columnas).
   const planesLista = useMemo(() => {
@@ -627,6 +638,10 @@ export function PlanesAccionBloque({
             </Button>
           </span>
         </CardTitle>
+        <p className="text-xs text-slate-500">
+          Planes centrados en el cliente. El plan general para subir la tasa de
+          respuesta (folletos en PDV) se sigue desde la solapa Cobertura.
+        </p>
 
         {/* Resumen */}
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -719,7 +734,7 @@ export function PlanesAccionBloque({
       <CardContent className="border-t pt-4">
         {planesFiltrados.length === 0 ? (
           <div className="py-10 text-center text-sm text-slate-400">
-            {planes.length === 0 ? (
+            {planesPanel.length === 0 ? (
               <>
                 Todavía no hay planes. Creá el primero desde un cliente
                 detractor, un driver o un promotor con NPS bajo.

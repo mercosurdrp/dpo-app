@@ -138,6 +138,12 @@ export function RmdClient({
 
   // Opciones del formulario de plan, compartidas por el panel y por la solapa
   // Cobertura (que crea y abre planes sin salir de ahí).
+  // Sólo Cobertura ofrece el foco «Tasa de respuesta»: ese plan es de
+  // cobertura y no entra en el tablero de planes por cliente de abajo.
+  const motivosPanel = useMemo(
+    () => [...new Set(motivos.map((m) => m.motivo))],
+    [motivos],
+  )
   const motivosPlan = useMemo(
     () => [...new Set([...motivos.map((m) => m.motivo), TASA_FOCO])],
     [motivos],
@@ -649,7 +655,7 @@ export function RmdClient({
         onPlanesChange={setPlanes}
         verPlanId={verPlanId}
         verPlanNonce={verPlanNonce}
-        motivos={motivosPlan}
+        motivos={motivosPanel}
         clientes={clientesPlan}
         choferes={choferesPlan}
         focoInicial={focoPlan}

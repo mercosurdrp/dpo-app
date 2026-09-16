@@ -132,6 +132,12 @@ export function NpsClient({ data, planesIniciales, cobertura }: Props) {
 
   // Opciones del formulario de plan, compartidas por el panel y por la solapa
   // Cobertura (que crea y abre planes sin salir de ahi).
+  // Sólo Cobertura ofrece el foco «Tasa de respuesta»: ese plan es de
+  // cobertura y no entra en el tablero de planes por cliente de abajo.
+  const driversPanel = useMemo(
+    () => [...new Set(drivers_dp.map((d) => d.driver))],
+    [drivers_dp],
+  )
   const driversPlan = useMemo(
     () => [...new Set([...drivers_dp.map((d) => d.driver), TASA_FOCO])],
     [drivers_dp],
@@ -610,7 +616,7 @@ export function NpsClient({ data, planesIniciales, cobertura }: Props) {
         onPlanesChange={setPlanes}
         verPlanId={verPlanId}
         verPlanNonce={verPlanNonce}
-        drivers={driversPlan}
+        drivers={driversPanel}
         clientes={clientesPlan}
         promotores={promotoresPlan}
         focoInicial={focoPlan}
