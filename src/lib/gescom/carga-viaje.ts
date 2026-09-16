@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import {
   loadChecklistDominios,
   loadChoferesGescom,
+  loadPatentesValidas,
   patenteDeChofer,
 } from "./patente-chofer"
 
@@ -43,10 +44,11 @@ export async function cargaGescomPorViaje(
   desde: string,
   hasta: string,
 ): Promise<Map<string, CargaGescomViaje>> {
-  const [factores, choferes, checklists] = await Promise.all([
+  const [factores, choferes, checklists, patentesValidas] = await Promise.all([
     factoresArticulo(supabase),
     loadChoferesGescom(supabase),
     loadChecklistDominios(supabase, desde, hasta),
+    loadPatentesValidas(supabase),
   ])
 
   const out = new Map<string, CargaGescomViaje>()
@@ -81,7 +83,7 @@ export async function cargaGescomPorViaje(
       const bultos = Math.abs(Number(r.bultos) || 0)
       if (bultos === 0) continue
 
-      const patente = patenteDeChofer(codigo, r.fecha, choferes, checklists)
+      const patente = patenteDeChofer(codigo, r.fecha, choferes, checklists, patentesValidas)
       if (!patente) continue
 
       const key = `${patente}|${r.fecha}`

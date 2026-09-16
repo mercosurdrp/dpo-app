@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import {
   loadChecklistDominios,
   loadChoferesGescom,
+  loadPatentesValidas,
   patenteDeChofer,
   type ChoferGescom,
 } from "./patente-chofer"
@@ -20,6 +21,8 @@ import { codigoFleteroGescom, esFleteroGescom } from "./etiqueta-fletero"
 export interface ResolucionGescom {
   choferes: Map<string, ChoferGescom>
   checklists: Map<string, string>
+  /** Dominios activos del catálogo: distinguen un typo de un cambio real de unidad. */
+  patentesValidas: Set<string>
 }
 
 /** Mapeos necesarios para resolver fleteros de Gestión en [desde, hasta]. */
@@ -28,11 +31,12 @@ export async function loadResolucionGescom(
   desde: string,
   hasta: string,
 ): Promise<ResolucionGescom> {
-  const [choferes, checklists] = await Promise.all([
+  const [choferes, checklists, patentesValidas] = await Promise.all([
     loadChoferesGescom(supabase),
     loadChecklistDominios(supabase, desde, hasta),
+    loadPatentesValidas(supabase),
   ])
-  return { choferes, checklists }
+  return { choferes, checklists, patentesValidas }
 }
 
 export type FleteroResuelto =
@@ -54,7 +58,13 @@ export function resolverFleteroGescom(
   const codigo = codigoFleteroGescom(dsFleteroCarga)
   if (!codigo) return { tipo: "sin_resolver" } // "GESTION" pelado, sin código
   if (res.choferes.get(codigo)?.ventaDirecta) return { tipo: "venta_directa" }
-  const patente = patenteDeChofer(codigo, fecha, res.choferes, res.checklists)
+  const patente = patenteDeChofer(
+    codigo,
+    fecha,
+    res.choferes,
+    res.checklists,
+    res.patentesValidas,
+  )
   return patente ? { tipo: "patente", patente } : { tipo: "sin_resolver" }
 }
 

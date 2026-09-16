@@ -19,6 +19,7 @@ import {
   loadResolucionGescom,
   traducirFilasGescom,
 } from "@/lib/gescom/ventas-patente"
+import { normTexto } from "@/lib/gescom/patente-chofer"
 
 // ---------- Types ----------
 
@@ -258,6 +259,32 @@ export async function getMisRechazos(): Promise<
         clavesEmpleado.add(`${s.fecha}|${norm(s.patente)}`)
       }
     }
+    // Checklist del día: tercera fuente de "quién estuvo en ese camión". Cubre
+    // los días en que nadie cargó el egreso TML (entre el 01/08 y el 16/09 hubo
+    // 12 días sin un solo egreso registrado), que si no quedarían sin dueño.
+    const nombreChkNorm = nombreChofer ? normTexto(nombreChofer) : null
+    for (const [key, dominio] of resolucion.checklists) {
+      const sep = key.indexOf("|")
+      const f = key.slice(0, sep)
+      const nombreChk = key.slice(sep + 1)
+      if (nombreChkNorm && nombreChk === nombreChkNorm) {
+        clavesEmpleado.add(`${f}|${norm(dominio)}`)
+      }
+    }
+
+    // Camión-día del que SÍ se sabe quién lo manejó (cualquiera, no sólo este
+    // empleado). Es lo que permite usar el mapeo estático sin cobrarle a la
+    // gente los rechazos de días en que el camión lo manejó otro.
+    const camionConDuenoConocido = new Set<string>()
+    for (const r of registros) {
+      if (r.dominio) camionConDuenoConocido.add(`${r.fecha}|${norm(r.dominio)}`)
+    }
+    for (const s of salidasProg) {
+      if (s.patente) camionConDuenoConocido.add(`${s.fecha}|${norm(s.patente)}`)
+    }
+    for (const [key, dominio] of resolucion.checklists) {
+      camionConDuenoConocido.add(`${key.slice(0, key.indexOf("|"))}|${norm(dominio)}`)
+    }
 
     // Vinculado por mapeo de chofer, fletero fijo O salida programada.
     if (!nombreChofer && fleteros.size === 0 && clavesEmpleado.size === 0) {
@@ -279,11 +306,31 @@ export async function getMisRechazos(): Promise<
     const rechazos = traducirFilasGescom(rechazosCrudos, resolucion)
     const ventas = traducirFilasGescom(ventasCrudas, resolucion)
 
+    /**
+     * ¿Esta fila es de esta persona?
+     *
+     * Primero manda la evidencia del día (egreso TML, checklist o salida
+     * programada). El mapeo estático `mapeo_empleado_fletero` quedó como
+     * FALLBACK: sólo vale cuando de ese camión-día no se sabe quién lo manejó.
+     *
+     * Antes, la rama del mapeo estático cortocircuitaba antes del chequeo del
+     * día ("mapeo estático: todos los días"), y como esa tabla no tiene
+     * vigencia temporal —es un snapshot del presente aplicado a toda la
+     * historia— a cada persona se le cobraban TODOS los rechazos de "su"
+     * camión, aunque ese día estuviera franco o lo manejara otro. Medido el
+     * 16/09/2026 sobre 01/06→16/09: 265 filas mal atribuidas (404,5 bultos),
+     * el 15% de todo lo que mostraba la pantalla, con SANDOVAL al 42% de sus
+     * filas y RIVERO FEDERICO al 35%. Caso testigo: los 11 bultos del 15/09 de
+     * AE908DH, un camión que ese día no salió, mientras Sandoval manejaba
+     * AF399KY.
+     */
     const esMio = (fecha: string, dsFletero: string | null): string | null => {
       const patente = norm(dsFletero)
       if (!patente) return null
-      if (fleteros.has(patente)) return patente // mapeo estático: todos los días
-      return clavesEmpleado.has(`${fecha}|${patente}`) ? patente : null
+      const clave = `${fecha}|${patente}`
+      if (clavesEmpleado.has(clave)) return patente
+      if (fleteros.has(patente) && !camionConDuenoConocido.has(clave)) return patente
+      return null
     }
 
     // ---- Agregaciones ----
