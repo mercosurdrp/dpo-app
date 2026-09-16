@@ -120,6 +120,7 @@ export async function fetchViajesTlp(
           // y PostgREST devuelve los empates en orden arbitrario ⇒ las páginas se
           // pisan y el TLP sale distinto en cada corrida (abril llegó a saltar de
           // 31,4 a 39,4). Ver [[feedback_supabase_max_rows]].
+          .order("fecha", { ascending: true })
           .order("id")
           .range(from, to),
     ),
@@ -132,6 +133,7 @@ export async function fetchViajesTlp(
           .not("tiempo_ruta_minutos", "is", null)
           .gte("fecha", desde)
           .lte("fecha", hasta)
+          .order("fecha", { ascending: true })
           .order("id")
           .range(from, to),
     ),
@@ -143,6 +145,7 @@ export async function fetchViajesTlp(
           .eq("tipo", "egreso")
           .gte("fecha", desde)
           .lte("fecha", hasta)
+          .order("fecha", { ascending: true })
           .order("id")
           .range(from, to),
     ),

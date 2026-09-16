@@ -117,6 +117,7 @@ export async function getChoferDetalle(
           .select("fecha, ds_fletero_carga, total_bultos, total_hl, viajes")
           .gte("fecha", fechaDesde)
           .lte("fecha", fechaHasta)
+          .order("fecha", { ascending: true })
           .order("id")
           .range(a, b),
       "ventas_diarias"),
@@ -127,6 +128,7 @@ export async function getChoferDetalle(
           .gte("fecha", fechaDesde)
           .lte("fecha", fechaHasta)
           .eq("tipo", "egreso")
+          .order("fecha", { ascending: true })
           .order("id")
           .range(a, b),
       "registros_vehiculos"),
@@ -136,6 +138,7 @@ export async function getChoferDetalle(
           .select("fecha, ds_fletero_carga, bultos_rechazados")
           .gte("fecha", fechaDesde)
           .lte("fecha", fechaHasta)
+          .order("fecha", { ascending: true })
           .order("id")
           .range(a, b),
       "rechazos"),
@@ -165,6 +168,7 @@ export async function getChoferDetalle(
           .select("fecha, patente, chofer_empleado_id")
           .gte("fecha", fechaDesde)
           .lte("fecha", fechaHasta)
+          .order("fecha", { ascending: true })
           .order("id")
           .range(a, b),
       "salidas_programadas").catch(() => []),
