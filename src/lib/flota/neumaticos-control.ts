@@ -40,6 +40,26 @@ export function nivelProfundidad(mm: number | null): NivelProfundidad | null {
 export const PROF_MAX_MM = 30
 
 /**
+ * Cuánto se le tolera a una medición estar POR ENCIMA de la anterior de la
+ * misma cubierta antes de rechazarla.
+ *
+ * La goma no crece: si una cubierta marcaba 9,4 mm y la ronda siguiente dice
+ * 12,9, hay un error de tipeo o se midió otra rueda. Esos valores no molestan
+ * sólo a esa cubierta: el desgaste por km corta el tramo ante cualquier salto
+ * hacia arriba, así que una sola medición mal cargada deja a la cubierta sin
+ * tasa. En julio/2026 pasó con una ronda entera (22 cubiertas) y hubo que
+ * descartarla a mano.
+ *
+ * El margen existe porque el calibre y el canal de la banda que se mida dan
+ * unas décimas de diferencia entre dos lecturas honestas de la misma goma.
+ *
+ * No aplica cruzando un recapado: una cubierta que vuelve del recapador SÍ
+ * tiene más goma que antes. Por eso la comparación se hace contra las
+ * mediciones posteriores al último montaje, no contra toda la historia.
+ */
+export const TOLERANCIA_SUBIDA_MM = 0.2
+
+/**
  * 🚨 La profundidad se carga SIEMPRE con decimal: "11.5", y "12" hay que
  * escribirlo "12.0".
  *
