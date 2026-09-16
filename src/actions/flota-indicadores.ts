@@ -324,7 +324,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .or(`fuera_servicio_hasta.gte.${inicioVentana},fuera_servicio_hasta.is.null`),
       // Neumáticos (DPO 3.4): mediciones del período y padrón de cubiertas
       // instaladas. El dominio viaja con la cubierta porque el control mensual
-      // sólo alcanza a camiones y autoelevadores (ver `alcanceNeumaticos`).
+      // sólo alcanza a camiones (ver `alcanceNeumaticos`).
       supabase
         .from("mantenimiento_neumatico_mediciones")
         .select(
@@ -722,7 +722,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
      *    estándar (¿cómo está la flota?) — le corresponde a mantenimiento.
      *
      * 🚨 El universo es el del control mensual (`TIPOS_NEUMATICOS_OBLIGATORIOS`:
-     * camión y autoelevador activos), no todas las cubiertas cargadas: el
+     * camiones activos), no todas las cubiertas cargadas: el
      * acoplado y las camionetas se ven en el módulo de Neumáticos pero la
      * rutina mensual no las exige, y meterlas en el denominador es el mismo
      * error que se está corrigiendo. Son 85 cubiertas, no 108.

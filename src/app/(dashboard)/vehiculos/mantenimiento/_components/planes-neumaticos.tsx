@@ -374,7 +374,7 @@ export function PlanesNeumaticos({
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Una vez por mes se mide profundidad y presión de todas las cubiertas de
-                  camiones y autoelevadores. Clickeá una unidad para abrirla en el diagrama
+                  camiones. Clickeá una unidad para abrirla en el diagrama
                   de abajo y cargar las mediciones.
                 </p>
               </div>
@@ -426,7 +426,7 @@ export function PlanesNeumaticos({
 
             {ronda.length === 0 ? (
               <p className="py-3 text-sm text-muted-foreground">
-                No hay camiones ni autoelevadores con cubiertas instaladas.
+                No hay camiones con cubiertas instaladas.
               </p>
             ) : (
               <ul className="divide-y divide-border rounded-md border">
