@@ -60,7 +60,11 @@ const NIVELES = [
   {
     key: "averia",
     titulo: "Avería grave / fuera de servicio",
-    detalle: "Correctivos con la unidad parada en taller",
+    // 🚨 Antes contaba las OT correctivas en estado "en_taller" y por eso daba
+    // SIEMPRE 0: las órdenes se cargan ya cerradas, en "completado". La avería
+    // grave es la que dejó la unidad parada, y eso lo dice el período de fuera
+    // de servicio, no el estado de la orden.
+    detalle: "Correctivos que dejaron la unidad fuera de servicio",
     color: "#C0392B",
   },
   {
@@ -77,7 +81,11 @@ const NIVELES = [
   },
   {
     key: "leve",
-    titulo: "Observaciones / defectos leves",
+    // No decir "Observaciones": las observaciones son el texto libre del
+    // checklist (cientos por año) y este nivel son sólo los ítems no conformes
+    // que no son críticos. Los críticos están en el nivel de arriba, así que la
+    // base NUNCA es el total de defectos — de ahí venía la confusión.
+    titulo: "Defectos leves (no críticos)",
     detalle: "Ítems no conformes no críticos en checklist",
     color: "#5DADE2",
   },
@@ -155,7 +163,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       leve: items.filter((i) => !i.critico).length,
       critico: items.filter((i) => i.critico).length,
       correctivo: correctivos.length,
-      averia: correctivos.filter((m) => m.estado === "en_taller").length,
+      averia: correctivos.filter((m) => !!m.fuera_servicio_desde).length,
     }
 
     const porUnidad = new Map<string, { leves: number; criticos: number }>()
@@ -393,7 +401,15 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
             })}
           </svg>
         </div>
-        <p className="mt-1 flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
+        {/* La cuenta escrita al pie: la base son sólo los leves, y sin esto el
+            KPI "Defectos" (leves + críticos) parecía no cerrar con la pirámide. */}
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          <strong className="font-semibold text-foreground">
+            {fmtNum(datos.totalDefectos)} defectos de checklist
+          </strong>{" "}
+          = {fmtNum(datos.conteo.leve)} leves + {fmtNum(datos.conteo.critico)} críticos.
+        </p>
+        <p className="mt-0.5 flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
           <Info className="size-3" />
           De la base (defectos leves de checklist) a la punta (avería grave).
           Gestionando la base se previene la punta.
