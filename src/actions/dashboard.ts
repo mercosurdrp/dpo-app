@@ -4,6 +4,10 @@ import { createClient } from "@/lib/supabase/server"
 import { calcPillarScore, calcOverallScore } from "@/lib/scoring"
 import type { Pilar, Pregunta, Respuesta, Auditoria } from "@/types/database"
 
+/** Lo único que el scoring necesita de cada pregunta / respuesta. */
+type PreguntaScore = Pick<Pregunta, "id" | "bloque_id" | "mandatorio" | "peso">
+type RespuestaScore = Pick<Respuesta, "id" | "pregunta_id" | "puntaje">
+
 interface PillarScoreResult {
   pilarId: string
   pilarNombre: string
@@ -38,26 +42,34 @@ export async function getDashboardData(
   try {
     const supabase = await createClient()
 
-    // Get the target auditoria
-    let auditoria: Auditoria | null = null
+    // Catálogo y auditorías: nada de esto depende de lo otro, así que va todo
+    // en paralelo. Antes eran seis SELECT en fila contra una base que está en
+    // otra región, y cada uno pagaba su propio round-trip.
+    //
+    // Los `select("*")` de preguntas y respuestas se reemplazaron por las
+    // columnas que el scoring realmente usa: traían texto, guia, requerimiento
+    // y el JSON de puntaje_criterio de las 167 preguntas para leer sólo `peso`.
+    const [audRes, pilaresRes, bloquesRes, preguntasRes, allAuditoriasRes] =
+      await Promise.all([
+        auditoriaId
+          ? supabase.from("auditorias").select("*").eq("id", auditoriaId).single()
+          : supabase
+              .from("auditorias")
+              .select("*")
+              .order("fecha_inicio", { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+        supabase.from("pilares").select("*").order("orden"),
+        supabase.from("bloques").select("id, pilar_id"),
+        supabase.from("preguntas").select("id, bloque_id, mandatorio, peso"),
+        supabase
+          .from("auditorias")
+          .select("id, nombre, fecha_inicio")
+          .order("fecha_inicio", { ascending: true }),
+      ])
 
-    if (auditoriaId) {
-      const { data, error } = await supabase
-        .from("auditorias")
-        .select("*")
-        .eq("id", auditoriaId)
-        .single()
-      if (error) return { error: error.message }
-      auditoria = data as Auditoria
-    } else {
-      const { data } = await supabase
-        .from("auditorias")
-        .select("*")
-        .order("fecha_inicio", { ascending: false })
-        .limit(1)
-        .single()
-      auditoria = (data as Auditoria) ?? null
-    }
+    if (auditoriaId && audRes.error) return { error: audRes.error.message }
+    const auditoria = (audRes.data as Auditoria) ?? null
 
     if (!auditoria) {
       return {
@@ -71,42 +83,59 @@ export async function getDashboardData(
       }
     }
 
-    // Get all pilares
-    const { data: pilares } = await supabase
-      .from("pilares")
-      .select("*")
-      .order("orden")
+    const pilaresArr = (pilaresRes.data ?? []) as Pilar[]
+    const bloquesArr = (bloquesRes.data ?? []) as { id: string; pilar_id: string }[]
+    const preguntasArr = (preguntasRes.data ?? []) as Pick<
+      Pregunta,
+      "id" | "bloque_id" | "mandatorio" | "peso"
+    >[]
+    const allAuditorias = (allAuditoriasRes.data ?? []) as Pick<
+      Auditoria,
+      "id" | "nombre" | "fecha_inicio"
+    >[]
 
-    // Get all bloques
-    const { data: bloques } = await supabase
-      .from("bloques")
-      .select("*")
+    // Respuestas de TODAS las auditorías de una, agrupadas después en memoria.
+    // Antes: un SELECT para la auditoría activa y, más abajo, otro SELECT por
+    // cada auditoría del historial dentro de un `for` — un round-trip por fila.
+    const respuestasPorAuditoria = new Map<
+      string,
+      Pick<Respuesta, "id" | "pregunta_id" | "puntaje">[]
+    >()
+    for (const aud of allAuditorias) respuestasPorAuditoria.set(aud.id, [])
+    if (!respuestasPorAuditoria.has(auditoria.id)) {
+      respuestasPorAuditoria.set(auditoria.id, [])
+    }
 
-    // Get all preguntas
-    const { data: preguntas } = await supabase
-      .from("preguntas")
-      .select("*")
+    // PostgREST corta en 1000 filas por request: se pagina para que el
+    // historial no quede truncado cuando se acumulen varias auditorías.
+    const PAGE = 1000
+    for (let from = 0; ; from += PAGE) {
+      const { data } = await supabase
+        .from("respuestas")
+        .select("id, auditoria_id, pregunta_id, puntaje")
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (!data || data.length === 0) break
+      for (const r of data as (Respuesta & { auditoria_id: string })[]) {
+        const lista = respuestasPorAuditoria.get(r.auditoria_id)
+        if (lista) lista.push({ id: r.id, pregunta_id: r.pregunta_id, puntaje: r.puntaje })
+      }
+      if (data.length < PAGE) break
+    }
 
-    // Get respuestas for this auditoria
-    const { data: respuestas } = await supabase
-      .from("respuestas")
-      .select("*")
-      .eq("auditoria_id", auditoria.id)
+    const respuestasArr = respuestasPorAuditoria.get(auditoria.id) ?? []
 
-    // Get pending actions count
-    const { count: pendingActions } = await supabase
+    // Acciones pendientes de esta auditoría. Antes se mandaban los ~167 UUID
+    // de las respuestas dentro de un `.in()`, o sea una URL de varios KB en un
+    // GET; ahora se traen las pendientes (que son pocas) y se cruzan acá.
+    const idsRespuestas = new Set(respuestasArr.map((r) => r.id))
+    const { data: accionesPendientes } = await supabase
       .from("acciones")
-      .select("id", { count: "exact", head: true })
+      .select("respuesta_id")
       .eq("estado", "pendiente")
-      .in(
-        "respuesta_id",
-        (respuestas ?? []).map((r: Respuesta) => r.id)
-      )
-
-    const pilaresArr = (pilares ?? []) as Pilar[]
-    const bloquesArr = (bloques ?? []) as { id: string; pilar_id: string }[]
-    const preguntasArr = (preguntas ?? []) as Pregunta[]
-    const respuestasArr = (respuestas ?? []) as Respuesta[]
+    const pendingActions = (accionesPendientes ?? []).filter(
+      (a: { respuesta_id: string }) => idsRespuestas.has(a.respuesta_id)
+    ).length
 
     // Build pilar -> bloques -> preguntas mapping
     const bloquesByPilar = new Map<string, string[]>()
@@ -116,14 +145,31 @@ export async function getDashboardData(
       bloquesByPilar.set(b.pilar_id, list)
     }
 
-    const preguntasByBloque = new Map<string, Pregunta[]>()
+    const preguntasByBloque = new Map<string, PreguntaScore[]>()
     for (const p of preguntasArr) {
       const list = preguntasByBloque.get(p.bloque_id) ?? []
       list.push(p)
       preguntasByBloque.set(p.bloque_id, list)
     }
 
-    const respuestaByPregunta = new Map<string, Respuesta>()
+    // Las preguntas de cada pilar se arman UNA vez y se reusan para la
+    // auditoría activa y para todo el historial. Antes se rearmaban dentro del
+    // loop de auditorías, y encima se cruzaban con un `.some()` adentro de un
+    // `.filter()`: O(preguntas × respuestas) por pilar y por auditoría.
+    const preguntasPorPilar = new Map<string, PreguntaScore[]>()
+    const pilarDePregunta = new Map<string, string>()
+    for (const pilar of pilaresArr) {
+      const lista: PreguntaScore[] = []
+      for (const bid of bloquesByPilar.get(pilar.id) ?? []) {
+        for (const p of preguntasByBloque.get(bid) ?? []) {
+          lista.push(p)
+          pilarDePregunta.set(p.id, pilar.id)
+        }
+      }
+      preguntasPorPilar.set(pilar.id, lista)
+    }
+
+    const respuestaByPregunta = new Map<string, RespuestaScore>()
     for (const r of respuestasArr) {
       respuestaByPregunta.set(r.pregunta_id, r)
     }
@@ -133,15 +179,11 @@ export async function getDashboardData(
     const pillarScoreValues: number[] = []
 
     for (const pilar of pilaresArr) {
-      const bloqueIds = bloquesByPilar.get(pilar.id) ?? []
-      const pilarPreguntas: Pregunta[] = []
-      for (const bid of bloqueIds) {
-        pilarPreguntas.push(...(preguntasByBloque.get(bid) ?? []))
-      }
+      const pilarPreguntas = preguntasPorPilar.get(pilar.id) ?? []
 
       const pilarRespuestas = pilarPreguntas
         .map((p) => respuestaByPregunta.get(p.id))
-        .filter((r): r is Respuesta => r !== undefined && r.puntaje !== null)
+        .filter((r): r is RespuestaScore => r !== undefined && r.puntaje !== null)
 
       const score = calcPillarScore(pilarRespuestas, pilarPreguntas)
 
@@ -149,7 +191,7 @@ export async function getDashboardData(
       const mandatoryPreguntas = pilarPreguntas.filter((p) => p.mandatorio)
       const mandatoryRespuestas = mandatoryPreguntas
         .map((p) => respuestaByPregunta.get(p.id))
-        .filter((r): r is Respuesta => r !== undefined && r.puntaje !== null)
+        .filter((r): r is RespuestaScore => r !== undefined && r.puntaje !== null)
       const mandatoryScore = calcPillarScore(mandatoryRespuestas, mandatoryPreguntas)
 
       pillarScores.push({
@@ -168,34 +210,32 @@ export async function getDashboardData(
 
     const overallScore = Math.round(calcOverallScore(pillarScoreValues) * 100) / 100
 
-    // Auditorias history for trend chart
-    const { data: allAuditorias } = await supabase
-      .from("auditorias")
-      .select("*")
-      .order("fecha_inicio", { ascending: true })
-
+    // Auditorias history for trend chart. Las respuestas ya están todas en
+    // memoria (ver `respuestasPorAuditoria`), así que acá no se consulta nada:
+    // antes era un SELECT por auditoría, en fila.
     const auditoriasHistory: AuditoriaHistoryItem[] = []
 
-    for (const aud of (allAuditorias ?? []) as Auditoria[]) {
-      const { data: audResp } = await supabase
-        .from("respuestas")
-        .select("pregunta_id, puntaje")
-        .eq("auditoria_id", aud.id)
+    for (const aud of allAuditorias) {
+      const audRespArr = respuestasPorAuditoria.get(aud.id) ?? []
 
-      const audRespArr = (audResp ?? []) as Pick<Respuesta, "pregunta_id" | "puntaje">[]
-      const audPillarScores: number[] = []
-
-      for (const pilar of pilaresArr) {
-        const bloqueIds = bloquesByPilar.get(pilar.id) ?? []
-        const pilarPreguntas: Pregunta[] = []
-        for (const bid of bloqueIds) {
-          pilarPreguntas.push(...(preguntasByBloque.get(bid) ?? []))
-        }
-        const pilarResp = audRespArr.filter(
-          (r) => pilarPreguntas.some((p) => p.id === r.pregunta_id) && r.puntaje !== null
-        )
-        audPillarScores.push(calcPillarScore(pilarResp, pilarPreguntas))
+      // Agrupar las respuestas por pilar en una sola pasada, resolviendo el
+      // pilar con el índice `pilarDePregunta` en vez de recorrer las preguntas.
+      const respPorPilar = new Map<string, RespuestaScore[]>()
+      for (const r of audRespArr) {
+        if (r.puntaje === null) continue
+        const pilarId = pilarDePregunta.get(r.pregunta_id)
+        if (!pilarId) continue
+        const lista = respPorPilar.get(pilarId) ?? []
+        lista.push(r)
+        respPorPilar.set(pilarId, lista)
       }
+
+      const audPillarScores = pilaresArr.map((pilar) =>
+        calcPillarScore(
+          respPorPilar.get(pilar.id) ?? [],
+          preguntasPorPilar.get(pilar.id) ?? []
+        )
+      )
 
       auditoriasHistory.push({
         id: aud.id,

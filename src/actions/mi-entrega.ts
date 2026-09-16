@@ -203,6 +203,7 @@ export async function getMiEntrega(): Promise<
               .like("ds_fletero_carga", "GESTION%")
               .gte("fecha", primerDia)
               .lte("fecha", ultimaFecha)
+              .order("fecha", { ascending: true })
               .order("id")
               .range(a, b),
           ),
@@ -213,6 +214,7 @@ export async function getMiEntrega(): Promise<
               .like("ds_fletero_carga", "GESTION%")
               .gte("fecha", primerDia)
               .lte("fecha", ultimaFecha)
+              .order("fecha", { ascending: true })
               .order("id")
               .range(a, b),
           ),

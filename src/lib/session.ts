@@ -14,29 +14,61 @@ import type { Profile, UserRole } from "@/types/database"
 export const getProfile = cache(async function getProfile(): Promise<Profile | null> {
   const supabase = await createClient()
 
+  const userId = await getUserId(supabase)
+  if (!userId) return null
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .single()
+
+  return profile as Profile | null
+})
+
+/**
+ * Devuelve el id del usuario autenticado validando el access token SIN pegarle
+ * al servidor de Auth.
+ *
+ * El proyecto firma los JWT con clave asimétrica (ES256, ver
+ * `/auth/v1/.well-known/jwks.json`), así que `getClaims()` verifica la firma
+ * localmente con WebCrypto y cachea el JWKS. `getUser()`, en cambio, hacía un
+ * round-trip HTTP a Auth por cada llamada, y cada uno de esos round-trips
+ * dispara cinco SELECT en la base (users, sessions, mfa_amr_claims, identities
+ * y mfa_factors).
+ *
+ * Medido en `pg_stat_statements` antes del cambio: ~1.3 millones de llamadas a
+ * cada uno de esos SELECT y ~45 minutos de CPU de la base acumulados sólo para
+ * responder "quién sos". Era el mayor consumidor de la base, por encima de
+ * cualquier query del negocio.
+ *
+ * Se mantiene el fallback a `getUser()` porque `getClaims()` también pega a la
+ * red cuando el token está por vencer (refresca antes de validar) o cuando no
+ * hay WebCrypto, y porque una falla de red NO es una sesión inválida: un 504 o
+ * un ECONNRESET tienen que reintentarse, mientras que un 401/403 es un "no" de
+ * verdad y se respeta al toque. Mismo criterio que el middleware.
+ */
+async function getUserId(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.auth.getClaims()
+    if (!error && data?.claims?.sub) return data.claims.sub
+    // Rechazo explícito: la sesión no vale, no hay nada que reintentar.
+    if (error && (error.status === 401 || error.status === 403)) return null
+  } catch {
+    // Firma ilegible, JWKS inalcanzable o WebCrypto ausente: probamos por red.
+  }
+
   let { data: userData, error } = await supabase.auth.getUser()
 
-  // Una falla de red NO es una sesión inválida. Cuando Supabase está cargado
-  // devuelve 504 —o directamente el HTML de su página de error, que llega como
-  // AuthUnknownError— y sin este reintento el usuario terminaba en /login con
-  // la sesión intacta. Sólo reintentamos lo transitorio: un 401/403 es un "no"
-  // de verdad y se respeta al toque. Mismo criterio que el middleware.
   if (error && error.status !== 401 && error.status !== 403) {
     await new Promise((r) => setTimeout(r, 300))
     ;({ data: userData, error } = await supabase.auth.getUser())
   }
 
-  const user = userData?.user
-  if (!user) return null
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single()
-
-  return profile as Profile | null
-})
+  return userData?.user?.id ?? null
+}
 
 /**
  * Require authentication. Redirects to /login if not authenticated.
@@ -75,14 +107,9 @@ export async function getEmpleadoIdFromAuth(): Promise<string | null> {
   const profile = await getProfile()
   if (!profile) return null
 
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("profiles")
-    .select("empleado_id")
-    .eq("id", profile.id)
-    .single()
-
-  return (data?.empleado_id as string | null) ?? null
+  // `getProfile()` ya hizo `select("*")`: `empleado_id` viene en esa fila y el
+  // segundo SELECT a profiles era un round-trip de más por cada llamada.
+  return profile.empleado_id ?? null
 }
 
 /**

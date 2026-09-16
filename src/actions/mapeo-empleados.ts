@@ -69,6 +69,7 @@ export async function getUnmappedFleteros(): Promise<
       .select("ds_fletero_carga")
       .not("ds_fletero_carga", "is", null)
       .gte("fecha", desdeVentas)
+      .order("fecha", { ascending: true })
       .order("id")
       .range(from, from + 999)
     if (!data || data.length === 0) break
