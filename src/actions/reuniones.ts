@@ -723,7 +723,7 @@ export async function crearReunion(
 
     if (!tipoRaw) return { error: "El tipo de reunión es obligatorio" }
     if (
-      !["logistica", "logistica-ventas", "matinal-distribucion", "warehouse", "presupuesto", "mantenimiento"].includes(
+      !["logistica", "logistica-ventas", "matinal-distribucion", "warehouse", "presupuesto", "mantenimiento", "iniciativas-ahorro"].includes(
         tipoRaw,
       )
     ) {
@@ -2110,7 +2110,7 @@ export async function crearIndicadorConfig(
 
     if (!tipoRaw) return { error: "El tipo es obligatorio" }
     if (
-      !["logistica", "logistica-ventas", "matinal-distribucion", "warehouse", "presupuesto", "mantenimiento"].includes(
+      !["logistica", "logistica-ventas", "matinal-distribucion", "warehouse", "presupuesto", "mantenimiento", "iniciativas-ahorro"].includes(
         tipoRaw,
       )
     ) {
@@ -2964,7 +2964,7 @@ async function getIndicadoresMesCore(
     // (no rechazan), así que no necesitan el envoltorio de arriba. Cada una se
     // consume abajo con `await (pX ?? qX())`: si el prefetch corrió se reusa, y
     // si no, se ejecuta ahí mismo como antes — el guard del sitio manda.
-    const quiereNoWarehouse = tipo !== "warehouse" && tipo !== "presupuesto"
+    const quiereNoWarehouse = tipo !== "warehouse" && tipo !== "presupuesto" && tipo !== "iniciativas-ahorro"
     const quiereChecklist = tipo === "logistica" || tipo === "matinal-distribucion"
 
     const qReportesSeguridad = () =>
@@ -3299,7 +3299,7 @@ async function getIndicadoresMesCore(
     //     Se imputa por `fecha_venta` (día de la venta real, no el de carga de
     //     la devolución) y se mide en HL. Mismo criterio que /indicadores/rechazos
     //     (lib/rechazos/comparado.ts) y el detalle del día (lib/rechazos/resumen-dia.ts).
-    if (tipo !== "warehouse" && tipo !== "presupuesto") {
+    if (tipo !== "warehouse" && tipo !== "presupuesto" && tipo !== "iniciativas-ahorro") {
       const hlPorFecha: Record<string, number> = {}
       const ventasHlPorFecha: Record<string, number> = {}
 
@@ -3397,7 +3397,7 @@ async function getIndicadoresMesCore(
     //     salvo warehouse. Suma diaria de total_bultos / total_hl. Meta de cada
     //     uno = promedio diario del mes anterior. mejor_si=mayor (verde si
     //     supera meta). Se hace una sola lectura por rango con ambas columnas.
-    if (tipo !== "warehouse" && tipo !== "presupuesto") {
+    if (tipo !== "warehouse" && tipo !== "presupuesto" && tipo !== "iniciativas-ahorro") {
       const { data: ventRaw, error: errVent } = await leerVentasDiarias(
         fechaDesde,
         fechaHasta,
@@ -3534,7 +3534,7 @@ async function getIndicadoresMesCore(
     //     salvo warehouse. Promedio diario de tml_minutos en registros_vehiculos
     //     (tipo=egreso, tml_minutos NOT NULL). Meta 25 min. mejor_si=menor.
     //     MTD = promedio ponderado por # de egresos (Σ minutos / Σ egresos).
-    if (tipo !== "warehouse" && tipo !== "presupuesto") {
+    if (tipo !== "warehouse" && tipo !== "presupuesto" && tipo !== "iniciativas-ahorro") {
       const { data: tmlRaw, error: errTml } = await (pTml ?? qTml())
 
       if (!errTml) {
@@ -3599,7 +3599,7 @@ async function getIndicadoresMesCore(
     //   CEq objetivo y no coincidía con el número del modal). Como ningún viaje
     //   llena el camión, el 100% no es alcanzable: el verde se pinta contra el
     //   objetivo de carga expresado en % de la bodega (600/1440).
-    if (tipo !== "warehouse" && tipo !== "presupuesto") {
+    if (tipo !== "warehouse" && tipo !== "presupuesto" && tipo !== "iniciativas-ahorro") {
       const { data: obRaw, error: errOB } = await (pOcupacionBodega ??
         qOcupacionBodega())
       if (!errOB) {

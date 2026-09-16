@@ -12,6 +12,16 @@ import {
   parseEstadosManuales,
 } from "@/lib/capacitacion-estado"
 import { calcularAdherencia, type ItemAdherencia } from "@/lib/capacitacion-adherencia"
+import {
+  pctAsistencia,
+  type EmpleadoRef,
+  type FilaAsistenciaEmpleado,
+  type ItemAsistencia,
+} from "@/lib/capacitacion-asistencia"
+import {
+  hojaAdherenciaPersona,
+  hojaAsistencia,
+} from "@/lib/capacitacion-asistencia-xlsx"
 import { HAY_PAC, META_CUMPLIMIENTO, PAC_2026_ORIGEN, PAC_2026_TOTAL } from "@/lib/pac-2026"
 import type {
   Capacitacion,
@@ -163,11 +173,16 @@ export async function GET(_req: NextRequest) {
     type Row = Record<string, string | number | null>
     const rows: Row[] = []
     const itemsAdherencia: ItemAdherencia[] = []
+    const itemsAsistencia: ItemAsistencia[] = []
+    const filasEmpleado: FilaAsistenciaEmpleado[] = []
+    const empleadosRef = new Map<string, EmpleadoRef>()
 
     const today = new Date().toISOString().slice(0, 10)
     for (const c of caps) {
       const list = asistByCap.get(c.id) ?? []
       const aprobados = list.filter((a) => a.resultado === "aprobado").length
+      const presentes = list.filter((a) => a.presente).length
+      const pctAsist = pctAsistencia({ convocados: list.length, presentes })
       const entradaEstado = {
         estado: c.estado,
         total_asistentes: list.length,
@@ -186,6 +201,33 @@ export async function GET(_req: NextRequest) {
         estadoReal,
         estadoManual,
       })
+      itemsAsistencia.push({
+        id: c.id,
+        titulo: c.titulo,
+        fecha: c.fecha,
+        pilar: c.pilar,
+        // La asistencia sólo saca de la medición las dadas de baja, no las que
+        // todavía no cerraron: una capacitación dictada se mide igual.
+        estadoReal: c.estado === "cancelada" ? "cancelada" : estadoReal,
+        convocados: list.length,
+        presentes,
+      })
+      for (const a of list) {
+        filasEmpleado.push({
+          empleadoId: a.empleado_id,
+          capacitacionId: c.id,
+          presente: !!a.presente,
+          resultado: (a.resultado as ResultadoCapacitacion) ?? null,
+        })
+        if (a.empleado && !empleadosRef.has(a.empleado.id)) {
+          empleadosRef.set(a.empleado.id, {
+            id: a.empleado.id,
+            nombre: a.empleado.nombre,
+            legajo: a.empleado.legajo ?? null,
+            sector: a.empleado.sector ?? null,
+          })
+        }
+      }
       const base = {
         Capacitación: c.titulo,
         Pilar: c.pilar ?? "",
@@ -197,6 +239,9 @@ export async function GET(_req: NextRequest) {
         Lugar: c.lugar ?? "",
         Descripción: c.descripcion ?? "",
         Visible: fmtBool(c.visible),
+        Convocados: list.length,
+        "Presentes (total)": presentes,
+        "% Asistencia": pctAsist,
       }
 
       if (list.length === 0) {
@@ -256,6 +301,9 @@ export async function GET(_req: NextRequest) {
         "Lugar",
         "Descripción",
         "Visible",
+        "Convocados",
+        "Presentes (total)",
+        "% Asistencia",
         "Empleado",
         "Legajo",
         "Sector",
@@ -278,6 +326,9 @@ export async function GET(_req: NextRequest) {
       { wch: 22 },
       { wch: 40 },
       { wch: 8 },
+      { wch: 12 },
+      { wch: 16 },
+      { wch: 13 },
       { wch: 28 },
       { wch: 10 },
       { wch: 16 },
@@ -291,6 +342,16 @@ export async function GET(_req: NextRequest) {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Capacitaciones")
     XLSX.utils.book_append_sheet(wb, hojaAdherencia(itemsAdherencia, today), "Adherencia Cronograma")
+    XLSX.utils.book_append_sheet(
+      wb,
+      hojaAsistencia(itemsAsistencia, filasEmpleado, [...empleadosRef.values()], today),
+      "Asistencia"
+    )
+    XLSX.utils.book_append_sheet(
+      wb,
+      hojaAdherenciaPersona(itemsAsistencia, filasEmpleado, [...empleadosRef.values()], today),
+      "Adherencia por Persona"
+    )
 
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer
 

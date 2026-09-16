@@ -13,6 +13,7 @@ import {
   type CiudadPriorizada,
 } from "@/lib/priorizacion/score"
 import {
+  topeGanadores,
   umbralFacturacionAlta,
   clasificarCluster,
   motivosDeBaja,
@@ -119,6 +120,7 @@ async function getPerfilClientes(
   const conDrop = clientes.filter((r) => r.dias_45d > 0 && r.bultos_45d > 0)
   const umbral = umbralFacturacionAlta(
     conDrop.filter(crece).map((r) => r.facturacion_sem),
+    topeGanadores(conDrop.length),
   )
   const entregasPorCliente = new Map(entregas.rows.map((e) => [Number(e.id_cliente), Number(e.n)]))
 

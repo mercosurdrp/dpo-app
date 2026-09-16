@@ -18,7 +18,7 @@ async function signed(supabase: Awaited<ReturnType<typeof createClient>>, path: 
   return data?.signedUrl ?? null
 }
 
-// GET → programa de incentivos de temporada alta, con sus KPIs y las URLs
+// GET → programa de incentivos de períodos críticos, con sus KPIs y las URLs
 // públicas resueltas. Los KPIs son filas (pc_incentivos_kpis) y no prosa dentro
 // de `descripcion`: R3.4.4 pide demostrar a qué indicadores está conectado el
 // incentivo, con su meta.
@@ -42,14 +42,19 @@ export async function GET() {
       ...data,
       archivo_url: await signed(supabase, data.archivo_path),
       comunicado_url: await signed(supabase, data.comunicado_path),
+      aprobacion_url: await signed(supabase, data.aprobacion_path),
     },
     kpis: kpis ?? [],
   })
 }
 
+// Los tres adjuntos del programa: la presentación, la aprobación de gerencia
+// firmada y el comunicado firmado por los empleados.
+const SLOTS = ["programa", "aprobacion", "comunicado"] as const
+
 // POST → genera una URL firmada para subir un archivo DIRECTO a Storage desde el
 // navegador (bypass del límite de 4.5MB de las funciones serverless). Body JSON:
-// { slot: "programa" | "comunicado", nombre }. Devuelve { bucket, path, token }.
+// { slot: "programa" | "aprobacion" | "comunicado", nombre }. Devuelve { bucket, path, token }.
 export async function POST(req: NextRequest) {
   const profile = await getProfile()
   if (!profile) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
@@ -58,7 +63,7 @@ export async function POST(req: NextRequest) {
   }
   const body = await req.json().catch(() => ({}))
   const slot = body?.slot
-  if (slot !== "programa" && slot !== "comunicado") {
+  if (!SLOTS.includes(slot)) {
     return NextResponse.json({ error: "slot inválido" }, { status: 400 })
   }
   const supabase = await createClient()
@@ -70,9 +75,11 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ bucket: BUCKET, path, token: data.token })
 }
 
-// PUT (FormData) → edita el programa, sube PPT y/o evidencia de comunicación.
-// Campos: descripcion, periodo, comunicado(bool), comunicado_fecha, comunicado_nota,
-//         archivo_programa (File), archivo_comunicado (File). Solo admin/supervisor.
+// PUT (FormData) → edita el programa, sube PPT, aprobación de gerencia y/o
+// comunicado firmado. Campos: descripcion, periodo, comunicado(bool),
+// comunicado_fecha, comunicado_nota, comunicado_link, aprobacion_fecha,
+// aprobacion_nota, y los paths ya subidos (archivo_path, aprobacion_path,
+// comunicado_path con su *_nombre). Solo admin/supervisor.
 export async function PUT(req: NextRequest) {
   const profile = await getProfile()
   if (!profile) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
@@ -93,6 +100,11 @@ export async function PUT(req: NextRequest) {
   }
   if (fd.has("comunicado_nota")) patch.comunicado_nota = String(fd.get("comunicado_nota") ?? "") || null
   if (fd.has("comunicado_link")) patch.comunicado_link = String(fd.get("comunicado_link") ?? "").trim() || null
+  if (fd.has("aprobacion_fecha")) {
+    const f = String(fd.get("aprobacion_fecha") ?? "").trim()
+    patch.aprobacion_fecha = /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : null
+  }
+  if (fd.has("aprobacion_nota")) patch.aprobacion_nota = String(fd.get("aprobacion_nota") ?? "").trim() || null
 
   async function subir(file: File, sufijo: string) {
     const path = `${PREFIJO}/${sufijo}-${Date.now()}-${cleanFileName(file.name)}`
@@ -115,6 +127,11 @@ export async function PUT(req: NextRequest) {
     if (typeof pathCom === "string" && pathCom) {
       patch.comunicado_path = pathCom
       patch.comunicado_nombre = String(fd.get("comunicado_nombre") ?? "") || null
+    }
+    const pathApr = fd.get("aprobacion_path")
+    if (typeof pathApr === "string" && pathApr) {
+      patch.aprobacion_path = pathApr
+      patch.aprobacion_nombre = String(fd.get("aprobacion_nombre") ?? "") || null
     }
     // Retrocompat: archivos chicos (<4.5MB) enviados como File en el FormData.
     const fProg = fd.get("archivo_programa")
@@ -139,6 +156,11 @@ export async function PUT(req: NextRequest) {
     .from("pc_incentivos_programa").update(patch).eq("id", 1).select("*").single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({
-    programa: { ...data, archivo_url: await signed(supabase, data.archivo_path), comunicado_url: await signed(supabase, data.comunicado_path) },
+    programa: {
+      ...data,
+      archivo_url: await signed(supabase, data.archivo_path),
+      comunicado_url: await signed(supabase, data.comunicado_path),
+      aprobacion_url: await signed(supabase, data.aprobacion_path),
+    },
   })
 }

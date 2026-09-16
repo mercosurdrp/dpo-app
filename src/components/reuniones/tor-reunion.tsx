@@ -141,7 +141,16 @@ function ListaEditable({
 
 export function TorReunion({ tipo, tipoLabel, puedeEditar }: Props) {
   const [frecuencia, setFrecuencia] = useState<TorFrecuencia>(
-    tipo === "logistica-ventas" ? "semanal" : "diaria",
+    // Cada tipo abre en la frecuencia que realmente tiene: las reuniones
+    // mensuales (Presupuesto, Mantenimiento, Iniciativas de Ahorro) no tienen
+    // TOR diaria y abrían en una pestaña vacía.
+    tipo === "logistica-ventas"
+      ? "semanal"
+      : tipo === "presupuesto" ||
+          tipo === "mantenimiento" ||
+          tipo === "iniciativas-ahorro"
+        ? "mensual"
+        : "diaria",
   )
   const [contenido, setContenido] = useState<TorContenido | null>(null)
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)

@@ -14,6 +14,7 @@ import { MatinalDistribucionTab } from "@/components/reuniones/matinal-distribuc
 import { WarehouseTab } from "@/components/reuniones/warehouse-tab"
 import { PresupuestoTab } from "@/components/reuniones/presupuesto-tab"
 import { MantenimientoTab } from "@/components/reuniones/mantenimiento-tab"
+import { IniciativasAhorroTab } from "@/components/reuniones/iniciativas-ahorro-tab"
 import { ParticipacionCruzadaTab } from "@/components/reuniones/participacion-cruzada-tab"
 import { IS_MISIONES } from "@/lib/empresa"
 
@@ -58,6 +59,11 @@ export function ReunionesClient() {
               Mantenimiento
             </TabsTrigger>
           )}
+          {!IS_MISIONES && (
+            <TabsTrigger value="iniciativas-ahorro" className="flex-none">
+              Iniciativas de Ahorro
+            </TabsTrigger>
+          )}
           <TabsTrigger value="cruzada" className="flex-none">
             Participación cruzada
           </TabsTrigger>
@@ -83,6 +89,11 @@ export function ReunionesClient() {
         {!IS_MISIONES && (
           <TabsContent value="mantenimiento" className="mt-4">
             <MantenimientoTab />
+          </TabsContent>
+        )}
+        {!IS_MISIONES && (
+          <TabsContent value="iniciativas-ahorro" className="mt-4">
+            <IniciativasAhorroTab />
           </TabsContent>
         )}
         <TabsContent value="cruzada" className="mt-4">

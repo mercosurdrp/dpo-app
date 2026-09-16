@@ -35,8 +35,18 @@ export const MOTIVO_BAJA_LABELS: Record<MotivoBaja, string> = {
 // Ganador que la pantalla 4.2, el SOP dejaría de describir lo que hace el sistema.
 // Tocar estos valores cambia las DOS pantallas a la vez, que es la intención.
 
-/** Tope de PDV del clúster Ganador (devolución de la auditoría DPO H1 2026). */
-export const MAX_GANADORES = 200
+/**
+ * Proporción de la cartera que puede ser Ganador. Antes era un tope fijo de 200
+ * PDV (devolución de la auditoría DPO H1 2026); desde el 14/09/2026 es el 5 % de
+ * la cartera analizada (los que compraron en los últimos 45 días), así el corte
+ * acompaña el tamaño real de la cartera de cada tenant y de cada semestre.
+ */
+export const PCT_GANADORES = 0.05
+
+/** Cantidad máxima de Ganadores para una cartera de `totalCartera` PDV (mínimo 1). */
+export function topeGanadores(totalCartera: number): number {
+  return Math.max(1, Math.round(totalCartera * PCT_GANADORES))
+}
 /**
  * Rechazos por culpa del cliente EN EL PERÍODO que hacen bajar de clúster. Con 2
  * entraba demasiado ruido (285 PDV sobre 1.811 en el 1º sem 2026); con 3 son 142
@@ -48,15 +58,15 @@ export const MIN_RECHAZOS_BAJA = 3
 export const RMD_MINIMO_BAJA = 4.99
 
 /**
- * Umbral de facturación alta: la facturación del cliente Nº MAX_GANADORES en el
- * ranking de los que crecen. Antes era la mediana, que partía la cartera al medio
- * y dejaba 772 "ganadores". Puede quedar apenas por encima del tope si hay
- * empates justo en el corte.
+ * Umbral de facturación alta: la facturación del cliente Nº `tope` en el ranking
+ * de los que crecen (`tope` = topeGanadores(cartera analizada)). Antes era la
+ * mediana, que partía la cartera al medio y dejaba 772 "ganadores". Puede quedar
+ * apenas por encima del tope si hay empates justo en el corte.
  */
-export function umbralFacturacionAlta(facturacionQueCrecen: number[]): number {
+export function umbralFacturacionAlta(facturacionQueCrecen: number[], tope: number): number {
   if (facturacionQueCrecen.length === 0) return 0
   const orden = [...facturacionQueCrecen].sort((a, b) => b - a)
-  return orden.length >= MAX_GANADORES ? orden[MAX_GANADORES - 1] : orden[orden.length - 1]
+  return orden.length >= tope ? orden[tope - 1] : orden[orden.length - 1]
 }
 
 /** El cruce 2×2 puro: facturación alta/baja × crece/no crece. */
@@ -276,8 +286,10 @@ export interface ClusterizacionData {
    * no pase de ese tope y lo integren los que más facturan.
    */
   umbral_ingresos: number
-  /** Tope de clientes del clúster Ganador (regla de la auditoría DPO). */
+  /** Tope de clientes del clúster Ganador: `pct_ganadores` de la cartera analizada. */
   max_ganadores: number
+  /** Proporción de la cartera que puede ser Ganador (0.05 = 5 %). */
+  pct_ganadores: number
   /** Rechazos por culpa del cliente en el período que disparan la baja de clúster. */
   min_rechazos_baja: number
   /** RMD promedio por debajo del cual el cliente baja de clúster. */

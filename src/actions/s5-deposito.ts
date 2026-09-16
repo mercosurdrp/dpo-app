@@ -43,8 +43,18 @@ const DEFAULT_CONFIG: S5AyudantesConfig = {
   tope_errores: 20,
   prod_target: 300,
   prod_target_maq: 18,
+  // Reportes de seguridad (acto inseguro) cargados por el operario. 1,5 por
+  // mes = 3 en el bimestre valen 100 pts; sin reportes = 0 (no "sin dato").
+  peso_reportes: 0.2,
+  tope_reportes: 1.5,
   meses_ventana: 2,
 }
+
+// Tipos de reporte de seguridad que suman en el ranking. Criterio del usuario
+// (15/9/26): actos y condiciones inseguras. Los incidentes NO suman (no se
+// quiere incentivar tenerlos) y el formulario no tiene tipo "condición", así
+// que hoy es solo acto_inseguro.
+const REPORTES_TIPOS_QUE_SUMAN = ["acto_inseguro"] as const
 
 // ── Foto de ganadores 5S ──
 // Una foto grupal por (período, área). Se guarda en un bucket público de
@@ -180,6 +190,14 @@ function comparten(a: Set<string>, b: Set<string>): boolean {
   return false
 }
 
+/** Match estricto: >=2 tokens en común, o todos los tokens del nombre más corto. */
+function compartenEstricto(a: Set<string>, b: Set<string>): boolean {
+  let shared = 0
+  for (const t of a) if (b.has(t)) shared++
+  const minSize = Math.min(a.size, b.size)
+  return shared >= 2 || (minSize > 0 && shared === minSize)
+}
+
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n))
 }
@@ -298,14 +316,101 @@ async function fetchProductividadMaquinistas(
   return out
 }
 
+// ── Reportes de seguridad por autor en la ventana ──
+// Devuelve cantidad por empleado_id y, para autores sin empleado vinculado,
+// por nombre del perfil (se matchea por tokens). Lee con service role porque
+// el ranking lo ven auditores.
+async function fetchReportesPorAutor(
+  desde: string,
+  hastaExclusivo: string,
+): Promise<{ porEmpleado: Map<string, number>; porNombre: Map<string, number> }> {
+  const porEmpleado = new Map<string, number>()
+  const porNombre = new Map<string, number>()
+  try {
+    const svc = serviceClient()
+    const { data } = await svc
+      .from("reportes_seguridad")
+      .select(
+        "tipo, fecha, autor:profiles!reportes_seguridad_creado_por_fkey(nombre, empleado_id)",
+      )
+      .in("tipo", [...REPORTES_TIPOS_QUE_SUMAN])
+      .gte("fecha", desde)
+      .lt("fecha", hastaExclusivo)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const r of (data ?? []) as any[]) {
+      const autor = r.autor
+      if (!autor) continue
+      if (autor.empleado_id) {
+        porEmpleado.set(autor.empleado_id, (porEmpleado.get(autor.empleado_id) ?? 0) + 1)
+      } else if (autor.nombre) {
+        porNombre.set(autor.nombre, (porNombre.get(autor.nombre) ?? 0) + 1)
+      }
+    }
+  } catch {
+    /* best-effort: sin reportes todos quedan en 0 */
+  }
+  return { porEmpleado, porNombre }
+}
+
+// ── Ausentismo en la ventana (cualquier motivo deja fuera del podio) ──
+// Lee con service role: la tabla solo la ven admin/admin_rrhh y el ranking
+// también lo abren auditores.
+interface AusentismoResumen {
+  empleado_id: string
+  nombre: string
+  detalle: string
+}
+async function fetchAusentismoVentana(
+  desde: string,
+  hastaExclusivo: string,
+): Promise<AusentismoResumen[]> {
+  const out = new Map<string, AusentismoResumen>()
+  try {
+    const svc = serviceClient()
+    // Solapamiento con la ventana: empieza antes del fin y termina después del inicio.
+    const { data } = await svc
+      .from("ausentismo_eventos")
+      .select("empleado_id, fecha_inicio, dias, motivo, empleado:empleados(nombre)")
+      .lt("fecha_inicio", hastaExclusivo)
+      .gte("fecha_fin", desde)
+      .order("fecha_inicio")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const e of (data ?? []) as any[]) {
+      if (!e.empleado_id) continue
+      const nombre = (e.empleado?.nombre as string | undefined) ?? ""
+      const [, m, d] = String(e.fecha_inicio).split("-")
+      const dias = Number(e.dias ?? 1)
+      const item = `${motivoLabel(String(e.motivo))} ${Number(d)}/${Number(m)} (${dias} ${dias === 1 ? "día" : "días"})`
+      const cur = out.get(e.empleado_id)
+      if (cur) cur.detalle += `; ${item}`
+      else out.set(e.empleado_id, { empleado_id: e.empleado_id, nombre, detalle: item })
+    }
+  } catch {
+    /* best-effort: sin datos de ausentismo nadie queda excluido */
+  }
+  return Array.from(out.values())
+}
+
+function motivoLabel(motivo: string): string {
+  const labels: Record<string, string> = {
+    ausencia: "Ausencia",
+    licencia_medica: "Licencia médica",
+    enfermedad_profesional: "Enfermedad profesional",
+    accidente: "Accidente",
+    otras_licencias: "Otras licencias",
+    licencia_gremial: "Licencia gremial",
+    suspension: "Suspensión",
+  }
+  return labels[motivo] ?? motivo
+}
+
 // ── Config ──
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function readConfig(supabase: any): Promise<S5AyudantesConfig> {
+  // select("*") para tolerar columnas nuevas todavía no migradas (quedan en default).
   const { data } = await supabase
     .from("s5_ayudantes_config")
-    .select(
-      "peso_errores, peso_5s, peso_productividad, tope_errores, prod_target, prod_target_maq, meses_ventana",
-    )
+    .select("*")
     .eq("id", 1)
     .maybeSingle()
   if (!data) return { ...DEFAULT_CONFIG }
@@ -323,6 +428,8 @@ async function readConfig(supabase: any): Promise<S5AyudantesConfig> {
     prod_target_maq: Number(
       data.prod_target_maq ?? DEFAULT_CONFIG.prod_target_maq,
     ),
+    peso_reportes: Number(data.peso_reportes ?? DEFAULT_CONFIG.peso_reportes),
+    tope_reportes: Number(data.tope_reportes ?? DEFAULT_CONFIG.tope_reportes),
     meses_ventana: Number(data.meses_ventana ?? DEFAULT_CONFIG.meses_ventana),
   }
 }
@@ -347,6 +454,7 @@ export async function getRankingDeposito(
     const meses: string[] = []
     for (let i = 0; i < ventana; i++) meses.push(addMonths(desde, i))
     const hasta = meses[meses.length - 1]
+    const hastaExclusivo = addMonths(hasta, 1)
     const prefijos = meses.map((m) => m.slice(0, 7))
 
     const [
@@ -357,6 +465,8 @@ export async function getRankingDeposito(
       prodMap,
       prodMaqMap,
       premiosRes,
+      reportes,
+      ausentismo,
     ] = await Promise.all([
         supabase
           .from("s5_auditorias")
@@ -379,6 +489,8 @@ export async function getRankingDeposito(
           .from("s5_ayudantes_premios")
           .select("id, periodo_desde, area, posicion, empleado_id, nombre, score, origen")
           .eq("periodo_desde", desde),
+        fetchReportesPorAutor(desde, hastaExclusivo),
+        fetchAusentismoVentana(desde, hastaExclusivo),
       ])
 
     // Nombre de sectores
@@ -416,6 +528,8 @@ export async function getRankingDeposito(
       errores_cant: number | null
       productividad: number | null
       productividad_maq: number | null
+      reportes_cant: number
+      no_elegible_motivo: string | null
       es_picker: boolean
       es_maquinista: boolean
       es_responsable: boolean
@@ -439,6 +553,8 @@ export async function getRankingDeposito(
           errores_cant: null,
           productividad: null,
           productividad_maq: null,
+          reportes_cant: 0,
+          no_elegible_motivo: null,
           es_picker: false,
           es_maquinista: false,
           es_responsable: true,
@@ -466,6 +582,8 @@ export async function getRankingDeposito(
           errores_cant: null,
           productividad: null,
           productividad_maq: null,
+          reportes_cant: 0,
+          no_elegible_motivo: null,
           es_picker: false,
           es_maquinista: false,
           es_responsable: false,
@@ -502,16 +620,69 @@ export async function getRankingDeposito(
       c.productividad_maq = palhh
     }
 
+    // Reportes de seguridad y ausentismo: SOLO enriquecen candidatos que ya
+    // están (por empleado_id o por nombre). No crean filas: un supervisor que
+    // reporta o un ausente de Distribución no entran al ranking.
+    // El match por nombre es ESTRICTO (>=2 tokens en común, o todos los del
+    // nombre más corto): con un solo token "CERBIN ADRIAN" (Distribución)
+    // dejaba no elegible a "CERBIN DIEGO" (Depósito).
+    function matchExistente(empleadoId: string | null, nombre: string): Cand | undefined {
+      if (empleadoId) {
+        const porId = byEmpleado.get(empleadoId)
+        if (porId) return porId
+      }
+      const tk = tokens(nombre)
+      if (tk.size === 0) return undefined
+      return cands.find((x) => x.empleado_id == null && compartenEstricto(x._tokens, tk))
+    }
+    const empleadosNombre = new Map<string, string>()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const r of (respRes.data ?? []) as any[]) {
+      if (r.empleado) empleadosNombre.set(r.empleado.id, r.empleado.nombre)
+    }
+    if (reportes.porEmpleado.size > 0) {
+      // Nombres de los autores con empleado vinculado que no son responsables
+      // (para matchear pickers/maquinistas que vienen sin empleado_id).
+      const faltan = Array.from(reportes.porEmpleado.keys()).filter(
+        (id) => !empleadosNombre.has(id),
+      )
+      if (faltan.length > 0) {
+        const { data: emps } = await supabase
+          .from("empleados")
+          .select("id, nombre")
+          .in("id", faltan)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const e of (emps ?? []) as any[]) empleadosNombre.set(e.id, e.nombre)
+      }
+      for (const [empId, cant] of reportes.porEmpleado.entries()) {
+        const c = matchExistente(empId, empleadosNombre.get(empId) ?? "")
+        if (c) c.reportes_cant += cant
+      }
+    }
+    for (const [nombre, cant] of reportes.porNombre.entries()) {
+      const c = matchExistente(null, nombre)
+      if (c) c.reportes_cant += cant
+    }
+    for (const a of ausentismo) {
+      const c = matchExistente(a.empleado_id, a.nombre)
+      if (!c) continue
+      c.no_elegible_motivo = c.no_elegible_motivo
+        ? `${c.no_elegible_motivo}; ${a.detalle}`
+        : a.detalle
+    }
+
     // Scoring
     // El tope se configura por mes y se escala a la ventana (20/mes = 40 en un
     // bimestre), para que el puntaje no dependa del largo del período.
     const tope = Math.max(1, config.tope_errores * ventana)
+    const topeReportes = Math.max(0.5, config.tope_reportes * ventana)
     function scoreOf(c: Cand): {
       nota_5s: number | null
       errores_score: number | null
       productividad: number | null
       productividad_maq: number | null
       productividad_score: number | null
+      reportes_score: number
       score: number
     } {
       const nota_5s = c.notas5s.length
@@ -538,6 +709,11 @@ export async function getRankingDeposito(
         ? subScores.reduce((a, b) => a + b, 0) / subScores.length
         : null
 
+      // Reportes: lineal hasta el tope (1,5/mes = 3 en el bimestre → 100).
+      // Siempre presente (0 reportes = 0 pts): si se reponderara al faltar,
+      // no reportar puntuaría mejor que reportar.
+      const reportes_score = clamp((c.reportes_cant / topeReportes) * 100, 0, 100)
+
       const parts: Array<[number, number]> = []
       if (nota_5s != null && config.peso_5s > 0)
         parts.push([config.peso_5s, nota_5s])
@@ -545,6 +721,8 @@ export async function getRankingDeposito(
         parts.push([config.peso_errores, errores_score])
       if (productividad_score != null && config.peso_productividad > 0)
         parts.push([config.peso_productividad, productividad_score])
+      if (config.peso_reportes > 0)
+        parts.push([config.peso_reportes, reportes_score])
       const tw = parts.reduce((a, [w]) => a + w, 0)
       const score = tw > 0 ? parts.reduce((a, [w, v]) => a + w * v, 0) / tw : 0
       return {
@@ -553,6 +731,7 @@ export async function getRankingDeposito(
         productividad,
         productividad_maq,
         productividad_score,
+        reportes_score,
         score,
       }
     }
@@ -574,17 +753,26 @@ export async function getRankingDeposito(
         productividad: s.productividad,
         productividad_maq: s.productividad_maq,
         productividad_score: s.productividad_score,
+        reportes_cant: c.reportes_cant,
+        reportes_score: Number(s.reportes_score.toFixed(1)),
         score: Number(s.score.toFixed(1)),
         posicion_sugerida: null,
+        elegible: c.no_elegible_motivo == null,
+        no_elegible_motivo: c.no_elegible_motivo,
       }
     })
     rows.sort((a, b) => b.score - a.score)
 
     // Podio sugerido: los 3 mejores por score, sin reservar puestos.
     // (Regla pedida por el usuario 2026-05-21: que queden los primeros 3.)
-    rows.slice(0, 3).forEach((r, i) => {
-      r.posicion_sugerida = i + 1
-    })
+    // Desde 15/9/26: quien tuvo ausentismo en la ventana conserva su lugar en
+    // la tabla (con la etiqueta "no elegible") pero no entra al podio.
+    rows
+      .filter((r) => r.elegible)
+      .slice(0, 3)
+      .forEach((r, i) => {
+        r.posicion_sugerida = i + 1
+      })
 
     // Premios guardados
     const premios = ((premiosRes.data ?? []) as S5AyudantePremio[]).sort(
@@ -620,6 +808,8 @@ export async function updateAyudantesConfig(input: {
   tope_errores: number
   prod_target: number
   prod_target_maq: number
+  peso_reportes: number
+  tope_reportes: number
   meses_ventana: number
 }): Promise<{ ok: true } | { error: string }> {
   try {
@@ -634,6 +824,8 @@ export async function updateAyudantesConfig(input: {
         tope_errores: input.tope_errores,
         prod_target: input.prod_target,
         prod_target_maq: input.prod_target_maq,
+        peso_reportes: input.peso_reportes,
+        tope_reportes: input.tope_reportes,
         meses_ventana: Math.max(1, Math.min(6, Math.round(input.meses_ventana))),
         updated_by: profile.id,
       })

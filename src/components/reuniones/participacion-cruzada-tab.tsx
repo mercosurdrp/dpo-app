@@ -65,6 +65,7 @@ const TIPO_LABEL: Record<TipoReunion, string> = {
   warehouse: "Warehouse",
   presupuesto: "Presupuesto",
   mantenimiento: "Mantenimiento",
+  "iniciativas-ahorro": "Iniciativas de Ahorro",
 }
 
 const MESES = [

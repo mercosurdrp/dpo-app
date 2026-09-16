@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
   }
   if ("error" in res) return new NextResponse(res.error, { status: 500 })
 
-  const { clientes, umbral_ingresos, umbral_costo, max_ganadores } = res.data
+  const { clientes, umbral_ingresos, umbral_costo, max_ganadores, pct_ganadores } = res.data
   const conCuadrante = clientes.filter((c) => c.cuadrante != null)
 
   // Resumen (siempre sobre la matriz completa, sin filtros).
@@ -112,6 +112,7 @@ export async function GET(req: NextRequest) {
     umbral_ingresos,
     umbral_costo,
     max_ganadores,
+    pct_ganadores,
   })
 
   return new NextResponse(new Uint8Array(pdfBuf), {
@@ -137,6 +138,7 @@ interface RenderInput {
   umbral_ingresos: number
   umbral_costo: number
   max_ganadores: number
+  pct_ganadores: number
 }
 
 async function renderPDF(input: RenderInput): Promise<Buffer> {
@@ -255,7 +257,7 @@ function drawContexto(doc: Doc, input: RenderInput) {
   const margin = doc.page.margins.left
   const usable = doc.page.width - margin * 2
   const partes = [
-    `Corte facturación (tope ${input.max_ganadores} Ganadores): ${formatMoneyShort(input.umbral_ingresos)}`,
+    `Corte facturación (tope ${input.max_ganadores} Ganadores = ${Math.round(input.pct_ganadores * 100)} % de la cartera): ${formatMoneyShort(input.umbral_ingresos)}`,
     `Corte $/HL (mediana): ${formatMoneyShort(input.umbral_costo)}`,
   ]
   doc

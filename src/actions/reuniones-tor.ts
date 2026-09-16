@@ -17,6 +17,8 @@ const TIPOS_VALIDOS: TipoReunion[] = [
   "matinal-distribucion",
   "warehouse",
   "presupuesto",
+  "mantenimiento",
+  "iniciativas-ahorro",
 ]
 
 const FRECUENCIAS_VALIDAS: TorFrecuencia[] = ["diaria", "semanal", "mensual"]
