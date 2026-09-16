@@ -8,7 +8,6 @@ import type {
   DireccionKpiIniciativa,
   EstadoIniciativaAhorro,
   IniciativaAhorroConDetalle,
-  IniciativaAhorroSeguimiento,
   TipoIniciativaAhorro,
 } from "@/types/database"
 
@@ -48,10 +47,6 @@ async function requireEditor(): Promise<Profile> {
   return profile
 }
 
-function cleanFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_")
-}
-
 function parseNum(v: FormDataEntryValue | null): number | null {
   const s = String(v ?? "").trim()
   if (s === "") return null
@@ -84,7 +79,7 @@ export async function listIniciativas(
     const { data, error } = await supabase
       .from("presupuestos_iniciativas")
       .select(
-        "*, responsable:profiles!presupuestos_iniciativas_responsable_id_fkey(id, nombre, email), seguimientos:presupuestos_iniciativas_seguimiento(*)",
+        "*, responsable:profiles!presupuestos_iniciativas_responsable_id_fkey(id, nombre, email)",
       )
       .eq("anio", anio)
       .order("created_at", { ascending: true })
@@ -94,28 +89,6 @@ export async function listIniciativas(
     const enriched: IniciativaAhorroConDetalle[] = (data ?? []).map((row) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const r = row as any
-      const seguimientos: IniciativaAhorroSeguimiento[] = (
-        r.seguimientos ?? []
-      )
-        .map((s: Record<string, unknown>) => ({
-          id: s.id as string,
-          iniciativa_id: s.iniciativa_id as string,
-          anio: s.anio as number,
-          trimestre: s.trimestre as number,
-          ahorro_real: s.ahorro_real !== null ? Number(s.ahorro_real) : null,
-          kpi_valor: s.kpi_valor !== null ? Number(s.kpi_valor) : null,
-          comentario: (s.comentario as string) ?? null,
-          evidencia_url: (s.evidencia_url as string) ?? null,
-          evidencia_nombre: (s.evidencia_nombre as string) ?? null,
-          created_by: (s.created_by as string) ?? null,
-          created_at: s.created_at as string,
-          updated_at: s.updated_at as string,
-        }))
-        .sort(
-          (a: IniciativaAhorroSeguimiento, b: IniciativaAhorroSeguimiento) =>
-            a.trimestre - b.trimestre,
-        )
-
       return {
         id: r.id,
         anio: r.anio,
@@ -150,7 +123,6 @@ export async function listIniciativas(
         updated_at: r.updated_at,
         responsable_nombre: r.responsable?.nombre ?? null,
         responsable_email: r.responsable?.email ?? null,
-        seguimientos,
       }
     })
 
@@ -280,7 +252,8 @@ export async function eliminarIniciativa(
     await requireEditor()
     const supabase = await createClient()
 
-    // Borrar evidencias de los seguimientos del storage (las filas caen por CASCADE)
+    // Evidencias de los avances trimestrales viejos (la tabla sigue existiendo
+    // y sus filas caen por CASCADE): sacarlas del storage.
     const { data: segs } = await supabase
       .from("presupuestos_iniciativas_seguimiento")
       .select("evidencia_url")
@@ -305,149 +278,6 @@ export async function eliminarIniciativa(
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error eliminando iniciativa",
-    }
-  }
-}
-
-// =============================================
-// Mutaciones — seguimiento trimestral
-// =============================================
-
-export async function guardarSeguimiento(
-  formData: FormData,
-): Promise<Result<{ id: string }>> {
-  try {
-    const profile = await requireEditor()
-    const supabase = await createClient()
-
-    const iniciativaId = String(formData.get("iniciativa_id") ?? "").trim()
-    const anio = parseNum(formData.get("anio"))
-    const trimestre = parseNum(formData.get("trimestre"))
-
-    if (!iniciativaId) return { error: "Falta la iniciativa" }
-    if (anio === null) return { error: "Falta el año" }
-    if (trimestre === null || trimestre < 1 || trimestre > 4) {
-      return { error: "Trimestre inválido (1 a 4)" }
-    }
-
-    // Fila existente para ese (iniciativa, anio, trimestre)
-    const { data: actual } = await supabase
-      .from("presupuestos_iniciativas_seguimiento")
-      .select("id, evidencia_url")
-      .eq("iniciativa_id", iniciativaId)
-      .eq("anio", anio)
-      .eq("trimestre", trimestre)
-      .maybeSingle()
-
-    // Subida opcional de evidencia
-    let nuevaEvidenciaUrl: string | null = null
-    let nuevaEvidenciaNombre: string | null = null
-    const file = formData.get("evidencia") as File | null
-    if (file && file instanceof File && file.size > 0) {
-      const cleanName = cleanFileName(file.name)
-      const path = `iniciativas/${iniciativaId}/Q${trimestre}-${anio}-${Date.now()}-${cleanName}`
-      const arrayBuffer = await file.arrayBuffer()
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, arrayBuffer, {
-          contentType: file.type || "application/octet-stream",
-          upsert: false,
-        })
-      if (upErr) return { error: `Subiendo evidencia: ${upErr.message}` }
-      nuevaEvidenciaUrl = path
-      nuevaEvidenciaNombre = file.name
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const payload: Record<string, any> = {
-      iniciativa_id: iniciativaId,
-      anio,
-      trimestre,
-      ahorro_real: parseNum(formData.get("ahorro_real")),
-      kpi_valor: parseNum(formData.get("kpi_valor")),
-      comentario: parseText(formData.get("comentario")),
-    }
-    if (nuevaEvidenciaUrl) {
-      payload.evidencia_url = nuevaEvidenciaUrl
-      payload.evidencia_nombre = nuevaEvidenciaNombre
-    }
-
-    let savedId: string
-    if (actual?.id) {
-      const { data, error } = await supabase
-        .from("presupuestos_iniciativas_seguimiento")
-        .update(payload)
-        .eq("id", actual.id)
-        .select("id")
-        .single()
-      if (error) {
-        if (nuevaEvidenciaUrl)
-          await supabase.storage.from(BUCKET).remove([nuevaEvidenciaUrl])
-        return { error: error.message }
-      }
-      savedId = (data as { id: string }).id
-      // reemplazó la evidencia anterior
-      if (
-        nuevaEvidenciaUrl &&
-        actual.evidencia_url &&
-        actual.evidencia_url !== nuevaEvidenciaUrl
-      ) {
-        await supabase.storage.from(BUCKET).remove([actual.evidencia_url])
-      }
-    } else {
-      payload.created_by = profile.id
-      const { data, error } = await supabase
-        .from("presupuestos_iniciativas_seguimiento")
-        .insert(payload)
-        .select("id")
-        .single()
-      if (error) {
-        if (nuevaEvidenciaUrl)
-          await supabase.storage.from(BUCKET).remove([nuevaEvidenciaUrl])
-        return { error: error.message }
-      }
-      savedId = (data as { id: string }).id
-    }
-
-    revalidatePath(REVALIDATE_PATH)
-    return { data: { id: savedId } }
-  } catch (err) {
-    return {
-      error: err instanceof Error ? err.message : "Error guardando seguimiento",
-    }
-  }
-}
-
-export async function eliminarSeguimiento(
-  id: string,
-): Promise<Result<{ ok: true }>> {
-  try {
-    await requireEditor()
-    const supabase = await createClient()
-
-    const { data: actual } = await supabase
-      .from("presupuestos_iniciativas_seguimiento")
-      .select("evidencia_url")
-      .eq("id", id)
-      .maybeSingle()
-
-    const { error } = await supabase
-      .from("presupuestos_iniciativas_seguimiento")
-      .delete()
-      .eq("id", id)
-
-    if (error) return { error: error.message }
-
-    if (actual?.evidencia_url) {
-      await supabase.storage.from(BUCKET).remove([actual.evidencia_url])
-    }
-
-    revalidatePath(REVALIDATE_PATH)
-    return { data: { ok: true } }
-  } catch (err) {
-    return {
-      error:
-        err instanceof Error ? err.message : "Error eliminando seguimiento",
     }
   }
 }

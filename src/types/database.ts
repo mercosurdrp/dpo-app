@@ -3338,21 +3338,6 @@ export type EstadoIniciativaAhorro =
 
 export type DireccionKpiIniciativa = "menor" | "mayor"
 
-export interface IniciativaAhorroSeguimiento {
-  id: string
-  iniciativa_id: string
-  anio: number
-  trimestre: number // 1..4
-  ahorro_real: number | null
-  kpi_valor: number | null
-  comentario: string | null
-  evidencia_url: string | null
-  evidencia_nombre: string | null
-  created_by: string | null
-  created_at: string
-  updated_at: string
-}
-
 export interface IniciativaAhorro {
   id: string
   anio: number
@@ -3385,7 +3370,6 @@ export interface IniciativaAhorro {
 export interface IniciativaAhorroConDetalle extends IniciativaAhorro {
   responsable_nombre: string | null
   responsable_email: string | null
-  seguimientos: IniciativaAhorroSeguimiento[]
 }
 
 // =============================================

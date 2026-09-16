@@ -40,5 +40,3 @@ export const ESTADO_BADGE_CLASS: Record<EstadoIniciativaAhorro, string> = {
   implementada: "border-emerald-200 bg-emerald-100 text-emerald-700",
   cancelada: "border-red-200 bg-red-100 text-red-700",
 }
-
-export const TRIMESTRES = [1, 2, 3, 4] as const

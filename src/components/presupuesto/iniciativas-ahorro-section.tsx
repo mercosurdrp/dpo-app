@@ -6,7 +6,6 @@ import {
   Plus,
   Pencil,
   Trash2,
-  TrendingUp,
   Target,
   Wallet,
   CheckCircle2,
@@ -32,8 +31,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
-import { getSignedUrl } from "@/actions/presupuesto"
 import { eliminarIniciativa } from "@/actions/presupuesto-iniciativas"
 import type { EjecucionRubro } from "@/actions/presupuesto-generador"
 import type { KpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
@@ -46,10 +43,8 @@ import {
   ESTADO_BADGE_CLASS,
   ESTADO_LABEL,
   TIPO_LABEL,
-  TRIMESTRES,
 } from "./iniciativas-constantes"
 import { IniciativaFormDialog } from "./iniciativa-form-dialog"
-import { SeguimientoIniciativaDialog } from "./seguimiento-iniciativa-dialog"
 
 interface ResponsableOpt {
   id: string
@@ -86,52 +81,6 @@ function formatNum(n: number | null): string {
 
 // Fracción de cumplimiento del KPI (0 = sin avance, 1 = objetivo alcanzado).
 // Puede dar negativo si la métrica empeoró respecto de la línea base.
-function cumplimientoKpi(
-  base: number | null,
-  objetivo: number | null,
-  valor: number | null,
-  mejorSi: "menor" | "mayor",
-): number | null {
-  if (base === null || objetivo === null || valor === null) return null
-  const span = mejorSi === "menor" ? base - objetivo : objetivo - base
-  if (span === 0) return null
-  const avance = mejorSi === "menor" ? base - valor : valor - base
-  return avance / span
-}
-
-function SemaforoBadge({ frac }: { frac: number | null }) {
-  if (frac === null) {
-    return <span className="text-xs text-muted-foreground">Sin datos</span>
-  }
-  const pct = Math.round(frac * 100)
-  if (frac >= 1) {
-    return (
-      <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-        Cumplido · {pct}%
-      </Badge>
-    )
-  }
-  if (frac >= 0.5) {
-    return (
-      <Badge className="border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100">
-        En progreso · {pct}%
-      </Badge>
-    )
-  }
-  if (frac >= 0) {
-    return (
-      <Badge className="border-orange-200 bg-orange-100 text-orange-700 hover:bg-orange-100">
-        Bajo · {pct}%
-      </Badge>
-    )
-  }
-  return (
-    <Badge className="border-red-200 bg-red-100 text-red-700 hover:bg-red-100">
-      Empeoró · {pct}%
-    </Badge>
-  )
-}
-
 function barColor(frac: number | null): string {
   if (frac === null) return "bg-slate-300"
   if (frac >= 1) return "bg-emerald-500"
@@ -727,8 +676,9 @@ function mesInicioDe(ini: IniciativaAhorroConDetalle): number {
  * declaraba $1,12M ahorrados cuando contra el presupuesto venía $1,81M por
  * encima — dos varas distintas en la misma barra.
  *
- * Sin rubro (iniciativas cuyo ahorro no sale de un rubro del EERR) se mantiene la
- * suma de lo cargado a mano en los seguimientos.
+ * Sin rubro y sin serie automática (combustible o viajes) no hay ahorro real
+ * medible: queda en 0. Los avances trimestrales cargados a mano se sacaron el
+ * 16/09/2026 porque todas las iniciativas tienen el año y el mes calculados.
  */
 function ahorroDe(
   ini: IniciativaAhorroConDetalle,
@@ -762,7 +712,7 @@ function ahorroDe(
     }
   }
   return {
-    real: ini.seguimientos.reduce((acc, s) => acc + (s.ahorro_real ?? 0), 0),
+    real: 0,
     meses: null,
     mesInicio,
     mesesVigentes,
@@ -970,28 +920,15 @@ export function IniciativasAhorroSection({
   const [openForm, setOpenForm] = useState(false)
   const [editando, setEditando] =
     useState<IniciativaAhorroConDetalle | null>(null)
-  const [seguimientoDe, setSeguimientoDe] =
-    useState<IniciativaAhorroConDetalle | null>(null)
-  const [trimestreInicial, setTrimestreInicial] = useState<number>(1)
 
   function refrescar() {
     router.refresh()
   }
 
-  async function abrirArchivo(url: string | null) {
-    if (!url) return
-    const result = await getSignedUrl(url)
-    if ("error" in result) {
-      alert(`Error abriendo archivo: ${result.error}`)
-      return
-    }
-    abrirArchivoEnVisor(result.data.url)
-  }
-
   function handleEliminar(ini: IniciativaAhorroConDetalle) {
     if (
       !confirm(
-        `¿Eliminar la iniciativa "${ini.titulo}"? Se borran también sus avances trimestrales. No se puede deshacer.`,
+        `¿Eliminar la iniciativa "${ini.titulo}"? No se puede deshacer.`,
       )
     ) {
       return
@@ -1004,11 +941,6 @@ export function IniciativasAhorroSection({
       }
       refrescar()
     })
-  }
-
-  function abrirSeguimiento(ini: IniciativaAhorroConDetalle, q: number) {
-    setTrimestreInicial(q)
-    setSeguimientoDe(ini)
   }
 
   // Totales para las tarjetas resumen
@@ -1194,18 +1126,6 @@ export function IniciativasAhorroSection({
               ini.ahorro_comprometido_anual && ini.ahorro_comprometido_anual > 0
                 ? ahorroAcum / ini.ahorro_comprometido_anual
                 : null
-            // último valor de KPI (mayor trimestre con dato)
-            const conKpi = [...ini.seguimientos]
-              .filter((s) => s.kpi_valor !== null)
-              .sort((a, b) => b.trimestre - a.trimestre)
-            const ultimoKpi = conKpi.length > 0 ? conKpi[0].kpi_valor : null
-            const ultimoKpiQ = conKpi.length > 0 ? conKpi[0].trimestre : null
-            const kpiFrac = cumplimientoKpi(
-              ini.kpi_linea_base,
-              ini.kpi_objetivo,
-              ultimoKpi,
-              ini.kpi_mejor_si,
-            )
             // Ritmo: lo acumulado contra lo que debería llevar a esta altura,
             // no contra el compromiso anual entero. La ventana son los meses que
             // el EERR tiene cerrados (o los trimestres del calendario si el
@@ -1239,11 +1159,6 @@ export function IniciativasAhorroSection({
                     gastoComputado,
                   )
                 : null
-            // El último comentario cargado es el análisis de la iniciativa: es lo
-            // más valioso que se carga y estaba escondido dentro del diálogo.
-            const ultimoSeg = [...ini.seguimientos]
-              .filter((s) => (s.comentario ?? "").trim() !== "")
-              .sort((a, b) => b.trimestre - a.trimestre)[0]
             const tipoLabel =
               ini.tipo === "otro" && ini.tipo_otro
                 ? ini.tipo_otro
@@ -1287,16 +1202,6 @@ export function IniciativasAhorroSection({
                     <div className="flex gap-1">
                       {puedeEditar && (
                         <>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => abrirSeguimiento(ini, 1)}
-                            title="Cargar avance trimestral"
-                          >
-                            <TrendingUp className="mr-1 size-3.5" />
-                            Avance
-                          </Button>
                           <Button
                             type="button"
                             variant="outline"
@@ -1534,81 +1439,23 @@ export function IniciativasAhorroSection({
                         <span className="text-slate-900">
                           {formatNum(ini.kpi_linea_base)} →{" "}
                           {formatNum(ini.kpi_objetivo)}
-                          {ultimoKpi !== null && (
-                            <>
-                              <span className="text-muted-foreground">
-                                {" "}
-                                · hoy{" "}
-                              </span>
-                              <strong>{formatNum(ultimoKpi)}</strong>
-                              {ultimoKpiQ !== null && (
-                                <span className="text-muted-foreground">
-                                  {" "}
-                                  (Q{ultimoKpiQ})
-                                </span>
-                              )}
-                            </>
-                          )}
+                          <span className="text-muted-foreground">
+                            {" "}
+                            · sin serie automática
+                          </span>
                         </span>
-                        <SemaforoBadge frac={kpiFrac} />
                       </span>
                     </div>
                   )}
 
-                  {/* El análisis del último trimestre cargado. */}
-                  {ultimoSeg && (
-                    <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                      <span className="font-medium text-slate-700">
-                        Q{ultimoSeg.trimestre}:
-                      </span>{" "}
-                      {ultimoSeg.comentario}
+                  {/* Las notas de la iniciativa (cómo se calculó, supuestos,
+                      qué mirar): antes vivían en el avance trimestral, que se
+                      sacó porque el año y el mes ya se calculan solos. */}
+                  {ini.observaciones && ini.observaciones.trim() !== "" && (
+                    <p className="whitespace-pre-line rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      {ini.observaciones}
                     </p>
                   )}
-
-                  {/* Tira de trimestres */}
-                  <div className="grid grid-cols-4 gap-2">
-                    {TRIMESTRES.map((q) => {
-                      const s = ini.seguimientos.find((x) => x.trimestre === q)
-                      const fracQ = s
-                        ? cumplimientoKpi(
-                            ini.kpi_linea_base,
-                            ini.kpi_objetivo,
-                            s.kpi_valor,
-                            ini.kpi_mejor_si,
-                          )
-                        : null
-                      return (
-                        <button
-                          key={q}
-                          type="button"
-                          disabled={!puedeEditar}
-                          onClick={() => abrirSeguimiento(ini, q)}
-                          className={`rounded-lg border p-2 text-left transition-colors ${
-                            puedeEditar
-                              ? "hover:border-blue-300 hover:bg-blue-50/40"
-                              : ""
-                          } ${s ? "border-slate-200 bg-white" : "border-dashed border-slate-200 bg-slate-50/50"}`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-slate-600">
-                              Q{q}
-                            </span>
-                            <span
-                              className={`size-2 rounded-full ${s ? barColor(fracQ) : "bg-slate-300"}`}
-                            />
-                          </div>
-                          <p className="mt-1 truncate text-xs text-slate-700">
-                            KPI: {formatNum(s?.kpi_valor ?? null)}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {s?.ahorro_real != null
-                              ? formatMoney(s.ahorro_real)
-                              : "—"}
-                          </p>
-                        </button>
-                      )
-                    })}
-                  </div>
                 </CardContent>
               </Card>
             )
@@ -1625,19 +1472,6 @@ export function IniciativasAhorroSection({
           iniciativa={editando}
           responsables={responsables}
           onSaved={refrescar}
-        />
-      )}
-
-      {puedeEditar && seguimientoDe && (
-        <SeguimientoIniciativaDialog
-          open={true}
-          onOpenChange={(o) => {
-            if (!o) setSeguimientoDe(null)
-          }}
-          iniciativa={seguimientoDe}
-          defaultTrimestre={trimestreInicial}
-          onSaved={refrescar}
-          onAbrirArchivo={abrirArchivo}
         />
       )}
     </div>
