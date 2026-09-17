@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
-import { diasSinSync } from "@/lib/sync-estado"
+import { evaluarSync, type CorridaSync } from "@/lib/sync-estado"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -20,6 +20,10 @@ export interface NpsResumen {
   actualizado_en: string | null
   /** Días transcurridos desde esa corrida (se calcula acá para no depender del reloj del navegador). */
   dias_sin_sync: number | null
+  /** Última corrida FALLIDA, si es posterior a la OK (el sync está roto ahora). */
+  sync_falla_en: string | null
+  /** Motivo de esa falla, recortado para mostrar. */
+  sync_falla_motivo: string | null
 }
 
 export interface NpsMes {
@@ -129,17 +133,14 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
         .eq("anio", ANIO),
       supabase
         .from("nps_sync_log")
-        .select("ejecutado_en")
-        .eq("ok", true)
+        .select("ejecutado_en, ok, detalle")
         .order("ejecutado_en", { ascending: false })
-        .limit(1),
+        .limit(20),
     ])
 
     if (encRes.error) return { error: encRes.error.message }
     const encuestas = (encRes.data ?? []) as unknown as EncuestaRow[]
-    const ultimoSync =
-      ((syncRes.data ?? []) as Array<{ ejecutado_en: string }>)[0]
-        ?.ejecutado_en ?? null
+    const estadoSync = evaluarSync((syncRes.data ?? []) as CorridaSync[])
 
     const rmdPorMes = new Map<number, { rmd: number | null; n: number }>()
     for (const m of (metRes.data ?? []) as Array<{
@@ -187,8 +188,10 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       ultima_encuesta: encuestas.length
         ? encuestas[encuestas.length - 1].fecha_enc
         : null,
-      actualizado_en: ultimoSync,
-      dias_sin_sync: diasSinSync(ultimoSync),
+      actualizado_en: estadoSync.ultimaOk,
+      dias_sin_sync: estadoSync.diasSinSync,
+      sync_falla_en: estadoSync.fallaEn,
+      sync_falla_motivo: estadoSync.fallaMotivo,
     }
 
     // ---- por mes ----

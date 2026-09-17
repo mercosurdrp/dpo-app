@@ -5,17 +5,19 @@ import {
   listarGanadoresSorteoRmd,
   resumenSorteoRmd,
 } from "@/actions/rmd-sorteo"
+import { getRmdYtd } from "@/actions/ytd"
 import { RmdClient } from "./_components/rmd-client"
 
 export const dynamic = "force-dynamic"
 
 export default async function RmdPage() {
-  const [datos, planes, cobertura, resumenSorteo, ganadores] = await Promise.all([
+  const [datos, planes, cobertura, resumenSorteo, ganadores, ytd] = await Promise.all([
     getRmdDashboard(),
     listarPlanesRmd(),
     getRmdCobertura(),
     resumenSorteoRmd(),
     listarGanadoresSorteoRmd(),
+    getRmdYtd(),
   ])
 
   if ("error" in datos) {
@@ -36,6 +38,7 @@ export default async function RmdPage() {
       cobertura={"data" in cobertura ? cobertura.data : null}
       resumenSorteo={"data" in resumenSorteo ? resumenSorteo.data : null}
       ganadoresSorteo={"data" in ganadores ? ganadores.data : null}
+      ytd={ytd}
     />
   )
 }

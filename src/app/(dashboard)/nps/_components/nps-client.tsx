@@ -28,6 +28,8 @@ import type {
 import type { NpsPlan } from "@/actions/nps-planes"
 import type { PlanMarcable } from "@/components/plan-badge"
 import { SyncAviso } from "@/components/sync-aviso"
+import { ComparativoYtd } from "@/components/comparativo-ytd"
+import { metricasNps, type ComparativoYtd as ComparativoYtdData, type NpsYtdFila } from "@/lib/ytd"
 import { ClientesExplorador } from "./clientes-explorador"
 import { CoberturaBloque, TASA_FOCO } from "./cobertura-bloque"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
@@ -80,9 +82,11 @@ interface Props {
   planesIniciales: NpsPlan[]
   /** Enviadas vs respondidas (solapa Cobertura). Null si falló esa consulta. */
   cobertura: NpsCoberturaData | null
+  /** Acumulado del año vs el mismo período del anterior. Null si no se pudo leer. */
+  ytd: ComparativoYtdData<NpsYtdFila> | null
 }
 
-export function NpsClient({ data, planesIniciales, cobertura }: Props) {
+export function NpsClient({ data, planesIniciales, cobertura, ytd }: Props) {
   const { resumen, por_mes, drivers_dp, por_promotor, clientes_dp, recuperados } =
     data
 
@@ -197,7 +201,20 @@ export function NpsClient({ data, planesIniciales, cobertura }: Props) {
       <SyncAviso
         actualizadoEn={resumen.actualizado_en}
         diasSinSync={resumen.dias_sin_sync}
+        fallaEn={resumen.sync_falla_en}
+        fallaMotivo={resumen.sync_falla_motivo}
       />
+
+      {ytd && (
+        <ComparativoYtd
+          titulo="Acumulado del año vs el año pasado"
+          metricas={metricasNps(ytd)}
+          anioActual={ytd.actual.anio}
+          anioAnterior={ytd.anterior.anio}
+          hasta={ytd.hasta}
+          sinDatos={ytd.sinDatos}
+        />
+      )}
 
       <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
         <TabsList className="grid w-full max-w-md grid-cols-2">
