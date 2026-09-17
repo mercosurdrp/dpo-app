@@ -23,6 +23,10 @@ import {
   getCostoHlMensual,
   type CostoHlMes,
 } from "@/actions/presupuesto-costo-hl"
+import {
+  getSustentabilidadPresupuesto,
+  type SustentabilidadPresupuesto,
+} from "@/actions/presupuesto-sustentabilidad"
 import { listPlanesAccion } from "@/actions/presupuesto-planes-accion"
 import { listInversiones } from "@/actions/presupuesto-inversiones"
 import { getProfile } from "@/lib/session"
@@ -89,6 +93,7 @@ export default async function PresupuestoPage({
     kpiPerdidasRes,
     kpiCombustibleRes,
     costoHlRes,
+    sustentabilidadRes,
   ] = await Promise.all([
     getPresupuestoAnual(anioActivo),
     getEerrAnual(anioActivo),
@@ -125,6 +130,9 @@ export default async function PresupuestoPage({
     mostrarIniciativas
       ? getCostoHlMensual(anioActivo)
       : Promise.resolve<{ data: Record<number, CostoHlMes> }>({ data: {} }),
+    // Presupuesto y sustentabilidad: qué compromete el presupuesto sobre el
+    // FGLI y cómo viene. Pega al depósito; si falla, la sección lo dice.
+    getSustentabilidadPresupuesto(anioActivo),
   ])
 
   if ("error" in tareasRes) {
@@ -154,6 +162,11 @@ export default async function PresupuestoPage({
         "data" in kpiCombustibleRes ? kpiCombustibleRes.data : {}
       }
       costoHl={"data" in costoHlRes ? costoHlRes.data : {}}
+      sustentabilidad={
+        "data" in sustentabilidadRes
+          ? sustentabilidadRes.data
+          : ({ fgli: null, avisos: [sustentabilidadRes.error] } as SustentabilidadPresupuesto)
+      }
       mostrarPlanesAccion={mostrarPlanesAccion}
       planesAccion={"data" in planesAccionRes ? planesAccionRes.data : []}
       mostrarInversiones={mostrarInversiones}
