@@ -24,6 +24,8 @@ import type {
   ResumenSorteoRmd,
 } from "@/actions/rmd-sorteo"
 import { SyncAviso } from "@/components/sync-aviso"
+import { ComparativoYtd } from "@/components/comparativo-ytd"
+import { metricasRmd, type ComparativoYtd as ComparativoYtdData, type RmdYtdFila } from "@/lib/ytd"
 import {
   planesPorClienteFoco,
   type PlanMarcable,
@@ -87,6 +89,8 @@ interface Props {
   /** Conteos y ganadores del sorteo del folleto (QR). Null si fallo la consulta. */
   resumenSorteo: ResumenSorteoRmd | null
   ganadoresSorteo: GanadorSorteoRmd[] | null
+  /** Acumulado del año vs el mismo período del anterior. Null si no se pudo leer. */
+  ytd: ComparativoYtdData<RmdYtdFila> | null
 }
 
 export function RmdClient({
@@ -95,6 +99,7 @@ export function RmdClient({
   cobertura,
   resumenSorteo,
   ganadoresSorteo,
+  ytd,
 }: Props) {
   const { resumen, por_mes, distribucion, motivos, clientes, recuperados } =
     data
@@ -209,7 +214,20 @@ export function RmdClient({
       <SyncAviso
         actualizadoEn={resumen.actualizado_en}
         diasSinSync={resumen.dias_sin_sync}
+        fallaEn={resumen.sync_falla_en}
+        fallaMotivo={resumen.sync_falla_motivo}
       />
+
+      {ytd && (
+        <ComparativoYtd
+          titulo="Acumulado del año vs el año pasado"
+          metricas={metricasRmd(ytd)}
+          anioActual={ytd.actual.anio}
+          anioAnterior={ytd.anterior.anio}
+          hasta={ytd.hasta}
+          sinDatos={ytd.sinDatos}
+        />
+      )}
 
       <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
         <TabsList className="grid w-full max-w-md grid-cols-2">

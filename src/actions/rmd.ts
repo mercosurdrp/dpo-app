@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
-import { diasSinSync } from "@/lib/sync-estado"
+import { evaluarSync, type CorridaSync } from "@/lib/sync-estado"
 // El chofer de una entrega se resuelve igual acá y en la solapa de cobertura,
 // así que los helpers viven en lib (un archivo "use server" solo puede exportar
 // funciones async y resolverChofer es sincrónica).
@@ -40,6 +40,10 @@ export interface RmdResumen {
   actualizado_en: string | null
   /** Días transcurridos desde esa corrida (se calcula acá para no depender del reloj del navegador). */
   dias_sin_sync: number | null
+  /** Última corrida FALLIDA, si es posterior a la OK (el sync está roto ahora). */
+  sync_falla_en: string | null
+  /** Motivo de esa falla, recortado para mostrar. */
+  sync_falla_motivo: string | null
 }
 
 export interface RmdMes {
@@ -168,15 +172,12 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
         .eq("anio", ANIO),
       supabase
         .from("nps_sync_log")
-        .select("ejecutado_en")
-        .eq("ok", true)
+        .select("ejecutado_en, ok, detalle")
         .order("ejecutado_en", { ascending: false })
-        .limit(1),
+        .limit(20),
     ])
 
-    const ultimoSync =
-      ((syncRes.data ?? []) as Array<{ ejecutado_en: string }>)[0]
-        ?.ejecutado_en ?? null
+    const estadoSync = evaluarSync((syncRes.data ?? []) as CorridaSync[])
 
     const otifPorMes = new Map<number, number | null>()
     for (const r of (rechRes.data ?? []) as Array<{
@@ -212,8 +213,10 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
       pct_promotores: total ? round1((promotores / total) * 100) : null,
       clientes: clientesSet.size,
       ultima_puntuacion: total ? filas[total - 1].fecha_puntuacion : null,
-      actualizado_en: ultimoSync,
-      dias_sin_sync: diasSinSync(ultimoSync),
+      actualizado_en: estadoSync.ultimaOk,
+      dias_sin_sync: estadoSync.diasSinSync,
+      sync_falla_en: estadoSync.fallaEn,
+      sync_falla_motivo: estadoSync.fallaMotivo,
     }
 
     // ---- por mes ----
