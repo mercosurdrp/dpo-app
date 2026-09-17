@@ -35,6 +35,7 @@ import {
 } from "@/lib/vehiculos/desgaste-neumaticos"
 import type { DesgasteFlota } from "@/actions/neumaticos"
 import { EvolucionProfundidad } from "./evolucion-profundidad"
+import { VidaCubierta } from "./vida-cubierta"
 
 // Tablero de desgaste real de cubiertas: cuántos mm de dibujo se come la flota
 // cada 1.000 km. Sale del historial de la ronda mensual (DPO 3.4), así que la
@@ -501,6 +502,17 @@ export function DesgastePorKmCard({
             </div>
           </div>
         )}
+
+        {/* Vida de la cubierta: las mismas mediciones, pero contra los km y con
+            la recta prolongada hasta el límite. Va antes de la evolución
+            mensual porque contesta "cuántos km le quedan", que es la pregunta
+            con la que se arma la OT; la mensual queda abajo para ver la ronda. */}
+        <div className="space-y-2 border-t border-border pt-3">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            Vida de la cubierta · mm contra km
+          </p>
+          <VidaCubierta filas={filas} dominioSel={dominioSel} onIrAUnidad={onIrAUnidad} />
+        </div>
 
         {/* La evolución no depende de la tasa: son profundidades medidas. Es lo
             único firme hoy, así que queda siempre a la vista y sin cambios. */}
