@@ -1,7 +1,9 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
-const PUBLIC_PATHS = ["/login", "/seguridad", "/linea-etica", "/sorteo-rmd"]
+// "/sop/" es el destino de los QR pegados en cada puesto del almacén
+// (src/app/sop/[slug]/route.ts): redirige a un link firmado del SOP vigente.
+const PUBLIC_PATHS = ["/login", "/seguridad", "/linea-etica", "/sorteo-rmd", "/sop/"]
 
 // Cuánto antes del vencimiento del access token vale la pena refrescar.
 // Debajo de este margen se hace el round-trip a Supabase; por encima, no.
