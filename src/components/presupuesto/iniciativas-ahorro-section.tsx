@@ -785,8 +785,8 @@ function ahorroCombustibleDe(
 }
 
 /**
- * Aporte de la iniciativa al costo por HL: ahorro del mes ÷ HL distribuidos
- * del mes. Es cuánto más alto habría sido el $/HL de ese mes sin la
+ * Aporte de la iniciativa al costo por HL: ahorro del mes ÷ HL vendidos del
+ * mes (la misma base que el VLC/HL del Sueño). Es cuánto más alto habría sido el $/HL de ese mes sin la
  * iniciativa (el pool habría tenido esos pesos de más sobre los mismos HL).
  * No mide el costo real, que sube y baja por muchas cosas a la vez: mide lo
  * que ESTA iniciativa le sacó.
@@ -1517,8 +1517,9 @@ export function IniciativasAhorroSection({
                   {aporteHl && (
                     <div className="rounded-lg border p-3">
                       <div className="text-xs text-muted-foreground">
-                        Aporte al costo por HL · ahorro del mes ÷ HL
-                        distribuidos del mes (Cuadro mensual de indicadores)
+                        Aporte al costo por HL · ahorro del mes ÷ HL vendidos
+                        del mes (Cuadro mensual de indicadores, misma base que
+                        el VLC/HL del Sueño)
                         {mesInicio > 1 && `, desde ${MES_NOMBRE[mesInicio]}`}
                       </div>
                       <p
