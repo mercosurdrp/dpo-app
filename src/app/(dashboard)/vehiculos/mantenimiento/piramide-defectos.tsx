@@ -80,13 +80,13 @@ const NIVELES = [
     color: "#F1C40F",
   },
   {
-    key: "leve",
+    key: "defectos",
     // No decir "Observaciones": las observaciones son el texto libre del
     // checklist (cientos por año) y este nivel son sólo los ítems no conformes
     // que no son críticos. Los críticos están en el nivel de arriba, así que la
     // base NUNCA es el total de defectos — de ahí venía la confusión.
-    titulo: "Defectos leves (no críticos)",
-    detalle: "Ítems no conformes no críticos en checklist",
+    titulo: "Defectos de checklist (todos)",
+    detalle: "Ítems no conformes de checklist, críticos incluidos",
     color: "#5DADE2",
   },
 ] as const
@@ -165,6 +165,11 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       correctivo: correctivos.length,
       averia: correctivos.filter((m) => !!m.fuera_servicio_desde).length,
     }
+    // La base de la pirámide son TODOS los defectos de checklist (leves +
+    // críticos), no sólo los leves: es el mismo número que el KPI "Defectos" y
+    // el que se cuenta en la planta. El nivel de arriba es el subconjunto
+    // crítico. Antes la base mostraba sólo los leves y no cerraba con nada.
+    conteo.defectos = conteo.leve + conteo.critico
 
     const porUnidad = new Map<string, { leves: number; criticos: number }>()
     for (const i of items) {
@@ -407,11 +412,12 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
           <strong className="font-semibold text-foreground">
             {fmtNum(datos.totalDefectos)} defectos de checklist
           </strong>{" "}
-          = {fmtNum(datos.conteo.leve)} leves + {fmtNum(datos.conteo.critico)} críticos.
+          en la base = {fmtNum(datos.conteo.leve)} leves + {fmtNum(datos.conteo.critico)}{" "}
+          críticos. El nivel de arriba son esos mismos {fmtNum(datos.conteo.critico)} críticos.
         </p>
         <p className="mt-0.5 flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
           <Info className="size-3" />
-          De la base (defectos leves de checklist) a la punta (avería grave).
+          De la base (todo lo que marca el checklist) a la punta (avería grave).
           Gestionando la base se previene la punta.
         </p>
       </div>
