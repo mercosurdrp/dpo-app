@@ -382,6 +382,8 @@ function KpiCombustibleBlock({
   mejorSi: "menor" | "mayor"
 }) {
   const esViajes = kpi.modo === "viajes"
+  const [mesAbierto, setMesAbierto] = useState<number | null>(null)
+  const detalleMes = kpi.meses.find((m) => m.mes === mesAbierto) ?? null
   const hayControl =
     !esViajes &&
     kpi.dominiosIntervenidos.length > 0 &&
@@ -566,14 +568,12 @@ function KpiCombustibleBlock({
             m.real !== null && refMes !== null && m.real >= refMes
           const previo = mesInstalacion !== null && m.mes < mesInstalacion
           return (
-            <span
+            <button
               key={m.mes}
-              title={
-                esViajes
-                  ? `${m.viajes ?? 0} viajes en ${formatNum(m.semanas ?? 0)} semanas hábiles${previo ? " · anterior al cambio" : ""}`
-                  : `${m.cargas} cargas · ${m.km.toLocaleString("es-AR")} km · ${m.litros.toLocaleString("es-AR")} lts${previo ? " · anterior a la instalación" : ""}`
-              }
-              className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize ${
+              type="button"
+              onClick={() => setMesAbierto(m.mes)}
+              title={`Ver el detalle de ${MES_NOMBRE[m.mes]}`}
+              className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize transition-opacity hover:opacity-80 ${
                 ok
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                   : "border-red-200 bg-red-50 text-red-700"
@@ -583,10 +583,91 @@ function KpiCombustibleBlock({
               <span className="ml-1 opacity-60">
                 ({esViajes ? `${m.viajes ?? 0} viajes` : m.cargas})
               </span>
-            </span>
+            </button>
           )
         })}
       </div>
+
+      {/* El detalle del mes al clic, como en Roturas. */}
+      <Dialog
+        open={mesAbierto !== null}
+        onOpenChange={(o) => !o && setMesAbierto(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="capitalize">
+              {detalleMes ? MES_NOMBRE[detalleMes.mes] : ""} —{" "}
+              {esViajes ? "viajes por semana" : "rendimiento"}
+            </DialogTitle>
+          </DialogHeader>
+          {detalleMes && (
+            <div className="space-y-4 text-sm">
+              {mesInstalacion !== null && detalleMes.mes < mesInstalacion && (
+                <p className="rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
+                  Este mes es anterior {esViajes ? "al cambio de esquema" : "a la instalación"}
+                  {mesInstalacion <= 12 && ` (${MES_NOMBRE[mesInstalacion]})`}:
+                  es el &quot;antes&quot; contra el que se compara.
+                </p>
+              )}
+              <div>
+                <FilaDetalle
+                  etiqueta={esViajes ? "Viajes por semana" : `Rendimiento (${unidad})`}
+                  valor={formatNum(detalleMes.real)}
+                  className={
+                    detalleMes.real !== null && refMes !== null && mejora(detalleMes.real, refMes)
+                      ? "text-emerald-700"
+                      : "text-red-600"
+                  }
+                />
+                {lineaBase !== null && (
+                  <FilaDetalle etiqueta="Línea base" valor={formatNum(lineaBase)} />
+                )}
+                {objetivo !== null && (
+                  <FilaDetalle etiqueta="Objetivo" valor={formatNum(objetivo)} />
+                )}
+                {esViajes ? (
+                  <>
+                    <FilaDetalle
+                      etiqueta="Viajes en el mes"
+                      valor={String(detalleMes.viajes ?? 0)}
+                    />
+                    <FilaDetalle
+                      etiqueta="Semanas hábiles"
+                      valor={formatNum(detalleMes.semanas ?? 0)}
+                    />
+                    {kpi.viajes && (
+                      <FilaDetalle
+                        etiqueta="Km por viaje"
+                        valor={`${kpi.viajes.kmViaje} km`}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <FilaDetalle
+                      etiqueta="Cargas válidas"
+                      valor={String(detalleMes.cargas)}
+                    />
+                    <FilaDetalle
+                      etiqueta="Km recorridos"
+                      valor={`${detalleMes.km.toLocaleString("es-AR")} km`}
+                    />
+                    <FilaDetalle
+                      etiqueta="Litros cargados"
+                      valor={`${detalleMes.litros.toLocaleString("es-AR")} lts`}
+                    />
+                  </>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {esViajes
+                  ? "Viajes = rutas de Foxtrot con reparto en la localidad, la haga la ruta que la haga. Semanas = días hábiles ÷ 5."
+                  : "Razón de sumas (Σ km ÷ Σ litros), sólo gasoil; se descartan las cargas con odómetro salteado o tanque incompleto."}
+              </p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       <p className="text-xs text-muted-foreground">
         {esViajes && kpi.viajes && (
           <>
@@ -904,7 +985,10 @@ function AporteHlBlock({
   aporteHl: AporteHl
   encabezado: ReactNode
 }) {
+  const [mesAbierto, setMesAbierto] = useState<number | null>(null)
+  const detalle = aporteHl.meses.find((m) => m.mes === mesAbierto) ?? null
   return (
+    <>
 <div className="rounded-lg border p-3">
         <div className="text-xs text-muted-foreground">{encabezado}</div>
         <p
@@ -938,14 +1022,12 @@ function AporteHlBlock({
             const sinHl = m.aporte === null
             const mejora = m.ahorro > 0
             return (
-              <span
+              <button
                 key={m.mes}
-                title={
-                  sinHl
-                    ? `${MES_NOMBRE[m.mes]}: ${formatMoney(m.ahorro)} ahorrados, sin HL en el cuadro`
-                    : `${MES_NOMBRE[m.mes]}: ${formatMoney(m.ahorro)} ÷ ${formatNum(Math.round(m.hl ?? 0))} HL${m.parcial ? " (mes en curso, parcial)" : ""}${m.costoXHl !== null ? ` · costo del mes ${formatNum(Math.round(m.costoXHl))} $/HL` : " · sin costo cargado"}`
-                }
-                className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize tabular-nums ${
+                type="button"
+                onClick={() => setMesAbierto(m.mes)}
+                title={`Ver el detalle de ${MES_NOMBRE[m.mes]}`}
+                className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize tabular-nums transition-opacity hover:opacity-80 ${
                   sinHl
                     ? "border-slate-200 bg-slate-50 text-slate-500"
                     : mejora
@@ -962,11 +1044,88 @@ function AporteHlBlock({
                     ({formatHl(Math.abs(m.pct))}%)
                   </span>
                 )}
-              </span>
+              </button>
             )
           })}
         </div>
       </div>
+
+      {/* El detalle del mes: la cuenta completa, como en Roturas. */}
+      <Dialog
+        open={mesAbierto !== null}
+        onOpenChange={(o) => !o && setMesAbierto(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="capitalize">
+              {detalle ? MES_NOMBRE[detalle.mes] : ""} — aporte al costo por HL
+            </DialogTitle>
+          </DialogHeader>
+          {detalle && (
+            <div className="space-y-4 text-sm">
+              {detalle.parcial && (
+                <p className="rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
+                  Mes en curso: los HL están incompletos y el aporte va a
+                  cambiar cuando cierre.
+                </p>
+              )}
+              <div>
+                <FilaDetalle
+                  etiqueta={detalle.ahorro >= 0 ? "Ahorro del mes" : "Gasto de más del mes"}
+                  valor={formatMoney(Math.abs(detalle.ahorro))}
+                  className={detalle.ahorro >= 0 ? "text-emerald-700" : "text-red-600"}
+                />
+                <FilaDetalle
+                  etiqueta="HL vendidos del mes"
+                  valor={
+                    detalle.hl !== null
+                      ? `${formatNum(Math.round(detalle.hl))} HL`
+                      : "sin dato en el cuadro"
+                  }
+                />
+                <FilaDetalle
+                  etiqueta="Aporte al costo por HL"
+                  valor={
+                    detalle.aporte !== null
+                      ? `${detalle.ahorro >= 0 ? "−" : "+"}${formatHl(Math.abs(detalle.aporte))} $/HL`
+                      : "—"
+                  }
+                  className={
+                    detalle.aporte === null
+                      ? undefined
+                      : detalle.ahorro >= 0
+                        ? "text-emerald-700"
+                        : "text-red-600"
+                  }
+                />
+                <FilaDetalle
+                  etiqueta="Costo por HL del mes"
+                  valor={
+                    detalle.costoXHl !== null
+                      ? `${formatNum(Math.round(detalle.costoXHl))} $/HL`
+                      : "sin costo cargado"
+                  }
+                />
+                <FilaDetalle
+                  etiqueta="Peso sobre el costo por HL"
+                  valor={
+                    detalle.pct !== null
+                      ? `${formatHl(Math.abs(detalle.pct))}%`
+                      : "—"
+                  }
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {detalle.ahorro >= 0
+                  ? "Sin la iniciativa, el costo por HL del mes habría sido más alto en el aporte que se muestra."
+                  : "Este mes la iniciativa no ahorró: el costo por HL quedó más alto en lo que se muestra."}{" "}
+                HL vendidos y costo del Cuadro mensual de indicadores.
+              </p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
