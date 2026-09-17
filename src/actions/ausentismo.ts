@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireRole } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
+import { sincronizarAusentismoYam } from "@/lib/yam-ausentismo-sync"
 import type { AusentismoSerie, AusentismoPersona } from "@/actions/asistencia"
 import type {
   AusentismoEmpleadoOpcion,
@@ -319,6 +320,48 @@ export async function getArchivoUrl(
     }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// Dispara el mismo sync que corre solo a las 06:45 UTC (ver
+// src/lib/yam-ausentismo-sync.ts y el cron en
+// src/app/api/rrhh/cron-sync-ausentismo-yam), pero al toque: para cuando
+// alguien acaba de cargar una licencia en YAM y no quiere esperar hasta el
+// otro día. Misma ventana que el cron ([hoy-30, hoy+60]), misma lógica —
+// nunca toca una carga manual, sólo inserta/actualiza/borra filas con la
+// marca "Sincronizado desde YAM".
+export interface SincronizacionYamResumen {
+  ausentismosRecibidos: number
+  insertados: number
+  actualizados: number
+  sinCambios: number
+  eliminados: number
+}
+
+export async function sincronizarYamAhora(): Promise<Result<SincronizacionYamResumen>> {
+  try {
+    if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+    await requireRole(["admin", "admin_rrhh"])
+    const hoy = new Date().toISOString().slice(0, 10)
+    const sumarDias = (iso: string, dias: number) => {
+      const d = new Date(`${iso}T00:00:00Z`)
+      d.setUTCDate(d.getUTCDate() + dias)
+      return d.toISOString().slice(0, 10)
+    }
+    const desde = sumarDias(hoy, -30)
+    const hasta = sumarDias(hoy, 60)
+    const r = await sincronizarAusentismoYam(desde, hasta, false)
+    return {
+      data: {
+        ausentismosRecibidos: r.ausentismosRecibidos,
+        insertados: r.insertados,
+        actualizados: r.actualizados,
+        sinCambios: r.sinCambios,
+        eliminados: r.eliminados,
+      },
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error sincronizando con YAM" }
   }
 }
 

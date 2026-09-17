@@ -9,6 +9,10 @@ import {
 import { AusentismoClient } from "./ausentismo-client"
 
 export const dynamic = "force-dynamic"
+// El botón "Sincronizar YAM" dispara sincronizarYamAhora() (Server Action),
+// que puede tardar igual que el cron — mismo límite que
+// api/rrhh/cron-sync-ausentismo-yam.
+export const maxDuration = 120
 
 function currentYearMonth(): string {
   const d = new Date()

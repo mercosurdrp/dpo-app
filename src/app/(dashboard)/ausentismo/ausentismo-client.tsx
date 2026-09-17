@@ -20,6 +20,7 @@ import {
   getArchivoUrl,
   listarEventos,
   resumenMes,
+  sincronizarYamAhora,
 } from "@/actions/ausentismo"
 
 const BUCKET = "ausentismo"
@@ -70,6 +71,33 @@ export function AusentismoClient({
   const [editando, setEditando] = useState<AusentismoEventoConEmpleado | null>(null)
 
   const [pending, startTransition] = useTransition()
+  const [pendingSync, startSyncTransition] = useTransition()
+
+  function handleSincronizar() {
+    startSyncTransition(async () => {
+      const res = await sincronizarYamAhora()
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      const { insertados, actualizados, eliminados } = res.data
+      const cambios = insertados + actualizados + eliminados
+      if (cambios === 0) {
+        toast.info("Sincronizado con YAM: sin novedades nuevas")
+      } else {
+        const partes: string[] = []
+        if (insertados) partes.push(`${insertados} nueva${insertados === 1 ? "" : "s"}`)
+        if (actualizados) {
+          partes.push(`${actualizados} actualizada${actualizados === 1 ? "" : "s"}`)
+        }
+        if (eliminados) {
+          partes.push(`${eliminados} dada${eliminados === 1 ? "" : "s"} de baja`)
+        }
+        toast.success(`Sincronizado con YAM: ${partes.join(", ")}`)
+      }
+      await recargar()
+    })
+  }
 
   async function recargar() {
     const filtros = {
@@ -161,6 +189,15 @@ export function AusentismoClient({
           </p>
         </div>
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleSincronizar}
+            disabled={pendingSync}
+            title="Trae de nuevo las licencias/ausencias APROBADAS de YAM sin esperar al cron diario de las 06:45"
+            className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {pendingSync ? "Sincronizando..." : "↻ Sincronizar YAM"}
+          </button>
           <Link
             href="/ausentismo/reportes"
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
