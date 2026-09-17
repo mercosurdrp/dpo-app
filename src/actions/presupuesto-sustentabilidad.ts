@@ -1,9 +1,8 @@
 "use server"
 
 import { requireAuth } from "@/lib/session"
-import { createClient } from "@/lib/supabase/server"
 import { getPptoCantidades } from "@/actions/presupuesto-generador"
-import { KPI_EXTERNOS } from "@/lib/sueno/externos"
+import { fetchFgliMermaFinalResumen } from "@/lib/sueno/externos"
 
 /**
  * Presupuesto y sustentabilidad: qué compromete el presupuesto sobre el FGLI
@@ -14,11 +13,14 @@ import { KPI_EXTERNOS } from "@/lib/sueno/externos"
  *  - el real del año ANTERIOR (el punto de partida),
  *  - lo que el presupuesto del año PREVÉ perder (la Q de la hoja ALMACEN PXQ,
  *    pasada a HL, sobre los HL que el presupuesto prevé vender),
- *  - el real del año A LA FECHA (el FGLI del Árbol del Sueño).
+ *  - el real del año A LA FECHA, en MERMA FINAL.
  *
- * 🚨 Definición de FGLI (Handbook Almacén 3.4, y la misma del Sueño desde el
- * 14/09/2026): roturas + vencidos + diferencia neta de inventario, SIN
- * faltantes de entrega. El presupuesto tiene Q para las tres patas (ROTURAS Y
+ * 🚨 Definición de FGLI acá (Handbook Almacén 3.4): roturas DESCARTADAS +
+ * vencidos + diferencia neta de inventario, SIN faltantes de entrega. Es la
+ * base que cierra con el presupuesto, cuya Q son bultos que se dan de baja.
+ * NO es la del Árbol del Sueño: desde el 17/09/2026 el árbol sigue el Reporte
+ * DPO (volumen AFECTADO, con todo lo que entra a reempaque) y da ~3× más; por
+ * eso esta sección no muestra la meta del Sueño, no sería comparable. El presupuesto tiene Q para las tres patas (ROTURAS Y
  * DERRAMES, PRODUCTO VENCIDO, DIFERENCIAS DE INVENTARIO) y también para
  * FALTANTES, que queda afuera a propósito.
  *
@@ -29,7 +31,7 @@ import { KPI_EXTERNOS } from "@/lib/sueno/externos"
  * vencidos). Es un supuesto y está dicho en la tarjeta.
  *
  * 🚨 Denominadores: el presupuesto divide por los HL que preveía vender (EERR,
- * fila "Total en HL"); el real del Sueño divide por los HL entregados del
+ * fila "Total en HL"); el real del año divide por los HL entregados del
  * depósito; el año anterior por los HL de venta del tablero del depósito. Son
  * series parecidas (±10 %) y es lo que hay: sólo el EERR tiene presupuesto.
  */
@@ -52,7 +54,7 @@ export interface SustentabilidadMes {
   mes: number
   /** ppm que el presupuesto prevé perder ese mes. null si no hay Q o volumen. */
   pptoPpm: number | null
-  /** ppm real del año (FGLI del Sueño). null si el mes no cerró / sin dato. */
+  /** ppm real del año (merma final). null si el mes no cerró / sin dato. */
   realPpm: number | null
   /** ppm real del mismo mes del año anterior (roturas + vencidos). */
   anteriorPpm: number | null
@@ -84,13 +86,10 @@ export interface SustentabilidadFgli {
   pptoAnualPpm: number | null
   /** FGLI presupuestado sólo para los meses que ya tienen real (misma ventana). */
   pptoYtdPpm: number | null
-  /** FGLI real del año a la fecha (Sueño). */
+  /** FGLI real del año a la fecha (merma final). */
   realYtdPpm: number | null
   /** Meses con real, para decir "a la fecha" con precisión. */
   mesesConReal: number
-  /** Meta y gatillo del Sueño para el año. */
-  meta: number | null
-  gatillo: number | null
   meses: SustentabilidadMes[]
   patas: SustentabilidadPata[]
 }
@@ -177,20 +176,10 @@ export async function getSustentabilidadPresupuesto(
     await requireAuth()
     const avisos: string[] = []
 
-    const [cantRes, perdidasRes, realRes, metaRes] = await Promise.allSettled([
+    const [cantRes, perdidasRes, realRes] = await Promise.allSettled([
       getPptoCantidades(anio),
       fetchPerdidas(),
-      KPI_EXTERNOS.fgli.resumen(anio),
-      (async () => {
-        const supabase = await createClient()
-        const { data } = await supabase
-          .from("sueno_kpi_valores")
-          .select("meta, gatillo")
-          .eq("anio", anio)
-          .eq("kpi_key", "fgli")
-          .maybeSingle()
-        return data as { meta: number | null; gatillo: number | null } | null
-      })(),
+      fetchFgliMermaFinalResumen(anio),
     ])
 
     if (cantRes.status === "rejected") {
@@ -203,8 +192,7 @@ export async function getSustentabilidadPresupuesto(
     const perdidas = perdidasRes.status === "fulfilled" ? perdidasRes.value : null
     if (!perdidas) avisos.push("El tablero del depósito no respondió: sin año anterior ni factor HL/bulto real.")
     const real = realRes.status === "fulfilled" ? realRes.value : null
-    if (!real) avisos.push("El FGLI real del Sueño no está disponible ahora.")
-    const meta = metaRes.status === "fulfilled" ? metaRes.value : null
+    if (!real) avisos.push("El FGLI real (merma final, serie diaria del depósito) no está disponible ahora.")
 
     // ── Factores HL/bulto por pata ──
     const factorRot =
@@ -254,7 +242,7 @@ export async function getSustentabilidadPresupuesto(
       }
     })
 
-    // Diferencias reales del año: el resumen del Sueño trae en `bultos` el
+    // Diferencias reales del año: el resumen de merma final trae en `bultos` el
     // "vencidos + diferencias" de cada mes; restando vencidos queda diferencias.
     if (real) {
       const venReal = patas.find((p) => p.key === "vencidos")?.hlReal ?? 0
@@ -337,8 +325,6 @@ export async function getSustentabilidadPresupuesto(
           pptoYtdPpm: pptoVolYtd > 0 ? (pptoPerdYtd / pptoVolYtd) * 1e6 : null,
           realYtdPpm: realEnt > 0 ? (realPerd / realEnt) * 1e6 : null,
           mesesConReal: realPorMes.size,
-          meta: meta?.meta ?? null,
-          gatillo: meta?.gatillo ?? null,
           meses,
           patas,
         },

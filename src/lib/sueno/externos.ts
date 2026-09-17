@@ -8,14 +8,17 @@
  *      `precision_picking` (%)      ← /api/productividad/precision-resumen
  *      `wqi`               (PPM)    ← /api/productividad/wqi-resumen
  *      `dqi`               (PPM)    ← /api/dqi (el mismo de /indicadores/dqi)
- *      `tqi`               (PPM)    ← /api/indicadores/serie-diaria, UN pedido
- *      `fgli`              (PPM)      por mes del año (~100 KB c/u): HL PERDIDOS
- *                                     (merma final) ÷ HL entregados × 1M.
+ *      `tqi`               (PPM)    ← /api/indicadores (dpo_base): Reporte DPO
+ *      `fgli`              (PPM)      2026, UNA llamada por año. Volumen
+ *                                     AFECTADO, sin faltantes de entrega.
  *
- * 🚨 WQI y DQI cuentan lo que se AFECTA (entra a reempaque aunque se recupere,
- * pedido de auditoría); TQI y FGLI cuentan lo que se PIERDE de verdad (merma
- * final). Por eso los hijos dan más que el padre: no son sumandos, son otra
- * base. Definición de Sebastián, 2026-09-14.
+ * 🚨 Desde el 2026-09-17 TQI y FGLI siguen la definición del Reporte DPO 2026
+ * (TQI = DC-K1279, FGLI = DC-K0030) tal como la reproduce el tablero del
+ * depósito: la rotura de almacén es el volumen AFECTADO (lo que entra a
+ * reempaque aunque se recupere), así que WQI + DQI = TQI y TQI + vencidos +
+ * diferencias de inventario = FGLI. Antes (14/09 al 17/09) medían merma final
+ * y daban ~3× menos; esa versión queda en `fetchFgliMermaFinalResumen` para
+ * la sección de presupuesto, que compara contra bultos descartados.
  *
  * 🚨 Cada entrada de acá es UN fetch más en el render del home (el árbol NO
  * está bajo Suspense y corta a los 5s), así que el endpoint tiene que estar
@@ -38,6 +41,8 @@ const TIMEOUT_MS = 5000
 // 1,5-5 s en caliente: con el timeout genérico se caía de a ratos. Mismo margen
 // que usa `warehouse/auto-indicadores.ts`.
 const SERIE_DIARIA_TIMEOUT_MS = 20_000
+// `/api/indicadores` arma el mes completo del tablero (~20 KB, 1-3 s en frío).
+const INDICADORES_TIMEOUT_MS = 10_000
 const TTL_MS = 60 * 60 * 1000 // 1h: el blob del WMS se regenera 1 vez al día
 
 export interface ResumenExternoMes {
@@ -117,8 +122,9 @@ export const KPI_EXTERNOS: Record<
       "bloque, que no son rotura) más las roturas de almacén que no pasan por el " +
       "sector; el denominador son los HL entregados de Chess, netos de notas de " +
       "crédito. El número anual es el PPM PONDERADO (Σ HL afectados ÷ Σ HL " +
-      "entregados), no el promedio ni la suma de los PPM mensuales. Fuente: " +
-      "depósito (deposito-esteban /indicadores).",
+      "entregados), no el promedio ni la suma de los PPM mensuales. Es el " +
+      "sumando de almacén del TQI (#8 del Reporte DPO): WQI + DQI = TQI. " +
+      "Fuente: depósito (deposito-esteban /indicadores).",
     detalleLabel: "HL afectado",
     detalle2Label: "HL entregado",
   },
@@ -129,38 +135,40 @@ export const KPI_EXTERNOS: Record<
       "rompe en el camión o en el PDV) ÷ HL entregados × 1.000.000 (PPM). Es el " +
       "mismo indicador de Indicadores → DQI (DPO Entrega 1.4); el número anual es " +
       "el acumulado ponderado del tablero del depósito, no el promedio de los " +
-      "meses. Igual que el WQI, mide lo que se AFECTA (incluye lo que entra a " +
-      "reempaque); la pérdida real va en el TQI. Fuente: depósito " +
-      "(deposito-esteban /api/dqi).",
+      "meses. Es el sumando de entrega del TQI (#9 del Reporte DPO): WQI + DQI " +
+      "= TQI. Fuente: depósito (deposito-esteban /api/dqi).",
   },
   tqi: {
     resumen: fetchTqiResumen,
     explicacion:
-      "TQI = HL PERDIDOS por rotura (almacén + distribución) ÷ HL entregados × " +
-      "1.000.000 (PPM). Cuenta la merma final: lo que se rompió y se descartó. " +
-      "Es distinto de sus hijos WQI y DQI, que cuentan todo lo que se AFECTA " +
-      "(entra a reempaque aunque se recupere): por eso el TQI es mucho más bajo " +
-      "que WQI + DQI. El número anual es Σ HL rotos ÷ Σ HL entregados del año, " +
-      "no el promedio de los meses. Fuente: depósito (deposito-esteban, serie " +
-      "diaria de pérdidas; es la serie «WQI con distribución» del tablero).",
+      "TQI (Total Quality Index, KPI 5 del Reporte DPO 2026, DC-K1279) = (#8 HL " +
+      "rotura total del almacén + #9 HL rotura total de la entrega) ÷ #28 HL " +
+      "despachados × 1.000.000 (PPM). Mide el volumen AFECTADO: la rotura de " +
+      "almacén incluye todo lo que entra a reempaque aunque después se " +
+      "recupere, más la rotura de depósito y de acarreo; la de entrega es lo " +
+      "que se rompe en el camión o en el PDV. Por eso WQI + DQI = TQI. El " +
+      "número anual es Σ HL rotos ÷ Σ HL despachados del año, no el promedio " +
+      "de los meses. Fuente: tablero del depósito (deposito-esteban " +
+      "/indicadores, base del Reporte DPO), mismo número que muestra ahí.",
     detalleLabel: "HL rotos",
     detalle2Label: "HL entregado",
   },
   fgli: {
     resumen: fetchFgliResumen,
     explicacion:
-      "FGLI (Full Goods Loss Index) = HL PERDIDOS por rotura + vencidos " +
-      "(obsolescencia) + diferencia neta del recuento de inventario, ÷ HL " +
-      "entregados × 1.000.000 (PPM). Merma final, igual que el TQI: lo que se " +
-      "descartó, no lo que entró a reempaque. NO incluye faltantes de entrega " +
-      "(el FGLI en HL de la reunión de warehouse sí los suma, es otro " +
-      "indicador). Ojo: la diferencia de inventario entra entera el último día " +
-      "operativo del mes, cuando cierra el recuento, así que el mes en curso " +
-      "queda incompleto hasta unos días después. El detalle muestra los HL " +
-      "perdidos de cada mes y su apertura entre rotura (TQI) e inventario. " +
-      "Fuente: depósito (deposito-esteban, serie diaria de pérdidas).",
+      "FGLI (Finished Goods Loss Index, KPI 11 del Reporte DPO 2026, DC-K0030) " +
+      "= (#6 diferencias de inventario + #53 roturas de almacén y entrega + #45 " +
+      "obsolescencia) ÷ #28 HL despachados × 1.000.000 (PPM). Las roturas son " +
+      "las del TQI (volumen afectado); las diferencias son |faltantes| + " +
+      "|sobrantes| del cierre mensual cargado en la grilla DPO (si el mes no " +
+      "está cargado, el neto del recuento); la obsolescencia son los HL de la " +
+      "categoría Vencidos. NO incluye faltantes de entrega ni de acarreo (esos " +
+      "van al SCL y al «HL perdidos» de la reunión de warehouse). El detalle " +
+      "muestra los HL perdidos de cada mes y cuánto de eso es inventario + " +
+      "vencidos; el resto es rotura (TQI). Fuente: tablero del depósito " +
+      "(deposito-esteban /indicadores, base del Reporte DPO).",
     detalleLabel: "HL perdidos",
-    detalle2Label: "de inventario",
+    detalle2Label: "Inventario + vencidos",
   },
 }
 
@@ -258,8 +266,10 @@ const r1 = (n: number) => Math.round(n * 10) / 10
 const r2 = (n: number) => Math.round(n * 100) / 100
 
 /**
- * Pérdidas del mes (merma final, en HL) leídas de la serie diaria del
- * depósito. Es la fuente de TQI y FGLI.
+ * Pérdidas del mes en MERMA FINAL (HL descartados) leídas de la serie diaria
+ * del depósito. Ya NO es la fuente del árbol (ver `fetchDpoBase`): la usa la
+ * sección "Presupuesto y sustentabilidad", que compara contra la Q en bultos
+ * del presupuesto (bultos que se dan de baja, no volumen afectado).
  *
  * No hay resumen anual en el depósito: se lee `/api/indicadores/serie-diaria`
  * de cada mes del año (~100 KB y 1,5-5 s cada uno, en paralelo, cacheados 1 h
@@ -364,20 +374,125 @@ function resumenPpm(
   }
 }
 
-/** TQI = HL rotos (almacén + distribución, merma final) ÷ HL entregados × 1M. */
-async function fetchTqiResumen(anio: number): Promise<ResumenExterno | null> {
-  const meses = await fetchPerdidasDelAnio(anio)
-  return resumenPpm(anio, meses, (m) => m.roturas, (m) => m.entregado)
-}
-
-/** FGLI = (HL rotos + vencidos + diferencia de inventario) ÷ HL entregados × 1M. */
-async function fetchFgliResumen(anio: number): Promise<ResumenExterno | null> {
+/**
+ * FGLI en merma final = (HL rotos descartados + vencidos + diferencia NETA de
+ * inventario) ÷ HL entregados × 1M. Base del Handbook Almacén 3.4 y del
+ * presupuesto; no es la del árbol.
+ */
+export async function fetchFgliMermaFinalResumen(anio: number): Promise<ResumenExterno | null> {
   const meses = await fetchPerdidasDelAnio(anio)
   return resumenPpm(
     anio,
     meses,
     (m) => m.roturas + m.vencidos + m.diferencias,
     (m) => m.vencidos + m.diferencias,
+  )
+}
+
+/**
+ * TQI y FGLI del Reporte DPO 2026, leídos del endpoint mensual del depósito
+ * (`/api/indicadores`, el mismo de /indicadores). Desde el 2026-09-17 trae
+ * `dpo_base.actual` con la base numerada del reporte para CADA mes del año
+ * (una sola llamada de ~20 KB, contra 9-12 de ~100 KB a la serie diaria):
+ *   #8  HL rotura total del almacén = volumen AFECTADO (ingreso a reempaque
+ *       + rotura de depósito + rotura de acarreo)
+ *   #9  HL rotura total de la entrega (camión / PDV)
+ *   #53 = #8 + #9
+ *   #45 HL perdidos por obsolescencia (vencidos)
+ *   #6  HL perdidos por diferencias de inventario (|faltantes| + |sobrantes|
+ *       cargados en la grilla DPO; si el mes no está cargado, el neto del
+ *       recuento)
+ *   #28 HL despachados en concepto de venta (= HL entregados)
+ *   TQI  (DC-K1279) = #53 ÷ #28 × 1M
+ *   FGLI (DC-K0030) = (#6 + #53 + #45) ÷ #28 × 1M
+ * Sin faltantes de entrega. Se pide el último mes del año (diciembre para
+ * años cerrados, el mes en curso para el vigente); el acumulado anual se
+ * recalcula como Σ HL ÷ Σ #28 y coincide con `indicadores.*.anual_acum`
+ * (verificado 2026-09-17: 2026 TQI 1.555 / FGLI 1.723; 2025 1.866 / 2.359).
+ */
+interface DpoBaseMes {
+  n6?: number | null
+  n28?: number | null
+  n45?: number | null
+  n53?: number | null
+  tqi_hl?: number | null
+  fgli_hl?: number | null
+}
+interface IndicadoresDeposito {
+  dpo_base?: { actual?: Record<string, DpoBaseMes | null> }
+  _cached_at?: string
+}
+
+async function fetchDpoBase(anio: number): Promise<IndicadoresDeposito | null> {
+  const hoy = new Date()
+  if (anio > hoy.getFullYear()) return null
+  const mes = anio < hoy.getFullYear() ? 12 : hoy.getMonth() + 1
+  return fetchJsonCached<IndicadoresDeposito>(
+    `${DEPOSITO_API_BASE}/api/indicadores?year=${anio}&month=${mes}`,
+    INDICADORES_TIMEOUT_MS,
+  )
+}
+
+/**
+ * Arma un resumen en PPM = Σ HL ÷ Σ #28 × 1M (mes a mes y acumulado del año)
+ * desde la base del Reporte DPO. `perdido` elige qué HL suman; `detalle2` es
+ * el 2º dato de cada mes para el modal. Meses sin #28 quedan en null.
+ */
+function resumenDpo(
+  anio: number,
+  j: IndicadoresDeposito | null,
+  perdido: (m: DpoBaseMes) => number,
+  detalle2: (m: DpoBaseMes) => number,
+): ResumenExterno | null {
+  const actual = j?.dpo_base?.actual
+  if (!actual) return null
+  let perdidoAnual = 0
+  let entregadoAnual = 0
+  const filas: ResumenExternoMes[] = []
+  for (let mes = 1; mes <= 12; mes++) {
+    const m = actual[String(mes)]
+    const entregado = m?.n28 ?? 0
+    if (!m || entregado <= 0) {
+      filas.push({ mes, valor: null, registros: null })
+      continue
+    }
+    const p = perdido(m)
+    perdidoAnual += p
+    entregadoAnual += entregado
+    filas.push({
+      mes,
+      valor: r1((p / entregado) * 1_000_000),
+      registros: r2(p),
+      bultos: r2(detalle2(m)),
+    })
+  }
+  if (entregadoAnual <= 0) return null
+  return {
+    anio,
+    promedio_anual: r1((perdidoAnual / entregadoAnual) * 1_000_000),
+    registros_anual: r2(perdidoAnual),
+    generado_en: j?._cached_at ?? null,
+    meses: filas,
+  }
+}
+
+/** TQI (Reporte DPO KPI 5) = (#8 + #9) ÷ #28 × 1M. Detalle: HL rotos / HL entregados. */
+async function fetchTqiResumen(anio: number): Promise<ResumenExterno | null> {
+  return resumenDpo(
+    anio,
+    await fetchDpoBase(anio),
+    (m) => m.tqi_hl ?? m.n53 ?? 0,
+    (m) => m.n28 ?? 0,
+  )
+}
+
+/** FGLI (Reporte DPO KPI 11) = (#6 + #53 + #45) ÷ #28 × 1M. Detalle: HL perdidos / inventario + vencidos. */
+async function fetchFgliResumen(anio: number): Promise<ResumenExterno | null> {
+  return resumenDpo(
+    anio,
+    await fetchDpoBase(anio),
+    (m) => m.fgli_hl ?? (m.n53 ?? 0) + (m.n45 ?? 0) + (m.n6 ?? 0),
+    (m) => (m.n45 ?? 0) + (m.n6 ?? 0),
   )
 }
 

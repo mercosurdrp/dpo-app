@@ -51,9 +51,9 @@ export async function GET(request: NextRequest) {
   const sb = admin as unknown as Parameters<typeof tlpAnual>[0]
 
   // Cada cálculo por separado y tolerante a fallos: un error no tumba a los otros.
-  // FGLI y TQI entran al respaldo el 2026-09-14: el FGLI lee la serie diaria
-  // del depósito de CADA mes del año (la fuente más lenta del árbol) y es el
-  // que más chances tiene de quedar en null en un render frío.
+  // FGLI y TQI entran al respaldo el 2026-09-14: leen el tablero del depósito
+  // (desde el 2026-09-17 una sola llamada a /api/indicadores) y son los que
+  // más chances tienen de quedar en null en un render frío.
   const [tlp, pdv, ruta, wnp, fgli, tqi] = await Promise.all([
     tlpAnual(sb, year).catch(() => null),
     tiempoPdvAnual(sb, year).catch(() => null),

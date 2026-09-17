@@ -63,8 +63,11 @@ export function SustentabilidadSection({
                   FGLI · Finished Goods Loss Index (HL perdidos por millón de HL)
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Roturas y derrames + producto vencido + diferencias de
-                  inventario, sin faltantes de entrega (Handbook Almacén 3.4).
+                  Roturas y derrames descartados + producto vencido +
+                  diferencias de inventario, sin faltantes de entrega (Handbook
+                  Almacén 3.4). Es merma final, la base del presupuesto: el
+                  FGLI del Árbol del Sueño sigue el Reporte DPO y mide volumen
+                  afectado, por eso es más alto y no se compara con éste.
                   El presupuesto fija cuánto se prevé perder: la Q de la hoja
                   ALMACEN PXQ pasada a HL sobre los HL que prevé vender.
                 </p>
@@ -164,13 +167,6 @@ export function SustentabilidadSection({
                 Verde: el real del año. Gris claro: el mismo mes del año
                 anterior. Los meses de verde por debajo de la punteada son los
                 que le ganaron al presupuesto.
-                {fgli.meta !== null && (
-                  <>
-                    {" "}
-                    Meta del Sueño: <strong>{ppm(fgli.meta)}</strong>
-                    {fgli.gatillo !== null && <> · gatillo {ppm(fgli.gatillo)}</>} ppm.
-                  </>
-                )}
               </p>
 
               {/* Composición por pata */}
@@ -213,9 +209,9 @@ export function SustentabilidadSection({
                 La Q del presupuesto está en bultos; se pasa a HL con el mix
                 real del año reportado por el depósito. Diferencias de
                 inventario usa el factor de roturas porque el depósito no
-                reporta bultos para esa pata. El real {fgli.anio} es el FGLI
-                del Árbol del Sueño (HL entregados como base); el presupuesto
-                divide por los HL que preveía vender.
+                reporta bultos para esa pata. El real {fgli.anio} es la merma
+                final de la serie diaria del depósito (HL entregados como
+                base); el presupuesto divide por los HL que preveía vender.
               </p>
               {data?.avisos && data.avisos.length > 0 && (
                 <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-800">

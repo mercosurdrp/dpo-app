@@ -86,19 +86,21 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   { key: "wnp", label: "WNP", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "HL/HH", mejorSi: "mayor", metaDefault: 6 },
   // FGLI (Full Goods Loss Index) desde el 2026-09-14 (pedido del usuario):
   // tercera rama de VLC/HL. Cadena FGLI → TQI → WQI + DQI, todo en PPM sobre
-  // los HL entregados del depósito, pero en DOS bases distintas (definición de
-  // Sebastián, 2026-09-14):
-  //   FGLI = HL PERDIDOS (rotura + vencidos + diferencia de inventario), merma
-  //          final. SIN faltantes de entrega (el FGLI en HL de la reunión de
-  //          warehouse sí los suma; es otro indicador).
-  //   TQI  = HL PERDIDOS por rotura (almacén + distribución), merma final.
-  //   WQI / DQI = lo que se AFECTA, incluido lo que entra a reempaque y se
-  //          recupera (pedido de auditoría). Por eso son mucho más altos que
-  //          su padre: NO son sumandos del TQI.
-  // Metas en PPM sacadas del presupuesto 2026 del depósito (HL/mes de roturas
-  // y diferencias sobre los HL entregados ene-sep): TQI 388 → 400, FGLI 523 →
-  // 520. Real 2026 ene-sep: TQI 514 y FGLI 605 (enero solo: 1.469 / 1.486).
-  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 520 },
+  // los HL despachados del depósito y en UNA sola base: la del Reporte DPO
+  // 2026 (volumen AFECTADO), tal como la reproduce el tablero del depósito
+  // (decisión de Sebastián, 2026-09-17: "tiene que incluir volumen afectado").
+  //   TQI  (DC-K1279) = (#8 rotura almacén + #9 rotura entrega) ÷ #28.
+  //   FGLI (DC-K0030) = (#6 dif. inventario + #53 roturas + #45 vencidos) ÷ #28.
+  //          SIN faltantes de entrega (van al SCL y al "HL perdidos" de la
+  //          reunión de warehouse; es otro indicador).
+  //   WQI / DQI = #8 y #9 sobre el mismo #28: ahora SÍ suman al TQI.
+  // Metas en PPM = real 2026 de MARZO A AGOSTO (meses cerrados) ponderado por
+  // HL, regla de Sebastián del 14/09 (enero y febrero tiran el cálculo muy
+  // para arriba: TQI 4.118 y 1.985; FGLI 4.320 y 2.259). Gatillo = el peor mes
+  // del tramo. TQI 1.003 → 1.000 / 1.452 → 1.450; FGLI 1.153 → 1.150 / 1.600.
+  // Real 2026 ene-sep: TQI 1.555, FGLI 1.723; 2025: 1.866 / 2.359. Ver
+  // 20260917120000_sueno_tqi_fgli_reporte_dpo.sql.
+  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 1150 },
   { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.4 },
 
   // ---- Operacional ----
@@ -119,8 +121,8 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // del almacén (deposito-esteban): si se toca uno solo, cada pantalla muestra
   // una meta distinta. La que MANDA es la fila 2026 de `sueno_kpi_valores`.
   { key: "prod_picking", label: "Prod Picking", nivel: "operacional", rama: "productividad", parentKey: "wnp", unidad: "Bul/HH", mejorSi: "mayor", metaDefault: 290 },
-  // TQI = HL rotos que se descartan (almacén + distribución) ÷ HL entregados.
-  { key: "tqi", label: "TQI", nivel: "operacional", rama: "productividad", parentKey: "fgli", unidad: "PPM", mejorSi: "menor", metaDefault: 400 },
+  // TQI = HL rotos (volumen afectado, almacén + entrega) ÷ HL despachados.
+  { key: "tqi", label: "TQI", nivel: "operacional", rama: "productividad", parentKey: "fgli", unidad: "PPM", mejorSi: "menor", metaDefault: 1000 },
   { key: "rechazo", label: "Rechazo", nivel: "operacional", rama: "cliente", parentKey: "in_full", unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
 
   // ---- Estación de trabajo / Tarea ----
