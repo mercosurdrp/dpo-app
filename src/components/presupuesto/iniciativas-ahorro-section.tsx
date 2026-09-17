@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { type ReactNode, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   Plus,
@@ -807,16 +807,30 @@ interface AporteHlMes {
   parcial: boolean
 }
 
+interface AporteHl {
+  meses: AporteHlMes[]
+  acum: { aporte: number; pct: number | null; costoXHl: number | null } | null
+}
+
 function aporteCostoHl(
   fuente: "eerr" | "manual",
   ejec: EjecucionRubro | undefined,
   ahorroComb: AhorroCombustible | null,
   mesInicio: number,
   costoHl: Record<number, CostoHlMes>,
-): {
-  meses: AporteHlMes[]
-  acum: { aporte: number; pct: number | null; costoXHl: number | null } | null
-} | null {
+): AporteHl | null {
+  const ahorros = ahorrosMensualesDe(fuente, ejec, ahorroComb, mesInicio)
+  if (!ahorros || ahorros.length === 0) return null
+  return aporteDeAhorros(ahorros, costoHl)
+}
+
+/** Ahorro en $ de cada mes, por la misma vía que la tarjeta. null si no hay fuente. */
+function ahorrosMensualesDe(
+  fuente: "eerr" | "manual",
+  ejec: EjecucionRubro | undefined,
+  ahorroComb: AhorroCombustible | null,
+  mesInicio: number,
+): { mes: number; ahorro: number }[] | null {
   let ahorros: { mes: number; ahorro: number }[]
   if (ahorroComb) {
     ahorros = ahorroComb.meses
@@ -829,8 +843,18 @@ function aporteCostoHl(
   } else {
     return null
   }
-  if (ahorros.length === 0) return null
+  return ahorros
+}
 
+/**
+ * Aporte al $/HL de una lista de ahorros mensuales. Sirve igual para una
+ * iniciativa que para todas juntas: la suma de los ahorros de un mes sobre los
+ * HL de ese mes.
+ */
+function aporteDeAhorros(
+  ahorros: { mes: number; ahorro: number }[],
+  costoHl: Record<number, CostoHlMes>,
+): AporteHl {
   const meses: AporteHlMes[] = ahorros.map(({ mes, ahorro }) => {
     const c = costoHl[mes]
     const hl = c?.hl ?? null
@@ -870,6 +894,80 @@ function aporteCostoHl(
           : null,
     },
   }
+}
+
+/** Aporte al costo por HL: acumulado + un chip por mes (verde/rojo). */
+function AporteHlBlock({
+  aporteHl,
+  encabezado,
+}: {
+  aporteHl: AporteHl
+  encabezado: ReactNode
+}) {
+  return (
+<div className="rounded-lg border p-3">
+        <div className="text-xs text-muted-foreground">{encabezado}</div>
+        <p
+          className={`mt-1 text-sm font-medium ${
+            aporteHl.acum && aporteHl.acum.aporte < 0
+              ? "text-red-600"
+              : "text-slate-900"
+          }`}
+        >
+          {aporteHl.acum ? (
+            <>
+              {aporteHl.acum.aporte >= 0 ? "−" : "+"}
+              {formatHl(Math.abs(aporteHl.acum.aporte))} $/HL
+              <span className="font-normal text-muted-foreground">
+                {" "}
+                acumulado
+                {aporteHl.acum.pct !== null &&
+                aporteHl.acum.costoXHl !== null
+                  ? ` · ${formatHl(Math.abs(aporteHl.acum.pct))}% del costo por HL de esos meses (${formatNum(Math.round(aporteHl.acum.costoXHl))} $/HL)`
+                  : " · sin costo cargado para el %"}
+              </span>
+            </>
+          ) : (
+            <span className="font-normal text-muted-foreground">
+              Sin HL del cuadro para estos meses
+            </span>
+          )}
+        </p>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {aporteHl.meses.map((m) => {
+            const sinHl = m.aporte === null
+            const mejora = m.ahorro > 0
+            return (
+              <span
+                key={m.mes}
+                title={
+                  sinHl
+                    ? `${MES_NOMBRE[m.mes]}: ${formatMoney(m.ahorro)} ahorrados, sin HL en el cuadro`
+                    : `${MES_NOMBRE[m.mes]}: ${formatMoney(m.ahorro)} ÷ ${formatNum(Math.round(m.hl ?? 0))} HL${m.parcial ? " (mes en curso, parcial)" : ""}${m.costoXHl !== null ? ` · costo del mes ${formatNum(Math.round(m.costoXHl))} $/HL` : " · sin costo cargado"}`
+                }
+                className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize tabular-nums ${
+                  sinHl
+                    ? "border-slate-200 bg-slate-50 text-slate-500"
+                    : mejora
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-red-200 bg-red-50 text-red-700"
+                } ${m.parcial ? "opacity-70" : ""}`}
+              >
+                {MES_CORTO[m.mes]}{" "}
+                {sinHl
+                  ? "—"
+                  : `${mejora ? "−" : "+"}${formatHl(Math.abs(m.aporte ?? 0))} $/HL`}
+                {!sinHl && m.pct !== null && (
+                  <span className="ml-1 opacity-60">
+                    ({formatHl(Math.abs(m.pct))}%)
+                  </span>
+                )}
+              </span>
+            )
+          })}
+        </div>
+      </div>
+  )
 }
 
 function formatHl(n: number): string {
@@ -1061,8 +1159,33 @@ export function IniciativasAhorroSection({
         ).real
       if (ini.estado === "implementada") implementadas++
     }
-    return { comprometido, realAcum, implementadas }
-  }, [iniciativas, ejecucionRubros, kpiCombustible])
+    // Todas juntas contra el costo por HL: se suman los ahorros de cada mes
+    // (cada iniciativa por su vía) y se dividen por los HL de ese mes. El
+    // acumulado cuenta cada mes una sola vez aunque tenga varias iniciativas.
+    const porMes = new Map<number, number>()
+    for (const ini of iniciativas) {
+      const ejec = ini.rubro
+        ? ejecucionRubros[ini.rubro.trim().toUpperCase()]
+        : undefined
+      const { fuente, mesInicio } = ahorroDe(ini, ejec)
+      const ahorroComb =
+        fuente === "manual" ? ahorroCombustibleDe(ini, kpiCombustible) : null
+      const ahorros = ahorrosMensualesDe(fuente, ejec, ahorroComb, mesInicio)
+      for (const { mes, ahorro } of ahorros ?? []) {
+        porMes.set(mes, (porMes.get(mes) ?? 0) + ahorro)
+      }
+    }
+    const aporteTotal =
+      porMes.size > 0
+        ? aporteDeAhorros(
+            [...porMes.entries()]
+              .sort((a, b) => a[0] - b[0])
+              .map(([mes, ahorro]) => ({ mes, ahorro })),
+            costoHl,
+          )
+        : null
+    return { comprometido, realAcum, implementadas, aporteTotal }
+  }, [iniciativas, ejecucionRubros, kpiCombustible, costoHl])
 
   return (
     <div className="space-y-5">
@@ -1143,6 +1266,23 @@ export function IniciativasAhorroSection({
           </CardContent>
         </Card>
       </div>
+
+      {/* Todas juntas: cuánto le sacaron al costo por HL. */}
+      {resumen.aporteTotal && (
+        <AporteHlBlock
+          aporteHl={resumen.aporteTotal}
+          encabezado={
+            <>
+              <span className="font-medium text-slate-700">
+                Las {iniciativas.length} iniciativas juntas
+              </span>{" "}
+              · aporte al costo por HL: suma de los ahorros de cada mes ÷ HL
+              vendidos del mes (Cuadro mensual, misma base que el VLC/HL del
+              Sueño). Cada mes cuenta una sola vez.
+            </>
+          }
+        />
+      )}
 
       {/* Acción */}
       <div className="flex items-center justify-between">
@@ -1515,73 +1655,17 @@ export function IniciativasAhorroSection({
                       que se implementó. Los HL y el pool son los del Cuadro
                       mensual de indicadores, para que se pueda cotejar. */}
                   {aporteHl && (
-                    <div className="rounded-lg border p-3">
-                      <div className="text-xs text-muted-foreground">
-                        Aporte al costo por HL · ahorro del mes ÷ HL vendidos
-                        del mes (Cuadro mensual de indicadores, misma base que
-                        el VLC/HL del Sueño)
-                        {mesInicio > 1 && `, desde ${MES_NOMBRE[mesInicio]}`}
-                      </div>
-                      <p
-                        className={`mt-1 text-sm font-medium ${
-                          aporteHl.acum && aporteHl.acum.aporte < 0
-                            ? "text-red-600"
-                            : "text-slate-900"
-                        }`}
-                      >
-                        {aporteHl.acum ? (
-                          <>
-                            {aporteHl.acum.aporte >= 0 ? "−" : "+"}
-                            {formatHl(Math.abs(aporteHl.acum.aporte))} $/HL
-                            <span className="font-normal text-muted-foreground">
-                              {" "}
-                              acumulado
-                              {aporteHl.acum.pct !== null &&
-                              aporteHl.acum.costoXHl !== null
-                                ? ` · ${formatHl(Math.abs(aporteHl.acum.pct))}% del costo por HL de esos meses (${formatNum(Math.round(aporteHl.acum.costoXHl))} $/HL)`
-                                : " · sin costo cargado para el %"}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="font-normal text-muted-foreground">
-                            Sin HL del cuadro para estos meses
-                          </span>
-                        )}
-                      </p>
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {aporteHl.meses.map((m) => {
-                          const sinHl = m.aporte === null
-                          const mejora = m.ahorro > 0
-                          return (
-                            <span
-                              key={m.mes}
-                              title={
-                                sinHl
-                                  ? `${MES_NOMBRE[m.mes]}: ${formatMoney(m.ahorro)} ahorrados, sin HL en el cuadro`
-                                  : `${MES_NOMBRE[m.mes]}: ${formatMoney(m.ahorro)} ÷ ${formatNum(Math.round(m.hl ?? 0))} HL${m.parcial ? " (mes en curso, parcial)" : ""}${m.costoXHl !== null ? ` · costo del mes ${formatNum(Math.round(m.costoXHl))} $/HL` : " · sin costo cargado"}`
-                              }
-                              className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize tabular-nums ${
-                                sinHl
-                                  ? "border-slate-200 bg-slate-50 text-slate-500"
-                                  : mejora
-                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                    : "border-red-200 bg-red-50 text-red-700"
-                              } ${m.parcial ? "opacity-70" : ""}`}
-                            >
-                              {MES_CORTO[m.mes]}{" "}
-                              {sinHl
-                                ? "—"
-                                : `${mejora ? "−" : "+"}${formatHl(Math.abs(m.aporte ?? 0))} $/HL`}
-                              {!sinHl && m.pct !== null && (
-                                <span className="ml-1 opacity-60">
-                                  ({formatHl(Math.abs(m.pct))}%)
-                                </span>
-                              )}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    </div>
+                    <AporteHlBlock
+                      aporteHl={aporteHl}
+                      encabezado={
+                        <>
+                          Aporte al costo por HL · ahorro del mes ÷ HL vendidos
+                          del mes (Cuadro mensual de indicadores, misma base que
+                          el VLC/HL del Sueño)
+                          {mesInicio > 1 && `, desde ${MES_NOMBRE[mesInicio]}`}
+                        </>
+                      }
+                    />
                   )}
 
                   {/* KPI comprometido: la métrica que mueve el ahorro. Si el
