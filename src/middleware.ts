@@ -95,6 +95,11 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/presupuesto/inversiones/sync" ||
     pathname === "/api/indicadores/quiebres-stock/cron-foto" ||
     pathname === "/api/rrhh/cron-sync-ausentismo-yam" ||
+    // Crons del Árbol del Sueño y de tareas: estaban en vercel.json pero no
+    // acá, así que Vercel recibía un 307 al login y nunca corrían
+    // (el respaldo de TLP/WNP/FGLI/TQI quedó en null desde julio 2026).
+    pathname === "/api/sueno/cron-fallback-kpis" ||
+    pathname === "/api/tareas/cron-vencimientos" ||
     // Alertas de almacén: la consume el backend Python de deposito-esteban.
     // No lleva sesión; se autentica con Bearer ALERTAS_ALMACEN_TOKEN.
     pathname === "/api/alertas/almacen"
