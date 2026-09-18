@@ -820,6 +820,36 @@ function derivarFueraServicio(input: {
 }
 
 /**
+ * Una OT completada con entrada de taller y sin salida deja la unidad fuera de
+ * servicio PARA SIEMPRE: el período nunca cierra, la disponibilidad la cuenta
+ * parada desde esa fecha y en la pantalla se ve como "→ sigue". Es lo que pasó
+ * con la OT 1766 del AE908DH (entrada el 27/08, sin salida).
+ *
+ * Se valida sobre el período fuera de servicio ya derivado, así cubre tanto el
+ * formulario (que carga entrada/salida) como los patches que mandan las fechas
+ * sueltas.
+ */
+function validarVentanaTaller(v: {
+  estado?: MantenimientoEstado | null
+  entrada?: string | null
+  salida?: string | null
+  desde: string | null
+  hasta: string | null
+}): string | null {
+  if (v.entrada && v.salida && v.salida < v.entrada) {
+    return "La salida del taller no puede ser anterior a la entrada"
+  }
+  if (v.desde && v.hasta && v.hasta < v.desde) {
+    return "El fin del período fuera de servicio no puede ser anterior al inicio"
+  }
+  if ((v.estado ?? "completado") !== "completado") return null
+  if (v.desde && !v.hasta) {
+    return "La OT está completada con entrada al taller y sin salida: cargá la salida. Si la unidad no perdió disponibilidad, dejá las dos vacías; si no, la unidad queda fuera de servicio para siempre."
+  }
+  return null
+}
+
+/**
  * Sincroniza las tareas del plan que quedaron sin hacer en una OT.
  *
  * - Registra/actualiza las reprogramadas que vienen en el formulario.
@@ -1000,6 +1030,14 @@ export async function createMantenimiento(
     )
     if (errorMedicion) return { error: errorMedicion }
     const fs = derivarFueraServicio(input)
+    const errorTaller = validarVentanaTaller({
+      estado: input.estado,
+      entrada: input.entrada_taller,
+      salida: input.salida_taller,
+      desde: fs.desde,
+      hasta: fs.hasta,
+    })
+    if (errorTaller) return { error: errorTaller }
 
     // Toda OT nueva queda numerada: si no vino un N° de OT, se asigna el
     // siguiente correlativo al momento de guardar (evita sugerencias viejas).
@@ -1141,26 +1179,60 @@ export async function updateMantenimiento(
     // Mismo control que al crear: cerrar la OT también carga el kilometraje, y
     // ese camino es justamente por donde entró el 131.940 del AE908DH. El
     // dominio y la fecha salen de la OT si no vienen en el patch.
-    if (input.odometro != null || input.horometro != null) {
-      const { data: actual } = await supabase
-        .from("mantenimiento_realizados")
-        .select("dominio, fecha, odometro, horometro")
-        .eq("id", input.id)
-        .maybeSingle()
-      if (actual) {
-        const valorViejo = (actual.odometro ?? actual.horometro) as number | null
-        const errorMedicion = await validarMedicionOt(
-          supabase,
-          actual.dominio as string,
-          input.fecha ?? (actual.fecha as string),
-          input.odometro,
-          input.horometro,
-          valorViejo != null
-            ? { fecha: actual.fecha as string, valor: Number(valorViejo) }
-            : null
-        )
-        if (errorMedicion) return { error: errorMedicion }
-      }
+    const { data: actual } = await supabase
+      .from("mantenimiento_realizados")
+      .select(
+        "dominio, fecha, estado, odometro, horometro, entrada_taller, salida_taller, fuera_servicio_desde, fuera_servicio_hasta"
+      )
+      .eq("id", input.id)
+      .maybeSingle()
+
+    if ((input.odometro != null || input.horometro != null) && actual) {
+      const valorViejo = (actual.odometro ?? actual.horometro) as number | null
+      const errorMedicion = await validarMedicionOt(
+        supabase,
+        actual.dominio as string,
+        input.fecha ?? (actual.fecha as string),
+        input.odometro,
+        input.horometro,
+        valorViejo != null
+          ? { fecha: actual.fecha as string, valor: Number(valorViejo) }
+          : null
+      )
+      if (errorMedicion) return { error: errorMedicion }
+    }
+
+    // La ventana de taller se valida sobre cómo queda la OT después del patch:
+    // puede venir sólo el estado, sólo las fechas, o ninguna de las dos.
+    if (actual) {
+      const entrada =
+        input.entrada_taller !== undefined
+          ? input.entrada_taller || null
+          : (actual.entrada_taller as string | null)
+      const salida =
+        input.salida_taller !== undefined
+          ? input.salida_taller || null
+          : (actual.salida_taller as string | null)
+      const desde =
+        input.fuera_servicio_desde !== undefined
+          ? input.fuera_servicio_desde || null
+          : input.entrada_taller !== undefined
+            ? entrada?.slice(0, 10) ?? null
+            : (actual.fuera_servicio_desde as string | null)
+      const hasta =
+        input.fuera_servicio_hasta !== undefined
+          ? input.fuera_servicio_hasta || null
+          : input.salida_taller !== undefined
+            ? salida?.slice(0, 10) ?? null
+            : (actual.fuera_servicio_hasta as string | null)
+      const errorTaller = validarVentanaTaller({
+        estado: (input.estado ?? actual.estado) as MantenimientoEstado,
+        entrada,
+        salida,
+        desde,
+        hasta,
+      })
+      if (errorTaller) return { error: errorTaller }
     }
 
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
