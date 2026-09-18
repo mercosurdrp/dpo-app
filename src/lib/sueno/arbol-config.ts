@@ -150,6 +150,19 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // Ver 20260722160000_sueno_rechazos_cerrado_sin_dinero_pct.sql.
   { key: "sin_dinero", label: "Sin Dinero", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "%", mejorSi: "menor", metaDefault: 1.5 },
   { key: "cerrado", label: "Cerrado", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "%", mejorSi: "menor", metaDefault: 0.5 },
+  // Cerrado abre en sus dos mitades (2026-09-18), cruzando la hora en que
+  // Foxtrot dice que estuvimos en la puerta contra el horario que el cliente
+  // declaró en el relevamiento trimestral. Hasta acá las dos estaban en la
+  // misma bolsa y el nodo no era accionable: no se sabía si el comercio no
+  // cumplió su horario o si fuimos cuando estaba cerrado.
+  //   · en horario    → lo levanta Comercial (el cliente no nos atendió)
+  //   · fuera de horario → lo levanta quien rutea; el 73% es la siesta
+  // Misma unidad que el padre (% de pedidos) para que cascadeen de verdad, y
+  // los dos con mejorSi menor: los dos hay que bajarlos, con palancas
+  // distintas. Lo que no se puede clasificar queda afuera y se informa como
+  // cobertura — ver APLICAR_EN_PAMPEANA_CERRADO_HORARIOS.sql.
+  { key: "cerrado_en_horario", label: "· En horario", nivel: "estacion", rama: "cliente", parentKey: "cerrado", unidad: "%", mejorSi: "menor", metaDefault: 0.3 },
+  { key: "cerrado_fuera_horario", label: "· Fuera de horario", nivel: "estacion", rama: "cliente", parentKey: "cerrado", unidad: "%", mejorSi: "menor", metaDefault: 0.1 },
   // Los dos motivos de ALMACÉN (2026-09-14, pedido del usuario), con la misma
   // lógica que Sin Dinero / Cerrado: refresh, detalle, % del total, ranking de
   // clientes, PDF y plan. Un motivo nuevo se suma en `sueno_rechazo_patron`

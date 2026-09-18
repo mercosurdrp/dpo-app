@@ -22,6 +22,7 @@ import {
   resolverValoresExternos,
 } from "@/lib/sueno/externos"
 import { otifResumen } from "@/lib/sueno/otif"
+import { cerradoHorarioResumen } from "@/lib/cerrado-horarios/resumen"
 import { tiempoPdvAnual, tlpAnual } from "@/lib/tlp/calc"
 import { tiempoRutaAnual } from "@/lib/tlp/tiempo-ruta"
 
@@ -58,6 +59,22 @@ async function resolverTiempoPdvVivo(
 ): Promise<Awaited<ReturnType<typeof tiempoPdvAnual>>> {
   try {
     return await tiempoPdvAnual(supabase, year)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * CERRADO abierto por cumplimiento de horario. Lee la tabla que materializa el
+ * cron; si el SQL todavia no se aplico en ese tenant, devuelve null y los dos
+ * nodos caen al valor persistido (Misiones no tiene relevamiento de horarios).
+ */
+async function resolverCerradoHorarioVivo(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+): Promise<Awaited<ReturnType<typeof cerradoHorarioResumen>>> {
+  try {
+    return await cerradoHorarioResumen(supabase, year)
   } catch {
     return null
   }
@@ -174,11 +191,12 @@ async function computarArbolSueno(
     // OTIF e In-Full también van en vivo: su denominador incluye el VRC, que
     // vive fuera de Supabase, así que `sueno_kpi_refresh` no puede calcularlos
     // y el valor persistido puede quedar viejo o pisado.
-    const [tlpVivo, pdvVivo, rutaVivo, otifVivo] = await Promise.all([
+    const [tlpVivo, pdvVivo, rutaVivo, otifVivo, cerradoHorario] = await Promise.all([
       resolverTlpVivo(supabase, year),
       resolverTiempoPdvVivo(supabase, year),
       resolverTiempoRutaVivo(supabase, year),
       resolverOtifVivo(supabase, year),
+      resolverCerradoHorarioVivo(supabase, year),
     ])
 
     const nodos: SuenoNodo[] = ARBOL_SUENO.map((cfg) => {
@@ -195,7 +213,11 @@ async function computarArbolSueno(
                 ? (otifVivo?.otifYtd ?? null)
                 : cfg.key === "in_full"
                   ? (otifVivo?.inFullYtd ?? null)
-                  : externos.get(cfg.key)
+                  : cfg.key === "cerrado_en_horario"
+                    ? (cerradoHorario?.pctDentro ?? null)
+                    : cfg.key === "cerrado_fuera_horario"
+                      ? (cerradoHorario?.pctFuera ?? null)
+                      : externos.get(cfg.key)
       const mensualYtd = esKpiManualMensual(cfg.key)
         ? agregarMensual(cfg.key, (mensuales.get(cfg.key) ?? []).map((m) => m.valor))
         : null

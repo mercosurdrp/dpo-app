@@ -39,6 +39,10 @@
       "schedule": "0 4 * * *"
     },
     {
+      "path": "/api/cerrado-horarios/cron-sync",
+      "schedule": "30 7 * * *"
+    },
+    {
       "path": "/api/wa-bot/sync-clientes",
       "schedule": "30 8 * * *"
     },

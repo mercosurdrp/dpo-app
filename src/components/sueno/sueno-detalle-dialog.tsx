@@ -15,6 +15,8 @@ import { SEMAFORO_COLOR, SEMAFORO_LABEL } from "@/lib/sueno/semaforo"
 import { formatValor } from "./sueno-kpi-card"
 import { esRechazoKpi } from "@/lib/sueno/rechazo-tipos"
 import { SuenoRechazoDetalle } from "./sueno-rechazo-detalle"
+import { SuenoCerradoHorarioDetalle } from "./sueno-cerrado-horario-detalle"
+import { esCerradoHorarioKpi } from "@/lib/cerrado-horarios/claves"
 
 const nfAR = new Intl.NumberFormat("es-AR")
 
@@ -178,14 +180,17 @@ export function SuenoDetalleDialog({
   onOpenChange: (v: boolean) => void
 }) {
   const esRechazo = nodo != null && esRechazoKpi(nodo.key)
+  const esHorario = nodo != null && esCerradoHorarioKpi(nodo.key)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={`max-h-[88vh] overflow-y-auto ${esRechazo ? "sm:max-w-3xl" : ""}`}
+        className={`max-h-[88vh] overflow-y-auto ${esRechazo || esHorario ? "sm:max-w-3xl" : ""}`}
       >
         {nodo &&
           (esRechazo ? (
             <SuenoRechazoDetalle key={nodo.key} nodo={nodo} />
+          ) : esHorario ? (
+            <SuenoCerradoHorarioDetalle key={nodo.key} nodo={nodo} />
           ) : (
             <DetalleContent key={nodo.key} nodo={nodo} />
           ))}
