@@ -20,8 +20,36 @@ import {
   franjaPorHoraSalida,
 } from "@/lib/tml/calculo"
 import { calcTmlMatinal, normalizaNombre, horaARDeIso } from "@/lib/tml/matinal"
+import { validarLectura } from "@/lib/vehiculos/validar-lectura"
+import { fetchLecturas, kmActualPorDominio, addDays } from "@/lib/vehiculos/lecturas"
 
 const MES_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
+/**
+ * El odómetro del egreso entraba SIN NINGÚN CONTROL: es la única de las cuatro
+ * fuentes de lectura que no pasaba por `validarLectura`, y es justo por donde
+ * entraron los tipeos que después hubo que corregir a mano — 522.371 en el
+ * AE591EI (25/08), 171.289 en el AC165AJ (14/09), 145.237 en el AF399KY (18/09).
+ * Como el km actual de una unidad es la lectura MÁS ALTA, uno solo de esos
+ * números arrastra todo: traba el checklist siguiente, adelanta el service y
+ * pinta las cubiertas en rojo.
+ */
+async function validarOdometroRegistro(
+  dominio: string,
+  fecha: string,
+  odometro: number | null | undefined
+): Promise<string | null> {
+  if (!odometro) return null
+  const dom = dominio.trim().toUpperCase()
+  const lecturas = await fetchLecturas({
+    dominio: dom,
+    fechaDesde: addDays(fecha, -120),
+    fechaHasta: fecha,
+  })
+  const previa = kmActualPorDominio(lecturas).get(dom) ?? null
+  // Sólo se frena el número inflado: ver `permitirRetroceso` en validarLectura.
+  return validarLectura({ valor: odometro, previa, fecha, permitirRetroceso: true })
+}
 
 // ==================== CREAR REGISTRO ====================
 
@@ -44,6 +72,13 @@ export async function createRegistroVehiculo(
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
+
+    const errorLectura = await validarOdometroRegistro(
+      input.dominio,
+      input.fecha,
+      input.odometro
+    )
+    if (errorLectura) return { error: errorLectura }
 
     const horaEntrada = input.horaEntrada ?? franjaPorHoraSalida(input.hora)
     const tml = input.tipo === "egreso" ? calcTml(input.hora, horaEntrada) : null
@@ -142,6 +177,24 @@ export async function updateRegistroVehiculo(
   try {
     await requireAuth()
     const supabase = await createClient()
+
+    // Corregir un egreso pasa por el mismo control. El dominio y la fecha pueden
+    // no venir en el patch: salen del registro guardado.
+    if (input.odometro) {
+      const { data: actual } = await supabase
+        .from("registros_vehiculos")
+        .select("dominio, fecha, odometro")
+        .eq("id", input.id)
+        .maybeSingle()
+      if (actual && Number(actual.odometro ?? 0) !== input.odometro) {
+        const errorLectura = await validarOdometroRegistro(
+          input.dominio ?? (actual.dominio as string),
+          actual.fecha as string,
+          input.odometro
+        )
+        if (errorLectura) return { error: errorLectura }
+      }
+    }
 
     const updates: Record<string, unknown> = {}
 

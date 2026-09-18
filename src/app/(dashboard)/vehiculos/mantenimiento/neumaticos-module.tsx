@@ -96,6 +96,7 @@ import { PlanesNeumaticos } from "./_components/planes-neumaticos"
 import type { FlotaPlanConItems } from "@/actions/flota-indicadores"
 import {
   layoutDeTipo,
+  POSICION_AUXILIO,
   type PosicionNeumatico,
 } from "@/lib/vehiculos/neumaticos-layout"
 import {
@@ -187,12 +188,17 @@ const TODAS_LAS_UNIDADES = "__todas__"
 const fmtFecha = (f: string | null) =>
   !f ? "—" : f.slice(0, 10).split("-").reverse().join("/")
 
-// Color del relleno de una posición según el desgaste (profundidad mm).
+// Color del chip de una posición según el desgaste (profundidad mm).
+//
+// Antes eran los tres colores plenos de un semáforo y, con seis cubiertas sanas
+// en pantalla, el verde gritaba igual que el rojo. Ahora el fondo es tenue y el
+// color vive en el texto: lo normal se apaga y lo crítico salta.
 function colorDesgaste(prof: number | null): string {
-  if (prof == null) return "bg-muted-foreground"
-  if (prof <= PROFUNDIDAD_CRITICA_MM) return "bg-red-500"
-  if (prof <= 5) return "bg-amber-400"
-  return "bg-emerald-500"
+  if (prof == null) return "bg-muted text-muted-foreground"
+  if (prof <= PROFUNDIDAD_CRITICA_MM)
+    return "bg-red-500/15 text-red-700 dark:text-red-400"
+  if (prof <= 5) return "bg-amber-500/20 text-amber-800 dark:text-amber-400"
+  return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
 }
 
 const fmtNum = (n: number | null | undefined) =>
@@ -2047,17 +2053,58 @@ function DatoVehiculo({
   )
 }
 
-// Color de la línea de eje según su función (convención estilo Cloudfleet:
-// amarillo = direccional, verde = tracción, gris = eje libre).
+// Color de la línea de eje según su función: amarillo = direccional,
+// verde = tracción, gris = eje libre.
 const EJE_LINEA: Record<string, string> = {
   direccional: "border-amber-400",
   traccion: "border-emerald-500",
   libre: "border-border",
 }
 
-// Silueta de la unidad vista desde arriba, estilo Cloudfleet: bastidor central
-// rectangular con travesaños y una línea de eje punteada por cada fila de
-// ruedas, coloreada según la función del eje.
+// La misma convención, pero como barra sólida (vista por eje).
+const EJE_BARRA: Record<string, string> = {
+  direccional: "bg-amber-400",
+  traccion: "bg-emerald-500",
+  libre: "bg-border",
+}
+
+const EJE_NOMBRE: Record<string, string> = {
+  direccional: "Direccional",
+  traccion: "Tracción",
+  libre: "Libre",
+}
+
+/** Nº de eje de una posición: "2IE" → 2, "AUX" → null. */
+function ejeNumero(code: string): number | null {
+  const n = Number(code[0])
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+/** Filas (ejes) del layout, de adelante hacia atrás. */
+function filasDelLayout(layout: PosicionNeumatico[]) {
+  return [...new Set(layout.map((p) => p.y))]
+    .sort((a, b) => a - b)
+    .map((y) => {
+      const enFila = layout.filter((p) => p.y === y).sort((a, b) => a.x - b.x)
+      return {
+        y,
+        posiciones: enFila,
+        eje: enFila[0]?.eje ?? null,
+        numero: ejeNumero(enFila[0]?.code ?? ""),
+        x1: Math.min(...enFila.map((p) => p.x)),
+        x2: Math.max(...enFila.map((p) => p.x)),
+      }
+    })
+}
+
+/**
+ * Bastidor esquemático: dos largueros, tres travesaños y una línea por eje.
+ *
+ * Antes se dibujaba la unidad entera (cabina con parabrisas, caja, lanza). Nunca
+ * terminaba de parecerse a los Atego de la flota —salía un camioncito de
+ * juguete— y para reconocer la unidad ya está su foto en la ficha. Acá lo único
+ * que importa es ubicar la posición: frente arriba, lados a los costados.
+ */
 function SiluetaUnidad({
   layout,
   tipo,
@@ -2065,72 +2112,137 @@ function SiluetaUnidad({
   layout: PosicionNeumatico[]
   tipo: VehiculoTipo | null
 }) {
-  // Filas de ruedas (ejes) con su función y el ancho que abarcan.
-  const filas = [...new Set(layout.map((p) => p.y))]
-    .sort((a, b) => a - b)
-    .map((y) => {
-      const enFila = layout.filter((p) => p.y === y)
-      return {
-        y,
-        eje: enFila[0]?.eje ?? null,
-        x1: Math.min(...enFila.map((p) => p.x)),
-        x2: Math.max(...enFila.map((p) => p.x)),
-      }
-    })
+  const filas = filasDelLayout(layout)
   const conCabina = tipo !== "acoplado"
-  // El bastidor termina poco después del último eje (no sigue hasta abajo).
-  const bastidorTop = 2
-  const bastidorBottom = Math.min((filas[filas.length - 1]?.y ?? 84) + 14, 98)
+  const top = 6
+  const bottom = Math.min((filas[filas.length - 1]?.y ?? 84) + 12, 97)
+  const travesanos = [0, 0.5, 1]
   return (
     <div className="pointer-events-none absolute inset-0">
-      {/* Bastidor */}
-      <div
-        className="absolute inset-x-[34%] rounded-md border-2 border-border bg-white"
-        style={{ top: `${bastidorTop}%`, height: `${bastidorBottom - bastidorTop}%` }}
-      >
-        {/* Largueros */}
-        <div className="absolute inset-y-1 left-[18%] w-px bg-muted" />
-        <div className="absolute inset-y-1 right-[18%] w-px bg-muted" />
-        {/* Travesaños en cada eje */}
-        {filas.map((f) => (
-          <div
-            key={f.y}
-            className="absolute inset-x-0 h-1 -translate-y-1/2 bg-muted"
-            style={{ top: `${((f.y - bastidorTop) / (bastidorBottom - bastidorTop)) * 100}%` }}
-          />
-        ))}
+      {/* Frente de la unidad */}
+      <div className="absolute inset-x-0 top-0 flex flex-col items-center gap-0.5">
+        <span className="text-[9px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          {conCabina ? "Frente" : "Lanza"}
+        </span>
+        <span className="h-[3px] w-10 rounded-full bg-muted-foreground/60" />
       </div>
-      {/* Cabina (frente) con parabrisas */}
-      {conCabina && (
-        <div className="absolute inset-x-[30%] top-[4%] h-[11%] rounded-lg border border-border bg-muted/50 shadow-sm">
-          <div className="absolute inset-x-1.5 top-1 h-1.5 rounded-full bg-sky-200/80" />
-        </div>
-      )}
-      {/* Lanza de enganche (acoplado) */}
-      {!conCabina && (
-        <div className="absolute left-1/2 top-0 h-[10%] w-1 -translate-x-1/2 rounded-full bg-muted" />
-      )}
-      {/* Línea de eje punteada por fila de ruedas, coloreada por función */}
-      {filas.map((f) => (
+      {/* Largueros del chasis */}
+      <div
+        className="absolute w-[3px] rounded-full bg-border"
+        style={{ left: "43%", top: `${top}%`, height: `${bottom - top}%` }}
+      />
+      <div
+        className="absolute w-[3px] rounded-full bg-border"
+        style={{ right: "43%", top: `${top}%`, height: `${bottom - top}%` }}
+      />
+      {/* Travesaños */}
+      {travesanos.map((f) => (
         <div
-          key={f.y}
-          className={cn(
-            "absolute -translate-y-1/2 border-t-[3px] border-dashed",
-            EJE_LINEA[f.eje ?? "libre"]
-          )}
-          style={{ top: `${f.y}%`, left: `${f.x1}%`, width: `${f.x2 - f.x1}%` }}
+          key={f}
+          className="absolute h-[2px] bg-border"
+          style={{ left: "43%", right: "43%", top: `${top + (bottom - top) * f}%` }}
         />
       ))}
+      {/* Línea de eje por fila de ruedas, coloreada por función */}
+      {filas
+        .filter((f) => f.posiciones.some((p) => p.code !== POSICION_AUXILIO))
+        .map((f) => (
+          <div
+            key={f.y}
+            className={cn(
+              "absolute -translate-y-1/2 border-t-[3px] border-dashed",
+              EJE_LINEA[f.eje ?? "libre"]
+            )}
+            style={{ top: `${f.y}%`, left: `${f.x1}%`, width: `${f.x2 - f.x1}%` }}
+          />
+        ))}
     </div>
   )
 }
 
-// Glifo de una cubierta vista desde arriba, estilo Cloudfleet: goma oscura con
-// tacos de banda de rodamiento y canales, y un chip con la posición coloreado
-// según el desgaste.
+// Ids del sprite de la rueda lateral. Se define una sola vez por página.
+const RUEDA_SPRITE = "nm-rueda-lateral"
+
+/** Defs + símbolo de la rueda vista de costado (goma, llanta y bulones). */
+function RuedaSprite() {
+  return (
+    <svg width="0" height="0" className="absolute" aria-hidden>
+      <defs>
+        <radialGradient id="nm-goma" cx=".36" cy=".3" r=".85">
+          <stop offset="0" stopColor="#5a6069" />
+          <stop offset=".6" stopColor="#32373e" />
+          <stop offset="1" stopColor="#12151a" />
+        </radialGradient>
+        <radialGradient id="nm-llanta" cx=".38" cy=".33" r=".82">
+          <stop offset="0" stopColor="#f1f3f6" />
+          <stop offset=".5" stopColor="#c3c9d1" />
+          <stop offset="1" stopColor="#868d96" />
+        </radialGradient>
+        <symbol id={RUEDA_SPRITE} viewBox="-34 -34 68 68">
+          <circle r="30" fill="url(#nm-goma)" />
+          <circle r="26.5" fill="none" stroke="#0d1014" strokeWidth="2.2" opacity=".72" />
+          <g stroke="#0d1014" strokeWidth="2.6" opacity=".45">
+            <path d="M0 -30 V-25" />
+            <path d="M15 -26 L13 -21" />
+            <path d="M26 -15 L22 -13" />
+            <path d="M30 0 H25" />
+            <path d="M26 15 L22 13" />
+            <path d="M15 26 L13 21" />
+            <path d="M0 30 V25" />
+            <path d="M-15 26 L-13 21" />
+            <path d="M-26 15 L-22 13" />
+            <path d="M-30 0 H-25" />
+            <path d="M-26 -15 L-22 -13" />
+            <path d="M-15 -26 L-13 -21" />
+          </g>
+          <circle r="17.5" fill="url(#nm-llanta)" />
+          <circle r="17.5" fill="none" stroke="#7c838c" strokeWidth="1" />
+          <g fill="#767d86">
+            <circle cx="0" cy="-11.5" r="1.9" />
+            <circle cx="10" cy="-5.8" r="1.9" />
+            <circle cx="10" cy="5.8" r="1.9" />
+            <circle cx="0" cy="11.5" r="1.9" />
+            <circle cx="-10" cy="5.8" r="1.9" />
+            <circle cx="-10" cy="-5.8" r="1.9" />
+          </g>
+          <circle r="5.5" fill="#9aa1aa" />
+          <path
+            d="M-21 -21 A30 30 0 0 1 -6 -29"
+            stroke="#fff"
+            strokeOpacity=".2"
+            strokeWidth="3"
+            fill="none"
+            strokeLinecap="round"
+          />
+        </symbol>
+      </defs>
+    </svg>
+  )
+}
+
+/** Rueda de costado, para la vista por eje. */
+function RuedaLateral({ empty }: { empty: boolean }) {
+  if (empty) {
+    return (
+      <span className="flex size-12 items-center justify-center rounded-full border-2 border-dashed border-border text-[9px] text-muted-foreground">
+        vacía
+      </span>
+    )
+  }
+  return (
+    <svg viewBox="-34 -34 68 68" className="size-12 drop-shadow" aria-hidden>
+      <use href={`#${RUEDA_SPRITE}`} />
+    </svg>
+  )
+}
+
+// Glifo de una cubierta vista desde arriba: goma oscura con tacos y canales.
+// El chip de posición va DEBAJO y no encima: tapaba el dibujo y era lo primero
+// que se quería leer junto con el milimetraje.
 function TireGlyph({
   label,
   sub,
+  mm,
   eje,
   wearClass,
   empty,
@@ -2138,6 +2250,7 @@ function TireGlyph({
 }: {
   label: string
   sub?: string | null
+  mm?: number | null
   eje: PosicionNeumatico["eje"]
   wearClass: string
   empty: boolean
@@ -2150,7 +2263,7 @@ function TireGlyph({
         className={cn(
           "relative h-16 w-11 rounded-[9px] transition-transform",
           empty
-            ? "border-2 border-dashed border-border bg-white"
+            ? "border-2 border-dashed border-border bg-background"
             : "shadow-md ring-1 ring-foreground/20"
         )}
       >
@@ -2189,25 +2302,24 @@ function TireGlyph({
             <rect x="3" y="1.5" width="26" height="4" rx="2" fill="#fff" opacity="0.10" />
           </svg>
         )}
-        {/* Chip de posición coloreado por desgaste */}
-        <span
-          className={cn(
-            "absolute left-1/2 top-1/2 flex h-[28px] min-w-[28px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full px-1 text-[12px] font-bold leading-none ring-2",
-            empty
-              ? "bg-muted/50 text-muted-foreground/70 ring-white"
-              : cn(wearClass, "text-white shadow ring-white/90")
-          )}
-        >
-          {label}
-        </span>
       </div>
+      {/* Chip de posición + profundidad */}
+      <span
+        className={cn(
+          "-mt-1.5 rounded-full px-1.5 py-px text-[11px] font-semibold leading-tight shadow-sm ring-1 ring-background",
+          empty ? "bg-muted text-muted-foreground" : wearClass
+        )}
+      >
+        {label}
+        {mm != null && <span className="font-normal"> · {mm}</span>}
+      </span>
       {sub && (
-        <span className="mt-0.5 max-w-[60px] truncate text-[10px] font-medium leading-tight text-muted-foreground">
+        <span className="max-w-[62px] truncate text-[10px] leading-tight text-muted-foreground">
           {sub}
         </span>
       )}
       {badge && (
-        <span className="mt-px rounded bg-sky-100 px-1 text-[8px] font-semibold leading-none text-sky-700">
+        <span className="mt-px rounded bg-sky-500/10 px-1 text-[8px] font-semibold leading-none text-sky-600 dark:text-sky-400">
           {badge}
         </span>
       )}
@@ -2216,9 +2328,125 @@ function TireGlyph({
 }
 
 /**
- * ÚNICO diagrama de la unidad. Antes había tres siluetas iguales (cubiertas,
- * rotación y alineación); ahora es una sola y lo que se superpone depende de la
- * acción elegida en el selector de al lado:
+ * Vista por eje: una fila por eje, la rueda dibujada de costado. Es la que
+ * aguanta el acoplado (3 ejes, 12 cubiertas) sin achicar nada, y la que se
+ * parece a lo que se ve en la gomería.
+ */
+function DiagramaEjes({
+  layout,
+  porPosicion,
+  onPos,
+  badges,
+  soloEjes,
+}: {
+  layout: PosicionNeumatico[]
+  porPosicion: Map<string, Neumatico>
+  onPos?: (pos: PosicionNeumatico) => void
+  badges?: Record<string, string>
+  soloEjes?: PosicionNeumatico["eje"][]
+}) {
+  const filas = filasDelLayout(layout)
+  return (
+    <div className="w-72 space-y-3">
+      <RuedaSprite />
+      {filas.map((f) => {
+        const esAuxilio = f.posiciones.every((p) => p.code === POSICION_AUXILIO)
+        const enFoco = !soloEjes || (!esAuxilio && soloEjes.includes(f.eje))
+        const izq = f.posiciones.filter((p) => p.x < 50)
+        const der = f.posiciones.filter((p) => p.x >= 50)
+        const rueda = (p: PosicionNeumatico) => {
+          const n = porPosicion.get(p.code)
+          const dest = badges?.[p.code]
+          const title = `${p.label} · ${p.eje ?? "libre"}${
+            n
+              ? ` · ${n.numero || "s/n"} (${n.profundidad_actual_mm ?? "?"} mm${
+                  ultimaPresion(n) != null ? `, ${ultimaPresion(n)} psi` : ""
+                })`
+              : " · vacía"
+          }${dest ? ` → ${dest}` : ""}`
+          const cuerpo = (
+            <div className="flex w-[62px] flex-col items-center gap-0.5">
+              <RuedaLateral empty={!n} />
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-px text-[11px] font-semibold leading-tight",
+                  n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted text-muted-foreground"
+                )}
+              >
+                {p.label}
+                {n?.profundidad_actual_mm != null && (
+                  <span className="font-normal"> · {n.profundidad_actual_mm}</span>
+                )}
+              </span>
+              <span className="max-w-[62px] truncate text-[10px] leading-tight text-muted-foreground">
+                {n ? n.numero || "s/n" : "—"}
+              </span>
+              {dest && (
+                <span className="rounded bg-sky-500/10 px-1 text-[8px] font-semibold leading-none text-sky-600 dark:text-sky-400">
+                  →{dest}
+                </span>
+              )}
+            </div>
+          )
+          return onPos ? (
+            <button
+              key={p.code}
+              type="button"
+              onClick={() => onPos(p)}
+              title={title}
+              className="transition-transform hover:scale-105"
+            >
+              {cuerpo}
+            </button>
+          ) : (
+            <div key={p.code} title={title}>
+              {cuerpo}
+            </div>
+          )
+        }
+        return (
+          <div
+            key={f.y}
+            className={cn(
+              "rounded-md border border-border p-2 transition-opacity",
+              !enFoco && "opacity-30"
+            )}
+          >
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              {esAuxilio
+                ? "Auxilio"
+                : `Eje ${f.numero ?? ""} · ${EJE_NOMBRE[f.eje ?? "libre"]}${
+                    f.posiciones.length > 2 ? " · dual" : ""
+                  }`}
+            </p>
+            {esAuxilio ? (
+              <div className="flex justify-center">{f.posiciones.map(rueda)}</div>
+            ) : (
+              <div className="relative flex items-start justify-between">
+                <div
+                  className={cn(
+                    "absolute inset-x-6 top-6 h-[5px] -translate-y-1/2 rounded-full",
+                    EJE_BARRA[f.eje ?? "libre"]
+                  )}
+                />
+                <div className="relative flex gap-1">{izq.map(rueda)}</div>
+                <div className="relative flex gap-1">{der.map(rueda)}</div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * ÚNICO diagrama de la unidad, en dos vistas que se cambian con el botón:
+ *   - `planta` (la de entrada): bastidor esquemático visto desde arriba, con las
+ *     seis posiciones a la vez.
+ *   - `ejes`: una fila por eje con la rueda de costado.
+ *
+ * Lo que se superpone depende de la acción elegida en el selector de al lado:
  *   - `badges`: destino sugerido de cada cubierta (rotación).
  *   - `soloEjes`: resalta los ejes que toca la acción (alineación / balanceo) y
  *     apaga el resto.
@@ -2240,50 +2468,87 @@ function Diagrama({
   badges?: Record<string, string>
   soloEjes?: PosicionNeumatico["eje"][]
 }) {
+  const [modo, setModo] = useState<"planta" | "ejes">("planta")
   return (
-    <div className="relative aspect-[3/4] w-72 shrink-0">
-      <SiluetaUnidad layout={layout} tipo={tipo} />
-      {layout.map((p) => {
-        const n = porPosicion.get(p.code)
-        const dest = badges?.[p.code]
-        const enFoco = !soloEjes || soloEjes.includes(p.eje)
-        const glyph = (
-          <TireGlyph
-            label={p.label}
-            sub={n ? n.numero || "s/n" : null}
-            eje={p.eje}
-            wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted-foreground"}
-            empty={!n}
-            badge={dest ? `→${dest}` : null}
-          />
-        )
-        const title = `${p.label} · ${p.eje ?? "libre"}${n ? ` · ${n.numero || "s/n"} (${n.profundidad_actual_mm ?? "?"} mm${ultimaPresion(n) != null ? `, ${ultimaPresion(n)} psi` : ""})` : " · vacía"}${dest ? ` → ${dest}` : ""}`
-        const pos = { left: `${p.x}%`, top: `${p.y}%` }
-        return onPos ? (
+    <div className="flex shrink-0 flex-col items-center gap-2">
+      <div className="flex rounded-md border border-border p-0.5">
+        {(
+          [
+            { id: "planta", label: "Planta" },
+            { id: "ejes", label: "Por eje" },
+          ] as const
+        ).map((v) => (
           <button
-            key={p.code}
+            key={v.id}
             type="button"
-            onClick={() => onPos(p)}
-            title={title}
-            style={pos}
-            className="group absolute -translate-x-1/2 -translate-y-1/2"
-          >
-            <div className="transition-transform group-hover:scale-110">{glyph}</div>
-          </button>
-        ) : (
-          <div
-            key={p.code}
-            title={title}
-            style={pos}
+            onClick={() => setModo(v.id)}
             className={cn(
-              "absolute -translate-x-1/2 -translate-y-1/2 transition-opacity",
-              !enFoco && "opacity-30"
+              "rounded px-2.5 py-1 text-xs transition-colors",
+              modo === v.id
+                ? "bg-primary/10 font-medium text-foreground"
+                : "text-muted-foreground hover:bg-muted"
             )}
           >
-            {glyph}
-          </div>
-        )
-      })}
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {modo === "ejes" ? (
+        <DiagramaEjes
+          layout={layout}
+          porPosicion={porPosicion}
+          onPos={onPos}
+          badges={badges}
+          soloEjes={soloEjes}
+        />
+      ) : (
+        <div className="relative aspect-[3/4] w-72">
+          <SiluetaUnidad layout={layout} tipo={tipo} />
+          {layout.map((p) => {
+            const n = porPosicion.get(p.code)
+            const dest = badges?.[p.code]
+            const enFoco = !soloEjes || soloEjes.includes(p.eje)
+            const glyph = (
+              <TireGlyph
+                label={p.label}
+                sub={n ? n.numero || "s/n" : null}
+                mm={n?.profundidad_actual_mm ?? null}
+                eje={p.eje}
+                wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted"}
+                empty={!n}
+                badge={dest ? `→${dest}` : null}
+              />
+            )
+            const title = `${p.label} · ${p.eje ?? "libre"}${n ? ` · ${n.numero || "s/n"} (${n.profundidad_actual_mm ?? "?"} mm${ultimaPresion(n) != null ? `, ${ultimaPresion(n)} psi` : ""})` : " · vacía"}${dest ? ` → ${dest}` : ""}`
+            const pos = { left: `${p.x}%`, top: `${p.y}%` }
+            return onPos ? (
+              <button
+                key={p.code}
+                type="button"
+                onClick={() => onPos(p)}
+                title={title}
+                style={pos}
+                className="group absolute -translate-x-1/2 -translate-y-1/2"
+              >
+                <div className="transition-transform group-hover:scale-110">{glyph}</div>
+              </button>
+            ) : (
+              <div
+                key={p.code}
+                title={title}
+                style={pos}
+                className={cn(
+                  "absolute -translate-x-1/2 -translate-y-1/2 transition-opacity",
+                  !enFoco && "opacity-30"
+                )}
+              >
+                {glyph}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -3294,7 +3559,7 @@ function MontajeDialog({
                       resaltaPosiciones && "ring-2 ring-emerald-500 ring-offset-1"
                     )}
                   >
-                    <TireGlyph label={p.label} eje={p.eje} wearClass="bg-muted-foreground" empty />
+                    <TireGlyph label={p.label} eje={p.eje} wearClass="bg-muted" empty />
                   </button>
                 )
               })}
@@ -4358,9 +4623,9 @@ function DiagramaConAcciones({
                 <LeyendaEje clase="border-border" txt="Eje libre" />
               </div>
               <p className="pt-1 font-medium text-foreground">Desgaste (chip de posición)</p>
-              <Leyenda color="bg-emerald-500" txt="Profundidad OK (> 5 mm)" />
-              <Leyenda color="bg-amber-400" txt="A vigilar (≤ 5 mm)" />
-              <Leyenda color="bg-red-500" txt={`Crítico (≤${PROFUNDIDAD_CRITICA_MM} mm)`} />
+              <Leyenda color="bg-emerald-600" txt="Profundidad OK (> 5 mm)" />
+              <Leyenda color="bg-amber-500" txt="A vigilar (≤ 5 mm)" />
+              <Leyenda color="bg-red-600" txt={`Crítico (≤${PROFUNDIDAD_CRITICA_MM} mm)`} />
               <Leyenda color="bg-muted-foreground" txt="Sin medición" />
               <p className="pt-1 text-muted-foreground/80">
                 {puedeEditar
