@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { Fragment, useMemo, useState, useTransition } from "react"
 import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -194,11 +194,13 @@ const fmtFecha = (f: string | null) =>
 // en pantalla, el verde gritaba igual que el rojo. Ahora el fondo es tenue y el
 // color vive en el texto: lo normal se apaga y lo crítico salta.
 function colorDesgaste(prof: number | null): string {
-  if (prof == null) return "bg-muted text-muted-foreground"
+  if (prof == null)
+    return "bg-muted text-muted-foreground ring-border"
   if (prof <= PROFUNDIDAD_CRITICA_MM)
-    return "bg-red-500/15 text-red-700 dark:text-red-400"
-  if (prof <= 5) return "bg-amber-500/20 text-amber-800 dark:text-amber-400"
-  return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+    return "bg-red-500/20 text-red-700 ring-red-600/50 dark:bg-red-500/25 dark:text-red-300 dark:ring-red-400/50"
+  if (prof <= 5)
+    return "bg-amber-500/25 text-amber-800 ring-amber-600/50 dark:bg-amber-500/25 dark:text-amber-300 dark:ring-amber-400/50"
+  return "bg-emerald-500/20 text-emerald-700 ring-emerald-600/50 dark:bg-emerald-500/25 dark:text-emerald-300 dark:ring-emerald-400/50"
 }
 
 const fmtNum = (n: number | null | undefined) =>
@@ -300,6 +302,9 @@ export function NeumaticosModule({
     actual: Neumatico | null
   } | null>(null)
   const [tabUnidad, setTabUnidad] = useState("diagrama")
+  // La tabla de instaladas arranca en lo esencial: 18 columnas se iban de
+  // pantalla y el dato que se busca (cuánto dibujo le queda) quedaba al final.
+  const [tablaCompleta, setTablaCompleta] = useState(false)
 
   // Numeración de fuego: la serie es de toda la flota y la usan tanto la
   // pestaña como los formularios que asignan un número.
@@ -613,149 +618,235 @@ export function NeumaticosModule({
                 Esta unidad no tiene cubiertas instaladas.
               </p>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <th className="py-2">Pos.</th>
-                    <th>Número</th>
-                    <th>Tipo</th>
-                    <th>Marca</th>
-                    <th>Medida</th>
-                    <th>Dibujo</th>
-                    <th className="text-right">Prof. inic.</th>
-                    <th className="text-right">Prof. act.</th>
-                    <th className="text-right">mm gast.</th>
-                    <th className="text-right" title="Desgaste medido: milímetros de dibujo cada 1.000 km, del historial de mediciones">
-                      mm/1.000 km
-                    </th>
-                    <th className="text-right pr-3">Presión</th>
-                    <th className="border-l pl-3">Instalación</th>
-                    <th className="text-right">Km inst.</th>
-                    <th className="text-right">Recorridos</th>
-                    <th className="text-right">Restante (est.)</th>
-                    <th className="text-right">Días (est.)</th>
-                    <th className="text-right" title={`Km hasta ${PROF_OBJETIVO_MM} mm al ritmo REAL medido, no al km de vida teórico`}>
-                      Km a {PROF_OBJETIVO_MM} mm
-                    </th>
-                    <th>Vida útil</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {instaladasOrden.map((n, i) => {
-                    const pres = ultimaPresion(n)
-                    const v = vidaPorId.get(n.id)
-                    // Desgaste acumulado y rendimiento km por mm (estilo Cloudfleet).
-                    const mmGastados =
-                      n.profundidad_inicial_mm != null && n.profundidad_actual_mm != null
-                        ? Math.max(
-                            Math.round((n.profundidad_inicial_mm - n.profundidad_actual_mm) * 10) / 10,
-                            0
-                          )
-                        : null
-                    const d = desgastePorId.get(n.id)
-                    return (
-                      <tr
-                        key={n.id}
-                        className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
+<div className="space-y-2">
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setTablaCompleta((v) => !v)}
+                    className="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted"
+                  >
+                    {tablaCompleta ? "Ver lo esencial" : "Ver todas las columnas"}
+                  </button>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <th className="py-2">Pos.</th>
+                      <th>N°</th>
+                      <th>Marca · medida</th>
+                      <th className="min-w-[170px]">Dibujo restante</th>
+                      <th
+                        className="text-right"
+                        title="Desgaste medido: milímetros de dibujo cada 1.000 km, del historial de mediciones"
                       >
-                        <td className="py-2 font-medium">{n.posicion || "—"}</td>
-                        <td>{n.numero || "—"}</td>
-                        <td>{TIPO_LABEL[n.tipo]}</td>
-                        <td className="text-muted-foreground">{n.marca || "—"}</td>
-                        <td className="text-muted-foreground">{n.medida || "—"}</td>
-                        <td className="text-muted-foreground">
-                          {n.dibujo ? NEUMATICO_DIBUJO_LABEL[n.dibujo] : "—"}
-                        </td>
-                        <td className="text-right tabular-nums text-muted-foreground">
-                          {n.profundidad_inicial_mm ?? "—"}
-                        </td>
-                        <td
-                          className={cn(
-                            "text-right tabular-nums font-medium",
-                            n.profundidad_actual_mm != null &&
-                              n.profundidad_actual_mm <= PROFUNDIDAD_CRITICA_MM
-                              ? "text-destructive"
-                              : "text-foreground"
+                        mm/1.000 km
+                      </th>
+                      <th className="text-right">Recorridos</th>
+                      <th
+                        className="text-right"
+                        title={`Km hasta ${PROF_OBJETIVO_MM} mm al ritmo REAL medido, no al km de vida teórico`}
+                      >
+                        Le queda
+                      </th>
+                      <th>Estado</th>
+                      {tablaCompleta && (
+                        <>
+                          <th className="border-l pl-3">Tipo</th>
+                          <th>Dibujo</th>
+                          <th className="text-right">Prof. inic.</th>
+                          <th className="text-right">mm gast.</th>
+                          <th className="text-right">Presión</th>
+                          <th className="whitespace-nowrap">Instalación</th>
+                          <th className="text-right">Km inst.</th>
+                          <th className="text-right">Días (est.)</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {instaladasOrden.map((n, i) => {
+                      const pres = ultimaPresion(n)
+                      const v = vidaPorId.get(n.id)
+                      const d = desgastePorId.get(n.id)
+                      const mmGastados =
+                        n.profundidad_inicial_mm != null && n.profundidad_actual_mm != null
+                          ? Math.max(
+                              Math.round(
+                                (n.profundidad_inicial_mm - n.profundidad_actual_mm) * 10
+                              ) / 10,
+                              0
+                            )
+                          : null
+                      // Cabecera de eje: la tabla se lee por eje, que es como se
+                      // trabaja (los dos de dirección juntos, la dual junta).
+                      const pos = layout.find((p) => p.code === n.posicion)
+                      const posPrev =
+                        i > 0 ? layout.find((p) => p.code === instaladasOrden[i - 1].posicion) : null
+                      const nuevoEje = !posPrev || posPrev.y !== pos?.y
+                      const esAux = n.posicion === POSICION_AUXILIO
+                      const dualEje =
+                        pos && layout.filter((p) => p.y === pos.y).length > 2
+                      // Barra de dibujo: lo que queda contra lo que traía de
+                      // fábrica, con la marca del límite de servicio.
+                      const ini = n.profundidad_inicial_mm
+                      const act = n.profundidad_actual_mm
+                      const pctBarra =
+                        ini != null && act != null && ini > 0
+                          ? Math.max(0, Math.min(100, (act / ini) * 100))
+                          : null
+                      const pctLimite =
+                        ini != null && ini > 0 ? (PROF_OBJETIVO_MM / ini) * 100 : null
+                      return (
+                        <Fragment key={n.id}>
+                          {nuevoEje && (
+                            <tr>
+                              <td
+                                colSpan={tablaCompleta ? 16 : 8}
+                                className="bg-muted/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"
+                              >
+                                {esAux
+                                  ? "Auxilio"
+                                  : `Eje ${pos?.code?.[0] ?? ""} · ${
+                                      EJE_NOMBRE[pos?.eje ?? "libre"]
+                                    }${dualEje ? " · dual" : ""}`}
+                              </td>
+                            </tr>
                           )}
-                        >
-                          {n.profundidad_actual_mm ?? "—"}
-                        </td>
-                        <td className="text-right tabular-nums text-muted-foreground">
-                          {mmGastados ?? "—"}
-                        </td>
-                        <td
-                          className="text-right tabular-nums text-muted-foreground"
-                          title={
-                            d?.mmPorMilKm != null
-                              ? `Medido sobre ${fmtNum(d.kmMedidos)} km (${d.puntos} mediciones, ${d.desde} → ${d.hasta})`
-                              : d?.motivo
-                                ? MOTIVO_SIN_TASA_LABEL[d.motivo]
-                                : undefined
-                          }
-                        >
-                          {d?.mmPorMilKm != null ? d.mmPorMilKm.toFixed(2) : "—"}
-                        </td>
-                        <td className="text-right tabular-nums text-muted-foreground pr-3">
-                          {pres != null ? `${pres} psi` : "—"}
-                        </td>
-                        <td className="border-l pl-3 text-muted-foreground whitespace-nowrap">
-                          {fmtFecha(n.fecha_instalacion)}
-                        </td>
-                        <td className="text-right tabular-nums text-muted-foreground">
-                          {fmtNum(n.km_instalacion)}
-                        </td>
-                        <td className="text-right tabular-nums text-muted-foreground">
-                          {v?.kmRodados != null ? `${fmtNum(v.kmRodados)} km` : "—"}
-                        </td>
-                        <td
-                          className={cn(
-                            "text-right tabular-nums",
-                            // El color sigue al estado de la cubierta, no al signo:
-                            // si pasó el km estimado pero la goma está sana el
-                            // badge dice "Próximo" y el número tiene que
-                            // acompañar, no gritar en rojo.
-                            v?.estado === "cambiar"
-                              ? "font-medium text-destructive"
-                              : v?.estado === "proximo"
-                                ? "font-medium text-amber-600 dark:text-amber-500"
-                                : "text-foreground"
-                          )}
-                        >
-                          {v?.kmRestante != null ? `${fmtNum(v.kmRestante)} km` : "—"}
-                        </td>
-                        <td className="text-right tabular-nums text-muted-foreground">
-                          {v?.diasRestantes != null ? `${fmtNum(v.diasRestantes)} d` : "—"}
-                        </td>
-                        <td
-                          className={cn(
-                            "text-right tabular-nums",
-                            d?.kmHastaCambio != null && d.kmHastaCambio <= 5_000
-                              ? "font-medium text-destructive"
-                              : "text-foreground"
-                          )}
-                          title={
-                            d?.fechaCambio
-                              ? `Llegaría a ${PROF_OBJETIVO_MM} mm alrededor del ${fmtFecha(d.fechaCambio)}`
-                              : undefined
-                          }
-                        >
-                          {d?.kmHastaCambio != null ? `${fmtNum(d.kmHastaCambio)} km` : "—"}
-                        </td>
-                        <td>
-                          {v && (
-                            <Badge
-                              variant="outline"
-                              className={cn("text-xs", VIDA_BADGE[v.estado].clase)}
+                          <tr className="border-b last:border-0">
+                            <td className="py-2">
+                              <span
+                                className={cn(
+                                  "inline-flex rounded-full px-2 py-0.5 text-[12px] font-bold ring-2",
+                                  colorDesgaste(n.profundidad_actual_mm)
+                                )}
+                              >
+                                {n.posicion || "—"}
+                              </span>
+                            </td>
+                            <td className="tabular-nums font-medium">{n.numero || "—"}</td>
+                            <td className="text-muted-foreground">
+                              {n.marca || "—"}
+                              {n.medida ? ` · ${n.medida}` : ""}
+                            </td>
+                            <td>
+                              <div className="flex items-center gap-2">
+                                <div className="relative h-2 w-[104px] overflow-hidden rounded-full bg-muted">
+                                  {pctBarra != null && (
+                                    <span
+                                      className={cn(
+                                        "absolute inset-y-0 left-0 rounded-full",
+                                        act != null && act <= PROFUNDIDAD_CRITICA_MM
+                                          ? "bg-red-600"
+                                          : act != null && act <= 5
+                                            ? "bg-amber-500"
+                                            : "bg-emerald-600"
+                                      )}
+                                      style={{ width: `${pctBarra}%` }}
+                                    />
+                                  )}
+                                  {pctLimite != null && pctLimite < 100 && (
+                                    <span
+                                      className="absolute inset-y-0 w-px bg-foreground/50"
+                                      style={{ left: `${pctLimite}%` }}
+                                      title={`Límite de servicio: ${PROF_OBJETIVO_MM} mm`}
+                                    />
+                                  )}
+                                </div>
+                                <span className="tabular-nums text-xs">
+                                  <span className="font-semibold text-foreground">
+                                    {act ?? "—"}
+                                  </span>
+                                  <span className="text-muted-foreground"> / {ini ?? "—"} mm</span>
+                                </span>
+                              </div>
+                            </td>
+                            <td
+                              className="text-right tabular-nums text-muted-foreground"
+                              title={
+                                d?.mmPorMilKm != null
+                                  ? `Medido sobre ${fmtNum(d.kmMedidos)} km (${d.puntos} mediciones, ${d.desde} → ${d.hasta})`
+                                  : d?.motivo
+                                    ? MOTIVO_SIN_TASA_LABEL[d.motivo]
+                                    : undefined
+                              }
                             >
-                              {VIDA_BADGE[v.estado].label}
-                            </Badge>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                              {d?.mmPorMilKm != null ? d.mmPorMilKm.toFixed(2) : "—"}
+                            </td>
+                            <td className="text-right tabular-nums text-muted-foreground">
+                              {v?.kmRodados != null ? `${fmtNum(v.kmRodados)} km` : "—"}
+                            </td>
+                            <td
+                              className={cn(
+                                "text-right tabular-nums",
+                                d?.kmHastaCambio != null && d.kmHastaCambio <= 5_000
+                                  ? "font-semibold text-destructive"
+                                  : v?.estado === "cambiar"
+                                    ? "font-semibold text-destructive"
+                                    : v?.estado === "proximo"
+                                      ? "font-medium text-amber-600 dark:text-amber-500"
+                                      : "text-foreground"
+                              )}
+                              title={
+                                d?.fechaCambio
+                                  ? `Al ritmo medido llegaría a ${PROF_OBJETIVO_MM} mm alrededor del ${fmtFecha(d.fechaCambio)}`
+                                  : undefined
+                              }
+                            >
+                              {d?.kmHastaCambio != null
+                                ? `${fmtNum(d.kmHastaCambio)} km`
+                                : v?.kmRestante != null
+                                  ? `${fmtNum(v.kmRestante)} km`
+                                  : "—"}
+                            </td>
+                            <td>
+                              {v && (
+                                <Badge
+                                  variant="outline"
+                                  className={cn("text-xs", VIDA_BADGE[v.estado].clase)}
+                                >
+                                  {VIDA_BADGE[v.estado].label}
+                                </Badge>
+                              )}
+                            </td>
+                            {tablaCompleta && (
+                              <>
+                                <td className="border-l pl-3 text-muted-foreground">
+                                  {TIPO_LABEL[n.tipo]}
+                                </td>
+                                <td className="text-muted-foreground">
+                                  {n.dibujo ? NEUMATICO_DIBUJO_LABEL[n.dibujo] : "—"}
+                                </td>
+                                <td className="text-right tabular-nums text-muted-foreground">
+                                  {n.profundidad_inicial_mm ?? "—"}
+                                </td>
+                                <td className="text-right tabular-nums text-muted-foreground">
+                                  {mmGastados ?? "—"}
+                                </td>
+                                <td className="text-right tabular-nums text-muted-foreground">
+                                  {pres != null ? `${pres} psi` : "—"}
+                                </td>
+                                <td className="whitespace-nowrap text-muted-foreground">
+                                  {fmtFecha(n.fecha_instalacion)}
+                                </td>
+                                <td className="text-right tabular-nums text-muted-foreground">
+                                  {fmtNum(n.km_instalacion)}
+                                </td>
+                                <td className="text-right tabular-nums text-muted-foreground">
+                                  {v?.diasRestantes != null ? `${fmtNum(v.diasRestantes)} d` : "—"}
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        </Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                <p className="text-[11px] text-muted-foreground">
+                  La barra es el dibujo que queda contra el que traía de fábrica; la marca fina es
+                  el límite de servicio ({PROF_OBJETIVO_MM} mm).
+                </p>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -2306,15 +2397,15 @@ function TireGlyph({
       {/* Chip de posición + profundidad */}
       <span
         className={cn(
-          "-mt-1.5 rounded-full px-1.5 py-px text-[11px] font-semibold leading-tight shadow-sm ring-1 ring-background",
-          empty ? "bg-muted text-muted-foreground" : wearClass
+          "-mt-2 rounded-full px-2 py-0.5 text-[13px] font-bold leading-tight shadow-sm ring-2",
+          empty ? "bg-muted text-muted-foreground ring-border" : wearClass
         )}
       >
         {label}
-        {mm != null && <span className="font-normal"> · {mm}</span>}
+        {mm != null && <span className="font-semibold"> · {mm}</span>}
       </span>
       {sub && (
-        <span className="max-w-[62px] truncate text-[10px] leading-tight text-muted-foreground">
+        <span className="mt-0.5 max-w-[74px] truncate text-[11px] font-medium leading-tight text-muted-foreground">
           {sub}
         </span>
       )}
@@ -2347,7 +2438,7 @@ function DiagramaEjes({
 }) {
   const filas = filasDelLayout(layout)
   return (
-    <div className="w-72 space-y-3">
+    <div className="w-80 space-y-3 sm:w-[22rem]">
       <RuedaSprite />
       {filas.map((f) => {
         const esAuxilio = f.posiciones.every((p) => p.code === POSICION_AUXILIO)
@@ -2365,20 +2456,22 @@ function DiagramaEjes({
               : " · vacía"
           }${dest ? ` → ${dest}` : ""}`
           const cuerpo = (
-            <div className="flex w-[62px] flex-col items-center gap-0.5">
+            <div className="flex w-[74px] flex-col items-center gap-0.5">
               <RuedaLateral empty={!n} />
               <span
                 className={cn(
-                  "rounded-full px-1.5 py-px text-[11px] font-semibold leading-tight",
-                  n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted text-muted-foreground"
+                  "rounded-full px-2 py-0.5 text-[13px] font-bold leading-tight ring-2",
+                  n
+                    ? colorDesgaste(n.profundidad_actual_mm)
+                    : "bg-muted text-muted-foreground ring-border"
                 )}
               >
                 {p.label}
                 {n?.profundidad_actual_mm != null && (
-                  <span className="font-normal"> · {n.profundidad_actual_mm}</span>
+                  <span className="font-semibold"> · {n.profundidad_actual_mm}</span>
                 )}
               </span>
-              <span className="max-w-[62px] truncate text-[10px] leading-tight text-muted-foreground">
+              <span className="max-w-[74px] truncate text-[11px] font-medium leading-tight text-muted-foreground">
                 {n ? n.numero || "s/n" : "—"}
               </span>
               {dest && (
@@ -2503,7 +2596,7 @@ function Diagrama({
           soloEjes={soloEjes}
         />
       ) : (
-        <div className="relative aspect-[3/4] w-72">
+        <div className="relative aspect-[3/4] w-80 sm:w-[22rem]">
           <SiluetaUnidad layout={layout} tipo={tipo} />
           {layout.map((p) => {
             const n = porPosicion.get(p.code)
@@ -4626,6 +4719,7 @@ function DiagramaConAcciones({
               <Leyenda color="bg-emerald-600" txt="Profundidad OK (> 5 mm)" />
               <Leyenda color="bg-amber-500" txt="A vigilar (≤ 5 mm)" />
               <Leyenda color="bg-red-600" txt={`Crítico (≤${PROFUNDIDAD_CRITICA_MM} mm)`} />
+              <Leyenda color="bg-sky-600" txt="El número chico es el de fuego de la cubierta" />
               <Leyenda color="bg-muted-foreground" txt="Sin medición" />
               <p className="pt-1 text-muted-foreground/80">
                 {puedeEditar

@@ -313,6 +313,7 @@ export function DesgastePorKmCard({
             valor={`${conTasa.length}/${filas.length}`}
             sub={`medidas dos veces y con ${fmt(MIN_KM_TRAMO)} km o más`}
             alerta={conTasa.length < COBERTURA_MINIMA}
+            pct={filas.length > 0 ? (conTasa.length / filas.length) * 100 : 0}
           />
           <Dato
             label="Desgaste desparejo"
@@ -590,24 +591,53 @@ function Dato({
   valor,
   sub,
   alerta,
+  pct,
 }: {
   label: string
   valor: string
   sub: string
   alerta?: boolean
+  /** 0-100: dibuja la barra de avance debajo del número. */
+  pct?: number | null
 }) {
   return (
-    <div className="rounded-md border border-border bg-muted/40 p-3">
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-lg border bg-card p-3 pl-4",
+        alerta ? "border-amber-500/40" : "border-border"
+      )}
+    >
+      {/* Franja de estado: el color entra por el borde, no pintando el número */}
+      <span
+        className={cn(
+          "absolute inset-y-0 left-0 w-1",
+          alerta ? "bg-amber-500" : "bg-emerald-600/70"
+        )}
+        aria-hidden
+      />
+      <p className="text-[10.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+        {label}
+      </p>
       <p
         className={cn(
-          "mt-0.5 text-lg font-semibold tabular-nums",
-          alerta ? "text-amber-600 dark:text-amber-400" : "text-foreground"
+          "mt-1 text-2xl font-semibold leading-none tabular-nums",
+          alerta ? "text-amber-700 dark:text-amber-400" : "text-foreground"
         )}
       >
         {valor}
       </p>
-      <p className="text-[11px] text-muted-foreground">{sub}</p>
+      {pct != null && (
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+          <span
+            className={cn(
+              "block h-full rounded-full",
+              alerta ? "bg-amber-500" : "bg-emerald-600"
+            )}
+            style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+          />
+        </div>
+      )}
+      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">{sub}</p>
     </div>
   )
 }

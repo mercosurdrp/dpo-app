@@ -196,6 +196,47 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
     // undefined en todas las filas y un 0 mentiría: diría que nunca pasó,
     // cuando lo que pasa es que no se anota.
     const hayColumnaAuxilio = mantenimientos.some((m) => m.auxilio_ruta !== undefined)
+
+    /**
+     * Correctivos que llegaron al taller SIN AVISO: ninguna unidad los tenía
+     * anunciados con un defecto crítico de checklist en los 30 días previos.
+     *
+     * 🚨 Antes acá se comparaba el total de correctivos contra el total de
+     * críticos ("35 contra 31") y se lo cantaba como pirámide invertida. Estaba
+     * MAL: son cosas distintas —una OT no es un defecto, una sola orden puede
+     * resolver varios, y muchos correctivos (una ECU, un alternador) nunca
+     * pasan por un ítem del checklist—. Comparar los totales hacía que el aviso
+     * saltara siempre, incluso con el checklist funcionando bien.
+     *
+     * Esto sí es comparable: unidad por unidad y contra la fecha, cuántas
+     * reparaciones no tuvieron ningún aviso previo. Es el número que se puede
+     * bajar trabajando el checklist.
+     */
+    const criticosPorUnidad = new Map<string, string[]>()
+    for (const i of items) {
+      if (!i.critico) continue
+      const arr = criticosPorUnidad.get(i.dominio) ?? []
+      arr.push(i.fecha)
+      criticosPorUnidad.set(i.dominio, arr)
+    }
+    const DIAS_AVISO = 30
+    const diasEntre = (a: string, b: string) =>
+      Math.round(
+        (new Date(b + "T12:00:00").getTime() - new Date(a + "T12:00:00").getTime()) / 86_400_000
+      )
+    const sinAviso = correctivos.filter((m) => {
+      const previos = criticosPorUnidad.get(m.dominio) ?? []
+      return !previos.some((f) => {
+        const d = diasEntre(f, m.fecha)
+        return d >= 0 && d <= DIAS_AVISO
+      })
+    })
+    const deteccion = {
+      sinAviso: sinAviso.length,
+      total: correctivos.length,
+      dias: DIAS_AVISO,
+      pct: correctivos.length > 0 ? (sinAviso.length / correctivos.length) * 100 : 0,
+    }
     // La base de la pirámide son TODOS los defectos de checklist (leves +
     // críticos), no sólo los leves: es el mismo número que el KPI "Defectos" y
     // el que se cuenta en la planta. El nivel de arriba es el subconjunto
@@ -309,6 +350,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       ratioFalla,
       cimiento,
       hayColumnaAuxilio,
+      deteccion,
       // Listas que abren las tarjetas de indicadores (antes eran sólo números).
       criticos: items
         .filter((i) => i.critico)
@@ -512,17 +554,20 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
           en la base = {fmtNum(datos.conteo.leve)} leves + {fmtNum(datos.conteo.critico)}{" "}
           críticos. El nivel de arriba son esos mismos {fmtNum(datos.conteo.critico)} críticos.
         </p>
-        {/* La pirámide sirve justamente para mostrar cuando NO es una pirámide:
-            si al taller entran más órdenes que defectos críticos detectados, la
-            falla está llegando sin que el checklist la vea venir. */}
-        {datos.conteo.correctivo > datos.conteo.critico && (
-          <p className="mt-2 flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50/60 p-2 text-[11px] text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+{/* Lo que la pirámide tiene que contestar: de las reparaciones que
+            entraron, ¿cuántas se podrían haber visto venir? Se mide unidad por
+            unidad y contra la fecha, no comparando totales. */}
+        {datos.deteccion.sinAviso > 0 && (
+          <p className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-300 bg-amber-50/70 p-2 text-[11px] text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
             <TriangleAlert className="mt-px size-3.5 shrink-0" />
             <span>
-              <strong className="font-semibold">La pirámide está dada vuelta en el medio:</strong>{" "}
-              {fmtNum(datos.conteo.correctivo)} correctivos contra{" "}
-              {fmtNum(datos.conteo.critico)} defectos críticos detectados. La falla llega al
-              taller sin que el checklist la haya visto venir.
+              <strong className="font-semibold">
+                {fmtNum(datos.deteccion.sinAviso)} de {fmtNum(datos.deteccion.total)} correctivos
+                llegaron sin aviso
+              </strong>{" "}
+              ({fmtPct(datos.deteccion.pct)}): la unidad no tenía ningún defecto crítico marcado en
+              el checklist en los {datos.deteccion.dias} días previos a la reparación. Es el número
+              a bajar trabajando la base.
             </span>
           </p>
         )}
