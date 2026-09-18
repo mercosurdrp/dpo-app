@@ -423,14 +423,29 @@ interface IndicadoresDeposito {
   _cached_at?: string
 }
 
-async function fetchDpoBase(anio: number): Promise<IndicadoresDeposito | null> {
+function urlDpoBase(anio: number): string | null {
   const hoy = new Date()
   if (anio > hoy.getFullYear()) return null
   const mes = anio < hoy.getFullYear() ? 12 : hoy.getMonth() + 1
-  return fetchJsonCached<IndicadoresDeposito>(
-    `${DEPOSITO_API_BASE}/api/indicadores?year=${anio}&month=${mes}`,
-    INDICADORES_TIMEOUT_MS,
-  )
+  return `${DEPOSITO_API_BASE}/api/indicadores?year=${anio}&month=${mes}`
+}
+
+async function fetchDpoBase(anio: number): Promise<IndicadoresDeposito | null> {
+  const url = urlDpoBase(anio)
+  return url ? fetchJsonCached<IndicadoresDeposito>(url, INDICADORES_TIMEOUT_MS) : null
+}
+
+/**
+ * Precalienta la base del Reporte DPO con timeout largo. En frío el depósito
+ * re-arma el mes entero y tarda ~50 s (medido 2026-09-18: 51 s, después 1 s),
+ * así que con el timeout normal el cron de respaldo saltea FGLI y TQI. Deja
+ * la respuesta en el cache in-memory: los `resumen()` que vienen después la
+ * encuentran sin volver a pegarle. Devuelve false si ni así respondió.
+ */
+export async function precalentarDpoBase(anio: number): Promise<boolean> {
+  const url = urlDpoBase(anio)
+  if (!url) return false
+  return (await fetchJsonCached<IndicadoresDeposito>(url, 120_000)) != null
 }
 
 /**

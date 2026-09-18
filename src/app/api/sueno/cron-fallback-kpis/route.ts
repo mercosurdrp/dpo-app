@@ -24,7 +24,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { tlpAnual, tiempoPdvAnual } from "@/lib/tlp/calc"
 import { tiempoRutaAnual } from "@/lib/tlp/tiempo-ruta"
-import { KPI_EXTERNOS } from "@/lib/sueno/externos"
+import { KPI_EXTERNOS, precalentarDpoBase } from "@/lib/sueno/externos"
 import { IS_MISIONES } from "@/lib/empresa"
 
 const CRON_SECRET = process.env.CRON_SECRET
@@ -54,6 +54,10 @@ export async function GET(request: NextRequest) {
   // FGLI y TQI entran al respaldo el 2026-09-14: leen el tablero del depósito
   // (desde el 2026-09-17 una sola llamada a /api/indicadores) y son los que
   // más chances tienen de quedar en null en un render frío.
+  // El tablero del depósito tarda ~50 s en frío (a las 06:40 siempre lo está):
+  // se precalienta con timeout largo para que FGLI y TQI no queden en null.
+  const depositoCaliente = await precalentarDpoBase(year).catch(() => false)
+
   const [tlp, pdv, ruta, wnp, fgli, tqi] = await Promise.all([
     tlpAnual(sb, year).catch(() => null),
     tiempoPdvAnual(sb, year).catch(() => null),
@@ -91,6 +95,7 @@ export async function GET(request: NextRequest) {
     else escritos.push(v.kpi_key)
   }
 
+  if (!depositoCaliente) console.warn("[cron-fallback-kpis] el depósito no respondió en 120 s")
   const saltados = ["tlp", "tiempo_pdv", "tiempo_ruta", "wnp", "fgli", "tqi"].filter(
     (k) => !escritos.includes(k),
   )
