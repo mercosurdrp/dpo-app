@@ -246,13 +246,18 @@ export async function ingresarDepositoAcarreo(id: string): Promise<{ error?: str
   return {}
 }
 
-// Salida del almacén: el camión se retira de planta. Cierra la estadía total
-// (arribo → salida), distinta del tiempo del SLA (arribo → fin de descarga).
-// Acción reservada, igual que el ingreso a depósito.
+// Control y salida: se revisa el camión y se lo deja salir de planta. Cierra la
+// estadía total (arribo → salida), distinta del tiempo del SLA (arribo → fin de
+// descarga).
+//
+// 🚨 Ya NO es una acción reservada como el ingreso a depósito (cambio pedido el
+// 18-09-2026): la da quien está en el muelle cuando el camión terminó —el
+// auxiliar o el maquinista que descargó—, así que alcanza con poder operar la
+// recepción (`puedeOperarAcarreo`), igual que iniciar y finalizar la descarga.
 export async function marcarSalidaAcarreo(id: string): Promise<{ error?: string }> {
   const profile = await requireAuth()
   if (IS_MISIONES) return { error: "Solo disponible en Pampeana." }
-  if (!puedeDarIngreso(profile.role, profile.email)) {
+  if (!puedeOperarAcarreo(profile.role, profile.email)) {
     return { error: "No tenés permiso para marcar la salida del almacén." }
   }
   const acarreo = createAcarreoClient()

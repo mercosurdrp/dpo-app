@@ -225,7 +225,7 @@ export function RecepcionClient({
             const estadoLabel = cargandoVacios
               ? "Cargando vacíos"
               : r.estado === "finalizado"
-                ? "Esperando salida"
+                ? "Esperando control y salida"
                 : r.estado === "descargando"
                   ? r.operacion === "solo_vacios"
                     ? "Cargando vacíos"
@@ -371,7 +371,10 @@ export function RecepcionClient({
                       <CheckCircle2 className="size-4" /> Fin vacíos
                     </button>
                   )}
-                  {r.estado === "finalizado" && !cargandoVacios && puedeIngreso && (
+                  {/* Control y salida: lo puede dar cualquiera habilitado a
+                      operar la recepción (auxiliar o maquinista), no sólo quien
+                      da el ingreso a depósito. */}
+                  {r.estado === "finalizado" && !cargandoVacios && (
                     <button
                       disabled={pending}
                       onClick={() =>
@@ -383,13 +386,8 @@ export function RecepcionClient({
                       }
                       className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-60"
                     >
-                      <LogOut className="size-4" /> Salida del almacén
+                      <LogOut className="size-4" /> Control y salida
                     </button>
-                  )}
-                  {r.estado === "finalizado" && !cargandoVacios && !puedeIngreso && (
-                    <span className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs italic text-slate-500">
-                      {conVacios ? "Vacíos cargados · esperando salida" : "Descarga terminada · esperando salida"}
-                    </span>
                   )}
                   {esAdmin && (
                     <button
