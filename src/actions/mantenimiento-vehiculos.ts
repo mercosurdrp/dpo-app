@@ -747,6 +747,8 @@ interface CreateMantenimientoInput {
   fuera_servicio_hasta?: string | null
   entrada_taller?: string | null
   salida_taller?: string | null
+  /** La unidad quedó parada fuera de la planta (punta de la pirámide). */
+  auxilio_ruta?: boolean
   tareas: MantenimientoTareaInput[]
   repuestos?: MantenimientoRepuestoInput[]
   /** Comprobantes de la OT (proveedor + nº + monto + adjunto). */
@@ -1011,6 +1013,19 @@ async function validarMedicionOt(
   return validarLectura({ valor, previa, fecha, esHorometro })
 }
 
+/**
+ * ¿Ya existe la columna `auxilio_ruta`? La agrega una migración y hasta que
+ * corra hay que guardar la OT igual, sin el tilde: mandar la clave en el insert
+ * tira 42703 y se caería toda la carga. Mismo criterio que el repuesto del plan
+ * de acción.
+ */
+async function hayAuxilioRuta(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<boolean> {
+  const sonda = await supabase.from("mantenimiento_realizados").select("auxilio_ruta").limit(1)
+  return !sonda.error
+}
+
 export async function createMantenimiento(
   input: CreateMantenimientoInput
 ): Promise<{ data: MantenimientoRealizado; warning?: string } | { error: string }> {
@@ -1069,6 +1084,7 @@ export async function createMantenimiento(
         salida_taller: input.salida_taller || null,
         fuera_servicio_desde: fs.desde,
         fuera_servicio_hasta: fs.hasta,
+        ...((await hayAuxilioRuta(supabase)) ? { auxilio_ruta: !!input.auxilio_ruta } : {}),
         created_by: profile.id,
       })
       .select()
@@ -1159,6 +1175,8 @@ interface UpdateMantenimientoInput {
   fuera_servicio_hasta?: string | null
   entrada_taller?: string | null
   salida_taller?: string | null
+  /** La unidad quedó parada fuera de la planta (punta de la pirámide). */
+  auxilio_ruta?: boolean
   /** Si se pasa, reemplaza el detalle completo de tareas. */
   tareas?: MantenimientoTareaInput[]
   /** Si se pasa, reemplaza el detalle completo de repuestos. */
@@ -1263,6 +1281,8 @@ export async function updateMantenimiento(
     if (input.evidencia_urls !== undefined) patch.evidencia_urls = input.evidencia_urls
     if (input.entrada_taller !== undefined) patch.entrada_taller = input.entrada_taller || null
     if (input.salida_taller !== undefined) patch.salida_taller = input.salida_taller || null
+    if (input.auxilio_ruta !== undefined && (await hayAuxilioRuta(supabase)))
+      patch.auxilio_ruta = input.auxilio_ruta
     // Fuera de servicio: explícito si se pasa; si no, se deriva de entrada/salida.
     if (input.fuera_servicio_desde !== undefined)
       patch.fuera_servicio_desde = input.fuera_servicio_desde || null

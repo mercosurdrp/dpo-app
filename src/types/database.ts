@@ -1595,6 +1595,12 @@ export interface MantenimientoRealizado {
   /** Período fuera de servicio (para disponibilidad de flota). NULL = no sacó la unidad de ruta. */
   fuera_servicio_desde: string | null
   fuera_servicio_hasta: string | null
+  /**
+   * La unidad quedó parada FUERA de la planta y hubo que ir a asistirla. Es la
+   * punta de la pirámide de fallas. Opcional en el tipo porque la columna la
+   * agrega una migración: hasta que corra llega `undefined`.
+   */
+  auxilio_ruta?: boolean | null
   /** Entrada/salida del taller con fecha+hora (ISO). De acá se deriva el período fuera de servicio. */
   entrada_taller: string | null
   salida_taller: string | null

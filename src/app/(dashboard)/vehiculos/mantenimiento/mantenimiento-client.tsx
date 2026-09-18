@@ -1651,6 +1651,9 @@ function NuevoMantenimientoDialog({
   // de servicio: por defecto la OT nueva marca la unidad NO disponible desde el
   // ingreso. Si no la saca de ruta, vaciá "Entrada al taller".
   const [entradaTaller, setEntradaTaller] = useState(ahoraLocal())
+  // Punta de la pirámide de fallas: el camión tirado en la ruta con el reparto
+  // arriba. Hasta hoy sólo quedaba escrito en las observaciones.
+  const [auxilioRuta, setAuxilioRuta] = useState(false)
   const [salidaTaller, setSalidaTaller] = useState("")
   const [tareasSel, setTareasSel] = useState<Set<string>>(
     () => new Set(prefill.tareaId ? [prefill.tareaId] : [])
@@ -1745,6 +1748,7 @@ function NuevoMantenimientoDialog({
       evidencia_urls: comprobantes.urls.length > 0 ? comprobantes.urls : null,
       entrada_taller: deDatetimeLocal(entradaTaller),
       salida_taller: deDatetimeLocal(salidaTaller),
+      auxilio_ruta: auxilioRuta,
       tareas,
       reprogramadas: reprogramadasPayload(reprogramadas),
     })
@@ -1967,6 +1971,24 @@ function NuevoMantenimientoDialog({
               </div>
             </div>
           </div>
+
+
+          <label className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50/60 p-3 text-sm dark:border-red-900 dark:bg-red-950/30">
+            <Checkbox
+              className="mt-0.5"
+              checked={auxilioRuta}
+              onCheckedChange={(c) => setAuxilioRuta(c === true)}
+            />
+            <span>
+              <span className="font-medium text-red-800 dark:text-red-300">
+                La unidad quedó parada fuera de la planta
+              </span>
+              <span className="mt-0.5 block text-xs text-red-700 dark:text-red-400">
+                Hubo que ir a asistirla en ruta. Es el nivel más grave de la pirámide de fallas:
+                no cambia el tipo de la orden, la califica.
+              </span>
+            </span>
+          </label>
 
           <label className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-sm">
             <Checkbox
@@ -3023,6 +3045,7 @@ function EditarMantenimientoDialog({
   const [salidaTaller, setSalidaTaller] = useState(
     aDatetimeLocal(m.salida_taller ?? m.fuera_servicio_hasta)
   )
+  const [auxilioRuta, setAuxilioRuta] = useState(!!m.auxilio_ruta)
   const [facturas, setFacturas] = useState<FacturaForm[]>(() => facturasDesde(m))
   const [repuestos, setRepuestos] = useState<RepuestoForm[]>(() => repuestosDesde(m))
   const [costoMO, setCostoMO] = useState(() => {
@@ -3063,6 +3086,7 @@ function EditarMantenimientoDialog({
       evidencia_urls: comprobantes.urls,
       entrada_taller: deDatetimeLocal(entradaTaller),
       salida_taller: deDatetimeLocal(salidaTaller),
+      auxilio_ruta: auxilioRuta,
     })
     setSaving(false)
     if ("error" in res) {
@@ -3205,6 +3229,24 @@ function EditarMantenimientoDialog({
               </div>
             </div>
           </div>
+
+
+          <label className="col-span-2 flex items-start gap-2 rounded-md border border-red-200 bg-red-50/60 p-3 text-sm dark:border-red-900 dark:bg-red-950/30">
+            <Checkbox
+              className="mt-0.5"
+              checked={auxilioRuta}
+              onCheckedChange={(c) => setAuxilioRuta(c === true)}
+            />
+            <span>
+              <span className="font-medium text-red-800 dark:text-red-300">
+                La unidad quedó parada fuera de la planta
+              </span>
+              <span className="mt-0.5 block text-xs text-red-700 dark:text-red-400">
+                Hubo que ir a asistirla en ruta. Es el nivel más grave de la pirámide de fallas:
+                no cambia el tipo de la orden, la califica.
+              </span>
+            </span>
+          </label>
 
           <div className="col-span-2">
             <FacturasEditor facturas={facturas} setFacturas={setFacturas} proveedorSugerido={taller} />

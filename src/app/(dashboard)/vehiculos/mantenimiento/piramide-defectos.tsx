@@ -55,29 +55,39 @@ const fmtNum = (v: number) => new Intl.NumberFormat("es-AR").format(v)
 const fmtPct = (v: number) =>
   `${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 1 }).format(v)}%`
 
-// Niveles de la pirámide, de la PUNTA (grave) hacia la BASE (leve).
+// Niveles de la pirámide, de la PUNTA (lo más grave) hacia la BASE (lo más leve).
+//
+// La punta es el AUXILIO EN RUTA y no la avería grave: la falla que duele no es
+// la que para la unidad en el taller, es la que la deja tirada afuera con el
+// reparto arriba. Se marca con un tilde en la OT (`auxilio_ruta`).
 const NIVELES = [
   {
+    key: "auxilio",
+    titulo: "Auxilio en ruta",
+    detalle: "La unidad quedó parada fuera de la planta",
+    color: "#7f1d1d",
+  },
+  {
     key: "averia",
-    titulo: "Avería grave / fuera de servicio",
+    titulo: "Avería grave",
     // 🚨 Antes contaba las OT correctivas en estado "en_taller" y por eso daba
     // SIEMPRE 0: las órdenes se cargan ya cerradas, en "completado". La avería
     // grave es la que dejó la unidad parada, y eso lo dice el período de fuera
     // de servicio, no el estado de la orden.
-    detalle: "Correctivos que dejaron la unidad fuera de servicio",
-    color: "#C0392B",
+    detalle: "Correctivo que dejó la unidad fuera de servicio",
+    color: "#a63a2a",
   },
   {
     key: "correctivo",
-    titulo: "Falla → correctivo en taller",
-    detalle: "Mantenimientos correctivos registrados",
-    color: "#E67E22",
+    titulo: "Correctivo en taller",
+    detalle: "Reparación no planificada",
+    color: "#c47a2c",
   },
   {
     key: "critico",
-    titulo: "Defecto crítico detectado",
-    detalle: "Ítems críticos no conformes en checklist",
-    color: "#F1C40F",
+    titulo: "Defecto crítico",
+    detalle: "Ítem crítico no conforme en el checklist",
+    color: "#b79020",
   },
   {
     key: "defectos",
@@ -85,9 +95,9 @@ const NIVELES = [
     // checklist (cientos por año) y este nivel son sólo los ítems no conformes
     // que no son críticos. Los críticos están en el nivel de arriba, así que la
     // base NUNCA es el total de defectos — de ahí venía la confusión.
-    titulo: "Defectos de checklist (todos)",
-    detalle: "Ítems no conformes de checklist, críticos incluidos",
-    color: "#5DADE2",
+    titulo: "Defectos de checklist",
+    detalle: "Todos los ítems no conformes, críticos incluidos",
+    color: "#5b7f9e",
   },
 ] as const
 
@@ -164,7 +174,28 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       critico: items.filter((i) => i.critico).length,
       correctivo: correctivos.length,
       averia: correctivos.filter((m) => !!m.fuera_servicio_desde).length,
+      // La punta. Cuenta cualquier OT marcada, no sólo las correctivas: el
+      // auxilio del AF469UR del 23/06 está cargado como preventivo.
+      auxilio: mantes.filter((m) => m.auxilio_ruta).length,
     }
+    // El cimiento: lo planificado, que es lo que evita que la pirámide crezca.
+    const preventivos = mantes.filter((m) => m.tipo === "preventivo").length
+    const proactivos = mantes.filter((m) => m.tipo === "proactivo").length
+    const planificadas = preventivos + proactivos
+    const plata = (f: (m: MantenimientoRealizado) => boolean) =>
+      mantes.filter(f).reduce((a, m) => a + Number(m.costo ?? 0), 0)
+    const cimiento = {
+      preventivos,
+      proactivos,
+      planificadas,
+      pctPlanificado: mantes.length > 0 ? (planificadas / mantes.length) * 100 : 0,
+      costoPlanificado: plata((m) => m.tipo !== "correctivo"),
+      costoCorrectivo: plata((m) => m.tipo === "correctivo"),
+    }
+    // ¿Corrió ya la migración del tilde? Sin columna, `auxilio_ruta` llega
+    // undefined en todas las filas y un 0 mentiría: diría que nunca pasó,
+    // cuando lo que pasa es que no se anota.
+    const hayColumnaAuxilio = mantenimientos.some((m) => m.auxilio_ruta !== undefined)
     // La base de la pirámide son TODOS los defectos de checklist (leves +
     // críticos), no sólo los leves: es el mismo número que el KPI "Defectos" y
     // el que se cuenta en la planta. El nivel de arriba es el subconjunto
@@ -276,6 +307,8 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       detalle,
       totalDefectos,
       ratioFalla,
+      cimiento,
+      hayColumnaAuxilio,
       // Listas que abren las tarjetas de indicadores (antes eran sólo números).
       criticos: items
         .filter((i) => i.critico)
@@ -304,22 +337,19 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
   const verUnidad = (dominio: string) =>
     setUnidadSel((actual) => (actual === dominio ? null : dominio))
 
-  // ===== Geometría de la pirámide (SVG compacto) =====
-  const NIV = NIVELES.length // 4
-  const VIEW_W = 560
-  const VIEW_H = 230
-  const ALTO_NIV = VIEW_H / NIV
-  const PYR_LEFT = 24
-  const PYR_W = 300
-  const PYR_CX = PYR_LEFT + PYR_W / 2
-  const PYR_RIGHT = PYR_LEFT + PYR_W
-  const TOP_W = 0.16
-
-  function widths(n: number): { top: number; bottom: number } {
-    const top = TOP_W + (1 - TOP_W) * (n / NIV)
-    const bottom = TOP_W + (1 - TOP_W) * ((n + 1) / NIV)
-    return { top, bottom }
-  }
+  // ===== Geometría de la pirámide =====
+  // Pirámide de verdad (la punta termina en punta) a la izquierda, el nombre de
+  // cada nivel a la derecha y el cimiento de trabajo planificado abajo.
+  const NIV = NIVELES.length // 5
+  const VIEW_W = 820
+  const VIEW_H = 430
+  const PYR_TOP = 12
+  const PYR_BOT = 336
+  const ALTO_NIV = (PYR_BOT - PYR_TOP) / NIV
+  const PYR_CX = 210
+  const PYR_HALF = 190
+  /** Semiancho de la pirámide a una altura dada. */
+  const semi = (y: number) => ((y - PYR_TOP) / (PYR_BOT - PYR_TOP)) * PYR_HALF
 
   return (
     <div className="space-y-4">
@@ -348,62 +378,129 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       </div>
 
       {/* Pirámide */}
-      <div className="rounded-lg border bg-card p-3">
-        <div className="mx-auto max-w-xl">
+      <div className="rounded-lg border bg-card p-3 sm:p-4">
+        <div className="mx-auto max-w-4xl">
           <svg
             viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
             className="w-full"
             preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="Pirámide de fallas de flota"
           >
             {NIVELES.map((n, i) => {
-              const { top, bottom } = widths(i)
-              const yTop = i * ALTO_NIV
-              const yBot = (i + 1) * ALTO_NIV
-              const xTopL = PYR_CX - (top * PYR_W) / 2
-              const xTopR = PYR_CX + (top * PYR_W) / 2
-              const xBotL = PYR_CX - (bottom * PYR_W) / 2
-              const xBotR = PYR_CX + (bottom * PYR_W) / 2
-              const points = `${xTopL},${yTop} ${xTopR},${yTop} ${xBotR},${yBot} ${xBotL},${yBot}`
+              const yTop = PYR_TOP + i * ALTO_NIV
+              const yBot = yTop + ALTO_NIV
+              const sT = semi(yTop)
+              const sB = semi(yBot)
+              const points = `${PYR_CX - sT},${yTop} ${PYR_CX + sT},${yTop} ${PYR_CX + sB},${yBot} ${PYR_CX - sB},${yBot}`
+              const sinDato = n.key === "auxilio" && !datos.hayColumnaAuxilio
               const count = datos.conteo[n.key] ?? 0
               const cy = yTop + ALTO_NIV / 2
+              // "1 cada tanto" contra el nivel de abajo: es lo que hace hablar a
+              // la pirámide (cuántos defectos hay por cada avería).
+              const abajo = NIVELES[i + 1]
+              const nAbajo = abajo ? (datos.conteo[abajo.key] ?? 0) : 0
+              const razon =
+                abajo && count > 0 && nAbajo > 0
+                  ? `1 cada ${new Intl.NumberFormat("es-AR", {
+                      maximumFractionDigits: 1,
+                    }).format(nAbajo / count)}`
+                  : null
               return (
                 <g key={n.key}>
                   <polygon
                     points={points}
                     fill={n.color}
                     className="stroke-card"
-                    strokeWidth={1.2}
+                    strokeWidth={2}
                   />
-                  {/* Conteo en el centro */}
                   <text
                     x={PYR_CX}
-                    y={cy + 5}
+                    y={cy + (i === 0 ? 10 : 8)}
                     textAnchor="middle"
-                    fontSize={i === 0 ? 13 : 16}
-                    fontWeight={900}
+                    fontSize={i === 0 ? 15 : 24}
+                    fontWeight={700}
                     fill="#FFFFFF"
                     style={{
                       paintOrder: "stroke",
-                      stroke: "rgba(0,0,0,0.35)",
+                      stroke: "rgba(0,0,0,0.30)",
                       strokeWidth: 2.5,
                     }}
                   >
-                    {count}
+                    {sinDato ? "s/d" : fmtNum(count)}
                   </text>
-                  {/* Etiqueta a la derecha */}
+                  <line
+                    x1={PYR_CX + sB - 2}
+                    y1={yBot - 6}
+                    x2={PYR_CX + PYR_HALF + 22}
+                    y2={yBot - 6}
+                    className="stroke-border"
+                    strokeWidth={1.2}
+                  />
                   <text
-                    x={PYR_RIGHT + 10}
-                    y={cy + 4}
-                    textAnchor="start"
-                    fontSize={11}
-                    fontWeight={500}
-                    className="fill-foreground"
+                    x={PYR_CX + PYR_HALF + 30}
+                    y={yBot - 18}
+                    fontSize={15}
+                    fontWeight={600}
+                    fill={n.color}
                   >
                     {n.titulo}
                   </text>
+                  <text
+                    x={PYR_CX + PYR_HALF + 30}
+                    y={yBot - 2}
+                    fontSize={11.5}
+                    className="fill-muted-foreground"
+                  >
+                    {sinDato
+                      ? "Sin registro todavía · se marca con el tilde en la OT"
+                      : n.detalle}
+                  </text>
+                  {razon && (
+                    <text
+                      x={PYR_CX - sB - 8}
+                      y={yBot + 4}
+                      textAnchor="end"
+                      fontSize={10.5}
+                      className="fill-muted-foreground"
+                    >
+                      {razon}
+                    </text>
+                  )}
                 </g>
               )
             })}
+
+            {/* Cimiento: el trabajo planificado sostiene la base */}
+            <rect
+              x={PYR_CX - PYR_HALF}
+              y={PYR_BOT + 20}
+              width={VIEW_W - (PYR_CX - PYR_HALF) - 12}
+              height={58}
+              rx={8}
+              className="fill-emerald-500/10 stroke-emerald-600/40"
+              strokeWidth={1.5}
+            />
+            <text
+              x={PYR_CX - PYR_HALF + 16}
+              y={PYR_BOT + 42}
+              fontSize={11}
+              fontWeight={600}
+              letterSpacing="1.2"
+              className="fill-emerald-700 dark:fill-emerald-400"
+            >
+              CIMIENTO · TRABAJO PLANIFICADO
+            </text>
+            <text
+              x={PYR_CX - PYR_HALF + 16}
+              y={PYR_BOT + 62}
+              fontSize={12.5}
+              className="fill-foreground"
+            >
+              {`${fmtNum(datos.cimiento.preventivos)} preventivos + ${fmtNum(
+                datos.cimiento.proactivos
+              )} proactivos · ${fmtPct(datos.cimiento.pctPlanificado)} de las OT del período`}
+            </text>
           </svg>
         </div>
         {/* La cuenta escrita al pie: la base son sólo los leves, y sin esto el
@@ -415,10 +512,25 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
           en la base = {fmtNum(datos.conteo.leve)} leves + {fmtNum(datos.conteo.critico)}{" "}
           críticos. El nivel de arriba son esos mismos {fmtNum(datos.conteo.critico)} críticos.
         </p>
-        <p className="mt-0.5 flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
+        {/* La pirámide sirve justamente para mostrar cuando NO es una pirámide:
+            si al taller entran más órdenes que defectos críticos detectados, la
+            falla está llegando sin que el checklist la vea venir. */}
+        {datos.conteo.correctivo > datos.conteo.critico && (
+          <p className="mt-2 flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50/60 p-2 text-[11px] text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+            <TriangleAlert className="mt-px size-3.5 shrink-0" />
+            <span>
+              <strong className="font-semibold">La pirámide está dada vuelta en el medio:</strong>{" "}
+              {fmtNum(datos.conteo.correctivo)} correctivos contra{" "}
+              {fmtNum(datos.conteo.critico)} defectos críticos detectados. La falla llega al
+              taller sin que el checklist la haya visto venir.
+            </span>
+          </p>
+        )}
+        <p className="mt-1.5 flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
           <Info className="size-3" />
-          De la base (todo lo que marca el checklist) a la punta (avería grave).
-          Gestionando la base se previene la punta.
+          De la base (todo lo que marca el checklist) a la punta (la unidad tirada en la
+          ruta). Gestionando la base se previene la punta; el cimiento verde es lo que se
+          hace para que no crezca.
         </p>
       </div>
 
