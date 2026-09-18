@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { useState } from "react"
 import {
   BookOpen,
+  BookOpenCheck,
   LayoutDashboard,
   ClipboardCheck,
   ListTodo,
@@ -264,6 +265,13 @@ const navItemsFlat: NavItem[] = [
     label: "Capacitaciones",
     href: "/capacitaciones",
     icon: <GraduationCap className="size-5" />,
+  },
+  {
+    // Instructivos del depósito, la misma pantalla que ve el operario.
+    label: "Cómo se hace",
+    href: "/instructivos",
+    icon: <BookOpenCheck className="size-5" />,
+    pampeanaOnly: true,
   },
   {
     label: "Matriz SKAP",

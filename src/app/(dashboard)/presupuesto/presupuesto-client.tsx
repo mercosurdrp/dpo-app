@@ -61,6 +61,8 @@ import type { EjecucionRubro } from "@/actions/presupuesto-generador"
 import type { KpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
 import type { KpiCombustible } from "@/actions/presupuesto-combustible-kpi"
 import type { CostoHlMes } from "@/actions/presupuesto-costo-hl"
+import type { SustentabilidadPresupuesto } from "@/actions/presupuesto-sustentabilidad"
+import { SustentabilidadSection } from "@/components/presupuesto/sustentabilidad-section"
 import type {
   EstadoPresupuestoTarea,
   IniciativaAhorroConDetalle,
@@ -93,6 +95,7 @@ interface Props {
   kpiPerdidas: Record<string, KpiPerdidas>
   kpiCombustible: Record<string, KpiCombustible>
   costoHl: Record<number, CostoHlMes>
+  sustentabilidad: SustentabilidadPresupuesto | null
   mostrarPlanesAccion: boolean
   planesAccion: PlanAccionPresupuestoConDetalle[]
   mostrarInversiones: boolean
@@ -180,6 +183,7 @@ export function PresupuestoClient({
   kpiPerdidas,
   kpiCombustible,
   costoHl,
+  sustentabilidad,
   mostrarPlanesAccion,
   planesAccion,
   mostrarInversiones,
@@ -524,6 +528,9 @@ export function PresupuestoClient({
           todos los meses adentro).
         </p>
       </section>
+
+      {/* Presupuesto y sustentabilidad: ¿el presupuesto mejora el FGLI? */}
+      <SustentabilidadSection data={sustentabilidad} anio={anioActivo} />
 
       {/* Criterio de análisis de desvíos */}
       <section>

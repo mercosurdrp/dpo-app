@@ -431,76 +431,6 @@ export function NeumaticosModule({
     <div className="space-y-6">
       <DpoSeccionCinta seccionId="neumaticos" />
 
-      {/* Resumen — cada tarjeta abre el detalle de sus cubiertas */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        <KpiCard
-          label="En stock"
-          valor={resumen.stock}
-          sub={
-            resumen.stockRecapadas > 0
-              ? `${resumen.stock - resumen.stockRecapadas} nuevas · ${resumen.stockRecapadas} recapadas · click para ver`
-              : "Cubiertas disponibles para montar · click para ver"
-          }
-          onClick={() => setDetalleResumen("stock")}
-        />
-        <KpiCard
-          label="Para recapar"
-          valor={resumen.paraRecapar}
-          sub="En el depósito esperando que las manden · click para ver"
-          onClick={() => setDetalleResumen("para_recapar")}
-        />
-        <KpiCard
-          label="En el recapador"
-          valor={resumen.enRecapado}
-          sub="Ya enviadas, todavía sin volver · click para ver"
-          onClick={() => setDetalleResumen("en_recapado")}
-        />
-        <KpiCard
-          label="Para desechar"
-          valor={resumen.paraDesecho}
-          sub="Esperando a la recicladora · click para ver"
-          estado={resumen.paraDesecho > 0 ? "alerta" : "ok"}
-          onClick={() => setDetalleResumen("para_desecho")}
-        />
-        <KpiCard
-          label="Instaladas"
-          valor={resumen.instalados}
-          sub="Cubiertas rodando en la flota · click para ver"
-          onClick={() => setDetalleResumen("instaladas")}
-        />
-        <KpiCard
-          label="Desgaste crítico"
-          valor={resumen.criticos}
-          sub={`Profundidad ≤ ${PROFUNDIDAD_CRITICA_MM} mm · click para ver`}
-          estado={resumen.criticos > 0 ? "critico" : "ok"}
-          dpo="3.4"
-          onClick={() => setDetalleResumen("criticas")}
-        />
-        <KpiCard
-          label="Bajas (total)"
-          valor={resumen.bajas}
-          sub="Cubiertas dadas de baja · click para ver"
-          onClick={() => setDetalleResumen("bajas")}
-        />
-      </div>
-
-      {/* De la medición a la acción: qué cubierta hay que reponer y qué unidad
-          falta medir este mes, con el plan ya escrito. */}
-      <PlanesNeumaticos
-        neumaticos={neumaticos}
-        unidades={unidades}
-        planes={planes}
-        puedeEditar={puedeEditar}
-        onPlanCreado={refresh}
-        dominioSel={unidadSel}
-        onIrAUnidad={(dominio) => {
-          setUnidadSel(dominio)
-          document
-            .getElementById("diagrama-unidad")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" })
-        }}
-      />
-
       {puedeEditar && (
         <div className="flex flex-wrap justify-end gap-2">
           {/* Un solo acceso: adentro se elige qué hacer con cada posición
@@ -514,25 +444,13 @@ export function NeumaticosModule({
         </div>
       )}
 
-      {/* Desgaste real: mm de dibujo por cada 1.000 km, del historial de la
-          ronda mensual de "Planes de acción". Va acá, entre la ronda y el
-          diagrama, porque es la lectura de lo que esa ronda produjo. */}
-      <DesgastePorKmCard
-        data={desgaste}
-        dominioSel={unidadSel}
-        onIrAUnidad={(dominio) => {
-          setUnidadSel(dominio)
-          document
-            .getElementById("diagrama-unidad")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" })
-        }}
-      />
-
       {/* Diagrama por unidad */}
       <Card id="diagrama-unidad">
-        {/* El click en la ronda de medición (arriba) trae hasta acá, pero esa
-            ronda lista sólo camiones y autoelevadores: el selector queda para
-            llegar a cualquier otra unidad de la flota. */}
+        {/* El diagrama va primero: es la pantalla desde la que se trabaja a
+            diario (ver posiciones, montar, desmontar, abrir la OT). El click
+            en la ronda de medicion -mas abajo- tambien trae hasta aca, pero esa
+            ronda lista solo camiones: el selector queda para llegar a cualquier
+            otra unidad de la flota. */}
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-3">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -836,6 +754,90 @@ export function NeumaticosModule({
           </CardContent>
         </Card>
       )}
+
+      {/* Resumen — cada tarjeta abre el detalle de sus cubiertas */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        <KpiCard
+          label="En stock"
+          valor={resumen.stock}
+          sub={
+            resumen.stockRecapadas > 0
+              ? `${resumen.stock - resumen.stockRecapadas} nuevas · ${resumen.stockRecapadas} recapadas · click para ver`
+              : "Cubiertas disponibles para montar · click para ver"
+          }
+          onClick={() => setDetalleResumen("stock")}
+        />
+        <KpiCard
+          label="Para recapar"
+          valor={resumen.paraRecapar}
+          sub="En el depósito esperando que las manden · click para ver"
+          onClick={() => setDetalleResumen("para_recapar")}
+        />
+        <KpiCard
+          label="En el recapador"
+          valor={resumen.enRecapado}
+          sub="Ya enviadas, todavía sin volver · click para ver"
+          onClick={() => setDetalleResumen("en_recapado")}
+        />
+        <KpiCard
+          label="Para desechar"
+          valor={resumen.paraDesecho}
+          sub="Esperando a la recicladora · click para ver"
+          estado={resumen.paraDesecho > 0 ? "alerta" : "ok"}
+          onClick={() => setDetalleResumen("para_desecho")}
+        />
+        <KpiCard
+          label="Instaladas"
+          valor={resumen.instalados}
+          sub="Cubiertas rodando en la flota · click para ver"
+          onClick={() => setDetalleResumen("instaladas")}
+        />
+        <KpiCard
+          label="Desgaste crítico"
+          valor={resumen.criticos}
+          sub={`Profundidad ≤ ${PROFUNDIDAD_CRITICA_MM} mm · click para ver`}
+          estado={resumen.criticos > 0 ? "critico" : "ok"}
+          dpo="3.4"
+          onClick={() => setDetalleResumen("criticas")}
+        />
+        <KpiCard
+          label="Bajas (total)"
+          valor={resumen.bajas}
+          sub="Cubiertas dadas de baja · click para ver"
+          onClick={() => setDetalleResumen("bajas")}
+        />
+      </div>
+
+      {/* De la medición a la acción: qué cubierta hay que reponer y qué unidad
+          falta medir este mes, con el plan ya escrito. */}
+      <PlanesNeumaticos
+        neumaticos={neumaticos}
+        unidades={unidades}
+        planes={planes}
+        puedeEditar={puedeEditar}
+        onPlanCreado={refresh}
+        dominioSel={unidadSel}
+        onIrAUnidad={(dominio) => {
+          setUnidadSel(dominio)
+          document
+            .getElementById("diagrama-unidad")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" })
+        }}
+      />
+
+      {/* Desgaste real: mm de dibujo por cada 1.000 km, del historial de la
+          ronda mensual de "Planes de accion". Va despues de la ronda porque es
+          la lectura de lo que esa ronda produjo. */}
+      <DesgastePorKmCard
+        data={desgaste}
+        dominioSel={unidadSel}
+        onIrAUnidad={(dominio) => {
+          setUnidadSel(dominio)
+          document
+            .getElementById("diagrama-unidad")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" })
+        }}
+      />
 
       {/* Stock */}
       <Card>
