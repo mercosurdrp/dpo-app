@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation"
 import {
   BookOpen,
   GraduationCap,
+  BookOpenCheck,
   ClipboardList,
   ShieldAlert,
   Truck,
@@ -83,6 +84,12 @@ function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpI
     ...(IS_MISIONES
       ? []
       : [{ label: "Mi productividad", href: "/mi-productividad", icon: <Gauge className="size-5" /> }]),
+    // Cómo se hace: los instructivos del depósito (descarga y carga del camión,
+    // recepción en dársena, picking tipeado, vencimientos). Solo Pampeana: las
+    // canchas, las metas y la ventana de recepción son las de Ramallo.
+    ...(IS_MISIONES
+      ? []
+      : [{ label: "Cómo se hace", href: "/instructivos", icon: <BookOpenCheck className="size-5" /> }]),
     // Campus de Capacitaciones: biblioteca de material por pilar (videos, PPT,
     // SOPs, flyers) para consultar cuando quiera. Distinto de "Inicio"
     // (/mis-capacitaciones), que son los cursos asignados con examen.
