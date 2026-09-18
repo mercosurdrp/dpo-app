@@ -94,13 +94,16 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   //          SIN faltantes de entrega (van al SCL y al "HL perdidos" de la
   //          reunión de warehouse; es otro indicador).
   //   WQI / DQI = #8 y #9 sobre el mismo #28: ahora SÍ suman al TQI.
-  // Metas en PPM = real 2026 de MARZO A AGOSTO (meses cerrados) ponderado por
-  // HL, regla de Sebastián del 14/09 (enero y febrero tiran el cálculo muy
-  // para arriba: TQI 4.118 y 1.985; FGLI 4.320 y 2.259). Gatillo = el peor mes
-  // del tramo. TQI 1.003 → 1.000 / 1.452 → 1.450; FGLI 1.153 → 1.150 / 1.600.
-  // Real 2026 ene-sep: TQI 1.555, FGLI 1.723; 2025: 1.866 / 2.359. Ver
-  // 20260917120000_sueno_tqi_fgli_reporte_dpo.sql.
-  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 1150 },
+  // Metas en PPM = la regla del propio Reporte DPO para estos KPIs: MEJORAR el
+  // año anterior. Gatillo = real 2025 (si no le ganás al año pasado, rojo);
+  // meta = 10 % mejor. TQI 1.866 → meta 1.700 / gatillo 1.900; FGLI 2.359 →
+  // 2.100 / 2.400 (Sebastián, 2026-09-18). Las metas del 17/09 (real mar-ago:
+  // 1.000/1.450 y 1.150/1.600) eran inalcanzables: el YTD arrastra enero
+  // (4.118 / 4.320) y a septiembre ya se habían consumido más HL que los que
+  // permitía la meta anual. Real 2026 ene-sep: TQI 1.555, FGLI 1.723;
+  // proyección con un Q4 igual al de 2025: 1.694 / 1.856. Ver
+  // 20260918120000_sueno_tqi_fgli_metas_mejorar_2025.sql.
+  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 2100 },
   { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.4 },
 
   // ---- Operacional ----
@@ -122,7 +125,7 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // una meta distinta. La que MANDA es la fila 2026 de `sueno_kpi_valores`.
   { key: "prod_picking", label: "Prod Picking", nivel: "operacional", rama: "productividad", parentKey: "wnp", unidad: "Bul/HH", mejorSi: "mayor", metaDefault: 290 },
   // TQI = HL rotos (volumen afectado, almacén + entrega) ÷ HL despachados.
-  { key: "tqi", label: "TQI", nivel: "operacional", rama: "productividad", parentKey: "fgli", unidad: "PPM", mejorSi: "menor", metaDefault: 1000 },
+  { key: "tqi", label: "TQI", nivel: "operacional", rama: "productividad", parentKey: "fgli", unidad: "PPM", mejorSi: "menor", metaDefault: 1700 },
   { key: "rechazo", label: "Rechazo", nivel: "operacional", rama: "cliente", parentKey: "in_full", unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
 
   // ---- Estación de trabajo / Tarea ----
