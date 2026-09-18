@@ -47,7 +47,8 @@ async function validarOdometroRegistro(
     fechaHasta: fecha,
   })
   const previa = kmActualPorDominio(lecturas).get(dom) ?? null
-  return validarLectura({ valor: odometro, previa, fecha })
+  // Sólo se frena el número inflado: ver `permitirRetroceso` en validarLectura.
+  return validarLectura({ valor: odometro, previa, fecha, permitirRetroceso: true })
 }
 
 // ==================== CREAR REGISTRO ====================

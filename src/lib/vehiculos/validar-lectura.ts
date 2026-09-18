@@ -135,17 +135,20 @@ export function avisoDigitoCambiado({
  * @param previa última lectura conocida de la unidad (null si es la primera)
  * @param fecha fecha de la lectura nueva (ISO)
  * @param esHorometro true para autoelevadores (la lectura son horas)
+ * @param permitirRetroceso no rechazar una lectura MENOR a la anterior
  */
 export function validarLectura({
   valor,
   previa,
   fecha,
   esHorometro = false,
+  permitirRetroceso = false,
 }: {
   valor: number
   previa: LecturaPrevia | null
   fecha: string
   esHorometro?: boolean
+  permitirRetroceso?: boolean
 }): string | null {
   const unidad = esHorometro ? "hs" : "km"
   const que = esHorometro ? "El horómetro" : "El odómetro"
@@ -157,7 +160,15 @@ export function validarLectura({
 
   // El odómetro no retrocede. Cubre también el caso "faltan dígitos"
   // (se cargó 117 cuando la unidad marcaba 117.922).
-  if (valor < previa.odometro) {
+  //
+  // 🚨 En el egreso esto NO se aplica (`permitirRetroceso`): el número del portón
+  // y el del checklist los tipean dos personas distintas y difieren de a decenas
+  // de km todo el tiempo — 33 de los 253 egresos de agosto y septiembre quedaron
+  // por debajo de la última lectura del día anterior. Rechazarlos trabaría el
+  // registro de TML cada dos días sin arreglar ningún dato: el km actual sale
+  // igual de la lectura MÁS ALTA y las bajas ya se descartan al leer. Lo que sí
+  // hace daño es un número inflado, y para eso siguen el salto y el dígito.
+  if (valor < previa.odometro && !permitirRetroceso) {
     return `${que} no puede ser menor al último cargado: la unidad marcaba ${fmt(
       previa.odometro
     )} ${unidad} el ${fmtFecha(previa.fecha)}. Revisá el número.`
