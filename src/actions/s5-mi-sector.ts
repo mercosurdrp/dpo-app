@@ -757,7 +757,12 @@ export async function getEvidenciaSectorUrl(
       supabase
         .from("s5_acciones_evidencias")
         .select("id")
-        .contains("archivos", [{ path }])
+        // Como texto JSON a propósito: si se pasa un array, supabase-js lo
+        // serializa como array de Postgres (`cs.{[object Object]}`) y la
+        // consulta falla con "invalid input syntax for type json". Como la
+        // foto de ANTES también está en `archivo_path`, sólo se notaba en la
+        // de DESPUÉS, que vive únicamente en el jsonb.
+        .contains("archivos", JSON.stringify([{ path }]))
         .limit(1),
     ])
     const existe = (porColumna.data?.length ?? 0) > 0 || (porJsonb.data?.length ?? 0) > 0
