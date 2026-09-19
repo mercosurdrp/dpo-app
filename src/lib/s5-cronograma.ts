@@ -32,6 +32,7 @@ export const CRONOGRAMA_5S: Record<number, ItemCronograma[]> = {
     { id: "s1-pallets", texto: "Pallets vacíos apilados en la zona demarcada", frecuencia: "diaria" },
     { id: "s1-heladeras", texto: "Zona de heladeras: equipos alineados y limpios", frecuencia: "semanal" },
     { id: "s1-paredes", texto: "Paredes, columnas y telas de araña", frecuencia: "mensual" },
+    { id: "s1-desagues", texto: "Rejillas y desagües del sector despejados, sin residuos ni barro", frecuencia: "mensual" },
   ],
   2: [
     { id: "s2-pasillos", texto: "Pasillos y frente de estiba barridos; sendas libres", frecuencia: "diaria" },
@@ -39,6 +40,7 @@ export const CRONOGRAMA_5S: Record<number, ItemCronograma[]> = {
     { id: "s2-traspaletas", texto: "Traspaletas y elementos de limpieza en su lugar", frecuencia: "diaria" },
     { id: "s2-rechazos", texto: "Rechazos desarmados y en su zona; nada en el piso", frecuencia: "diaria" },
     { id: "s2-estanterias", texto: "Estanterías de stay: estantes limpios y señalización", frecuencia: "mensual" },
+    { id: "s2-desagues", texto: "Rejillas y desagües de picking despejados, sin residuos ni barro", frecuencia: "mensual" },
   ],
   3: [
     { id: "s3-pisos", texto: "Pisos sin residuos ni derrames", frecuencia: "diaria" },
@@ -46,6 +48,7 @@ export const CRONOGRAMA_5S: Record<number, ItemCronograma[]> = {
     { id: "s3-vacios", texto: "Vacíos y cajones clasificados y apilados; sin botellas ajenas", frecuencia: "semanal" },
     { id: "s3-capacho", texto: "Zona del capacho limpia y ordenada", frecuencia: "semanal" },
     { id: "s3-paredes", texto: "Paredes, portones y telas de araña", frecuencia: "mensual" },
+    { id: "s3-desagues", texto: "Rejillas y desagües de nave 3 despejados, sin residuos ni barro", frecuencia: "mensual" },
   ],
   4: [
     { id: "s4-tachos", texto: "Tachos exteriores vaciados", frecuencia: "diaria" },
@@ -54,6 +57,7 @@ export const CRONOGRAMA_5S: Record<number, ItemCronograma[]> = {
     { id: "s4-ajenos", texto: "Sin botellas ni cajones ajenos en el predio", frecuencia: "semanal" },
     { id: "s4-pasto", texto: "Corte de pasto y desmalezado", frecuencia: "quincenal" },
     { id: "s4-carteleria", texto: "Cartelería y demarcación exterior", frecuencia: "mensual" },
+    { id: "s4-desagues", texto: "Rejillas, desagües y canaletas pluviales despejados, sin residuos ni barro", frecuencia: "mensual" },
   ],
 }
 
