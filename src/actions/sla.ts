@@ -664,7 +664,7 @@ async function filaCapacidad(
 /**
  * Fila del SLA de peso límite del camión (`plan_ruteo_peso`), el techo que
  * complementa al SLA de capacidad (el piso): ningún viaje ruteado debe superar
- * el peso neto de producto permitido (PESO_LIMITE_KG = bruto − tara = 11000 kg;
+ * el peso neto de producto permitido (PESO_LIMITE_KG = bruto − tara = 11500 kg;
  * AE908DF 8500 kg).
  * Fuente: ocupacion_bodega_diaria.peso_total (kg reales de producto por viaje).
  * Un día cumple si NINGUNA patente ruteada superó el límite.
