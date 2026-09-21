@@ -5,6 +5,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -19,10 +20,11 @@ import type {
 
 const MES_CORTO = ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
-/** Colores de las tres series: azul = año anterior, gris punteado = presupuesto, verde = real. */
+/** Colores de las series: azul = año anterior, gris punteado = presupuesto, verde = real, ámbar = meta. */
 const COLOR_ANTERIOR = "#2563eb"
 const COLOR_PPTO = "#94a3b8"
 const COLOR_REAL = "#059669"
+const COLOR_META = "#d97706"
 
 function ppm(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return "—"
@@ -70,11 +72,14 @@ export function SustentabilidadSection({
                 <p className="text-xs text-muted-foreground">
                   Roturas y derrames descartados + producto vencido +
                   diferencias de inventario, sin faltantes de entrega (Handbook
-                  Almacén 3.4). Es merma final, la base del presupuesto: el
-                  FGLI del Árbol del Sueño sigue el Reporte DPO y mide volumen
-                  afectado, por eso es más alto y no se compara con éste.
-                  El presupuesto fija cuánto se prevé perder: la Q de la hoja
-                  ALMACEN PXQ pasada a HL sobre los HL que prevé vender.
+                  Almacén 3.4). Es merma final, la base del presupuesto, leída
+                  de la misma base del Reporte DPO que alimenta el Árbol del
+                  Sueño. El FGLI del árbol mide volumen afectado (incluye lo
+                  que entra a reempaque), por eso es más alto y no se compara
+                  con éste. El presupuesto fija cuánto se prevé perder: la Q
+                  de la hoja ALMACEN PXQ pasada a HL sobre los HL que prevé
+                  vender. La meta aplica la regla del árbol en esta base: 10 %
+                  mejor que el año anterior, con el año anterior de gatillo.
                 </p>
               </div>
             </div>
@@ -89,15 +94,24 @@ export function SustentabilidadSection({
 
           {fgli && (
             <>
-              {/* Los tres números */}
-              <div className="grid gap-3 sm:grid-cols-3">
+              {/* Los cuatro números */}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <Tile
                   titulo={`Real ${fgli.anio - 1}`}
                   valor={ppm(fgli.anteriorPpm)}
                   nota={
                     fgli.anteriorIncluye.length < 3
                       ? "roturas + vencidos (sin diferencias: el depósito no las reporta para ese año)"
-                      : "año completo"
+                      : "año completo · es el gatillo"
+                  }
+                />
+                <Tile
+                  titulo={`Meta ${fgli.anio}`}
+                  valor={ppm(fgli.metaPpm)}
+                  nota={
+                    fgli.metaPpm !== null
+                      ? `10 % mejor que el real ${fgli.anio - 1} (regla del Sueño)`
+                      : `sin real ${fgli.anio - 1} no hay meta`
                   }
                 />
                 <Tile
@@ -105,12 +119,18 @@ export function SustentabilidadSection({
                   valor={ppm(fgli.pptoAnualPpm)}
                   nota={
                     pct(fgli.pptoAnualPpm, fgli.anteriorPpm)
-                      ? `${pct(fgli.pptoAnualPpm, fgli.anteriorPpm)} contra el real ${fgli.anio - 1} · año completo`
+                      ? `${pct(fgli.pptoAnualPpm, fgli.anteriorPpm)} contra el real ${fgli.anio - 1}${
+                          fgli.metaPpm !== null && fgli.pptoAnualPpm !== null
+                            ? fgli.pptoAnualPpm <= fgli.metaPpm
+                              ? " · cumple la meta"
+                              : ` · ${pct(fgli.pptoAnualPpm, fgli.metaPpm)} sobre la meta`
+                            : ""
+                        } · año completo`
                       : "año completo"
                   }
                   tono={
                     fgli.pptoAnualPpm !== null && fgli.anteriorPpm !== null
-                      ? fgli.pptoAnualPpm <= fgli.anteriorPpm
+                      ? fgli.pptoAnualPpm <= (fgli.metaPpm ?? fgli.anteriorPpm)
                         ? "ok"
                         : "mal"
                       : undefined
@@ -161,6 +181,21 @@ export function SustentabilidadSection({
                       labelClassName="capitalize"
                       contentStyle={{ fontSize: 12 }}
                     />
+                    {fgli.metaPpm !== null && (
+                      <ReferenceLine
+                        y={Math.round(fgli.metaPpm)}
+                        stroke={COLOR_META}
+                        strokeDasharray="6 3"
+                        strokeWidth={1.5}
+                        ifOverflow="extendDomain"
+                        label={{
+                          value: `meta ${ppm(fgli.metaPpm)}`,
+                          position: "insideTopRight",
+                          fontSize: 10,
+                          fill: COLOR_META,
+                        }}
+                      />
+                    )}
                     <Line type="monotone" dataKey="anterior" name="anterior" stroke={COLOR_ANTERIOR} strokeWidth={2} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
                     <Line type="monotone" dataKey="presupuesto" name="presupuesto" stroke={COLOR_PPTO} strokeDasharray="4 3" strokeWidth={2} dot={false} isAnimationActive={false} />
                     <Line type="monotone" dataKey="real" name="real" stroke={COLOR_REAL} strokeWidth={2} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
@@ -171,13 +206,16 @@ export function SustentabilidadSection({
                 <LeyendaItem color={COLOR_ANTERIOR} etiqueta={`Real ${fgli.anio - 1}`} />
                 <LeyendaItem color={COLOR_PPTO} etiqueta={`Presupuesto ${fgli.anio}`} punteada />
                 <LeyendaItem color={COLOR_REAL} etiqueta={`Real ${fgli.anio}`} />
+                {fgli.metaPpm !== null && (
+                  <LeyendaItem color={COLOR_META} etiqueta={`Meta ${fgli.anio} (anual)`} punteada />
+                )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Cada mes en la misma vara: lo que se perdió el mismo mes de{" "}
-                {fgli.anio - 1} (roturas + vencidos, sobre los HL de venta del
-                depósito), lo que el presupuesto prevé perder y el real de{" "}
-                {fgli.anio}. Los meses de verde por debajo de la punteada le
-                ganaron al presupuesto; por debajo del azul, al año anterior.
+                Cada mes en la misma vara y de la misma fuente: lo que se
+                perdió el mismo mes de {fgli.anio - 1}, lo que el presupuesto
+                prevé perder, el real de {fgli.anio} y la meta anual. Los meses
+                de verde por debajo de la punteada gris le ganaron al
+                presupuesto; por debajo del azul, al año anterior.
               </p>
 
               {/* Composición por pata */}
@@ -220,9 +258,10 @@ export function SustentabilidadSection({
                 La Q del presupuesto está en bultos; se pasa a HL con el mix
                 real del año reportado por el depósito. Diferencias de
                 inventario usa el factor de roturas porque el depósito no
-                reporta bultos para esa pata. El real {fgli.anio} es la merma
-                final de la serie diaria del depósito (HL entregados como
-                base); el presupuesto divide por los HL que preveía vender.
+                reporta bultos para esa pata. Los reales de {fgli.anio - 1} y{" "}
+                {fgli.anio} son la merma final de la base del Reporte DPO del
+                depósito, sobre los HL despachados en concepto de venta; el
+                presupuesto divide por los HL que preveía vender.
               </p>
               {data?.avisos && data.avisos.length > 0 && (
                 <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-800">

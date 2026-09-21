@@ -2,7 +2,7 @@
 
 import { requireAuth } from "@/lib/session"
 import { getPptoCantidades } from "@/actions/presupuesto-generador"
-import { fetchFgliMermaFinalResumen } from "@/lib/sueno/externos"
+import { fetchMermaFinalDelAnio, type MermaFinalMes } from "@/lib/sueno/externos"
 
 /**
  * Presupuesto y sustentabilidad: qué compromete el presupuesto sobre el FGLI
@@ -20,7 +20,8 @@ import { fetchFgliMermaFinalResumen } from "@/lib/sueno/externos"
  * base que cierra con el presupuesto, cuya Q son bultos que se dan de baja.
  * NO es la del Árbol del Sueño: desde el 17/09/2026 el árbol sigue el Reporte
  * DPO (volumen AFECTADO, con todo lo que entra a reempaque) y da ~3× más; por
- * eso esta sección no muestra la meta del Sueño, no sería comparable. El presupuesto tiene Q para las tres patas (ROTURAS Y
+ * eso esta sección no muestra el FGLI ni la meta del Sueño, no serían
+ * comparables. El presupuesto tiene Q para las tres patas (ROTURAS Y
  * DERRAMES, PRODUCTO VENCIDO, DIFERENCIAS DE INVENTARIO) y también para
  * FALTANTES, que queda afuera a propósito.
  *
@@ -30,10 +31,23 @@ import { fetchFgliMermaFinalResumen } from "@/lib/sueno/externos"
  * que se usa el factor de roturas (producto entero, no envase chico como los
  * vencidos). Es un supuesto y está dicho en la tarjeta.
  *
- * 🚨 Denominadores: el presupuesto divide por los HL que preveía vender (EERR,
- * fila "Total en HL"); el real del año divide por los HL entregados del
- * depósito; el año anterior por los HL de venta del tablero del depósito. Son
- * series parecidas (±10 %) y es lo que hay: sólo el EERR tiene presupuesto.
+ * 🚨 Fuente de los reales (desde el 2026-09-21): el bloque `merma` de la base
+ * del Reporte DPO en `/api/indicadores`, la MISMA llamada que alimenta el
+ * FGLI del Árbol del Sueño, para el año y para el anterior. Roturas = rotura
+ * de almacén descartada + rotura de entrega (igual que #53 del reporte, pero
+ * en merma final). Denominador = #28 HL despachados en concepto de venta,
+ * el mismo del árbol. Antes 2025 salía del módulo de pérdidas (÷ HL de
+ * venta) y 2026 de la serie diaria: dos endpoints, dos denominadores.
+ *
+ * 🚨 Denominador del presupuesto: los HL que preveía vender (EERR, fila
+ * "Total en HL"). Es parecido a #28 (±10 %) y es lo que hay: sólo el EERR
+ * tiene presupuesto.
+ *
+ * 🚨 Meta: la tarjeta NO muestra el FGLI ni la meta del Sueño (volumen
+ * afectado, otra base: ~3× más). Aplica la MISMA regla del árbol en esta
+ * base: gatillo = real del año anterior, meta = 10 % mejor. Con eso se ve
+ * si el presupuesto pide lo mismo que la meta (2026: ppto 1.005 vs meta
+ * ~1.000). Decisión de Sebastián, 2026-09-21.
  */
 
 const PERDIDAS_URL =
@@ -42,11 +56,11 @@ const TIMEOUT_MS = 8000
 
 type Result<T> = { data: T } | { error: string }
 
-/** Pata del FGLI ← concepto de la hoja ALMACEN PXQ ← grupo del depósito. */
+/** Pata del FGLI ← concepto de la hoja ALMACEN PXQ. */
 const PATAS = [
-  { key: "roturas", label: "Roturas y derrames", concepto: "ROTURAS Y DERRAMES", grupo: "Roturas y Derrames" },
-  { key: "vencidos", label: "Producto vencido", concepto: "PRODUCTO VENCIDO", grupo: "Vencidos" },
-  { key: "diferencias", label: "Diferencias de inventario", concepto: "DIFERENCIAS DE INVENTARIO", grupo: null },
+  { key: "roturas", label: "Roturas y derrames", concepto: "ROTURAS Y DERRAMES" },
+  { key: "vencidos", label: "Producto vencido", concepto: "PRODUCTO VENCIDO" },
+  { key: "diferencias", label: "Diferencias de inventario", concepto: "DIFERENCIAS DE INVENTARIO" },
 ] as const
 type PataKey = (typeof PATAS)[number]["key"]
 
@@ -56,7 +70,7 @@ export interface SustentabilidadMes {
   pptoPpm: number | null
   /** ppm real del año (merma final). null si el mes no cerró / sin dato. */
   realPpm: number | null
-  /** ppm real del mismo mes del año anterior (roturas + vencidos). */
+  /** ppm real del mismo mes del año anterior (merma final, misma base). */
   anteriorPpm: number | null
 }
 
@@ -80,7 +94,7 @@ export interface SustentabilidadFgli {
   anio: number
   /** FGLI real del año anterior, año completo. null si no hay dato. */
   anteriorPpm: number | null
-  /** Qué patas entran en el año anterior (diferencias no siempre está). */
+  /** Qué patas entran en el año anterior. */
   anteriorIncluye: PataKey[]
   /** FGLI que el presupuesto prevé para el año completo. */
   pptoAnualPpm: number | null
@@ -88,6 +102,10 @@ export interface SustentabilidadFgli {
   pptoYtdPpm: number | null
   /** FGLI real del año a la fecha (merma final). */
   realYtdPpm: number | null
+  /** Meta en esta base: 10 % mejor que el real del año anterior (regla del Sueño). */
+  metaPpm: number | null
+  /** Gatillo: el real del año anterior (si no se le gana, rojo). */
+  gatilloPpm: number | null
   /** Meses con real, para decir "a la fecha" con precisión. */
   mesesConReal: number
   meses: SustentabilidadMes[]
@@ -109,11 +127,10 @@ interface PerdidaItem {
   hl?: number
 }
 
+/** Sólo se usa para el factor HL/bulto: los HL reales salen de la base del Reporte DPO. */
 interface PerdidasEndpoint {
   actual: Record<string, PerdidaItem[]>
   anterior: Record<string, PerdidaItem[]>
-  /** año → mes → HL de venta. */
-  hlVentas: Record<string, Record<string, number>>
 }
 
 async function fetchPerdidas(): Promise<PerdidasEndpoint> {
@@ -139,15 +156,25 @@ async function fetchPerdidas(): Promise<PerdidasEndpoint> {
     return {
       actual: leer(d?.data_actual),
       anterior: leer(d?.data_anterior),
-      hlVentas: (d?.hl_ventas ?? {}) as Record<string, Record<string, number>>,
     }
   } finally {
     clearTimeout(t)
   }
 }
 
-function sumaHl(items: PerdidaItem[], grupo: string): number {
-  return items.filter((x) => x.grupo === grupo).reduce((a, x) => a + (x.hl ?? 0), 0)
+/** Regla del Sueño para estos KPIs: meta = 10 % mejor que el año anterior. */
+const META_MEJORA = 0.1
+
+/** HL de una pata en merma final. Roturas = almacén descartada + entrega. */
+function hlPata(m: MermaFinalMes, pata: PataKey): number {
+  if (pata === "roturas") return m.roturasAlmacen + m.roturasEntrega
+  if (pata === "vencidos") return m.vencidos
+  return m.diferencias
+}
+
+/** FGLI en HL: roturas + vencidos + diferencias, sin faltantes de entrega. */
+function mermaFinal(m: MermaFinalMes): number {
+  return hlPata(m, "roturas") + hlPata(m, "vencidos") + hlPata(m, "diferencias")
 }
 
 /**
@@ -176,10 +203,11 @@ export async function getSustentabilidadPresupuesto(
     await requireAuth()
     const avisos: string[] = []
 
-    const [cantRes, perdidasRes, realRes] = await Promise.allSettled([
+    const [cantRes, perdidasRes, realRes, antRes] = await Promise.allSettled([
       getPptoCantidades(anio),
       fetchPerdidas(),
-      fetchFgliMermaFinalResumen(anio),
+      fetchMermaFinalDelAnio(anio),
+      fetchMermaFinalDelAnio(anio - 1),
     ])
 
     if (cantRes.status === "rejected") {
@@ -190,9 +218,13 @@ export async function getSustentabilidadPresupuesto(
     }
     const ppto = cantRes.value.data
     const perdidas = perdidasRes.status === "fulfilled" ? perdidasRes.value : null
-    if (!perdidas) avisos.push("El tablero del depósito no respondió: sin año anterior ni factor HL/bulto real.")
-    const real = realRes.status === "fulfilled" ? realRes.value : null
-    if (!real) avisos.push("El FGLI real (merma final, serie diaria del depósito) no está disponible ahora.")
+    if (!perdidas) avisos.push("El módulo de pérdidas del depósito no respondió: sin factor HL/bulto real.")
+    const soloConDato = (r: PromiseSettledResult<(MermaFinalMes | null)[]>): MermaFinalMes[] =>
+      r.status === "fulfilled" ? r.value.filter((m): m is MermaFinalMes => m !== null) : []
+    const real = soloConDato(realRes)
+    const anterior = soloConDato(antRes)
+    if (real.length === 0) avisos.push(`La merma final ${anio} (base del Reporte DPO del depósito) no está disponible ahora.`)
+    if (anterior.length === 0) avisos.push(`La merma final ${anio - 1} (base del Reporte DPO del depósito) no está disponible ahora.`)
 
     // ── Factores HL/bulto por pata ──
     const factorRot =
@@ -222,14 +254,8 @@ export async function getSustentabilidadPresupuesto(
       } else {
         avisos.push(`${p.label}: el presupuesto no tiene fila Q en ALMACEN PXQ.`)
       }
-      const hlAnterior =
-        perdidas && p.grupo
-          ? Object.values(perdidas.anterior).reduce((a, items) => a + sumaHl(items, p.grupo!), 0)
-          : null
-      const hlReal =
-        perdidas && p.grupo
-          ? Object.values(perdidas.actual).reduce((a, items) => a + sumaHl(items, p.grupo!), 0)
-          : null
+      const hlAnterior = anterior.length ? anterior.reduce((a, m) => a + hlPata(m, p.key), 0) : null
+      const hlReal = real.length ? real.reduce((a, m) => a + hlPata(m, p.key), 0) : null
       return {
         key: p.key,
         label: p.label,
@@ -242,41 +268,27 @@ export async function getSustentabilidadPresupuesto(
       }
     })
 
-    // Diferencias reales del año: el resumen de merma final trae en `bultos` el
-    // "vencidos + diferencias" de cada mes; restando vencidos queda diferencias.
-    if (real) {
-      const venReal = patas.find((p) => p.key === "vencidos")?.hlReal ?? 0
-      const venMasDif = real.meses.reduce((a, m) => a + (m.bultos ?? 0), 0)
-      const dif = patas.find((p) => p.key === "diferencias")
-      if (dif && venMasDif > 0) dif.hlReal = Math.max(0, venMasDif - venReal)
-    }
-
     // ── Volumen presupuestado (denominador) ──
     const volPorMes = new Map(ppto.volumen.map((v) => [v.mes, v]))
 
-    // ── Año anterior: roturas + vencidos ÷ HL de venta del tablero ──
-    const anteriorIncluye: PataKey[] = ["roturas", "vencidos"]
-    const hlVentasAnt = perdidas?.hlVentas?.[String(anio - 1)] ?? {}
+    // ── Año anterior: merma final ÷ #28, mes a mes y año completo ──
+    const anteriorIncluye: PataKey[] = ["roturas", "vencidos", "diferencias"]
     let antPerd = 0
     let antVol = 0
     const anteriorPorMes = new Map<number, number>()
-    if (perdidas) {
-      for (const [mesStr, items] of Object.entries(perdidas.anterior)) {
-        const mes = Number(mesStr)
-        const vol = Number(hlVentasAnt[mesStr] ?? 0)
-        const perd = sumaHl(items, "Roturas y Derrames") + sumaHl(items, "Vencidos")
-        if (vol > 0) {
-          antPerd += perd
-          antVol += vol
-          anteriorPorMes.set(mes, (perd / vol) * 1e6)
-        }
-      }
+    for (const m of anterior) {
+      const perd = mermaFinal(m)
+      antPerd += perd
+      antVol += m.entregado
+      anteriorPorMes.set(m.mes, (perd / m.entregado) * 1e6)
     }
+    const anteriorPpm = antVol > 0 ? (antPerd / antVol) * 1e6 : null
 
     // ── Serie mensual ──
-    const realPorMes = new Map<number, { ppm: number; hl: number }>()
-    for (const m of real?.meses ?? []) {
-      if (m.valor !== null && m.registros !== null) realPorMes.set(m.mes, { ppm: m.valor, hl: m.registros })
+    const realPorMes = new Map<number, { ppm: number; hl: number; ent: number }>()
+    for (const m of real) {
+      const perd = mermaFinal(m)
+      realPorMes.set(m.mes, { ppm: (perd / m.entregado) * 1e6, hl: perd, ent: m.entregado })
     }
     const meses: SustentabilidadMes[] = []
     let pptoPerdAnual = 0
@@ -304,26 +316,25 @@ export async function getSustentabilidadPresupuesto(
       })
     }
 
-    // Real YTD como razón de sumas: Σ HL perdidos ÷ Σ HL entregados, con el
-    // entregado de cada mes despejado de su ppm.
+    // Real YTD como razón de sumas: Σ HL perdidos ÷ Σ HL entregados.
     let realPerd = 0
     let realEnt = 0
-    for (const { ppm, hl } of realPorMes.values()) {
-      if (ppm > 0) {
-        realPerd += hl
-        realEnt += (hl / ppm) * 1e6
-      }
+    for (const { hl, ent } of realPorMes.values()) {
+      realPerd += hl
+      realEnt += ent
     }
 
     return {
       data: {
         fgli: {
           anio,
-          anteriorPpm: antVol > 0 ? (antPerd / antVol) * 1e6 : null,
+          anteriorPpm,
           anteriorIncluye,
           pptoAnualPpm: pptoVolAnual > 0 ? (pptoPerdAnual / pptoVolAnual) * 1e6 : null,
           pptoYtdPpm: pptoVolYtd > 0 ? (pptoPerdYtd / pptoVolYtd) * 1e6 : null,
           realYtdPpm: realEnt > 0 ? (realPerd / realEnt) * 1e6 : null,
+          metaPpm: anteriorPpm !== null ? anteriorPpm * (1 - META_MEJORA) : null,
+          gatilloPpm: anteriorPpm,
           mesesConReal: realPorMes.size,
           meses,
           patas,

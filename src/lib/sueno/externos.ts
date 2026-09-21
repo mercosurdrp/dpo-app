@@ -17,8 +17,9 @@
  * depósito: la rotura de almacén es el volumen AFECTADO (lo que entra a
  * reempaque aunque se recupere), así que WQI + DQI = TQI y TQI + vencidos +
  * diferencias de inventario = FGLI. Antes (14/09 al 17/09) medían merma final
- * y daban ~3× menos; esa versión queda en `fetchFgliMermaFinalResumen` para
- * la sección de presupuesto, que compara contra bultos descartados.
+ * y daban ~3× menos; esa base queda en `fetchMermaFinalDelAnio` (el bloque
+ * `merma` de la misma llamada) para la sección de presupuesto, que compara
+ * contra bultos descartados.
  *
  * 🚨 Cada entrada de acá es UN fetch más en el render del home (el árbol NO
  * está bajo Suspense y corta a los 5s), así que el endpoint tiene que estar
@@ -37,10 +38,6 @@ const DEPOSITO_API_BASE =
   process.env.DEPOSITO_API_URL ?? "https://deposito-regionpampeana.vercel.app"
 
 const TIMEOUT_MS = 5000
-// `/api/indicadores/serie-diaria` re-arma el mes (movimientos + Sheets) y mide
-// 1,5-5 s en caliente: con el timeout genérico se caía de a ratos. Mismo margen
-// que usa `warehouse/auto-indicadores.ts`.
-const SERIE_DIARIA_TIMEOUT_MS = 20_000
 // `/api/indicadores` arma el mes completo del tablero (~20 KB, 1-3 s en frío).
 const INDICADORES_TIMEOUT_MS = 10_000
 const TTL_MS = 60 * 60 * 1000 // 1h: el blob del WMS se regenera 1 vez al día
@@ -279,127 +276,52 @@ const r1 = (n: number) => Math.round(n * 10) / 10
 const r2 = (n: number) => Math.round(n * 100) / 100
 
 /**
- * Pérdidas del mes en MERMA FINAL (HL descartados) leídas de la serie diaria
- * del depósito. Ya NO es la fuente del árbol (ver `fetchDpoBase`): la usa la
- * sección "Presupuesto y sustentabilidad", que compara contra la Q en bultos
- * del presupuesto (bultos que se dan de baja, no volumen afectado).
+ * Pérdidas del mes en MERMA FINAL (HL que se dieron de baja), leídas del
+ * bloque `merma` que trae cada mes de la base del Reporte DPO en
+ * `/api/indicadores` (la MISMA llamada que alimenta TQI y FGLI del árbol).
+ * Ya NO es la fuente del árbol: la usa la sección "Presupuesto y
+ * sustentabilidad", que compara contra la Q en bultos del presupuesto
+ * (bultos que se dan de baja, no volumen afectado).
  *
- * No hay resumen anual en el depósito: se lee `/api/indicadores/serie-diaria`
- * de cada mes del año (~100 KB y 1,5-5 s cada uno, en paralelo, cacheados 1 h
- * y con single-flight, así TQI y FGLI comparten los mismos pedidos). Las
- * series de pérdida vienen ACUMULADAS en el mes (MTD): el total del mes es el
- * último día con dato. El HL entregado viene por día y se suma. Un mes que no
- * responde queda en null, y con él el acumulado anual: la card cae al valor
- * persistido en la tabla, que el cron de respaldo escribe a diario.
+ * Hasta el 2026-09-21 se leía `/api/indicadores/serie-diaria` mes por mes
+ * (12 pedidos de ~100 KB); el bloque `merma` trae los mismos HL (verificado
+ * ene/may/ago 2026: idénticos al centésimo) en una llamada, y además para
+ * el año anterior, con el mismo denominador #28 que usa el árbol.
  */
-interface SerieDiariaPerdidas {
-  /** Roturas almacén + distribución que se DESCARTARON (merma final), MTD. */
-  roturas?: Record<string, number | null>
-  vencidos?: Record<string, number | null>
-  /** Diferencia NETA del recuento mensual; entra entera al cierre del conteo. */
-  diferencias_hl?: Record<string, number | null>
-  hl_entregado_dia?: Record<string, number | null>
-}
-
-interface PerdidasMes {
+export interface MermaFinalMes {
   mes: number
-  roturas: number
+  /** Rotura de almacén descartada (sin lo que entra a reempaque). */
+  roturasAlmacen: number
+  /** Rotura de entrega (camión / PDV) descartada. */
+  roturasEntrega: number
   vencidos: number
+  /** Diferencia de inventario (|faltantes| + |sobrantes| de la grilla DPO). */
   diferencias: number
+  /** Faltantes de entrega: NO entran al FGLI, quedan para el SCL. */
+  faltantes: number
+  /** #28 HL despachados en concepto de venta. */
   entregado: number
 }
 
-function ultimoConDato(serie: Record<string, number | null> | undefined): number {
-  if (!serie) return 0
-  let ultimo = 0
-  for (const fecha of Object.keys(serie).sort()) {
-    const v = serie[fecha]
-    if (v != null && Number.isFinite(v)) ultimo = v
-  }
-  return ultimo
-}
-
-/** Un elemento por mes del año hasta el mes en curso; null = mes sin dato. */
-async function fetchPerdidasDelAnio(anio: number): Promise<(PerdidasMes | null)[]> {
-  const hoy = new Date()
-  if (anio > hoy.getFullYear()) return []
-  const ultimoMes = anio < hoy.getFullYear() ? 12 : hoy.getMonth() + 1
-  const series = await Promise.all(
-    Array.from({ length: ultimoMes }, (_, i) =>
-      fetchJsonCached<SerieDiariaPerdidas>(
-        `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${anio}&month=${i + 1}`,
-        SERIE_DIARIA_TIMEOUT_MS,
-      ),
-    ),
-  )
-  return series.map((s, i) => {
-    const entregado = Object.values(s?.hl_entregado_dia ?? {}).reduce<number>(
-      (acc, v) => acc + (v ?? 0),
-      0,
-    )
-    if (!s || entregado <= 0) return null
+/** Un elemento por mes (1..12); null = mes sin #28 (no cerró o el depósito no respondió). */
+export async function fetchMermaFinalDelAnio(anio: number): Promise<(MermaFinalMes | null)[]> {
+  const j = await fetchDpoBase(anio)
+  const actual = j?.dpo_base?.actual
+  return Array.from({ length: 12 }, (_, i) => {
+    const m = actual?.[String(i + 1)]
+    const entregado = m?.n28 ?? 0
+    const mm = m?.merma
+    if (!m || !mm || entregado <= 0) return null
     return {
       mes: i + 1,
-      roturas: ultimoConDato(s.roturas),
-      vencidos: ultimoConDato(s.vencidos),
-      diferencias: ultimoConDato(s.diferencias_hl),
+      roturasAlmacen: mm.rot_alm_hl ?? 0,
+      roturasEntrega: mm.rot_ent_hl ?? 0,
+      vencidos: mm.venc_hl ?? 0,
+      diferencias: mm.dif_hl ?? 0,
+      faltantes: mm.falt_hl ?? 0,
       entregado,
     }
   })
-}
-
-/**
- * Arma un resumen en PPM = Σ HL perdidos ÷ Σ HL entregados × 1M (mes a mes y
- * acumulado del año). `perdido` elige qué pérdidas suman; `detalle2` es el 2º
- * dato de cada mes para el modal.
- */
-function resumenPpm(
-  anio: number,
-  meses: (PerdidasMes | null)[],
-  perdido: (m: PerdidasMes) => number,
-  detalle2: (m: PerdidasMes) => number,
-): ResumenExterno | null {
-  if (meses.length === 0 || meses.every((m) => m == null)) return null
-  let perdidoAnual = 0
-  let entregadoAnual = 0
-  const completo = meses.every((m) => m != null)
-  const filas: ResumenExternoMes[] = meses.map((m, i) => {
-    if (!m) return { mes: i + 1, valor: null, registros: null }
-    const p = perdido(m)
-    perdidoAnual += p
-    entregadoAnual += m.entregado
-    return {
-      mes: m.mes,
-      valor: r1((p / m.entregado) * 1_000_000),
-      registros: r2(p),
-      bultos: r2(detalle2(m)),
-    }
-  })
-  return {
-    anio,
-    promedio_anual:
-      completo && entregadoAnual > 0
-        ? r1((perdidoAnual / entregadoAnual) * 1_000_000)
-        : null,
-    registros_anual: r2(perdidoAnual),
-    generado_en: null,
-    meses: filas,
-  }
-}
-
-/**
- * FGLI en merma final = (HL rotos descartados + vencidos + diferencia NETA de
- * inventario) ÷ HL entregados × 1M. Base del Handbook Almacén 3.4 y del
- * presupuesto; no es la del árbol.
- */
-export async function fetchFgliMermaFinalResumen(anio: number): Promise<ResumenExterno | null> {
-  const meses = await fetchPerdidasDelAnio(anio)
-  return resumenPpm(
-    anio,
-    meses,
-    (m) => m.roturas + m.vencidos + m.diferencias,
-    (m) => m.vencidos + m.diferencias,
-  )
 }
 
 /**
@@ -430,6 +352,14 @@ interface DpoBaseMes {
   n53?: number | null
   tqi_hl?: number | null
   fgli_hl?: number | null
+  /** Merma final del mes (HL dados de baja), por concepto. */
+  merma?: {
+    rot_alm_hl?: number | null
+    rot_ent_hl?: number | null
+    venc_hl?: number | null
+    dif_hl?: number | null
+    falt_hl?: number | null
+  } | null
 }
 interface IndicadoresDeposito {
   dpo_base?: {
