@@ -19,6 +19,11 @@ import type {
 
 const MES_CORTO = ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
+/** Colores de las tres series: azul = año anterior, gris punteado = presupuesto, verde = real. */
+const COLOR_ANTERIOR = "#2563eb"
+const COLOR_PPTO = "#94a3b8"
+const COLOR_REAL = "#059669"
+
 function ppm(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return "—"
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(n)
@@ -156,17 +161,23 @@ export function SustentabilidadSection({
                       labelClassName="capitalize"
                       contentStyle={{ fontSize: 12 }}
                     />
-                    <Line type="monotone" dataKey="anterior" name="anterior" stroke="#cbd5e1" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
-                    <Line type="monotone" dataKey="presupuesto" name="presupuesto" stroke="#94a3b8" strokeDasharray="4 3" strokeWidth={2} dot={false} isAnimationActive={false} />
-                    <Line type="monotone" dataKey="real" name="real" stroke="#059669" strokeWidth={2} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                    <Line type="monotone" dataKey="anterior" name="anterior" stroke={COLOR_ANTERIOR} strokeWidth={2} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
+                    <Line type="monotone" dataKey="presupuesto" name="presupuesto" stroke={COLOR_PPTO} strokeDasharray="4 3" strokeWidth={2} dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="real" name="real" stroke={COLOR_REAL} strokeWidth={2} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-700">
+                <LeyendaItem color={COLOR_ANTERIOR} etiqueta={`Real ${fgli.anio - 1}`} />
+                <LeyendaItem color={COLOR_PPTO} etiqueta={`Presupuesto ${fgli.anio}`} punteada />
+                <LeyendaItem color={COLOR_REAL} etiqueta={`Real ${fgli.anio}`} />
+              </div>
               <p className="text-xs text-muted-foreground">
-                Línea punteada: lo que el presupuesto prevé perder cada mes.
-                Verde: el real del año. Gris claro: el mismo mes del año
-                anterior. Los meses de verde por debajo de la punteada son los
-                que le ganaron al presupuesto.
+                Cada mes en la misma vara: lo que se perdió el mismo mes de{" "}
+                {fgli.anio - 1} (roturas + vencidos, sobre los HL de venta del
+                depósito), lo que el presupuesto prevé perder y el real de{" "}
+                {fgli.anio}. Los meses de verde por debajo de la punteada le
+                ganaron al presupuesto; por debajo del azul, al año anterior.
               </p>
 
               {/* Composición por pata */}
@@ -225,6 +236,33 @@ export function SustentabilidadSection({
         </CardContent>
       </Card>
     </section>
+  )
+}
+
+function LeyendaItem({
+  color,
+  etiqueta,
+  punteada,
+}: {
+  color: string
+  etiqueta: string
+  punteada?: boolean
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <svg width="22" height="8" aria-hidden="true">
+        <line
+          x1="1"
+          y1="4"
+          x2="21"
+          y2="4"
+          stroke={color}
+          strokeWidth="2"
+          strokeDasharray={punteada ? "4 3" : undefined}
+        />
+      </svg>
+      {etiqueta}
+    </span>
   )
 }
 
