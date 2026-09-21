@@ -64,6 +64,7 @@ import { SeccionRoturasCalle } from "@/components/reuniones/seccion-roturas-call
 import { SeccionFeedbackEmpleados } from "@/components/reuniones/seccion-feedback-empleados"
 import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
 import { TareasOperariosBloque } from "@/components/reuniones/tareas-operarios-bloque"
+import { ArbolFueraDeGatilloBloque } from "@/components/reuniones/arbol-fuera-de-gatillo-bloque"
 import { SeccionAvanceVenta } from "@/components/reuniones/seccion-avance-venta"
 import { SeccionFrescura } from "@/components/reuniones/seccion-frescura"
 import { SeccionSobrestock } from "@/components/reuniones/seccion-sobrestock"
@@ -1771,6 +1772,8 @@ export function ReunionDetallePageClient({
           )}
           {/* Tareas asignadas a operarios (Registro de tareas / Mis tareas) — solo Warehouse */}
           {detalle.tipo === "warehouse" && <TareasOperariosBloque />}
+          {/* Indicadores del árbol de KPI del almacén que no llegan al gatillo — solo Warehouse */}
+          {detalle.tipo === "warehouse" && <ArbolFueraDeGatilloBloque />}
         </CardContent>
       </Card>
 
