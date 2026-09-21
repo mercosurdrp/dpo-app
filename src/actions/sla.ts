@@ -1917,8 +1917,9 @@ async function filaCarga(
 export async function getCumplimientoMes(
   year: number,
   month: number,
-  // El SLA de peso límite se calcula SOLO a pedido (reunión de Logística); no se
-  // suma a la matriz general de /sla ni a la reunión Ventas-Logística.
+  // El SLA de peso límite se calcula a pedido: lo piden la reunión de Logística
+  // y, desde el 21/09/2026, la solapa Cumplimientos de /sla. Siguen sin pedirlo
+  // la reunión Ventas-Logística y el Cuadro Mensual (no mueve ese promedio).
   incluirPeso = false,
 ): Promise<Result<CumplimientoMes>> {
   try {

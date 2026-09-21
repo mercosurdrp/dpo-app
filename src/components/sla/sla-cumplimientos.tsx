@@ -52,7 +52,7 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
     const [y, m] = value.split("-").map(Number)
     if (!y || !m) return
     start(async () => {
-      const r = await getCumplimientoMes(y, m)
+      const r = await getCumplimientoMes(y, m, true) // con peso límite, como la carga inicial
       if ("error" in r) {
         toast.error(r.error)
         return

@@ -26,7 +26,9 @@ export default async function SlaPage() {
   let cumplimiento: CumplimientoMes | null = null
   if (!IS_MISIONES) {
     const { year, month } = mesActualARG()
-    const r = await getCumplimientoMes(year, month)
+    // Desde el 21/09/2026 la solapa Cumplimientos también muestra el SLA de
+    // peso límite de camiones (antes sólo salía en la reunión de Logística).
+    const r = await getCumplimientoMes(year, month, true)
     if (!("error" in r)) cumplimiento = r.data
   }
 
