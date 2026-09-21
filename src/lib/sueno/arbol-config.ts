@@ -103,7 +103,11 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // permitía la meta anual. Real 2026 ene-sep: TQI 1.555, FGLI 1.723;
   // proyección con un Q4 igual al de 2025: 1.694 / 1.856. Ver
   // 20260918120000_sueno_tqi_fgli_metas_mejorar_2025.sql.
-  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 2100 },
+  // FGLI 2026-09-21: meta 1.700 / gatillo 1.900 (Sebastián). La de 2.100 quedó
+  // holgada: al ritmo de agosto el año cierra en ~1.500 y ni con un Q4 como el
+  // de 2025 pasa de ~1.840; enero (4.321, la caída de una paleta) es lo que
+  // sostiene el acumulado. Ver 20260921150000_sueno_fgli_meta_1700.sql.
+  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 1700 },
   { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.4 },
 
   // ---- Operacional ----
