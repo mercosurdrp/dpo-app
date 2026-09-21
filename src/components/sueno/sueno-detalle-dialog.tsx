@@ -82,6 +82,11 @@ function DetalleContent({ nodo }: { nodo: SuenoNodo }) {
             <span className="font-medium text-slate-700">
               {nodo.meta == null ? "—" : formatValor(nodo.meta, nodo.unidad)}
             </span>
+            {nodo.metaOrigen === "ly" && (
+              <span className="ml-1 text-xs text-slate-400">
+                · mejorar {nodo.anio - 1} (mismo período)
+              </span>
+            )}
           </p>
           <p className="flex items-center gap-1.5">
             <span

@@ -28,7 +28,7 @@ async function main() {
 
   function imprimir(key: string, sangria = 0) {
     const nodo = ARBOL_SUENO.find((n) => n.key === key)!
-    const val = externos.get(key)
+    const val = externos.get(key)?.valor
     const { meta, gatillo } = METAS_2026[key] ?? { meta: nodo.metaDefault ?? 0, gatillo: null }
     const estado = estadoSemaforo(val ?? null, meta, gatillo, nodo.mejorSi)
     const pad = "  ".repeat(sangria)

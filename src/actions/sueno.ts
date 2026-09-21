@@ -217,7 +217,7 @@ async function computarArbolSueno(
                     ? (cerradoHorario?.pctDentro ?? null)
                     : cfg.key === "cerrado_fuera_horario"
                       ? (cerradoHorario?.pctFuera ?? null)
-                      : externos.get(cfg.key)
+                      : externos.get(cfg.key)?.valor
       const mensualYtd = esKpiManualMensual(cfg.key)
         ? agregarMensual(cfg.key, (mensuales.get(cfg.key) ?? []).map((m) => m.valor))
         : null
@@ -225,18 +225,27 @@ async function computarArbolSueno(
         externoVal !== undefined && externoVal !== null
           ? externoVal
           : (mensualYtd ?? row?.valor_ytd ?? null)
-      const gatillo = row?.gatillo ?? null
+      // TQI y FGLI (2026-09-21, pedido del usuario): la meta es MEJORAR EL
+      // AÑO ANTERIOR, como en el Reporte DPO y en /indicadores del depósito:
+      // el mismo KPI del LY sobre los mismos meses, en PPM (ya es relativo a
+      // los HL vendidos, así que acompaña el volumen). Se calcula en vivo; si
+      // el depósito no tiene el LY, queda la meta cargada en la tabla. Sin
+      // gatillo: verde si le gana al año pasado, rojo si no.
+      const metaLy = externos.get(cfg.key)?.metaLy ?? null
+      const metaFinal = metaLy ?? meta
+      const gatillo = metaLy != null ? null : (row?.gatillo ?? null)
       const mejorSi = row?.mejor_si ?? cfg.mejorSi
       return {
         ...cfg,
         mejorSi,
         anio: year,
         valorYtd,
-        meta,
+        meta: metaFinal,
+        metaOrigen: metaLy != null ? ("ly" as const) : null,
         gatillo,
         nota: row?.nota ?? null,
         updatedAt: row?.updated_at ?? null,
-        estado: estadoSemaforo(valorYtd, meta, gatillo, mejorSi),
+        estado: estadoSemaforo(valorYtd, metaFinal, gatillo, mejorSi),
       }
     })
 

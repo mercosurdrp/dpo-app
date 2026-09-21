@@ -68,6 +68,14 @@ export interface ResumenExterno {
   registros_anual: number
   generado_en: string | null
   meses: ResumenExternoMes[]
+  /**
+   * Meta "mejorar el año anterior" (regla del Reporte DPO, adoptada para el
+   * árbol el 2026-09-21): el mismo KPI del año anterior calculado sobre LOS
+   * MISMOS MESES que ya tienen dato este año (Σ HL ÷ Σ #28 de ene..mes en
+   * curso del LY). Sólo TQI y FGLI lo informan; null cuando el depósito no
+   * tiene el año anterior.
+   */
+  meta_ly?: number | null
 }
 
 /** key del KPI → cómo resolver su valor externo. */
@@ -149,7 +157,9 @@ export const KPI_EXTERNOS: Record<
       "que se rompe en el camión o en el PDV. Por eso WQI + DQI = TQI. El " +
       "número anual es Σ HL rotos ÷ Σ HL despachados del año, no el promedio " +
       "de los meses. Fuente: tablero del depósito (deposito-esteban " +
-      "/indicadores, base del Reporte DPO), mismo número que muestra ahí.",
+      "/indicadores, base del Reporte DPO), mismo número que muestra ahí. " +
+      "Meta = mejorar el año anterior (regla del Reporte DPO): el mismo TQI del " +
+      "año pasado sobre los mismos meses que ya tienen dato este año, en PPM.",
     detalleLabel: "HL rotos",
     detalle2Label: "HL entregado",
   },
@@ -166,7 +176,10 @@ export const KPI_EXTERNOS: Record<
       "van al SCL y al «HL perdidos» de la reunión de warehouse). El detalle " +
       "muestra los HL perdidos de cada mes y cuánto de eso es inventario + " +
       "vencidos; el resto es rotura (TQI). Fuente: tablero del depósito " +
-      "(deposito-esteban /indicadores, base del Reporte DPO).",
+      "(deposito-esteban /indicadores, base del Reporte DPO). Meta = mejorar " +
+      "el año anterior (regla del Reporte DPO): el mismo FGLI del año pasado " +
+      "sobre los mismos meses que ya tienen dato este año, en PPM, así acompaña " +
+      "el volumen vendido. Se recalcula sola cada mes.",
     detalleLabel: "HL perdidos",
     detalle2Label: "Inventario + vencidos",
   },
@@ -419,7 +432,11 @@ interface DpoBaseMes {
   fgli_hl?: number | null
 }
 interface IndicadoresDeposito {
-  dpo_base?: { actual?: Record<string, DpoBaseMes | null> }
+  dpo_base?: {
+    actual?: Record<string, DpoBaseMes | null>
+    /** el año anterior con el MISMO criterio, mes a mes (lo publica el tablero para el semáforo "vs LY") */
+    anterior?: Record<string, DpoBaseMes | null>
+  }
   _cached_at?: string
 }
 
@@ -461,8 +478,12 @@ function resumenDpo(
 ): ResumenExterno | null {
   const actual = j?.dpo_base?.actual
   if (!actual) return null
+  const anterior = j?.dpo_base?.anterior ?? {}
   let perdidoAnual = 0
   let entregadoAnual = 0
+  // Mismo período del año anterior: sólo los meses que este año ya tiene.
+  let perdidoLy = 0
+  let entregadoLy = 0
   const filas: ResumenExternoMes[] = []
   for (let mes = 1; mes <= 12; mes++) {
     const m = actual[String(mes)]
@@ -474,6 +495,11 @@ function resumenDpo(
     const p = perdido(m)
     perdidoAnual += p
     entregadoAnual += entregado
+    const ly = anterior[String(mes)]
+    if (ly && (ly.n28 ?? 0) > 0) {
+      perdidoLy += perdido(ly)
+      entregadoLy += ly.n28 ?? 0
+    }
     filas.push({
       mes,
       valor: r1((p / entregado) * 1_000_000),
@@ -488,6 +514,7 @@ function resumenDpo(
     registros_anual: r2(perdidoAnual),
     generado_en: j?._cached_at ?? null,
     meses: filas,
+    meta_ly: entregadoLy > 0 ? r1((perdidoLy / entregadoLy) * 1_000_000) : null,
   }
 }
 
@@ -518,13 +545,13 @@ async function fetchFgliResumen(anio: number): Promise<ResumenExterno | null> {
  */
 export async function resolverValoresExternos(
   anio: number,
-): Promise<Map<string, number | null>> {
+): Promise<Map<string, { valor: number | null; metaLy: number | null }>> {
   const entries = Object.entries(KPI_EXTERNOS)
-  const out = new Map<string, number | null>()
+  const out = new Map<string, { valor: number | null; metaLy: number | null }>()
   await Promise.all(
     entries.map(async ([key, cfg]) => {
       const r = await cfg.resumen(anio)
-      out.set(key, r?.promedio_anual ?? null)
+      out.set(key, { valor: r?.promedio_anual ?? null, metaLy: r?.meta_ly ?? null })
     }),
   )
   return out

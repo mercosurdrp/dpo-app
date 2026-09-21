@@ -33,6 +33,8 @@ export interface SuenoNodo extends SuenoNodoConfig {
   anio: number
   valorYtd: number | null
   meta: number | null
+  /** "ly" cuando la meta es el mismo período del año anterior, calculada en vivo (TQI y FGLI). */
+  metaOrigen?: "ly" | null
   gatillo: number | null
   nota: string | null
   estado: EstadoSemaforo
@@ -103,6 +105,11 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // permitía la meta anual. Real 2026 ene-sep: TQI 1.555, FGLI 1.723;
   // proyección con un Q4 igual al de 2025: 1.694 / 1.856. Ver
   // 20260918120000_sueno_tqi_fgli_metas_mejorar_2025.sql.
+  // 2026-09-21 (usuario: "ponemos ese target"): la meta ya NO es un número
+  // fijo. Es el mismo KPI del año anterior sobre los mismos meses (Σ HL ÷ Σ
+  // #28 del LY, en PPM), calculada en vivo en computarArbolSueno desde
+  // dpo_base.anterior del tablero; igual que /indicadores. El metaDefault y
+  // la fila de la tabla quedan sólo como respaldo si el depósito no responde.
   { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 2100 },
   { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.4 },
 

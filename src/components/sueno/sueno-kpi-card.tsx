@@ -92,6 +92,11 @@ export function SuenoKpiCard({
             <span className="font-medium text-slate-700">
               {nodo.meta == null ? "—" : formatValor(nodo.meta, nodo.unidad)}
             </span>
+            {nodo.metaOrigen === "ly" && (
+              <span className="ml-1 text-[10px] text-slate-400" title="Mejorar el mismo período del año anterior (regla del Reporte DPO)">
+                {nodo.anio - 1} mismo período
+              </span>
+            )}
           </span>
           <span className="text-[10px] uppercase tracking-wide text-slate-400">
             YTD
