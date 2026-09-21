@@ -20,14 +20,18 @@ export const SLA_PESO_TARGET = 95
 // Techo de peso NETO de producto ruteado por camión. Ningún viaje debería
 // rutearse con carga que supere este peso: peso bruto máximo (PBT) − tara.
 // El peso real del producto llega en ocupacion_bodega_diaria.peso_total (kg).
+// 21/09/2026: los brutos que se venían usando (15.000 y 11.500) estaban mal
+// cargados; las taras estaban bien. Se corrigen para que el neto quede en
+// 11.000 kg (flota estándar) y 8.500 kg (AE908DF). Como el SLA se calcula al
+// vuelo sobre ocupacion_bodega_diaria, la historia se recalcula sola.
 export const PESO_TARA_KG = 6500
-export const PESO_BRUTO_KG = 15000
-export const PESO_LIMITE_KG = PESO_BRUTO_KG - PESO_TARA_KG // 8500 kg (flota estándar)
+export const PESO_BRUTO_KG = 17500
+export const PESO_LIMITE_KG = PESO_BRUTO_KG - PESO_TARA_KG // 11000 kg (flota estándar)
 
 // Excepciones por patente: camiones con tara/bruto distintos → otro neto.
-//   • AE908DF ("el DF"): tara 4500 · bruto 11500 → neto 7000 kg.
+//   • AE908DF ("el DF"): tara 4500 · bruto 13000 → neto 8500 kg.
 export const PESO_LIMITE_POR_PATENTE: Record<string, number> = {
-  AE908DF: 11500 - 4500, // 7000 kg
+  AE908DF: 13000 - 4500, // 8500 kg
 }
 
 /** Límite de peso neto (kg) para una patente: su excepción o el estándar. */
