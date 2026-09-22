@@ -121,7 +121,79 @@ interface ItemFallado {
   comentarios: string[]
 }
 
-const fmtFecha = (iso: string) => iso.split("-").reverse().join("/")
+const fmtFecha = (iso: string) => iso.slice(0, 10).split("-").reverse().join("/")
+
+const diasEntreFechas = (desde: string, hasta: string) =>
+  Math.max(
+    0,
+    Math.round(
+      (new Date(hasta.slice(0, 10) + "T12:00:00").getTime() -
+        new Date(desde.slice(0, 10) + "T12:00:00").getTime()) /
+        86_400_000
+    )
+  )
+
+/** "12/09 al 14/09 · 2 días". Sin salida cargada la unidad sigue parada. */
+function textoParada(m: MantenimientoRealizado): string {
+  const desde = m.fuera_servicio_desde
+  if (!desde) return "—"
+  const hasta = m.fuera_servicio_hasta
+  if (!hasta) return `desde ${fmtFecha(desde)} · sin salida cargada`
+  const d = diasEntreFechas(desde, hasta)
+  return `${fmtFecha(desde)} al ${fmtFecha(hasta)} · ${d} ${d === 1 ? "día" : "días"}`
+}
+
+/**
+ * Las OT que forman un nivel de la pirámide. La última columna cambia según el
+ * nivel: la avería grave se explica por el período de parada, y el auxilio por
+ * el tipo de OT (hay auxilios cargados como preventivos).
+ */
+function TablaOt({
+  ots,
+  columna = "estado",
+}: {
+  ots: MantenimientoRealizado[]
+  columna?: "estado" | "parada" | "tipo"
+}) {
+  const encabezado =
+    columna === "parada" ? "Fuera de servicio" : columna === "tipo" ? "Tipo de OT" : "Estado"
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Fecha</TableHead>
+          <TableHead>Unidad</TableHead>
+          <TableHead>OT</TableHead>
+          <TableHead>Qué se hizo</TableHead>
+          <TableHead>{encabezado}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {ots.map((m) => (
+          <TableRow key={m.id}>
+            <TableCell className="whitespace-nowrap">{fmtFecha(m.fecha)}</TableCell>
+            <TableCell className="font-medium">{m.dominio}</TableCell>
+            <TableCell className="text-muted-foreground">{m.numero_ot || "—"}</TableCell>
+            <TableCell className="max-w-80 text-muted-foreground">
+              {m.tareas?.map((t) => t.descripcion).filter(Boolean).join(", ") ||
+                m.observaciones ||
+                "—"}
+            </TableCell>
+            <TableCell className="whitespace-nowrap text-muted-foreground">
+              {columna === "parada"
+                ? textoParada(m)
+                : columna === "tipo"
+                  ? m.tipo
+                  : m.estado === "en_taller"
+                    ? "En taller"
+                    : m.estado}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
 
 /** Excel del período: las cuatro hojas que pide la auditoría del punto 1.3. */
 function urlExport(r: { desde: string | null; hasta: string | null }): string {
@@ -356,11 +428,21 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
         .filter((i) => i.critico)
         .sort((a, b) => b.fecha.localeCompare(a.fecha)),
       correctivos: [...correctivos].sort((a, b) => b.fecha.localeCompare(a.fecha)),
+      // Los dos niveles de la punta: hasta ahora eran sólo un número dibujado y
+      // no había forma de saber de qué unidad ni de qué OT hablaban.
+      averias: correctivos
+        .filter((m) => !!m.fuera_servicio_desde)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+      auxilios: mantes
+        .filter((m) => m.auxilio_ruta)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
     }
   }, [itemsNoOk, mantenimientos, rango, exposicion])
 
   /** Qué tarjeta de indicadores se abrió: cada una lista lo que la forma. */
-  const [detalleKpi, setDetalleKpi] = useState<"criticos" | "correctivos" | "ratio" | null>(null)
+  const [detalleKpi, setDetalleKpi] = useState<
+    "criticos" | "correctivos" | "averias" | "auxilios" | "ratio" | null
+  >(null)
 
   const verTablaUnidades = () =>
     document
@@ -378,6 +460,57 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
     : null
   const verUnidad = (dominio: string) =>
     setUnidadSel((actual) => (actual === dominio ? null : dominio))
+
+  // Qué texto y qué lista le toca a cada detalle que se abre. El "ratio" lista
+  // los correctivos porque son el divisor de la cuenta.
+  const vistaKpi = useMemo(() => {
+    const base = { ots: [] as MantenimientoRealizado[], columna: "estado" as const }
+    switch (detalleKpi) {
+      case "auxilios":
+        return {
+          titulo: `Auxilios en ruta (${datos.auxilios.length})`,
+          descripcion: `OT marcadas con el tilde de auxilio: la unidad quedó parada fuera de la planta y hubo que ir a asistirla · ${etiquetaRango}`,
+          vacio: "Sin auxilios en ruta registrados en el período.",
+          ots: datos.auxilios,
+          columna: "tipo" as const,
+        }
+      case "averias":
+        return {
+          titulo: `Averías graves (${datos.averias.length})`,
+          descripcion: `Correctivos que dejaron la unidad fuera de servicio · ${etiquetaRango}`,
+          vacio: "Sin averías graves en el período.",
+          ots: datos.averias,
+          columna: "parada" as const,
+        }
+      case "correctivos":
+        return {
+          ...base,
+          titulo: `Correctivos en taller (${datos.correctivos.length})`,
+          descripcion: `Órdenes de trabajo correctivas del período · ${etiquetaRango}`,
+          vacio: "Sin correctivos en el período.",
+          ots: datos.correctivos,
+        }
+      case "ratio":
+        return {
+          ...base,
+          titulo: "Defectos por cada correctivo",
+          descripcion: `${fmtNum(datos.totalDefectos)} defectos de checklist ÷ ${fmtNum(
+            datos.conteo.correctivo
+          )} correctivos = ${
+            datos.ratioFalla !== null ? `${datos.ratioFalla} : 1` : "sin correctivos"
+          }. Cuanto más alto, más se detecta abajo antes de que llegue al taller. Abajo, los correctivos que forman el divisor.`,
+          vacio: "Sin correctivos en el período.",
+          ots: datos.correctivos,
+        }
+      default:
+        return {
+          ...base,
+          titulo: `Defectos críticos (${datos.criticos.length})`,
+          descripcion: `Ítems marcados como críticos en los checklists · ${etiquetaRango}`,
+          vacio: "Sin defectos críticos en el período.",
+        }
+    }
+  }, [detalleKpi, datos, etiquetaRango])
 
   // ===== Geometría de la pirámide =====
   // Pirámide de verdad (la punta termina en punta) a la izquierda, el nombre de
@@ -448,8 +581,40 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
                       maximumFractionDigits: 1,
                     }).format(nAbajo / count)}`
                   : null
+              // Cada nivel abre lo que lo forma: el número recién sirve cuando
+              // se puede ver de qué unidad y de qué OT está hablando.
+              const abrir = sinDato
+                ? null
+                : n.key === "auxilio"
+                  ? () => setDetalleKpi("auxilios")
+                  : n.key === "averia"
+                    ? () => setDetalleKpi("averias")
+                    : n.key === "correctivo"
+                      ? () => setDetalleKpi("correctivos")
+                      : n.key === "critico"
+                        ? () => setDetalleKpi("criticos")
+                        : verTablaUnidades
               return (
-                <g key={n.key}>
+                <g
+                  key={n.key}
+                  onClick={abrir ?? undefined}
+                  onKeyDown={
+                    abrir
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault()
+                            abrir()
+                          }
+                        }
+                      : undefined
+                  }
+                  role={abrir ? "button" : undefined}
+                  tabIndex={abrir ? 0 : undefined}
+                  aria-label={
+                    abrir ? `${n.titulo}: ${fmtNum(count)} · ver el detalle` : undefined
+                  }
+                  className={cn(abrir && "cursor-pointer [&>polygon]:hover:brightness-110")}
+                >
                   <polygon
                     points={points}
                     fill={n.color}
@@ -575,12 +740,12 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
           <Info className="size-3" />
           De la base (todo lo que marca el checklist) a la punta (la unidad tirada en la
           ruta). Gestionando la base se previene la punta; el cimiento verde es lo que se
-          hace para que no crezca.
+          hace para que no crezca. Tocá cualquier nivel para ver las OT que lo forman.
         </p>
       </div>
 
       {/* Indicadores */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <KpiCard
           label="Defectos"
           valor={fmtNum(datos.totalDefectos)}
@@ -600,6 +765,24 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
           estado={datos.conteo.correctivo > 0 ? "alerta" : "ok"}
           sub="Fallas que llegaron al taller · click para verlas"
           onClick={() => setDetalleKpi("correctivos")}
+        />
+        <KpiCard
+          label="Averías graves"
+          valor={fmtNum(datos.conteo.averia)}
+          estado={datos.conteo.averia > 0 ? "critico" : "ok"}
+          sub="Correctivos que dejaron la unidad fuera de servicio · click para verlas"
+          onClick={() => setDetalleKpi("averias")}
+        />
+        <KpiCard
+          label="Auxilios en ruta"
+          valor={datos.hayColumnaAuxilio ? fmtNum(datos.conteo.auxilio) : "s/d"}
+          estado={datos.conteo.auxilio > 0 ? "critico" : "ok"}
+          sub={
+            datos.hayColumnaAuxilio
+              ? "La punta: unidades paradas fuera de la planta · click para verlas"
+              : "Sin registro todavía · se marca con el tilde en la OT"
+          }
+          onClick={datos.hayColumnaAuxilio ? () => setDetalleKpi("auxilios") : undefined}
         />
         <KpiCard
           label="Defectos / correctivo"
@@ -940,24 +1123,8 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
         <Dialog open onOpenChange={(o: boolean) => !o && setDetalleKpi(null)}>
           <DialogContent className="max-w-3xl">
             <DialogHeader>
-              <DialogTitle>
-                {detalleKpi === "criticos"
-                  ? `Defectos críticos (${datos.criticos.length})`
-                  : detalleKpi === "correctivos"
-                    ? `Correctivos en taller (${datos.correctivos.length})`
-                    : "Defectos por cada correctivo"}
-              </DialogTitle>
-              <DialogDescription>
-                {detalleKpi === "criticos"
-                  ? `Ítems marcados como críticos en los checklists · ${etiquetaRango}`
-                  : detalleKpi === "correctivos"
-                    ? `Órdenes de trabajo correctivas del período · ${etiquetaRango}`
-                    : `${fmtNum(datos.totalDefectos)} defectos de checklist ÷ ${fmtNum(
-                        datos.conteo.correctivo
-                      )} correctivos = ${
-                        datos.ratioFalla !== null ? `${datos.ratioFalla} : 1` : "sin correctivos"
-                      }. Cuanto más alto, más se detecta abajo antes de que llegue al taller. Abajo, los correctivos que forman el divisor.`}
-              </DialogDescription>
+              <DialogTitle>{vistaKpi.titulo}</DialogTitle>
+              <DialogDescription>{vistaKpi.descripcion}</DialogDescription>
             </DialogHeader>
             <div className="max-h-[60vh] overflow-auto">
               {detalleKpi === "criticos" ? (
@@ -991,41 +1158,12 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
                     </TableBody>
                   </Table>
                 )
-              ) : datos.correctivos.length === 0 ? (
+              ) : vistaKpi.ots.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  Sin correctivos en el período.
+                  {vistaKpi.vacio}
                 </p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead>Unidad</TableHead>
-                      <TableHead>OT</TableHead>
-                      <TableHead>Qué se hizo</TableHead>
-                      <TableHead>Estado</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {datos.correctivos.map((m) => (
-                      <TableRow key={m.id}>
-                        <TableCell className="whitespace-nowrap">{fmtFecha(m.fecha)}</TableCell>
-                        <TableCell className="font-medium">{m.dominio}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {m.numero_ot || "—"}
-                        </TableCell>
-                        <TableCell className="max-w-80 text-muted-foreground">
-                          {m.tareas?.map((t) => t.descripcion).filter(Boolean).join(", ") ||
-                            m.observaciones ||
-                            "—"}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {m.estado === "en_taller" ? "En taller" : m.estado}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <TablaOt ots={vistaKpi.ots} columna={vistaKpi.columna} />
               )}
             </div>
           </DialogContent>
