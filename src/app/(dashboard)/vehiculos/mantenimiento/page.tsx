@@ -23,7 +23,7 @@ import {
 } from "@/actions/neumaticos"
 import { getRecapados } from "@/actions/recapados"
 import { getRetirosCubiertas } from "@/actions/desecho-neumaticos"
-import { getGastos, getProveedores } from "@/actions/mantenimiento-gastos"
+import { getProveedores } from "@/actions/mantenimiento-gastos"
 import { getHerramientas } from "@/actions/mantenimiento-herramientas"
 import {
   getFlotaKpiSeriesExtra,
@@ -63,7 +63,6 @@ export default async function MantenimientoPage() {
     rotacionesRes,
     diasRuteoRes,
     indispRes,
-    gastosRes,
     proveedoresRes,
     configRes,
     intervalosRes,
@@ -94,7 +93,6 @@ export default async function MantenimientoPage() {
     getRotaciones(),
     getDiasRuteo(ventanaRuteoDesde()),
     getIndisponibilidades(),
-    getGastos({ limit: 500 }),
     getProveedores(),
     getMantenimientoConfig(),
     getIntervalosNeumaticos(),
@@ -169,7 +167,6 @@ export default async function MantenimientoPage() {
   const rotaciones = "data" in rotacionesRes ? rotacionesRes.data : []
   const diasRuteo = "data" in diasRuteoRes ? diasRuteoRes.data : []
   const indisponibilidades = "data" in indispRes ? indispRes.data : []
-  const gastos = "data" in gastosRes ? gastosRes.data : []
   const proveedores = "data" in proveedoresRes ? proveedoresRes.data : []
   const siguienteNumeroOt =
     "data" in siguienteNumeroOtRes ? siguienteNumeroOtRes.data : ""
@@ -244,7 +241,6 @@ export default async function MantenimientoPage() {
       rotaciones={rotaciones}
       diasRuteo={diasRuteo}
       indisponibilidades={indisponibilidades}
-      gastos={gastos}
       proveedores={proveedores}
       gestion={gestion}
       flotaMetas={flotaMetas}

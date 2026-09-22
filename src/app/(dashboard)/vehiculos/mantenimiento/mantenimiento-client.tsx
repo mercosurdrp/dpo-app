@@ -73,7 +73,6 @@ import type {
   MantenimientoCategoria,
   MantenimientoEstado,
   MantenimientoPlanOverride,
-  MantenimientoGasto,
   MantenimientoProveedor,
   MantenimientoPlanTarea,
   MantenimientoRealizado,
@@ -93,7 +92,6 @@ import { NeumaticosModule } from "./neumaticos-module"
 import type { DesgasteFlota } from "@/actions/neumaticos"
 import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
-import { GastosTab } from "./gastos-tab"
 import { ProveedorPicker } from "./_components/proveedor-picker"
 import { GestionMtto } from "./gestion-mtto"
 import { HerramientasTab } from "./herramientas-tab"
@@ -411,7 +409,6 @@ interface MantenimientoClientProps {
   rotaciones: Rotacion[]
   diasRuteo: DiaRuteo[]
   indisponibilidades: FlotaIndisponibilidad[]
-  gastos: MantenimientoGasto[]
   proveedores: MantenimientoProveedor[]
   gestion: {
     novedades: Novedad[]
@@ -456,7 +453,6 @@ export function MantenimientoClient({
   rotaciones,
   diasRuteo,
   indisponibilidades,
-  gastos,
   proveedores,
   gestion,
   flotaMetas,
@@ -720,8 +716,7 @@ export function MantenimientoClient({
               label="Costo del mes"
               valor={fmtMoney(costos.costoMes)}
               dpo="3.2"
-              sub="Gasto de flota imputado en el mes · click para ver el libro"
-              onClick={() => setTab("gastos")}
+              sub="Costo de las OT imputadas en el mes"
             />
           </div>
 
@@ -1152,17 +1147,6 @@ export function MantenimientoClient({
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-
-        {/* ============ TAB: Gastos (facturas / boletas / caja chica) ============ */}
-        <TabsContent value="gastos" className="space-y-4">
-          <GastosTab
-            gastos={gastos}
-            proveedores={provList}
-            onProveedorCreado={agregarProveedor}
-            dominios={estados.map((e) => e.vehiculo.dominio)}
-            puedeEditar={puedeEditar}
-          />
         </TabsContent>
 
         {/* ============ TAB: Plantillas ============ */}

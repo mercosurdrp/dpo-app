@@ -184,14 +184,6 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
       "Stock mínimo/objetivo/máximo con recuentos, y trazabilidad de la disposición de residuos de mantenimiento.",
   },
   {
-    id: "gastos",
-    label: "Gastos",
-    grupo: "gestion",
-    puntos: ["3.2"],
-    requisitos: ["R3.2.1", "R3.2.2"],
-    aporta: "Gasto real de flota imputado por unidad y proveedor, contra presupuesto.",
-  },
-  {
     id: "plantillas",
     label: "Plan / Plantillas",
     grupo: "gestion",
