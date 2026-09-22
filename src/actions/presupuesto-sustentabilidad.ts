@@ -72,6 +72,10 @@ export interface SustentabilidadMes {
   realPpm: number | null
   /** ppm real del mismo mes del año anterior (merma final, misma base). */
   anteriorPpm: number | null
+  /** Acumulados de enero a este mes (Σ HL perdidos ÷ Σ HL), la vista que dice cómo va el año. */
+  pptoAcumPpm: number | null
+  realAcumPpm: number | null
+  anteriorAcumPpm: number | null
 }
 
 export interface SustentabilidadPata {
@@ -290,11 +294,17 @@ export async function getSustentabilidadPresupuesto(
       const perd = mermaFinal(m)
       realPorMes.set(m.mes, { ppm: (perd / m.entregado) * 1e6, hl: perd, ent: m.entregado })
     }
+    const anteriorHlPorMes = new Map(anterior.map((m) => [m.mes, { hl: mermaFinal(m), ent: m.entregado }]))
     const meses: SustentabilidadMes[] = []
     let pptoPerdAnual = 0
     let pptoVolAnual = 0
     let pptoPerdYtd = 0
     let pptoVolYtd = 0
+    // Acumulados: razón de sumas de enero al mes, no promedio de los ppm.
+    let realAcumPerd = 0
+    let realAcumEnt = 0
+    let antAcumPerd = 0
+    let antAcumEnt = 0
     for (let mes = 1; mes <= 12; mes++) {
       const vol = volPorMes.get(mes)
       const perd = hlPptoMes.get(mes)
@@ -308,11 +318,24 @@ export async function getSustentabilidadPresupuesto(
           pptoVolYtd += vol!.hlPpto
         }
       }
+      const r = realPorMes.get(mes)
+      if (r) {
+        realAcumPerd += r.hl
+        realAcumEnt += r.ent
+      }
+      const a = anteriorHlPorMes.get(mes)
+      if (a) {
+        antAcumPerd += a.hl
+        antAcumEnt += a.ent
+      }
       meses.push({
         mes,
         pptoPpm,
-        realPpm: realPorMes.get(mes)?.ppm ?? null,
+        realPpm: r?.ppm ?? null,
         anteriorPpm: anteriorPorMes.get(mes) ?? null,
+        pptoAcumPpm: pptoPpm !== null && pptoVolAnual > 0 ? (pptoPerdAnual / pptoVolAnual) * 1e6 : null,
+        realAcumPpm: r && realAcumEnt > 0 ? (realAcumPerd / realAcumEnt) * 1e6 : null,
+        anteriorAcumPpm: a && antAcumEnt > 0 ? (antAcumPerd / antAcumEnt) * 1e6 : null,
       })
     }
 

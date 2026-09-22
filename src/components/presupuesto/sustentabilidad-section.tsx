@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Leaf } from "lucide-react"
 import {
   CartesianGrid,
@@ -53,6 +54,10 @@ export function SustentabilidadSection({
   anio: number
 }) {
   const fgli = data?.fgli ?? null
+  // Mes a mes: qué pasó cada mes. Acumulado: cómo va el año (Σ HL ÷ Σ HL de
+  // enero al mes), la vista que se compara con la meta y el presupuesto anual.
+  const [vista, setVista] = useState<"mensual" | "acumulado">("mensual")
+  const acum = vista === "acumulado"
   return (
     <section>
       <h2 className="mb-3 text-sm font-semibold text-slate-700">
@@ -154,16 +159,42 @@ export function SustentabilidadSection({
                 />
               </div>
 
-              {/* Serie mensual */}
+              {/* Serie mensual / acumulada */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-medium text-slate-700">
+                  {acum ? "Acumulado del año, de enero a cada mes" : "Mes a mes"}
+                </p>
+                <div className="inline-flex rounded-md border bg-slate-50 p-0.5 text-xs" role="tablist" aria-label="Vista del gráfico">
+                  {(["mensual", "acumulado"] as const).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      role="tab"
+                      aria-selected={vista === v}
+                      onClick={() => setVista(v)}
+                      className={`rounded px-2.5 py-1 transition-colors ${
+                        vista === v ? "bg-white font-medium text-slate-900 shadow-sm" : "text-muted-foreground hover:text-slate-700"
+                      }`}
+                    >
+                      {v === "mensual" ? "Mes a mes" : "Acumulado"}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="h-44 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={fgli.meses.map((m) => ({
-                      mes: MES_CORTO[m.mes],
-                      presupuesto: m.pptoPpm !== null ? Math.round(m.pptoPpm) : null,
-                      real: m.realPpm !== null ? Math.round(m.realPpm) : null,
-                      anterior: m.anteriorPpm !== null ? Math.round(m.anteriorPpm) : null,
-                    }))}
+                    data={fgli.meses.map((m) => {
+                      const p = acum ? m.pptoAcumPpm : m.pptoPpm
+                      const r = acum ? m.realAcumPpm : m.realPpm
+                      const a = acum ? m.anteriorAcumPpm : m.anteriorPpm
+                      return {
+                        mes: MES_CORTO[m.mes],
+                        presupuesto: p !== null ? Math.round(p) : null,
+                        real: r !== null ? Math.round(r) : null,
+                        anterior: a !== null ? Math.round(a) : null,
+                      }
+                    })}
                     margin={{ top: 5, right: 14, bottom: 0, left: 0 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -171,7 +202,7 @@ export function SustentabilidadSection({
                     <YAxis tick={{ fontSize: 11 }} width={48} domain={[0, "auto"]} />
                     <Tooltip
                       formatter={(v, n) => [
-                        v === null ? "—" : `${ppm(Number(v))} ppm`,
+                        v === null ? "—" : `${ppm(Number(v))} ppm${acum ? " acum." : ""}`,
                         n === "presupuesto"
                           ? `Presupuesto ${fgli.anio}`
                           : n === "real"
@@ -211,11 +242,9 @@ export function SustentabilidadSection({
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Cada mes en la misma vara y de la misma fuente: lo que se
-                perdió el mismo mes de {fgli.anio - 1}, lo que el presupuesto
-                prevé perder, el real de {fgli.anio} y la meta anual. Los meses
-                de verde por debajo de la punteada gris le ganaron al
-                presupuesto; por debajo del azul, al año anterior.
+                {acum
+                  ? `Cada punto es el FGLI de enero a ese mes (Σ HL perdidos ÷ Σ HL). Es la vista que se compara con la meta: donde termina el verde es el FGLI del año a la fecha, y donde termina la punteada gris, el presupuesto anual.`
+                  : `Cada mes en la misma vara y de la misma fuente: lo que se perdió el mismo mes de ${fgli.anio - 1}, lo que el presupuesto prevé perder, el real de ${fgli.anio} y la meta anual. Los meses de verde por debajo de la punteada gris le ganaron al presupuesto; por debajo del azul, al año anterior.`}
               </p>
 
               {/* Composición por pata */}
