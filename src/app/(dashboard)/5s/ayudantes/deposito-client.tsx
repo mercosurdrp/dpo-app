@@ -102,9 +102,12 @@ const MEDAL = [
   { icon: Award, color: "text-orange-500", bg: "border-orange-200 bg-orange-50/60", label: "3° puesto" },
 ]
 
-// Comprime la imagen en el navegador antes de mandarla al server action
-// (evita el límite de payload de las Server Actions).
-function comprimirImagen(file: File, maxLado = 1600, calidad = 0.82): Promise<Blob> {
+// Comprime la imagen en el navegador antes de mandarla al server action.
+// El límite de payload es 25 MB (next.config), así que el tope es generoso:
+// la foto se muestra a pantalla completa en la TV del depósito y a 1600 px /
+// calidad 82 se veía pixelada (22/9/26). Si el origen es de WhatsApp
+// (1200×1600) no hay nada que rescatar: pedir la foto en HD o como documento.
+function comprimirImagen(file: File, maxLado = 2600, calidad = 0.92): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new window.Image()
     const url = URL.createObjectURL(file)
