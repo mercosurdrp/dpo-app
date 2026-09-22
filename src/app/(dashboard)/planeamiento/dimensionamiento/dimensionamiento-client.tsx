@@ -18,6 +18,7 @@ import {
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
   recalcularProductividadAlmacen, guardarCostoHh,
 } from "@/actions/dimensionamiento"
+import { CuadroAnualCard } from "./cuadro-anual"
 
 function fmt(v: number) {
   return v.toLocaleString("es-AR")
@@ -131,24 +132,33 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
   const pesoDe = (wd: number) => (wd === 0 ? 0 : pesos[wd - 1] ?? 0)
 
   const almacen = proy.almacen.map((r) => {
+    // Clasificadores (HL): demanda del presupuesto retornable, no depende del escenario → queda como vino del server.
+    if (r.unidadVol === "HL") return r
     // capPersona viene del server (capDiaria ya descuenta ausentismo, no sirve para derivarla)
     const capPersona = r.capPersona ?? (r.dotacion > 0 ? r.capDiaria / r.dotacion : 0)
+    const ausAlm = r.dotacion > 0 ? r.dotacionEfectiva / r.dotacion : 1 // 1 − ausentismo
+    const volFijo = r.volFijo ?? 0
     const horasExtra: number[] = [], faltanPico: number[] = [], volPicoDia: number[] = []
+    const necesariosProm: number[] = [], sobran: number[] = [], temporales: number[] = []
     for (const mm of meses) {
       const volMes = r.volPromBase * mm.indice
       let hh = 0
       for (const wd of weekdaysDelMes(mm.mes)) {
         const w = pesoDe(wd)
         if (w <= 0) continue
-        const volDia = volMes * 6 * w
+        const volDia = volMes * 6 * w + volFijo
         if (volDia > r.capDiaria && r.prodH > 0) hh += (volDia - r.capDiaria) / r.prodH
       }
-      const pico = volMes * 6 * maxPeso
+      const pico = volMes * 6 * maxPeso + volFijo
       horasExtra.push(Math.round(hh * 10) / 10)
       volPicoDia.push(Math.round(pico))
       faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((pico - r.capDiaria) / capPersona)) : 0)
+      const nec = capPersona > 0 && ausAlm > 0 ? Math.round(((volMes + volFijo) / capPersona / ausAlm) * 10) / 10 : 0
+      necesariosProm.push(nec)
+      sobran.push(Math.max(0, Math.round((r.dotacion - nec) * 10) / 10))
+      temporales.push(Math.max(0, Math.round((nec - r.dotacion) * 10) / 10))
     }
-    return { ...r, horasExtra, faltanPico, volPicoDia }
+    return { ...r, horasExtra, faltanPico, volPicoDia, necesariosProm, sobran, temporales }
   })
 
   const camionesDe = (ceqDia: number) => zonas.length > 0 && proy.capCamionViaje > 0
@@ -156,6 +166,7 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
     : (proy.capCamionViaje > 0 ? Math.ceil(ceqDia / proy.capCamionViaje) : 0)
   const flota = proy.flota.map((rf) => {
     const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = [], personaDias: number[] = []
+    const necesariosProm: number[] = [], sobran: number[] = []
     for (const mm of meses) {
       const ceqMes = proy.flotaCeqPromBase * mm.indice
       let dias = 0, pico = 0, sv = false, pdias = 0
@@ -171,11 +182,15 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
       }
       diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv)
       personaDias.push(Math.round(pdias * 10) / 10)
+      const necProm = camionesDe(ceqMes) * rf.tripulacion
+      necesariosProm.push(necProm)
+      sobran.push(Math.max(0, rf.dotacion - necProm))
     }
-    return { ...rf, diasRefuerzo, picoNecesario, segundaVueltaMeses, personaDias }
+    return { ...rf, diasRefuerzo, picoNecesario, segundaVueltaMeses, personaDias, necesariosProm, sobran }
   })
+  const ocupacionMes = meses.map((mm) => (proy.capacidadInstalada > 0 ? Math.round(((proy.flotaCeqPromBase * mm.indice) / proy.capacidadInstalada) * 1000) / 1000 : 0))
 
-  return { ...proy, hlBase, ajusteBasePct: pctDe(proy.mesBase, proy.ajusteBasePct), meses, almacen, flota }
+  return { ...proy, hlBase, ajusteBasePct: pctDe(proy.mesBase, proy.ajusteBasePct), meses, almacen, flota, ocupacionMes }
 }
 
 type PctEscenario = { pct: Record<string, string>; setPct: React.Dispatch<React.SetStateAction<Record<string, string>>> }
@@ -461,6 +476,8 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
           {m ? ` · Mes ${m.mes} · ${m.diasCerrados} días de ruteo cerrados` : ""}
         </p>
       </div>
+
+      <CuadroAnualCard data={data} proy={proyLive} />
 
       <Tabs defaultValue="flotaentrega">
         <TabsList>
@@ -751,8 +768,16 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
     ausentismo_reparto: String(data.config.ausentismo_reparto),
   })
   const [zonas, setZonas] = useState(data.zonas.map((z) => ({ zona: z.zona, peso: String(z.peso), camiones_minimos: String(z.camiones_minimos), absorbe: z.absorbe_crecimiento })))
-  const estado = (nec: number, dot: number, pico: number) =>
-    pico <= dot ? { t: "Cubre", c: "text-emerald-700" } : nec <= dot ? { t: "Refuerzo en pico", c: "text-amber-700" } : { t: `Faltan ${nec - dot}`, c: "text-red-700 font-semibold" }
+  const umbral = data.config.umbral_ocupacion_ociosa
+  // ocupacion: fracción de la capacidad que usa la demanda promedio (CEq ÷ instalada para
+  // camiones; necesarios ÷ dotación para la tripulación). Debajo del umbral → capacidad ociosa.
+  const estado = (nec: number, dot: number, pico: number, ocupacion?: number) => {
+    if (nec > dot) return { t: `Faltan ${nec - dot}`, c: "text-red-700 font-semibold" }
+    if (pico > dot) return { t: "Refuerzo en pico", c: "text-amber-700" }
+    const oc = ocupacion ?? (dot > 0 ? nec / dot : 1)
+    if (oc > 0 && oc < umbral) return { t: `Capacidad ociosa (${Math.round(oc * 100)} %)`, c: "text-sky-700 font-semibold" }
+    return { t: "Cubre", c: "text-emerald-700" }
+  }
   // capacidad de un camión por día (CEq) para el desglose por zona
   const capCamVj = dispo > 0 ? data.capacidadInstaladaDiaria / dispo : 0
   const volProm = m?.volumenCeqPromedio ?? 0
@@ -857,8 +882,8 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                   <TableCell className="text-right font-semibold">{m.camionesNecesariosPromedio} (pico {m.camionesNecesariosPico})</TableCell>
                   <TableCell className="p-0">
                     <Dialog>
-                      <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico).c}`}>
-                        {estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico).t} <span className="text-[10px] font-normal text-muted-foreground">¿por qué?</span>
+                      <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico, m.ocupacionPromedio / 100).c}`}>
+                        {estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico, m.ocupacionPromedio / 100).t} <span className="text-[10px] font-normal text-muted-foreground">¿por qué?</span>
                       </DialogTrigger>
                       <DetalleHoyCamionesModal m={m} zonas={data.zonas} capCamVj={capCamVj} dispo={dispo} totalFlota={data.flota.length} viajes={data.config.viajes_por_dia} />
                     </Dialog>
@@ -886,28 +911,40 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                 })}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Camiones necesarios = volumen CEq ÷ (capacidad por camión × viajes/día). Choferes/ayudantes = camiones × tripulación. Dotación de reparto = promedio real diario (registros_vehiculos). «Cubre» = alcanza incluso en el pico. <b>Tocá el estado</b> para ver el desglose por zona y el cálculo paso a paso.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Camiones necesarios = máx(mínimo de cobertura por zona, volumen CEq × peso de la zona ÷ capacidad por camión). Choferes/ayudantes = camiones × tripulación. Dotación de reparto = plantel cargado o promedio real diario (registros_vehiculos). «Cubre» = alcanza incluso en el pico · «Capacidad ociosa» = la demanda promedio usa menos del {Math.round(umbral * 100)} % de la capacidad (para camiones, CEq ÷ capacidad instalada de {fmt(Math.round(data.capacidadInstaladaDiaria))} CEq). <b>Tocá el estado</b> para ver el desglose por zona y el cálculo paso a paso.</p>
           </CardContent>
         </Card>
       )}
 
       {proy && proy.flota.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Proyección a diciembre — días con refuerzo por mes</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Proyección a diciembre — días con refuerzo y sobrantes por mes</CardTitle></CardHeader>
           <CardContent>
             <Table>
               <TableHeader><TableRow><TableHead>Recurso</TableHead>{proy.meses.map((mm) => (<TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>))}</TableRow></TableHeader>
               <TableBody>
+                <TableRow className="bg-slate-50">
+                  <TableCell className="text-xs font-medium">Ocupación de flota <span className="font-normal text-muted-foreground">(CEq ÷ {fmt(proy.capacidadInstalada)})</span></TableCell>
+                  {proy.ocupacionMes.map((oc, i) => (
+                    <TableCell key={i} className={`text-right text-xs ${oc > 0 && oc < proy.umbralOciosa ? "text-sky-700 font-semibold" : ""}`}>{Math.round(oc * 100)} %</TableCell>
+                  ))}
+                </TableRow>
                 {proy.flota.map((r) => (
                   <TableRow key={r.rol}>
                     <TableCell className="font-medium">{r.rol} <span className="text-xs text-muted-foreground">({fmt(r.dotacion)})</span></TableCell>
                     {r.diasRefuerzo.map((d, i) => {
                       const sv = r.segundaVueltaMeses[i]
-                      const cls = d > 0 ? (sv ? "bg-red-100 text-red-700 font-semibold" : "bg-amber-50 text-amber-700") : "text-emerald-700"
+                      const sobran = r.sobran?.[i] ?? 0
+                      const oc = r.rol === "Camiones" ? (proy.ocupacionMes[i] ?? 0) : (r.dotacion > 0 ? (r.necesariosProm?.[i] ?? 0) / r.dotacion : 1)
+                      const ociosa = d === 0 && oc > 0 && oc < proy.umbralOciosa
+                      const cls = d > 0 ? (sv ? "bg-red-100 text-red-700 font-semibold" : "bg-amber-50 text-amber-700") : ociosa ? "text-sky-700" : "text-emerald-700"
                       return (
                         <TableCell key={i} className="p-0">
                           <Dialog>
-                            <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-right hover:brightness-95 ${cls}`}>{d > 0 ? `${d} días` : "✓"}</DialogTrigger>
+                            <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-right hover:brightness-95 ${cls}`}>
+                              {d > 0 ? `${d} días` : "✓"}
+                              {d === 0 && sobran > 0 ? <span className={`block text-[10px] ${ociosa ? "font-semibold" : "font-normal text-muted-foreground"}`}>sobran {fmt(sobran)}</span> : null}
+                            </DialogTrigger>
                             <DetalleFlotaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} ceqPromBase={proy.flotaCeqPromBase} capCamionViaje={proy.capCamionViaje} camionesDisp={proy.camionesDisp} zonas={data.zonas} />
                           </Dialog>
                         </TableCell>
@@ -917,7 +954,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">«N días» = días del mes donde el volumen supera lo que la dotación cubre en los viajes actuales → contratar o 2ª vuelta. Fondo <span className="font-medium text-red-700">rojo fuerte</span> = algún día supera los {proy.camionesDisp} camiones (2ª vuelta obligada). Tocá una celda para ver el desglose por día.</p>
+            <p className="mt-2 text-xs text-muted-foreground">«N días» = días del mes donde el volumen supera lo que la dotación cubre en los viajes actuales → contratar o 2ª vuelta. Fondo <span className="font-medium text-red-700">rojo fuerte</span> = algún día supera los {proy.camionesDisp} camiones (2ª vuelta obligada). «sobran N» = dotación menos necesarios en el día promedio del mes; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación queda por debajo del {Math.round(proy.umbralOciosa * 100)} % (capacidad ociosa: evaluar reasignación o reducción, SOP §8). Tocá una celda para ver el desglose por día.</p>
           </CardContent>
         </Card>
       )}
@@ -957,14 +994,15 @@ function DetalleCeldaModal({ rol, mes, pesos, horasExtraMes, volDiaMes }: { rol:
     )
   }
   const volProm = rol.volPromBase * mes.indice
-  const vals = DIAS_SEM.map((_, d) => Math.round(volProm * 6 * (pesos[d] ?? 0)))
+  const fijo = rol.volFijo ?? 0 // horas fijas de tareas generales: no escalan con el volumen
+  const vals = DIAS_SEM.map((_, d) => Math.round((volProm * 6 * (pesos[d] ?? 0) + fijo) * 10) / 10)
   const pico = Math.max(...vals), bajo = Math.min(...vals)
   const supera = pico > cap
   return (
     <DialogContent className="max-w-lg">
       <DialogHeader><DialogTitle>{rol.rol} — {mesLabel(mes.mes)}</DialogTitle></DialogHeader>
       <p className="text-sm text-muted-foreground">
-        Capacidad: <b>{fmt(cap)} {rol.unidadVol}/día</b> (dotación {rol.dotacionEfectiva != null && rol.dotacionEfectiva < rol.dotacion ? <>efectiva {fmt(rol.dotacionEfectiva)} de {rol.dotacion}</> : rol.dotacion} × {fmt(rol.prodH)} {rol.unidadVol}/HH). Volumen prom del mes (presupuesto): <b>{fmt(Math.round(volProm))} {rol.unidadVol}/día</b> · índice ×{mes.indice.toFixed(2).replace(".", ",")}{mes.ajustePct !== 0 ? <> · <b className="text-sky-700">escenario {mes.ajustePct > 0 ? "+" : ""}{mes.ajustePct}%</b></> : null}.
+        Capacidad: <b>{fmt(cap)} {rol.unidadVol}/día</b> (dotación {rol.dotacionEfectiva != null && rol.dotacionEfectiva < rol.dotacion ? <>efectiva {fmt(rol.dotacionEfectiva)} de {rol.dotacion}</> : rol.dotacion}{rol.unidadVol === "horas" ? <> × {fmt(rol.capPersona)} h efectivas por persona</> : <> × {fmt(rol.prodH)} {rol.unidadVol}/HH</>}). Volumen prom del mes (presupuesto): <b>{fmt(Math.round((volProm + fijo) * 10) / 10)} {rol.unidadVol}/día</b>{fijo > 0 ? <> (de las cuales <b>{fmt(fijo)} h fijas</b> que no dependen del volumen)</> : null} · índice ×{mes.indice.toFixed(2).replace(".", ",")}{mes.ajustePct !== 0 ? <> · <b className="text-sky-700">escenario {mes.ajustePct > 0 ? "+" : ""}{mes.ajustePct}%</b></> : null}.
       </p>
       <Table>
         <TableHeader><TableRow>
@@ -1120,6 +1158,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
     prod_reempaque_bul_hh: String(data.config.prod_reempaque_bul_hh), util_reempaque: String(data.config.util_reempaque), dotacion_reempaque: String(data.config.dotacion_reempaque),
     prod_pal_h: String(data.config.prod_pal_h), util_maquinistas: String(data.config.util_maquinistas), dotacion_maquinistas: String(data.config.dotacion_maquinistas),
     horas_turno: String(data.config.horas_turno), ausentismo_almacen: String(data.config.ausentismo_almacen),
+    horas_fijas_generales: String(data.config.horas_fijas_generales),
     peso_lun: String(data.config.peso_lun), peso_mar: String(data.config.peso_mar), peso_mie: String(data.config.peso_mie),
     peso_jue: String(data.config.peso_jue), peso_vie: String(data.config.peso_vie), peso_sab: String(data.config.peso_sab),
   })
@@ -1144,6 +1183,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
     prod_reempaque_bul_hh: Number(c.prod_reempaque_bul_hh), util_reempaque: Number(c.util_reempaque), dotacion_reempaque: Number(c.dotacion_reempaque),
     prod_pal_h: Number(c.prod_pal_h), util_maquinistas: Number(c.util_maquinistas), dotacion_maquinistas: Number(c.dotacion_maquinistas),
     horas_turno: Number(c.horas_turno), ausentismo_almacen: Number(c.ausentismo_almacen),
+    horas_fijas_generales: Number(c.horas_fijas_generales),
     peso_lun: Number(c.peso_lun), peso_mar: Number(c.peso_mar), peso_mie: Number(c.peso_mie),
     peso_jue: Number(c.peso_jue), peso_vie: Number(c.peso_vie), peso_sab: Number(c.peso_sab),
   }), "Datos de almacén guardados")
@@ -1153,16 +1193,21 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
       fuente: "Demanda: bultos despachados por día (ocupacion_bodega_diaria, líneas de venta de Chess). Productividad: promedio YTD del Árbol del Sueño (deposito-esteban), con override editable." },
     { n: "Clasificadores", r: a.clasificadores, u: "HL", pico: false, hl: true, real: a.clasificadores.prodRealPalHH,
       fuente: "Demanda: HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf), repartidos uniforme entre los días hábiles del mes — por eso promedio y pico son iguales. Conversión: 6 HL por paleta." },
-    { n: "Tareas generales", r: a.reempaque, u: "bultos", pico: false, hl: false, real: null as number | null,
-      fuente: "Demanda y productividad: reempaque de deposito-esteban (bultos por día y bultos ÷ horas trabajadas del mes)." },
+    { n: "Tareas generales", r: a.reempaque, u: "horas", pico: false, hl: false, real: null as number | null,
+      fuente: `Demanda en HORAS por día: bultos de reempaque (deposito-esteban) ÷ ${fmt(data.config.prod_reempaque_bul_hh)} bul/HH, más ${fmt(data.config.horas_fijas_generales)} h fijas de tareas generales (limpieza, prensa, orden) que no dependen del volumen. Capacidad por persona = horas de turno × utilización.` },
     { n: "Maquinistas", r: a.maquinistas, u: "pallets", pico: false, hl: false, real: null as number | null,
       fuente: `Demanda: pallets de acarreo descargado (recepcion_acarreos) + carga a distribución (deposito-esteban) × (1 + factor de retorno ${fmt(a.maquinistas.factorRetorno)}). Promedios del mes: ${fmt(a.maquinistas.palAcarreoProm)} pal de acarreo y ${fmt(a.maquinistas.palCargaProm)} pal de carga por día.` },
   ] : []
-  // Compara contra la dotación EFECTIVA (descontado el ausentismo).
-  const estadoHoy = (r: RolFte) =>
-    r.fteNecesariosPico <= r.dotacionEfectiva ? { txt: "Cubre", cls: "text-emerald-700" }
-      : r.fteNecesariosProm <= r.dotacionEfectiva ? { txt: "Extras en pico", cls: "text-amber-700" }
-        : { txt: `Faltan ${fmt(Math.round((r.fteNecesariosProm - r.dotacionEfectiva) * 10) / 10)}`, cls: "text-red-700 font-semibold" }
+  // Compara contra la dotación EFECTIVA (descontado el ausentismo). Debajo del umbral de
+  // ocupación (necesarios ÷ dotación efectiva) → capacidad ociosa: la alerta por exceso.
+  const umbralAlm = data.config.umbral_ocupacion_ociosa
+  const estadoHoy = (r: RolFte) => {
+    if (r.fteNecesariosProm > r.dotacionEfectiva) return { txt: `Faltan ${fmt(Math.round((r.fteNecesariosProm - r.dotacionEfectiva) * 10) / 10)}`, cls: "text-red-700 font-semibold" }
+    if (r.fteNecesariosPico > r.dotacionEfectiva) return { txt: "Extras en pico", cls: "text-amber-700" }
+    const oc = r.dotacionEfectiva > 0 ? r.fteNecesariosProm / r.dotacionEfectiva : 1
+    if (oc > 0 && oc < umbralAlm) return { txt: `Capacidad ociosa (${Math.round(oc * 100)} %)`, cls: "text-sky-700 font-semibold" }
+    return { txt: "Cubre", cls: "text-emerald-700" }
+  }
 
   return (
     <div className="space-y-6">
@@ -1194,6 +1239,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
             <div className="flex flex-wrap items-end gap-3">
               <div><Label className="text-xs">Horas / turno</Label><Input type="number" step="0.1" className="h-8 w-20" value={c.horas_turno} onChange={(e) => setC((s) => ({ ...s, horas_turno: e.target.value }))} /></div>
               <div><Label className="text-xs">Ausentismo (0–1)</Label><Input type="number" step="0.01" className="h-8 w-20" value={c.ausentismo_almacen} onChange={(e) => setC((s) => ({ ...s, ausentismo_almacen: e.target.value }))} /></div>
+              <div><Label className="text-xs">Horas fijas tareas grales. (h/día)</Label><Input type="number" step="0.5" className="h-8 w-20" value={c.horas_fijas_generales} onChange={(e) => setC((s) => ({ ...s, horas_fijas_generales: e.target.value }))} /></div>
               <span className="self-center text-xs font-medium text-muted-foreground">Peso de volumen por día:</span>
               {([["peso_lun", "Lun"], ["peso_mar", "Mar"], ["peso_mie", "Mié"], ["peso_jue", "Jue"], ["peso_vie", "Vie"], ["peso_sab", "Sáb"]] as const).map(([k, l]) => (
                 <div key={k}><Label className="text-xs">{l}</Label><Input type="number" step="0.05" className="h-8 w-16" value={c[k]} onChange={(e) => setC((s) => ({ ...s, [k]: e.target.value }))} /></div>
@@ -1207,7 +1253,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              Productividad y volumen vienen vinculados: «↻ Traer productividad real» toma el promedio del mes de <b>deposito-esteban</b> (picking/maquinistas/reempaque) y de la tabla de clasificación de <b>dpo-app</b>; el volumen sale del <b>presupuesto anual</b>. Todo es editable como override. Utilización por defecto 0,875 (7 h efectivas sobre 8). <b>Ausentismo</b> = fracción de la dotación que en promedio no está (vacaciones, licencias, faltas); la dotación efectiva = dotación × (1 − ausentismo) es la que se compara contra la demanda. Tras recalcular, revisá y tocá <b>Guardar</b>.
+              Productividad y volumen vienen vinculados: «↻ Traer productividad real» toma el promedio del mes de <b>deposito-esteban</b> (picking/maquinistas/reempaque) y de la tabla de clasificación de <b>dpo-app</b>; el volumen sale del <b>presupuesto anual</b>. Todo es editable como override. <b>Utilización</b> = fracción del turno aplicada a la tarea pura: picking 0,80 (decisión del 22/09/2026; Casa Central asume 2 h netas sobre 8). <b>Ausentismo</b> = fracción de la dotación que en promedio no está (vacaciones, licencias, faltas); la dotación efectiva = dotación × (1 − ausentismo) es la que se compara contra la demanda. <b>Horas fijas</b> = horas/día de tareas generales que no dependen del volumen (limpieza, prensa, orden), se suman al reempaque. Los <b>pesos por día</b> salen del volumen real de los cierres de ruteo 2026 (lun 0,14 · mar 0,15 · mié 0,22 · jue 0,21 · vie 0,13 · sáb 0,15). Tras recalcular, revisá y tocá <b>Guardar</b>.
             </p>
           </CardContent>
         </Card>
@@ -1276,30 +1322,37 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 })}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación <b>efectiva</b> (descontado el ausentismo) × productividad × horas/turno × utilización. Clasificadores: la demanda son los HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf) repartidos entre los días hábiles del mes; se convierten a paletas con 6 HL/paleta. Productividad = estándar de junio (4,35 pal/HH ≈ 26 HL/HH). «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio. Los <b>necesarios van con un decimal</b> (no redondeados hacia arriba) para que sean comparables con la dotación efectiva: 2,7 necesarios contra 2,76 efectivos <b>cubre</b>. <b>Tocá el estado</b> para ver el cálculo paso a paso, la fuente de cada dato y qué significa la brecha.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación <b>efectiva</b> (descontado el ausentismo) × productividad × horas/turno × utilización. Clasificadores: la demanda son los HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf) repartidos entre los días hábiles del mes; se convierten a paletas con 6 HL/paleta. Productividad = estándar de junio (4,35 pal/HH ≈ 26 HL/HH). Tareas generales: demanda en horas/día (reempaque ÷ bul/HH + horas fijas). «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio · «Capacidad ociosa» = los necesarios usan menos del {Math.round(umbralAlm * 100)} % de la dotación efectiva (alerta por exceso, SOP §3). Los <b>necesarios van con un decimal</b> (no redondeados hacia arriba) para que sean comparables con la dotación efectiva: 2,7 necesarios contra 2,76 efectivos <b>cubre</b>. <b>Tocá el estado</b> para ver el cálculo paso a paso, la fuente de cada dato y qué significa la brecha.</p>
           </CardContent>
         </Card>
       )}
 
       {proy && proy.almacen.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Proyección a diciembre — horas extra por mes (dotación fija)</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Proyección a diciembre — horas extra, sobrantes y temporales por mes (dotación fija)</CardTitle></CardHeader>
           <CardContent>
             <Table>
               <TableHeader><TableRow><TableHead>Rol</TableHead>{proy.meses.map((m) => (<TableHead key={m.mes} className="text-right">{mesLabel(m.mes)}</TableHead>))}</TableRow></TableHeader>
               <TableBody>
                 {proy.almacen.map((r) => (
                   <TableRow key={r.rol}>
-                    <TableCell className="font-medium">{r.rol}</TableCell>
+                    <TableCell className="font-medium">{r.rol} <span className="text-xs text-muted-foreground">({fmt(r.dotacion)})</span></TableCell>
                     {r.horasExtra.map((hh, i) => {
                       const falta = r.faltanPico[i]
-                      const cls = hh > 0 ? (falta > 0 ? "bg-red-50 text-red-700 font-semibold" : "bg-amber-50 text-amber-700") : "text-emerald-700"
+                      const sobran = r.sobran?.[i] ?? 0
+                      const temporales = r.temporales?.[i] ?? 0
+                      const nec = r.necesariosProm?.[i] ?? 0
+                      const ociosa = hh === 0 && r.dotacion > 0 && nec > 0 && nec / r.dotacion < umbralAlm
+                      const cls = hh > 0 ? (falta > 0 ? "bg-red-50 text-red-700 font-semibold" : "bg-amber-50 text-amber-700") : ociosa ? "text-sky-700" : "text-emerald-700"
                       return (
                         <TableCell key={i} className="p-0">
                           <Dialog>
                             <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-right hover:brightness-95 ${cls}`}>
                               {hh > 0 ? `${fmt(hh)} h` : "✓"}
-                              {falta > 0 ? <span className="block text-[10px] font-normal">falta {falta}</span> : null}
+                              {falta > 0 ? <span className="block text-[10px] font-normal">falta {falta} en pico</span> : null}
+                              {temporales > 0
+                                ? <span className="block text-[10px] font-semibold text-red-700">temporales {fmt(temporales)}</span>
+                                : sobran > 0 ? <span className={`block text-[10px] ${ociosa ? "font-semibold" : "font-normal text-muted-foreground"}`}>sobran {fmt(sobran)}</span> : null}
                             </DialogTrigger>
                             <DetalleCeldaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} horasExtraMes={hh} volDiaMes={r.volPicoDia[i]} />
                           </Dialog>
@@ -1310,7 +1363,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Hora-hombre extra estimadas cuando el volumen del día (volumen del presupuesto repartido por el peso del día de semana) supera la capacidad de la dotación fija. «falta N» = personas que faltarían en el día pico para no hacer horas extra. <span className="text-emerald-700">✓</span> = cubre sin extras. <b>Tocá cualquier celda</b> para ver el desglose por día de ese mes.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Hora-hombre extra estimadas cuando el volumen del día (volumen del presupuesto repartido por el peso del día de semana) supera la capacidad de la dotación fija. «falta N en pico» = personas que faltarían el día pico para no hacer horas extra. «sobran N» / «temporales N» = lectura mensual estilo Casa Central: necesarios del día promedio llevados a nómina (÷ (1 − ausentismo)) contra la dotación; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación del rol queda por debajo del {Math.round(umbralAlm * 100)} % (capacidad ociosa: vacaciones, reasignar o no reponer bajas, SOP §6). <span className="text-emerald-700">✓</span> = cubre sin extras. <b>Tocá cualquier celda</b> para ver el desglose por día de ese mes.</p>
           </CardContent>
         </Card>
       )}
@@ -1421,11 +1474,17 @@ function ConfigCard({ config, run, isPending }: { config: DimConfig; run: RunFn;
           <Input type="number" className="h-8 w-28" value={c.dias_operativos_mes}
             onChange={(e) => setC((s) => ({ ...s, dias_operativos_mes: Number(e.target.value) }))} />
         </div>
+        <div>
+          <Label className="text-xs">Umbral capacidad ociosa (0–1)</Label>
+          <Input type="number" step="0.05" className="h-8 w-28" value={c.umbral_ocupacion_ociosa}
+            onChange={(e) => setC((s) => ({ ...s, umbral_ocupacion_ociosa: Number(e.target.value) }))} />
+        </div>
         <Button size="sm" disabled={isPending} onClick={() => run(() => guardarConfigDim(c), "Parámetros guardados")}>
           Guardar
         </Button>
         <p className="w-full text-xs text-muted-foreground">
           El factor convierte los bultos ruteados a cajas equivalentes (CEq = bultos × factor). «↻ Recalcular» lo recomputa con el mix del mes anterior cerrado en Chess, excluyendo envases (CEq = 120 × bultos / bultosPallet).
+          {" "}<b>Umbral de capacidad ociosa</b>: si la ocupación de la flota (CEq ÷ capacidad instalada) o la de un rol (necesarios ÷ dotación) queda por debajo, el estado pasa a «Capacidad ociosa» — la alerta por exceso del SOP (70 %).
         </p>
       </CardContent>
     </Card>

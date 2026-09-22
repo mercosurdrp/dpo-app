@@ -207,11 +207,13 @@ export async function construirHistorico(sector: SectorHistorico): Promise<Histo
 
   // ─── ALMACÉN ───
   const efAlmacen = (d: number) => Math.round(d * (1 - config.ausentismo_almacen) * 10) / 10
+  // Tareas generales va en HORAS (variable = reempaque ÷ bul/HH, más horas fijas que no
+  // escalan con el volumen); prodH = 1. Mismo modelo que la proyección del módulo.
   const rolesAlm = [
-    { rol: "Pickeros", rf: almacen?.pickeros, prodH: config.prod_bul_hh, dot: config.dotacion_almacen },
-    { rol: "Clasificadores", rf: almacen?.clasificadores, prodH: config.prod_clasif_pal_h * HL_POR_PALETA_RETORNABLE, dot: config.dotacion_clasif },
-    { rol: "Tareas grales.", rf: almacen?.reempaque, prodH: config.prod_reempaque_bul_hh, dot: config.dotacion_reempaque },
-    { rol: "Maquinistas", rf: almacen?.maquinistas, prodH: config.prod_pal_h, dot: config.dotacion_maquinistas },
+    { rol: "Pickeros", rf: almacen?.pickeros, prodH: config.prod_bul_hh, dot: config.dotacion_almacen, volFijo: 0 },
+    { rol: "Clasificadores", rf: almacen?.clasificadores, prodH: config.prod_clasif_pal_h * HL_POR_PALETA_RETORNABLE, dot: config.dotacion_clasif, volFijo: 0 },
+    { rol: "Tareas grales.", rf: almacen?.reempaque, prodH: 1, dot: config.dotacion_reempaque, volFijo: config.horas_fijas_generales },
+    { rol: "Maquinistas", rf: almacen?.maquinistas, prodH: config.prod_pal_h, dot: config.dotacion_maquinistas, volFijo: 0 },
   ]
   const dotacionAlmacen = rolesAlm.map((r) => ({
     rol: r.rol,
@@ -233,11 +235,11 @@ export async function construirHistorico(sector: SectorHistorico): Promise<Histo
         const diasHab = diasHabilesDelMes(anio, m)
         if (volDia > capDiaria && r.prodH > 0) hh = ((volDia - capDiaria) / r.prodH) * diasHab
       } else {
-        const volMes = (r.rf?.volumenProm ?? 0) * indice
+        const volMes = Math.max(0, (r.rf?.volumenProm ?? 0) - r.volFijo) * indice
         for (const wd of weekdaysDelMes(m)) {
           const w = pesoDe(wd)
           if (w <= 0) continue
-          const volDia = volMes * DIAS_SEMANA * w
+          const volDia = volMes * DIAS_SEMANA * w + r.volFijo
           if (volDia > capDiaria && r.prodH > 0) hh += (volDia - capDiaria) / r.prodH
         }
       }

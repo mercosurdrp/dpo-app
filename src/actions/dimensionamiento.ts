@@ -18,6 +18,7 @@ import {
   diasHabilesDelMes,
   HL_POR_PALETA_RETORNABLE,
 } from "@/lib/dimensionamiento/retornable"
+import { hheePorLegajo, type MarcaHheeRow } from "@/lib/asistencia/horas-extras"
 
 const DEPOSITO_API_BASE = "https://deposito-regionpampeana.vercel.app"
 
@@ -26,6 +27,25 @@ function statsPorDia(m: Map<string, number>): { prom: number; pico: number; dias
   const vals = [...m.values()].filter((v) => v > 0)
   if (!vals.length) return { prom: 0, pico: 0, dias: 0 }
   return { prom: vals.reduce((s, x) => s + x, 0) / vals.length, pico: Math.max(...vals), dias: vals.length }
+}
+
+/** Sub-map de un Map fecha→valor con las fechas del mes "YYYY-MM". */
+function soloMes(m: Map<string, number>, mes: string): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const [k, v] of m) if (k.startsWith(mes)) out.set(k, v)
+  return out
+}
+
+/** Trae todas las filas paginando de a 1000 (PostgREST corta en 1000 por pedido). */
+async function todas<T>(mk: (desde: number, hasta: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
+  const out: T[] = []
+  for (let off = 0; ; off += 1000) {
+    const { data, error } = await mk(off, off + 999)
+    if (error || !data) break
+    out.push(...data)
+    if (data.length < 1000) break
+  }
+  return out
 }
 
 /** Lee las filas de un blob de deposito-esteban (shared/load). [] si falla. */
@@ -126,6 +146,23 @@ export interface DimConfig {
   ausentismo_almacen: number    // fracción 0–1 no disponible en promedio (vacaciones/licencias/faltas)
   ausentismo_reparto: number    // ídem reparto; 0 = la dotación observada ya lo trae implícito
   horas_vuelta_extra: number    // horas extra por persona en un día de refuerzo de flota (días → hora-hombre)
+  horas_fijas_generales: number // horas/día de tareas generales que no dependen del volumen (limpieza, prensa, orden)
+  umbral_ocupacion_ociosa: number // ocupación (0–1) por debajo de la cual se marca "capacidad ociosa" (SOP: 0,70)
+}
+
+// Volumen del año, mes a mes, en HL: año anterior (AA), presupuesto, forecast
+// (= presupuesto × escenario) y real. Es la fila "presupuesto vs real" que
+// pide R2.3.1 y el comentario del auditor H1 2026 ("comparar con volumen real").
+// AA y real salen de pc_volumen_diario (HL distribuidos con flota propia,
+// Chess + GESCOM, la misma base de Períodos Críticos).
+export interface EscenarioVolumenMes {
+  mes: number
+  aa: number | null           // HL real del mismo mes del año anterior
+  presupuesto: number | null
+  forecast: number | null     // presupuesto × (1 + ajuste_pct/100); null si no hay presupuesto
+  real: number | null         // HL real del mes; null si no hay días cargados
+  diasReal: number            // días con dato en el mes
+  parcial: boolean            // mes en curso (real incompleto)
 }
 
 // Costo de la hora-hombre EXTRA por sector (EERR PxQ; recargo 50/100% ya incluido).
@@ -237,7 +274,13 @@ export interface ProyeccionAlmacenRol {
   faltanPico: number[]     // personas que faltarían en el día pico de cada mes (0 = cubre)
   volPicoDia: number[]     // volumen del día más cargado del mes
   volPromBase: number      // volumen promedio diario base (mes actual); el modal reconstruye por día
+  volFijo: number          // parte de la demanda diaria que NO escala con el volumen (horas fijas de tareas generales); 0 en el resto
   prodH: number            // productividad horaria del rol (para derivar horas extra en el modal)
+  // Lectura mensual estilo Casa Central: necesarios en el día promedio del mes,
+  // llevados a nómina (÷ (1 − ausentismo)), contra la dotación nominal.
+  necesariosProm: number[] // por mes: FTE necesarios con ausentismo (1 decimal)
+  sobran: number[]         // por mes: dotación − necesarios, si > 0 ("jornales sobrantes")
+  temporales: number[]     // por mes: necesarios − dotación, si > 0 ("temporales requeridos")
 }
 // Flota: por recurso (camiones/choferes/ayudantes), dotación fija → días/mes que requieren refuerzo.
 export interface ProyeccionFlotaRol {
@@ -248,6 +291,8 @@ export interface ProyeccionFlotaRol {
   picoNecesario: number[]        // por mes: necesarios el día más cargado
   segundaVueltaMeses: boolean[]  // por mes: algún día supera los camiones disponibles (2ª vuelta obligada)
   personaDias: number[]          // por mes: Σ (necesarios − dotación) de los días de refuerzo → hora-hombre × horas_vuelta_extra
+  necesariosProm: number[]       // por mes: necesarios en el día promedio (camiones por zonas × tripulación)
+  sobran: number[]               // por mes: dotación − necesarios en el día promedio, si > 0
 }
 export interface ProyeccionData {
   mesBase: string
@@ -266,6 +311,9 @@ export interface ProyeccionData {
   costoHh: CostoHhMes[]          // $/hora extra por mes y sector (mismo orden que meses)
   horasVueltaExtra: number       // horas extra por persona en un día de refuerzo
   vlc: VlcReferencia             // costo logístico por HL de referencia (Árbol del Sueño)
+  ocupacionMes: number[]         // por mes: CEq promedio diario ÷ capacidad instalada diaria (0–1)
+  capacidadInstalada: number     // CEq/día de toda la flota activa × viajes
+  umbralOciosa: number           // ocupación mínima antes de marcar capacidad ociosa (0–1)
 }
 
 export interface DimPlan {
@@ -324,6 +372,42 @@ function camionesPorZonas(volCeq: number, zonas: ZonaReparto[], capCamionViaje: 
   return zonas.reduce((s, z) => s + Math.max(z.camiones_minimos, Math.ceil((vol.get(z.zona) ?? 0) / capCamionViaje)), 0)
 }
 
+// ─── Cuadro anual: meses cerrados con volumen REAL (misma estructura que hoy) ──
+export interface HistoricoRol {
+  volumenProm: number       // demanda promedio/día real del mes (bultos, HL, horas o pallets)
+  volumenPico: number
+  dias: number
+  necesariosProm: number    // FTE necesarios en el día promedio, con ausentismo (÷ (1 − aus))
+  necesariosPico: number
+  sobran: number            // dotación − necesarios, si > 0
+  temporales: number        // necesarios − dotación, si > 0
+  horasExtra: number        // hora-hombre que el modelo hubiera pedido (Σ días con demanda > capacidad)
+}
+export interface HistoricoMes {
+  mes: string               // "2026-03"
+  flota: MetricasDistribucion | null          // métricas reales de los cierres de ruteo del mes
+  repartoObs: { choferes: number; ayudantes: number } | null // dotación observada (personas distintas/día)
+  diasRefuerzoFlota: number // días del mes con camiones necesarios > disponibles
+  horasExtraDistribucion: number // personas que faltaron cada día de refuerzo × horas de la vuelta extra (modelo)
+  almacen: {
+    pickeros: HistoricoRol | null
+    clasificadores: HistoricoRol | null
+    reempaque: HistoricoRol | null
+    maquinistas: HistoricoRol | null
+  }
+}
+// Horas extra por mes y sector: reales (fichadas / depósito), dimensionadas (modelo) y
+// presupuestadas (EERR, dim_costo_hh). Es la fila "real vs dimensionado vs presupuesto".
+export interface HorasExtraMes {
+  mes: number
+  realAlmacen: number | null     // Σ horas extra de almacén (deposito-esteban, indicador DPO #39)
+  realDistribucion: number | null // Σ horas extra 50 % + 100 % de las fichadas de distribución
+  dimAlmacen: number | null      // modelo: histórico (meses cerrados) o proyección (mes en curso y futuros)
+  dimDistribucion: number | null
+  pptoAlmacen: number | null     // dim_costo_hh.hh_ppto_*
+  pptoDistribucion: number | null
+}
+
 export interface DimData {
   config: DimConfig
   objetivos: KpiObjetivo[]
@@ -339,6 +423,9 @@ export interface DimData {
   repartoError: string | null
   proyeccion: ProyeccionData | null
   proyeccionError: string | null
+  escenarios: EscenarioVolumenMes[]   // 12 meses del año en curso: AA / presupuesto / forecast / real
+  historico: HistoricoMes[]           // meses cerrados del año con datos reales
+  horasExtra: HorasExtraMes[]         // 12 meses: reales / dimensionadas / presupuestadas por sector
   planes: DimPlan[]
 }
 
@@ -397,13 +484,23 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       dotacion_reempaque: Number(configRes.data?.dotacion_reempaque ?? 1),
       ausentismo_almacen: Math.min(0.9, Math.max(0, Number(configRes.data?.ausentismo_almacen ?? 0.08))),
       ausentismo_reparto: Math.min(0.9, Math.max(0, Number(configRes.data?.ausentismo_reparto ?? 0))),
-      // columna nueva: se lee aparte para no romper el select si la migración aún no corrió
+      // columnas nuevas: se leen aparte para no romper el select si la migración aún no corrió
       horas_vuelta_extra: 4,
+      horas_fijas_generales: 2,
+      umbral_ocupacion_ociosa: 0.7,
     }
     {
       const { data: hve } = await supabase.from("dim_config").select("horas_vuelta_extra").eq("id", 1).maybeSingle()
       const v = Number(hve?.horas_vuelta_extra)
       if (Number.isFinite(v) && v > 0) config.horas_vuelta_extra = v
+    }
+    {
+      // migración 20260922120000: si no corrió, quedan los defaults
+      const { data: ext } = await supabase.from("dim_config").select("horas_fijas_generales, umbral_ocupacion_ociosa").eq("id", 1).maybeSingle()
+      const hf = Number(ext?.horas_fijas_generales)
+      if (Number.isFinite(hf) && hf >= 0) config.horas_fijas_generales = hf
+      const uo = Number(ext?.umbral_ocupacion_ociosa)
+      if (Number.isFinite(uo) && uo > 0 && uo < 1) config.umbral_ocupacion_ociosa = uo
     }
     // Dotación efectiva de almacén: descuenta el ausentismo promedio (1 decimal).
     const efAlmacen = (dot: number) => Math.round(dot * (1 - config.ausentismo_almacen) * 10) / 10
@@ -440,17 +537,23 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
     const hoy = new Date()
     const mesAA = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`
     const desde = `${mesAA}-01`
-    const { data: cierres, error: cierresErr } = await supabase
+    // Todo el año: el mes en curso alimenta el "hoy" y los meses cerrados el cuadro anual.
+    const inicioAnio = `${hoy.getFullYear()}-01-01`
+    const { data: cierresAnio, error: cierresErr } = await supabase
       .from("ruteo_cierres")
       .select("fecha, pergamino_bultos, pergamino_clientes, ramallo_bultos, ramallo_clientes, bultos_no_ruteados")
       .eq("estado", "cerrado")
-      .gte("fecha", desde)
+      .gte("fecha", inicioAnio)
       .order("fecha", { ascending: false })
-
-    if (cierresErr) {
-      metricasError = cierresErr.message
-    } else if (cierres && cierres.length > 0) {
-      const filas = cierres.map((c) => {
+      .limit(1000)
+    type Cierre = NonNullable<typeof cierresAnio>[number]
+    const cierres = (cierresAnio ?? []).filter((c) => String(c.fecha) >= desde)
+    // capUnidad = capacidad de un camión por día (capacidadInstaladaDiaria ya incluye viajes/día).
+    const capUnidad = disponibles.length > 0 ? capacidadInstaladaDiaria / disponibles.length : 0
+    // Métricas de un conjunto de cierres (un mes). El promedio del mes ES el volumen base:
+    // en el día pico, el excedente cae en las zonas que absorben (San Nicolás / Ramallo).
+    const metricasDe = (mes: string, cs: Cierre[]): MetricasDistribucion => {
+      const filas = cs.map((c) => {
         const ceq = (Number(c.pergamino_bultos ?? 0) + Number(c.ramallo_bultos ?? 0)) * f
         const clientes = Number(c.pergamino_clientes ?? 0) + Number(c.ramallo_clientes ?? 0)
         const noRutCeq = Number(c.bultos_no_ruteados ?? 0) * f
@@ -465,16 +568,12 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const avg = (arr: number[]) => arr.reduce((s, x) => s + x, 0) / n
       const volProm = avg(filas.map((x) => x.ceq))
       const volPico = Math.max(...filas.map((x) => x.ceq))
-      // capUnidad = capacidad de un camión por día (capacidadInstaladaDiaria ya incluye viajes/día).
-      const capUnidad = disponibles.length > 0 ? capacidadInstaladaDiaria / disponibles.length : 0
       // Camiones por COBERTURA DE ZONAS: máx(mínimo, volumen×peso ÷ capacidad) por zona; fallback a capacidad pura.
-      // El promedio del mes ES el volumen base: en el día pico, el excedente cae en
-      // las zonas que absorben (San Nicolás / Ramallo), no repartido entre las 5.
       const camionesNec = (vol: number) => zonas.length > 0
         ? camionesPorZonas(vol, zonas, capUnidad, volProm)
         : (capUnidad > 0 ? Math.ceil(vol / capUnidad) : 0)
-      metricas = {
-        mes: mesAA,
+      return {
+        mes,
         diasCerrados: n,
         volumenCeqPromedio: Math.round(volProm),
         volumenCeqPico: Math.round(volPico),
@@ -487,18 +586,30 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         camionesNecesariosPico: camionesNec(volPico),
       }
     }
+    if (cierresErr) metricasError = cierresErr.message
+    else if (cierres.length > 0) metricas = metricasDe(mesAA, cierres)
+    // Meses cerrados del año con cierres de ruteo → métricas reales por mes.
+    const metricasPorMes = new Map<string, MetricasDistribucion>()
+    for (const c of cierresAnio ?? []) {
+      const k = String(c.fecha).slice(0, 7)
+      if (k >= mesAA || metricasPorMes.has(k)) continue
+      metricasPorMes.set(k, metricasDe(k, (cierresAnio ?? []).filter((x) => String(x.fecha).startsWith(k))))
+    }
 
     // Almacén (FTE): pickeros (bultos procesados) + maquinistas (pallets a procesar).
     let almacen: AlmacenData | null = null
     let almacenError: string | null = null
+    const almacenHist = new Map<string, HistoricoMes["almacen"]>()
     try {
-      // Pickeros: bultos/día de ocupacion_bodega_diaria
-      const { data: ob } = await supabase.from("ocupacion_bodega_diaria").select("fecha, bultos_total").gte("fecha", desde)
-      const bultosPorDia = new Map<string, number>()
-      for (const r of ob ?? []) {
+      // Pickeros: bultos/día de ocupacion_bodega_diaria (todo el año; el "hoy" es el mes en curso)
+      const ob = await todas<{ fecha: string; bultos_total: number | string | null }>((a, b) =>
+        supabase.from("ocupacion_bodega_diaria").select("fecha, bultos_total").gte("fecha", inicioAnio).order("fecha").range(a, b))
+      const bultosPorDiaAnio = new Map<string, number>()
+      for (const r of ob) {
         const k = r.fecha as string
-        bultosPorDia.set(k, (bultosPorDia.get(k) ?? 0) + Number(r.bultos_total ?? 0))
+        bultosPorDiaAnio.set(k, (bultosPorDiaAnio.get(k) ?? 0) + Number(r.bultos_total ?? 0))
       }
+      const bultosPorDia = soloMes(bultosPorDiaAnio, mesAA)
       const pk = statsPorDia(bultosPorDia)
       // Productividad de picking = valor YTD del Árbol del Sueño (Prod Picking, Bul/HH),
       // que vive en deposito-esteban. Fallback al override de config si el depósito no responde.
@@ -517,31 +628,36 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       }
 
       // Maquinistas: pallets acarreo (recepcion_acarreos) + carga distribución (carga-camiones)
-      const acarreoPorDia = new Map<string, number>()
+      const acarreoPorDiaAnio = new Map<string, number>()
       try {
         const acarreo = createAcarreoClient()
         if (acarreo) {
-          const { data: rec } = await acarreo.from("recepcion_acarreos").select("fecha, pallets").gte("fecha", desde)
-          for (const r of rec ?? []) {
+          const rec = await todas<{ fecha: string; pallets: number | string | null }>((a, b) =>
+            acarreo.from("recepcion_acarreos").select("fecha, pallets").gte("fecha", inicioAnio).order("fecha").range(a, b))
+          for (const r of rec) {
             const k = r.fecha as string
-            acarreoPorDia.set(k, (acarreoPorDia.get(k) ?? 0) + Number(r.pallets ?? 0))
+            acarreoPorDiaAnio.set(k, (acarreoPorDiaAnio.get(k) ?? 0) + Number(r.pallets ?? 0))
           }
         }
       } catch {
         // acarreo-rdf no configurado → maquinistas solo con carga de distribución
       }
-      const cargaPorDia = new Map<string, number>()
+      const cargaPorDiaAnio = new Map<string, number>()
       for (const r of await fetchDepositoFilas("carga-camiones")) {
         const fch = String((r as { fecha?: string }).fecha ?? "")
-        if (fch >= desde) cargaPorDia.set(fch, (cargaPorDia.get(fch) ?? 0) + Number((r as { pallets?: number }).pallets ?? 0))
+        if (fch >= inicioAnio) cargaPorDiaAnio.set(fch, (cargaPorDiaAnio.get(fch) ?? 0) + Number((r as { pallets?: number }).pallets ?? 0))
       }
-      const palPorDia = new Map<string, number>()
+      const palPorDiaAnio = new Map<string, number>()
+      for (const fch of new Set([...acarreoPorDiaAnio.keys(), ...cargaPorDiaAnio.keys()])) {
+        const aca = acarreoPorDiaAnio.get(fch) ?? 0
+        const car = cargaPorDiaAnio.get(fch) ?? 0
+        palPorDiaAnio.set(fch, aca + car * (1 + config.factor_retorno_distrib))
+      }
+      const acarreoPorDia = soloMes(acarreoPorDiaAnio, mesAA), cargaPorDia = soloMes(cargaPorDiaAnio, mesAA)
+      const palPorDia = soloMes(palPorDiaAnio, mesAA)
       const acaVals: number[] = [], cargaVals: number[] = []
       for (const fch of new Set([...acarreoPorDia.keys(), ...cargaPorDia.keys()])) {
-        const aca = acarreoPorDia.get(fch) ?? 0
-        const car = cargaPorDia.get(fch) ?? 0
-        palPorDia.set(fch, aca + car * (1 + config.factor_retorno_distrib))
-        acaVals.push(aca); cargaVals.push(car)
+        acaVals.push(acarreoPorDia.get(fch) ?? 0); cargaVals.push(cargaPorDia.get(fch) ?? 0)
       }
       const mq = statsPorDia(palPorDia)
       const capMaq = config.prod_pal_h * config.horas_turno * config.util_maquinistas
@@ -593,28 +709,78 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         prodRealPalHH,
       }
 
-      // Reempaque (tareas generales): bultos/día de deposito-esteban /api/reempaque/diario.
-      const reJson = await fetchDepositoJson(`/api/reempaque/diario?mes=${hoy.getMonth() + 1}&anio=${hoy.getFullYear()}`)
-      const reempaquePorDia = new Map<string, number>()
-      for (const r of (reJson?.diario as Array<{ fecha?: string; bultos?: number }> | undefined) ?? []) {
-        const b = Number(r.bultos ?? 0)
-        if (b > 0 && String(r.fecha ?? "") >= desde) reempaquePorDia.set(String(r.fecha), b)
+      // Reempaque (tareas generales): bultos/día de deposito-esteban /api/reempaque/diario,
+      // un pedido por mes del año (en paralelo) para el cuadro anual.
+      const reempaquePorDiaAnio = new Map<string, number>()
+      const reJsons = await Promise.all(
+        Array.from({ length: hoy.getMonth() + 1 }, (_, i) => fetchDepositoJson(`/api/reempaque/diario?mes=${i + 1}&anio=${hoy.getFullYear()}`)),
+      )
+      for (const reJson of reJsons) {
+        for (const r of (reJson?.diario as Array<{ fecha?: string; bultos?: number }> | undefined) ?? []) {
+          const b = Number(r.bultos ?? 0)
+          if (b > 0 && String(r.fecha ?? "") >= inicioAnio) reempaquePorDiaAnio.set(String(r.fecha), b)
+        }
       }
+      const reempaquePorDia = soloMes(reempaquePorDiaAnio, mesAA)
       const re = statsPorDia(reempaquePorDia)
-      const capReempaque = config.prod_reempaque_bul_hh * config.horas_turno * config.util_reempaque
+      // Tareas generales se dimensionan en HORAS/día (modelo de Casa Central): la parte
+      // variable son los bultos de reempaque ÷ bul/HH, y se le suman las horas fijas
+      // (limpieza, prensa, orden) que no dependen del volumen. Capacidad por persona =
+      // horas de turno × utilización. Con 6-11 bultos/día el FTE por bultos daba 0,1 y
+      // escondía que la persona está ocupada igual.
+      const prodRe = config.prod_reempaque_bul_hh
+      const horasFijas = config.horas_fijas_generales
+      const horasVar = (b: number) => (prodRe > 0 ? b / prodRe : 0)
+      const capReempaque = config.horas_turno * config.util_reempaque // horas/persona/día
+      const hProm = horasVar(re.prom) + horasFijas
+      const hPico = horasVar(re.pico) + horasFijas
       const reempaque: RolFte = {
-        volumenProm: Math.round(re.prom), volumenPico: Math.round(re.pico), productividad: config.prod_reempaque_bul_hh,
+        volumenProm: Math.round(hProm * 10) / 10, volumenPico: Math.round(hPico * 10) / 10, productividad: prodRe,
         diasConDatos: re.dias,
-        fteNecesariosProm: capReempaque > 0 ? Math.round((re.prom / capReempaque) * 10) / 10 : 0,
-        fteNecesariosPico: capReempaque > 0 ? Math.round((re.pico / capReempaque) * 10) / 10 : 0,
+        fteNecesariosProm: capReempaque > 0 ? Math.round((hProm / capReempaque) * 10) / 10 : 0,
+        fteNecesariosPico: capReempaque > 0 ? Math.round((hPico / capReempaque) * 10) / 10 : 0,
         dotacion: config.dotacion_reempaque,
         dotacionEfectiva: efAlmacen(config.dotacion_reempaque),
         utilizacion: config.util_reempaque,
-        capDiariaFte: Math.round(capReempaque),
+        capDiariaFte: Math.round(capReempaque * 10) / 10,
       }
 
-      if (pk.dias > 0 || mq.dias > 0 || hlClasifDia > 0 || re.dias > 0)
+      if (pk.dias > 0 || mq.dias > 0 || hlClasifDia > 0 || re.dias > 0 || horasFijas > 0)
         almacen = { mes: mesAA, pickeros, clasificadores, reempaque, maquinistas }
+
+      // ── Cuadro anual: meses cerrados con volumen REAL, misma estructura y parámetros de hoy ──
+      const ausAlm = 1 - config.ausentismo_almacen
+      const rolHist = (m: Map<string, number>, capPersona: number, dotacion: number, prodH: number, fijo = 0): HistoricoRol | null => {
+        const st = statsPorDia(m)
+        if (st.dias === 0 && fijo === 0) return null
+        const capEquipo = capPersona * efAlmacen(dotacion)
+        let hh = 0
+        for (const v of m.values()) { const d = v + fijo; if (d > capEquipo && prodH > 0) hh += (d - capEquipo) / prodH }
+        const volProm = st.prom + fijo, volPico = st.pico + fijo
+        const nec = capPersona > 0 && ausAlm > 0 ? Math.round((volProm / capPersona / ausAlm) * 10) / 10 : 0
+        return {
+          volumenProm: Math.round(volProm * 10) / 10, volumenPico: Math.round(volPico * 10) / 10, dias: st.dias,
+          necesariosProm: nec,
+          necesariosPico: capPersona > 0 ? Math.round((volPico / capPersona) * 10) / 10 : 0,
+          sobran: Math.max(0, Math.round((dotacion - nec) * 10) / 10),
+          temporales: Math.max(0, Math.round((nec - dotacion) * 10) / 10),
+          horasExtra: Math.round(hh * 10) / 10,
+        }
+      }
+      for (let mN = 1; mN < hoy.getMonth() + 1; mN++) {
+        const k = `${hoy.getFullYear()}-${String(mN).padStart(2, "0")}`
+        const hlDia = hlRetornablePorDia(mN, hoy.getFullYear())
+        const clasifMap = new Map<string, number>()
+        if (hlDia > 0) for (let d = 1; d <= diasHabilesDelMes(hoy.getFullYear(), mN); d++) clasifMap.set(`${k}-h${d}`, hlDia)
+        const reMap = new Map([...soloMes(reempaquePorDiaAnio, k)].map(([f, b]) => [f, horasVar(b)]))
+        const almHist = {
+          pickeros: rolHist(soloMes(bultosPorDiaAnio, k), capPicker, config.dotacion_almacen, prodPicking),
+          clasificadores: rolHist(clasifMap, capClasif, config.dotacion_clasif, prodClasifHlHh),
+          reempaque: rolHist(reMap, capReempaque, config.dotacion_reempaque, 1, horasFijas),
+          maquinistas: rolHist(soloMes(palPorDiaAnio, k), capMaq, config.dotacion_maquinistas, config.prod_pal_h),
+        }
+        if (Object.values(almHist).some((x) => x && x.dias > 0)) almacenHist.set(k, almHist)
+      }
     } catch (e) {
       almacenError = e instanceof Error ? e.message : "Error almacén"
     }
@@ -623,27 +789,31 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
     // dotación actual = FTE promedio real de dpo-app (registros_vehiculos, egresos).
     let reparto: RepartoData | null = null
     let repartoError: string | null = null
+    const repartoObsPorMes = new Map<string, { choferes: number; ayudantes: number }>()
     try {
-      const { data: regs } = await supabase
-        .from("registros_vehiculos")
-        .select("fecha, chofer, ayudante1, ayudante2")
-        .eq("tipo", "egreso")
-        .gte("fecha", desde)
-      const choByDia = new Map<string, Set<string>>()
-      const ayuByDia = new Map<string, Set<string>>()
-      for (const r of regs ?? []) {
+      const regs = await todas<{ fecha: string; chofer: string | null; ayudante1: string | null; ayudante2: string | null }>((a, b) =>
+        supabase.from("registros_vehiculos").select("fecha, chofer, ayudante1, ayudante2").eq("tipo", "egreso").gte("fecha", inicioAnio).order("fecha").range(a, b))
+      const choByDiaAnio = new Map<string, Set<string>>()
+      const ayuByDiaAnio = new Map<string, Set<string>>()
+      for (const r of regs) {
         const k = r.fecha as string
         const cho = String(r.chofer ?? "").trim()
-        if (cho) (choByDia.get(k) ?? choByDia.set(k, new Set()).get(k)!).add(cho)
+        if (cho) (choByDiaAnio.get(k) ?? choByDiaAnio.set(k, new Set()).get(k)!).add(cho)
         for (const a of [r.ayudante1, r.ayudante2]) {
           const ay = String(a ?? "").trim()
-          if (ay) (ayuByDia.get(k) ?? ayuByDia.set(k, new Set()).get(k)!).add(ay)
+          if (ay) (ayuByDiaAnio.get(k) ?? ayuByDiaAnio.set(k, new Set()).get(k)!).add(ay)
         }
       }
-      const sizes = (m: Map<string, Set<string>>) => [...m.values()].map((s) => s.size)
+      const sizes = (m: Map<string, Set<string>>, mes?: string) => [...m.entries()].filter(([k]) => !mes || k.startsWith(mes)).map(([, s]) => s.size)
       const avgN = (a: number[]) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0)
       const maxN = (a: number[]) => (a.length ? Math.max(...a) : 0)
+      const choByDia = new Map([...choByDiaAnio].filter(([k]) => k.startsWith(mesAA)))
+      const ayuByDia = new Map([...ayuByDiaAnio].filter(([k]) => k.startsWith(mesAA)))
       const choC = sizes(choByDia), ayuC = sizes(ayuByDia)
+      // Cuadro anual: dotación observada por mes cerrado (promedio de personas distintas por día).
+      for (const [k] of metricasPorMes) {
+        repartoObsPorMes.set(k, { choferes: Math.round(avgN(sizes(choByDiaAnio, k)) * 10) / 10, ayudantes: Math.round(avgN(sizes(ayuByDiaAnio, k)) * 10) / 10 })
+      }
       const cnProm = metricas?.camionesNecesariosPromedio ?? 0
       const cnPico = metricas?.camionesNecesariosPico ?? 0
       // dotación efectiva: plantel cargado a mano si >0, si no el promedio real observado.
@@ -724,19 +894,32 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
 
           // Almacén (dotación fija) → horas-hombre extra por mes en los días que el volumen supera la capacidad.
           // Base = volumen PROMEDIO diario; el pico del día lo genera el peso del día de semana (jue/vie ×1,5).
-          const rolesAlm: Array<{ rol: string; rolFte?: RolFte; prodH: number; dotacion: number; unidad: string }> = [
-            { rol: "Pickeros", rolFte: almacen?.pickeros, prodH: config.prod_bul_hh, dotacion: config.dotacion_almacen, unidad: "bultos" },
-            { rol: "Clasificadores", rolFte: almacen?.clasificadores, prodH: config.prod_clasif_pal_h * HL_POR_PALETA_RETORNABLE, dotacion: config.dotacion_clasif, unidad: "HL" },
-            { rol: "Tareas grales (reempaque)", rolFte: almacen?.reempaque, prodH: config.prod_reempaque_bul_hh, dotacion: config.dotacion_reempaque, unidad: "bultos" },
-            { rol: "Maquinistas", rolFte: almacen?.maquinistas, prodH: config.prod_pal_h, dotacion: config.dotacion_maquinistas, unidad: "pallets" },
+          // Tareas generales va en HORAS: la parte variable (bultos de reempaque ÷ bul/HH)
+          // escala con el volumen, las horas fijas (volFijo) no. prodH = 1 (una hora es una hora).
+          const rolesAlm: Array<{ rol: string; rolFte?: RolFte; prodH: number; dotacion: number; unidad: string; volFijo: number }> = [
+            { rol: "Pickeros", rolFte: almacen?.pickeros, prodH: config.prod_bul_hh, dotacion: config.dotacion_almacen, unidad: "bultos", volFijo: 0 },
+            { rol: "Clasificadores", rolFte: almacen?.clasificadores, prodH: config.prod_clasif_pal_h * HL_POR_PALETA_RETORNABLE, dotacion: config.dotacion_clasif, unidad: "HL", volFijo: 0 },
+            { rol: "Tareas grales (reempaque)", rolFte: almacen?.reempaque, prodH: 1, dotacion: config.dotacion_reempaque, unidad: "horas", volFijo: config.horas_fijas_generales },
+            { rol: "Maquinistas", rolFte: almacen?.maquinistas, prodH: config.prod_pal_h, dotacion: config.dotacion_maquinistas, unidad: "pallets", volFijo: 0 },
           ]
           const maxPesoNorm = Math.max(...pesos) / sumaPesos
+          const ausAlm = 1 - config.ausentismo_almacen
           const almacenProy: ProyeccionAlmacenRol[] = rolesAlm.map((r) => {
-            const volBase = r.rolFte?.volumenProm ?? 0                            // promedio diario (NO el pico)
+            const volBase = Math.max(0, (r.rolFte?.volumenProm ?? 0) - r.volFijo) // promedio diario VARIABLE (NO el pico)
             const dotEfectiva = efAlmacen(r.dotacion)                             // descuenta ausentismo
             const capDiaria = (r.rolFte?.capDiariaFte ?? 0) * dotEfectiva         // dotación efectiva
             const capPersona = r.rolFte?.capDiariaFte ?? 0                        // por persona
             const horasExtra: number[] = [], faltanPico: number[] = [], volPicoDia: number[] = []
+            const necesariosProm: number[] = [], sobran: number[] = [], temporales: number[] = []
+            // Lectura mensual (Casa Central): necesarios del día promedio llevados a nómina
+            // (÷ (1 − ausentismo)) contra la dotación nominal → sobran / temporales.
+            const mensual = (volPromDia: number) => {
+              const nec = capPersona > 0 && ausAlm > 0 ? Math.round((volPromDia / capPersona / ausAlm) * 10) / 10 : 0
+              necesariosProm.push(nec)
+              sobran.push(Math.max(0, Math.round((r.dotacion - nec) * 10) / 10))
+              temporales.push(Math.max(0, Math.round((nec - r.dotacion) * 10) / 10))
+            }
+            const base = { rol: r.rol, dotacion: r.dotacion, dotacionEfectiva: dotEfectiva, capDiaria: Math.round(capDiaria), capPersona: Math.round(capPersona * 10) / 10, unidadVol: r.unidad, volPromBase: Math.round(volBase * 10) / 10, volFijo: r.volFijo, prodH: r.prodH }
             // Clasificadores: la demanda es el presupuesto retornable del mes (HL) repartido
             // uniforme entre días hábiles → no escala por índice ni tiene pico por día de semana.
             if (r.rol === "Clasificadores") {
@@ -748,8 +931,9 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
                 horasExtra.push(Math.round(hh * 10) / 10)
                 volPicoDia.push(Math.round(volDia))
                 faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((volDia - capDiaria) / capPersona)) : 0)
+                mensual(volDia)
               }
-              return { rol: r.rol, dotacion: r.dotacion, dotacionEfectiva: dotEfectiva, capDiaria: Math.round(capDiaria), capPersona: Math.round(capPersona), unidadVol: r.unidad, horasExtra, faltanPico, volPicoDia, volPromBase: Math.round(volBase), prodH: r.prodH }
+              return { ...base, horasExtra, faltanPico, volPicoDia, necesariosProm, sobran, temporales }
             }
             for (const mm of meses) {
               const volMes = volBase * mm.indice
@@ -757,16 +941,17 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
               for (const wd of weekdaysDelMes(Number(mm.mes.split("-")[1]))) {
                 const w = pesoDe(wd)
                 if (w <= 0) continue
-                const volDia = volMes * DIAS_SEMANA * w
+                const volDia = volMes * DIAS_SEMANA * w + r.volFijo
                 if (volDia > capDiaria && r.prodH > 0) hh += (volDia - capDiaria) / r.prodH
               }
-              const pico = volMes * DIAS_SEMANA * maxPesoNorm                     // volumen del día más cargado (jue/vie)
+              const pico = volMes * DIAS_SEMANA * maxPesoNorm + r.volFijo         // volumen del día más cargado
               horasExtra.push(Math.round(hh * 10) / 10)
               volPicoDia.push(Math.round(pico))
               // personas extra para cubrir el pico SIN horas extra; redondeo normal (evita "falta 1" por excedente mínimo)
               faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((pico - capDiaria) / capPersona)) : 0)
+              mensual(volMes + r.volFijo)
             }
-            return { rol: r.rol, dotacion: r.dotacion, dotacionEfectiva: dotEfectiva, capDiaria: Math.round(capDiaria), capPersona: Math.round(capPersona), unidadVol: r.unidad, horasExtra, faltanPico, volPicoDia, volPromBase: Math.round(volBase), prodH: r.prodH }
+            return { ...base, horasExtra, faltanPico, volPicoDia, necesariosProm, sobran, temporales }
           })
 
           // Flota → por recurso, días que requieren refuerzo (2ª vuelta o contratar).
@@ -783,8 +968,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             { rol: "Choferes", dotacion: choferesDisp, tripulacion: config.choferes_por_camion },
             { rol: "Ayudantes", dotacion: ayudantesDisp, tripulacion: config.ayudantes_por_camion },
           ]
+          const camionesDe = (ceqDia: number) => zonas.length > 0 ? camionesPorZonas(ceqDia, zonas, capCamionViaje, ceqProm) : (capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0)
           const flotaProy: ProyeccionFlotaRol[] = recursosFlota.map((rf) => {
             const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = [], personaDias: number[] = []
+            const necesariosProm: number[] = [], sobran: number[] = []
             for (const mm of meses) {
               const ceqMes = ceqProm * mm.indice
               let dias = 0, pico = 0, sv = false, pdias = 0
@@ -792,7 +979,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
                 const w = pesoDe(wd)
                 if (w <= 0) continue
                 const ceqDia = ceqMes * DIAS_SEMANA * w
-                const camionesDia = zonas.length > 0 ? camionesPorZonas(ceqDia, zonas, capCamionViaje, ceqProm) : (capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0)
+                const camionesDia = camionesDe(ceqDia)
                 const necesarios = camionesDia * rf.tripulacion
                 if (necesarios > rf.dotacion) { dias++; pdias += necesarios - rf.dotacion }
                 if (camionesDia > camionesDisp) sv = true
@@ -800,9 +987,15 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
               }
               diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv)
               personaDias.push(Math.round(pdias * 10) / 10)
+              // día promedio del mes: cuántos hacen falta y cuántos sobran de la dotación
+              const necProm = camionesDe(ceqMes) * rf.tripulacion
+              necesariosProm.push(necProm)
+              sobran.push(Math.max(0, rf.dotacion - necProm))
             }
-            return { rol: rf.rol, dotacion: rf.dotacion, tripulacion: rf.tripulacion, diasRefuerzo, picoNecesario, segundaVueltaMeses, personaDias }
+            return { rol: rf.rol, dotacion: rf.dotacion, tripulacion: rf.tripulacion, diasRefuerzo, picoNecesario, segundaVueltaMeses, personaDias, necesariosProm, sobran }
           })
+          // Ocupación proyectada de la flota por mes (capacidad instalada, no descuenta taller).
+          const ocupacionMes = meses.map((mm) => (capacidadInstaladaDiaria > 0 ? Math.round(((ceqProm * mm.indice) / capacidadInstaladaDiaria) * 1000) / 1000 : 0))
 
           // Costo de la hora extra por mes/sector + VLC/HL de referencia, para valorizar
           // las horas extra que el modelo proyecta y traducirlas a $/HL incremental.
@@ -850,11 +1043,140 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             choferesDisp, camionesDisp, capCamion: Math.round(capCamion),
             pesos: pesos.map((x) => Math.round((x / sumaPesos) * 1000) / 1000),
             costoHh, horasVueltaExtra: config.horas_vuelta_extra, vlc,
+            ocupacionMes, capacidadInstalada: Math.round(capacidadInstaladaDiaria), umbralOciosa: config.umbral_ocupacion_ociosa,
           }
         }
       }
     } catch (e) {
       proyeccionError = e instanceof Error ? e.message : "Error proyección"
+    }
+
+    // Escenarios de volumen del año (HL/mes): AA, presupuesto, forecast y real.
+    // Real y AA = HL distribuidos con flota propia (pc_volumen_diario, Chess + GESCOM).
+    const escenarios: EscenarioVolumenMes[] = []
+    try {
+      const anio = hoy.getFullYear()
+      const mesHoy = hoy.getMonth() + 1
+      const filas: { fecha: string; bultos_distribuidos: number | string | null }[] = []
+      for (let off = 0; ; off += 1000) {
+        const { data: pv, error: pvErr } = await supabase
+          .from("pc_volumen_diario").select("fecha, bultos_distribuidos")
+          .gte("fecha", `${anio - 1}-01-01`).lte("fecha", `${anio}-12-31`)
+          .order("fecha").range(off, off + 999)
+        if (pvErr || !pv) break
+        filas.push(...pv)
+        if (pv.length < 1000) break
+      }
+      const hlMes = new Map<string, { hl: number; dias: number }>()
+      for (const r of filas) {
+        const k = String(r.fecha).slice(0, 7)
+        const hl = Number(r.bultos_distribuidos ?? 0)
+        if (!Number.isFinite(hl) || hl <= 0) continue
+        const cur = hlMes.get(k) ?? { hl: 0, dias: 0 }
+        cur.hl += hl; cur.dias++
+        hlMes.set(k, cur)
+      }
+      const { data: ppto } = await supabase.from("dim_volumen_proyectado").select("mes, hl, ajuste_pct").eq("anio", anio)
+      const pptoMes = new Map((ppto ?? []).map((r) => [Number(r.mes), { hl: Number(r.hl), pct: Number((r as { ajuste_pct?: number }).ajuste_pct ?? 0) }]))
+      for (let m = 1; m <= 12; m++) {
+        const k = `${anio}-${String(m).padStart(2, "0")}`
+        const kAA = `${anio - 1}-${String(m).padStart(2, "0")}`
+        const real = hlMes.get(k), aa = hlMes.get(kAA), p = pptoMes.get(m)
+        escenarios.push({
+          mes: m,
+          aa: aa ? Math.round(aa.hl) : null,
+          presupuesto: p && p.hl > 0 ? Math.round(p.hl) : null,
+          forecast: p && p.hl > 0 ? Math.round(p.hl * (1 + p.pct / 100)) : null,
+          real: real ? Math.round(real.hl) : null,
+          diasReal: real?.dias ?? 0,
+          parcial: m === mesHoy,
+        })
+      }
+    } catch {
+      // sin pc_volumen_diario (o sin permisos) la tabla de escenarios queda vacía
+    }
+
+    // ── Cuadro anual: meses cerrados con datos reales, misma estructura y parámetros de hoy ──
+    const historico: HistoricoMes[] = []
+    {
+      const mesesCerrados = new Set<string>([...metricasPorMes.keys(), ...almacenHist.keys()])
+      const dotCho = config.dotacion_choferes, dotAyu = config.dotacion_ayudantes
+      for (const k of [...mesesCerrados].sort()) {
+        const mf = metricasPorMes.get(k) ?? null
+        const obs = repartoObsPorMes.get(k) ?? null
+        // día por día: camiones necesarios > disponibles, y personas que faltaron (tripulación)
+        let diasRef = 0, pdias = 0
+        if (mf) {
+          const choDisp = dotCho > 0 ? dotCho : Math.round(obs?.choferes ?? 0)
+          const ayuDisp = dotAyu > 0 ? dotAyu : Math.round(obs?.ayudantes ?? 0)
+          for (const c of (cierresAnio ?? []).filter((x) => String(x.fecha).startsWith(k))) {
+            const ceq = (Number(c.pergamino_bultos ?? 0) + Number(c.ramallo_bultos ?? 0)) * f
+            if (ceq <= 0) continue
+            const cam = zonas.length > 0 ? camionesPorZonas(ceq, zonas, capUnidad, mf.volumenCeqPromedio) : (capUnidad > 0 ? Math.ceil(ceq / capUnidad) : 0)
+            if (cam > disponibles.length) diasRef++
+            pdias += Math.max(0, cam * config.choferes_por_camion - choDisp) + Math.max(0, cam * config.ayudantes_por_camion - ayuDisp)
+          }
+        }
+        historico.push({
+          mes: k, flota: mf, repartoObs: obs, diasRefuerzoFlota: diasRef,
+          horasExtraDistribucion: Math.round(pdias * config.horas_vuelta_extra * 10) / 10,
+          almacen: almacenHist.get(k) ?? { pickeros: null, clasificadores: null, reempaque: null, maquinistas: null },
+        })
+      }
+    }
+
+    // ── Horas extra por mes y sector: reales / dimensionadas / presupuestadas ──
+    const horasExtra: HorasExtraMes[] = []
+    try {
+      const anio = hoy.getFullYear()
+      // Reales de almacén: deposito-esteban (Σ horas extra del indicador DPO #39, campo "registros").
+      const hsAlm = await fetchDepositoJson(`/api/productividad/hs-extras-resumen?anio=${anio}`)
+      const realAlm = new Map<number, number>()
+      for (const m of (hsAlm?.meses as Array<{ mes?: number; registros?: number }> | undefined) ?? [])
+        if (m.mes) realAlm.set(Number(m.mes), Number(m.registros ?? 0))
+      // Reales de distribución: fichadas de los empleados del sector, con la regla de pago
+      // de horas-extras.ts (50 % lun-vie desde las 15:00, 100 % sábados).
+      const realDis = new Map<number, number>()
+      const { data: emps } = await supabase.from("empleados").select("legajo").eq("sector", "Distribución")
+      const legajos = (emps ?? []).map((e) => Number(e.legajo)).filter((x) => x > 0)
+      if (legajos.length) {
+        const marcas = await todas<MarcaHheeRow>((a, b) =>
+          supabase.from("asistencia_marcas").select("legajo, fecha_marca, tipo_marca").in("legajo", legajos)
+            .gte("fecha_marca", `${anio}-01-01T00:00:00Z`).lte("fecha_marca", `${anio}-12-31T23:59:59Z`).order("fecha_marca").range(a, b))
+        for (const dias of hheePorLegajo(marcas).values())
+          for (const d of dias) { const m = Number(d.fecha.slice(5, 7)); realDis.set(m, (realDis.get(m) ?? 0) + d.hs_50 + d.hs_100) }
+      }
+      const { data: ch } = await supabase.from("dim_costo_hh").select("mes, hh_ppto_almacen, hh_ppto_entrega").eq("anio", anio)
+      const ppto = new Map((ch ?? []).map((r) => [Number(r.mes), r as { hh_ppto_almacen?: number; hh_ppto_entrega?: number }]))
+      // Dimensionadas: histórico para los meses cerrados, proyección para el mes en curso y los que vienen.
+      const dimAlm = new Map<number, number>(), dimDis = new Map<number, number>()
+      for (const h of historico) {
+        const m = Number(h.mes.slice(5, 7))
+        dimAlm.set(m, Object.values(h.almacen).reduce((s, r) => s + (r?.horasExtra ?? 0), 0))
+        dimDis.set(m, h.horasExtraDistribucion)
+      }
+      if (proyeccion) {
+        proyeccion.meses.forEach((mm, i) => {
+          const m = Number(mm.mes.slice(5, 7))
+          dimAlm.set(m, proyeccion!.almacen.reduce((s, r) => s + (r.horasExtra[i] ?? 0), 0))
+          dimDis.set(m, proyeccion!.flota.filter((r) => r.rol !== "Camiones").reduce((s, r) => s + (r.personaDias[i] ?? 0), 0) * proyeccion!.horasVueltaExtra)
+        })
+      }
+      const r1 = (v: number) => Math.round(v * 10) / 10
+      for (let m = 1; m <= 12; m++) {
+        const p = ppto.get(m)
+        horasExtra.push({
+          mes: m,
+          realAlmacen: realAlm.has(m) ? r1(realAlm.get(m)!) : null,
+          realDistribucion: realDis.has(m) ? r1(realDis.get(m)!) : null,
+          dimAlmacen: dimAlm.has(m) ? r1(dimAlm.get(m)!) : null,
+          dimDistribucion: dimDis.has(m) ? r1(dimDis.get(m)!) : null,
+          pptoAlmacen: p ? Number(p.hh_ppto_almacen ?? 0) : null,
+          pptoDistribucion: p ? Number(p.hh_ppto_entrega ?? 0) : null,
+        })
+      }
+    } catch {
+      // sin fichadas / depósito / tarifas: la fila de horas extra queda vacía
     }
 
     return {
@@ -873,6 +1195,9 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         repartoError,
         proyeccion,
         proyeccionError,
+        escenarios,
+        historico,
+        horasExtra,
         planes: (planesRes.data ?? []) as DimPlan[],
       },
     }
@@ -948,6 +1273,8 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         ausentismo_almacen: Math.min(0.9, Math.max(0, Number(config.ausentismo_almacen) || 0)),
         ausentismo_reparto: Math.min(0.9, Math.max(0, Number(config.ausentismo_reparto) || 0)),
         horas_vuelta_extra: Math.min(12, Math.max(0.5, Number(config.horas_vuelta_extra) || 4)),
+        horas_fijas_generales: Math.min(24, Math.max(0, Number(config.horas_fijas_generales) || 0)),
+        umbral_ocupacion_ociosa: Math.min(0.99, Math.max(0.05, Number(config.umbral_ocupacion_ociosa) || 0.7)),
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
       })

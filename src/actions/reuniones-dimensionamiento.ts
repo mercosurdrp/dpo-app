@@ -25,7 +25,9 @@ type Result<T> = { data: T } | { error: string }
 
 const ROLES_EDICION: ("admin" | "admin_rrhh" | "supervisor")[] = ["admin", "admin_rrhh", "supervisor"]
 
-type Estado = "cubre" | "extras_pico" | "faltan"
+// "ociosa" = la alerta por EXCESO (R2.3.2 / SOP §3): la dotación cubre de sobra
+// —necesarios del día promedio por debajo del umbral de ocupación (70 %)—.
+type Estado = "cubre" | "extras_pico" | "faltan" | "ociosa"
 
 export interface ResumenAlmacenRol {
   rol: string
@@ -38,6 +40,8 @@ export interface ResumenAlmacenRol {
   horasExtra: number        // hora-hombre extra del mes
   costoHorasExtra: number
   faltanPico: number        // personas que faltarían en el día pico
+  necesariosProm?: number   // FTE necesarios en el día promedio, con ausentismo
+  sobran?: number           // dotación − necesarios (jornales sobrantes), si > 0
   estado: Estado
 }
 
@@ -49,6 +53,9 @@ export interface ResumenFlotaRecurso {
   horasExtra: number        // hora-hombre extra (solo choferes/ayudantes)
   costoHorasExtra: number
   segundaVuelta: boolean
+  necesariosProm?: number   // necesarios en el día promedio
+  sobran?: number           // dotación − necesarios en el día promedio, si > 0
+  ocupacion?: number        // sólo camiones: CEq promedio ÷ capacidad instalada (0–1)
   estado: Estado
 }
 
@@ -98,11 +105,17 @@ async function construirResumen(fechaReunion: string): Promise<Result<ResumenDim
   const costoHhAlmacen = tar?.almacen ?? 0
   const costoHhEntrega = tar?.entrega ?? 0
 
+  const umbral = p.umbralOciosa ?? 0.7
   const almacen: ResumenAlmacenRol[] = p.almacen.map((r) => {
     const hh = r.horasExtra[i] ?? 0
     const faltan = r.faltanPico[i] ?? 0
-    const estado: Estado = faltan > 0 ? "faltan" : hh > 0 ? "extras_pico" : "cubre"
+    const nec = r.necesariosProm?.[i] ?? 0
+    const sobran = r.sobran?.[i] ?? 0
+    const ociosa = r.dotacion > 0 && nec > 0 && nec / r.dotacion < umbral
+    const estado: Estado = faltan > 0 ? "faltan" : hh > 0 ? "extras_pico" : ociosa ? "ociosa" : "cubre"
     return {
+      necesariosProm: nec,
+      sobran,
       rol: r.rol,
       unidad: r.unidadVol,
       dotacion: r.dotacion,
@@ -122,8 +135,15 @@ async function construirResumen(fechaReunion: string): Promise<Result<ResumenDim
     const sv = r.segundaVueltaMeses[i] ?? false
     // Los camiones son un activo, no hora-hombre: no generan horas extra.
     const hh = r.rol === "Camiones" ? 0 : Math.round((r.personaDias?.[i] ?? 0) * p.horasVueltaExtra * 10) / 10
-    const estado: Estado = sv ? "faltan" : dias > 0 ? "extras_pico" : "cubre"
+    const nec = r.necesariosProm?.[i] ?? 0
+    const sobran = r.sobran?.[i] ?? 0
+    const ocupacion = r.rol === "Camiones" ? (p.ocupacionMes?.[i] ?? 0) : (r.dotacion > 0 ? nec / r.dotacion : 0)
+    const ociosa = ocupacion > 0 && ocupacion < umbral
+    const estado: Estado = sv ? "faltan" : dias > 0 ? "extras_pico" : ociosa ? "ociosa" : "cubre"
     return {
+      necesariosProm: nec,
+      sobran,
+      ocupacion: r.rol === "Camiones" ? Math.round(ocupacion * 1000) / 1000 : undefined,
       recurso: r.rol,
       dotacion: r.dotacion,
       picoNecesario: r.picoNecesario[i] ?? 0,
