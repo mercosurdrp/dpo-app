@@ -59,7 +59,8 @@ const fmtPct = (v: number) =>
 //
 // La punta es el AUXILIO EN RUTA y no la avería grave: la falla que duele no es
 // la que para la unidad en el taller, es la que la deja tirada afuera con el
-// reparto arriba. Se marca con un tilde en la OT (`auxilio_ruta`).
+// reparto arriba. Se marca con un tilde en la OT (`auxilio_ruta`), y sólo
+// cuenta sobre correctivas: un preventivo programado no es un auxilio.
 const NIVELES = [
   {
     key: "auxilio",
@@ -70,11 +71,14 @@ const NIVELES = [
   {
     key: "averia",
     titulo: "Avería grave",
-    // 🚨 Antes contaba las OT correctivas en estado "en_taller" y por eso daba
-    // SIEMPRE 0: las órdenes se cargan ya cerradas, en "completado". La avería
-    // grave es la que dejó la unidad parada, y eso lo dice el período de fuera
-    // de servicio, no el estado de la orden.
-    detalle: "Correctivo que dejó la unidad fuera de servicio",
+    // 🚨 Este nivel ya estuvo mal dos veces. Primero contaba las correctivas en
+    // estado "en_taller" y daba SIEMPRE 0 (las órdenes se cargan ya cerradas,
+    // en "completado"). Después contaba toda correctiva con período fuera de
+    // servicio cargado y daba 29 sobre 35: ese período se carga en TODA OT que
+    // pasa por el taller, así que entraban un reemplazo de foco de 1 hora, una
+    // reparación de neumático y una guía de lona. Lo que hace grave a la falla
+    // es que la unidad perdió días de calle: ver MIN_DIAS_PARADA.
+    detalle: "Correctivo que dejó la unidad parada 2 días o más",
     color: "#a63a2a",
   },
   {
@@ -241,14 +245,37 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
     const mantes = mantenimientos.filter((m) => dentroDe(m.fecha, rango))
     const correctivos = mantes.filter((m) => m.tipo === "correctivo")
 
+    /**
+     * Días que la unidad estuvo fuera de servicio por esta OT. Sin salida
+     * cargada la unidad sigue parada, así que se mide contra hoy.
+     */
+    const diasParada = (m: MantenimientoRealizado) =>
+      m.fuera_servicio_desde
+        ? diasEntreFechas(m.fuera_servicio_desde, m.fuera_servicio_hasta ?? hoyISO())
+        : null
+
+    /**
+     * El corte de la avería grave. Tener período fuera de servicio cargado no
+     * alcanza: eso lo tiene cualquier OT que entró al taller, aunque haya
+     * entrado y salido en 4 horas. Grave es cuando la unidad no volvió a la
+     * calle al día siguiente, o sea 2 días o más de parada.
+     */
+    const MIN_DIAS_PARADA = 2
+    const esAveriaGrave = (m: MantenimientoRealizado) => {
+      const d = diasParada(m)
+      return d !== null && d >= MIN_DIAS_PARADA
+    }
+
     const conteo: Record<string, number> = {
       leve: items.filter((i) => !i.critico).length,
       critico: items.filter((i) => i.critico).length,
       correctivo: correctivos.length,
-      averia: correctivos.filter((m) => !!m.fuera_servicio_desde).length,
-      // La punta. Cuenta cualquier OT marcada, no sólo las correctivas: el
-      // auxilio del AF469UR del 23/06 está cargado como preventivo.
-      auxilio: mantes.filter((m) => m.auxilio_ruta).length,
+      averia: correctivos.filter(esAveriaGrave).length,
+      // La punta. Sólo sobre correctivas: una OT planificada no puede ser un
+      // auxilio en ruta. La 1717 del AF469UR (un preventivo del 23/06) tenía el
+      // tilde marcado y hacía figurar un auxilio que nunca existió; el tilde ya
+      // se limpió en la base, y este filtro evita que vuelva a pasar.
+      auxilio: correctivos.filter((m) => m.auxilio_ruta).length,
     }
     // El cimiento: lo planificado, que es lo que evita que la pirámide crezca.
     const preventivos = mantes.filter((m) => m.tipo === "preventivo").length
@@ -428,14 +455,15 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
         .filter((i) => i.critico)
         .sort((a, b) => b.fecha.localeCompare(a.fecha)),
       correctivos: [...correctivos].sort((a, b) => b.fecha.localeCompare(a.fecha)),
-      // Los dos niveles de la punta: hasta ahora eran sólo un número dibujado y
-      // no había forma de saber de qué unidad ni de qué OT hablaban.
+      // Los dos niveles de la punta: hasta hace poco eran sólo un número
+      // dibujado y no había forma de saber de qué unidad ni de qué OT hablaban.
       averias: correctivos
-        .filter((m) => !!m.fuera_servicio_desde)
+        .filter(esAveriaGrave)
         .sort((a, b) => b.fecha.localeCompare(a.fecha)),
-      auxilios: mantes
+      auxilios: correctivos
         .filter((m) => m.auxilio_ruta)
         .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+      minDiasParada: MIN_DIAS_PARADA,
     }
   }, [itemsNoOk, mantenimientos, rango, exposicion])
 
@@ -469,7 +497,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       case "auxilios":
         return {
           titulo: `Auxilios en ruta (${datos.auxilios.length})`,
-          descripcion: `OT marcadas con el tilde de auxilio: la unidad quedó parada fuera de la planta y hubo que ir a asistirla · ${etiquetaRango}`,
+          descripcion: `Correctivas marcadas con el tilde de auxilio: la unidad quedó parada fuera de la planta y hubo que ir a asistirla · ${etiquetaRango}`,
           vacio: "Sin auxilios en ruta registrados en el período.",
           ots: datos.auxilios,
           columna: "tipo" as const,
@@ -477,7 +505,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       case "averias":
         return {
           titulo: `Averías graves (${datos.averias.length})`,
-          descripcion: `Correctivos que dejaron la unidad fuera de servicio · ${etiquetaRango}`,
+          descripcion: `Correctivos que dejaron la unidad parada ${datos.minDiasParada} días o más · ${etiquetaRango}. Las que entran y salen del taller el mismo día quedan en el nivel de abajo, "Correctivo en taller".`,
           vacio: "Sin averías graves en el período.",
           ots: datos.averias,
           columna: "parada" as const,
@@ -770,7 +798,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
           label="Averías graves"
           valor={fmtNum(datos.conteo.averia)}
           estado={datos.conteo.averia > 0 ? "critico" : "ok"}
-          sub="Correctivos que dejaron la unidad fuera de servicio · click para verlas"
+          sub={`Correctivos que dejaron la unidad parada ${datos.minDiasParada} días o más · click para verlas`}
           onClick={() => setDetalleKpi("averias")}
         />
         <KpiCard
