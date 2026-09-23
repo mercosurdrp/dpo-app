@@ -55,6 +55,7 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
   const flotaRol = (rol: string) => proy?.flota.find((r) => r.rol === rol)
   const almRol = (rol: string) => proy?.almacen.find((r) => r.rol === rol)
   const umbral = data.config.umbral_ocupacion_ociosa
+  const pctDist = proy?.pctDistribuido ?? data.config.pct_distribuido
 
   const colCls = (c: Col) => (c.tipo === "actual" ? "bg-sky-50" : c.tipo === "futuro" ? "text-slate-500" : "")
   const dash = <span className="text-muted-foreground">—</span>
@@ -161,9 +162,9 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
     return <span className={excede ? "font-semibold text-red-700" : ""}>{fmt1(v)} h</span>
   }
 
-  const cerrados = cols.filter((c) => c.tipo === "cerrado" && esc(c.m)?.vendido != null && esc(c.m)?.presupuesto != null)
-  const ytdReal = cerrados.reduce((s, c) => s + (esc(c.m)?.vendido ?? 0), 0)
-  const ytdPpto = cerrados.reduce((s, c) => s + (esc(c.m)?.presupuesto ?? 0), 0)
+  const cerrados = cols.filter((c) => c.tipo === "cerrado" && esc(c.m)?.real != null && esc(c.m)?.aDistribuir != null)
+  const ytdReal = cerrados.reduce((s, c) => s + (esc(c.m)?.real ?? 0), 0)
+  const ytdPpto = cerrados.reduce((s, c) => s + (esc(c.m)?.forecastDistribuir ?? esc(c.m)?.aDistribuir ?? 0), 0)
   const desvio = pct(ytdReal, ytdPpto)
 
   return (
@@ -178,10 +179,13 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
             <TableBody>
               {grupo("Volumen (HL / mes)")}
               {fila("Presupuesto (venta facturada)", (c) => { const v = esc(c.m)?.presupuesto; return v == null ? dash : fmt(v) })}
-              {fila("Forecast (escenario)", (c) => { const e = esc(c.m); const v = c.pi >= 0 && proy ? Math.round(proy.meses[c.pi].hl) : e?.forecast; return v == null ? dash : <span className={e?.presupuesto != null && v !== e.presupuesto ? "font-semibold text-sky-700" : ""}>{fmt(v)}</span> })}
+              {fila(<>Presupuesto a distribuir <span className="text-xs font-normal text-muted-foreground">(× {Math.round(pctDist * 100)} %)</span></>, (c) => { const e = esc(c.m); const hl = c.pi >= 0 && proy ? proy.meses[c.pi].hl : e?.forecast ?? e?.presupuesto; return hl == null ? dash : <span className={e?.presupuesto != null && Math.round(hl) !== e.presupuesto ? "font-semibold text-sky-700" : "font-semibold"}>{fmt(Math.round(hl * pctDist))}</span> })}
+              {fila("Forecast (escenario)", (c) => { const e = esc(c.m); const v = c.pi >= 0 && proy ? Math.round(proy.meses[c.pi].hl) : e?.forecast; return v == null ? dash : <span className={e?.presupuesto != null && v !== e.presupuesto ? "font-semibold text-sky-700" : ""}>{fmt(v)}</span> }, true)}
               {fila(<b>Vendido real (facturado neto)</b>, (c) => { const e = esc(c.m); return e?.vendido == null ? dash : <b>{fmt(e.vendido)}{e.parcial ? "*" : ""}</b> })}
               {fila("Vendido vs presupuesto", (c) => { const e = esc(c.m); if (!e || e.parcial) return dash; const v = pct(e.vendido, e.presupuesto); return <span className={v != null && v < -0.1 ? "text-red-700" : v != null && v > 0.1 ? "text-sky-700" : ""}>{fmtPct(v)}</span> }, true)}
-              {fila("Distribuido con flota propia", (c) => { const e = esc(c.m); return e?.real == null ? dash : <>{fmt(e.real)}{e.parcial ? "*" : ""}</> })}
+              {fila(<b>Distribuido con flota propia</b>, (c) => { const e = esc(c.m); return e?.real == null ? dash : <b>{fmt(e.real)}{e.parcial ? "*" : ""}</b> })}
+              {fila("Distribuido vs presupuesto a distribuir", (c) => { const e = esc(c.m); if (!e || e.parcial) return dash; const v = pct(e.real, e.forecastDistribuir ?? e.aDistribuir); return <span className={v != null && v < -0.1 ? "text-red-700" : v != null && v > 0.1 ? "text-sky-700" : ""}>{fmtPct(v)}</span> }, true)}
+              {fila("% distribuido real (÷ vendido)", (c) => { const e = esc(c.m); if (!e || e.parcial || e.pctReal == null) return dash; return <span className={Math.abs(e.pctReal - pctDist) > 0.05 ? "font-semibold text-amber-700" : ""}>{Math.round(e.pctReal * 100)} %</span> }, true)}
               {fila("Distribuido año anterior", (c) => { const v = esc(c.m)?.aa; return v == null ? dash : fmt(v) })}
               {fila("Distribuido vs año anterior", (c) => { const e = esc(c.m); if (!e || e.parcial) return dash; return fmtPct(pct(e.real, e.aa)) }, true)}
 
@@ -211,9 +215,9 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           Columnas <b>real</b> = meses cerrados calculados con los datos del mes (cierres de ruteo, ocupación de bodega, carga y acarreo, fichadas) y la estructura de hoy; <b>en curso</b> = lo que muestran las solapas; <b>proy.</b> = presupuesto × escenario sobre el volumen real actual. * = mes incompleto.
-          <b>Vendido real</b> = HL facturados netos (Chess + mostrador − notas de crédito), la misma cuenta que el VLC/HL del Sueño y que el Presupuesto: es lo comparable con el presupuesto. <b>Distribuido con flota propia</b> = HL que salieron a reparto con nuestros camiones (Chess + GESCOM sin patentes, la base de Períodos Críticos): es lo que mueve el depósito y la flota, y lo único con 2025 para comparar con el año anterior. «nec. / dotación» = necesarios en el día promedio (almacén: ÷ (1 − ausentismo)) contra la dotación nominal; <span className="text-red-700">faltan</span> = temporales requeridos, <span className="text-sky-700">sobran</span> en azul = ocupación por debajo del {Math.round(umbral * 100)} % (capacidad ociosa).
+          <b>Presupuesto a distribuir</b> = presupuesto (o forecast) × {Math.round(pctDist * 100)} %: el presupuesto es venta facturada y el depósito y la flota mueven esa fracción; sobre ese volumen se dimensiona la proyección. <b>Vendido real</b> = HL facturados netos (Chess + mostrador − notas de crédito), la misma cuenta que el VLC/HL del Sueño y que el Presupuesto. <b>Distribuido con flota propia</b> = HL que salieron a reparto con nuestros camiones (Chess + GESCOM sin patentes, la base de Períodos Críticos): se compara con el presupuesto a distribuir y con el año anterior; «% distribuido real» = distribuido ÷ vendido, en ámbar cuando se aleja más de 5 puntos del {Math.round(pctDist * 100)} % (para recalibrar el parámetro). «nec. / dotación» = necesarios en el día promedio (almacén: ÷ (1 − ausentismo)) contra la dotación nominal; <span className="text-red-700">faltan</span> = temporales requeridos, <span className="text-sky-700">sobran</span> en azul = ocupación por debajo del {Math.round(umbral * 100)} % (capacidad ociosa).
           Horas extra: reales de almacén = deposito-esteban (indicador DPO #39); reales de distribución = fichadas del sector con la regla de pago (50 % lun-vie, 100 % sáb); dimensionadas = lo que pide el modelo; presupuestadas = «Q Horas Extras» del EERR cargado en Costo/HL. En rojo cuando superan el presupuesto.
-          {desvio != null && Math.abs(desvio) >= 0.1 ? <> <b className={desvio < 0 ? "text-red-700" : "text-sky-700"}>El real cerrado va {fmtPct(desvio)} contra el presupuesto</b>: si el desvío se mantiene, cargalo como escenario en los meses que faltan (la proyección escala el volumen real de hoy por el índice del presupuesto).</> : null}
+          {desvio != null && Math.abs(desvio) >= 0.1 ? <> <b className={desvio < 0 ? "text-red-700" : "text-sky-700"}>Lo distribuido en los meses cerrados va {fmtPct(desvio)} contra el presupuesto a distribuir</b>: si el desvío se mantiene, cargalo como escenario en los meses que faltan o revisá el % que se distribuye.</> : null}
         </p>
       </CardContent>
     </Card>

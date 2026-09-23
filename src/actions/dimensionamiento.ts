@@ -148,6 +148,7 @@ export interface DimConfig {
   horas_vuelta_extra: number    // horas extra por persona en un día de refuerzo de flota (días → hora-hombre)
   horas_fijas_generales: number // horas/día de tareas generales que no dependen del volumen (limpieza, prensa, orden)
   umbral_ocupacion_ociosa: number // ocupación (0–1) por debajo de la cual se marca "capacidad ociosa" (SOP: 0,70)
+  pct_distribuido: number       // fracción del presupuesto de venta que se pickea y sale con flota propia (0,80)
 }
 
 // Volumen del año, mes a mes, en HL: año anterior (AA), presupuesto, forecast
@@ -160,6 +161,9 @@ export interface EscenarioVolumenMes {
   aa: number | null           // HL DISTRIBUIDOS del mismo mes del año anterior (pc_volumen_diario)
   presupuesto: number | null  // HL del presupuesto anual ("Total en HL" del EERR: venta facturada)
   forecast: number | null     // presupuesto × (1 + ajuste_pct/100); null si no hay presupuesto
+  aDistribuir: number | null  // presupuesto × pct_distribuido: lo que el depósito y la flota tienen que mover
+  forecastDistribuir: number | null // forecast × pct_distribuido: el volumen sobre el que se dimensiona
+  pctReal: number | null      // distribuido real ÷ vendido real del mes (para calibrar pct_distribuido)
   vendido: number | null      // HL VENDIDOS del mes = facturado Chess neto (chess + mostrador − NC), la misma
                               // definición que el VLC/HL del Sueño y el Presupuesto → comparable con el presupuesto
   real: number | null         // HL DISTRIBUIDOS con flota propia (Chess + GESCOM sin patentes, base de Períodos
@@ -263,7 +267,9 @@ export interface ProyeccionMes {
   hl: number              // HL del escenario = presupuesto × (1 + ajuste_pct/100)
   hlPresupuesto: number   // HL original del presupuesto anual
   ajustePct: number       // % de ajuste de escenario cargado para el mes (0 = sin ajuste)
-  indice: number          // hl / hlBase
+  diasHabiles: number     // lun-sáb sin feriados: el HL/mes se lleva a HL/día con esto
+  hlDistribuir: number    // hl × pct_distribuido: el volumen que se dimensiona
+  indice: number          // (hl ÷ díasHábiles) ÷ (hlBase ÷ díasHábilesBase): volumen POR DÍA relativo al mes base
 }
 // Almacén: dotación fija → horas extra (hora-hombre) por mes en los días que el volumen supera la capacidad.
 export interface ProyeccionAlmacenRol {
@@ -317,6 +323,15 @@ export interface ProyeccionData {
   ocupacionMes: number[]         // por mes: CEq promedio diario ÷ capacidad instalada diaria (0–1)
   capacidadInstalada: number     // CEq/día de toda la flota activa × viajes
   umbralOciosa: number           // ocupación mínima antes de marcar capacidad ociosa (0–1)
+  // Anclaje al presupuesto a distribuir: la proyección no escala el volumen real de hoy,
+  // escala el volumen que el PRESUPUESTO (× pct_distribuido) dice que hay que mover.
+  // anclaje = (presupuesto a distribuir por día hábil del mes base) ÷ (distribuido real por día del mes base);
+  // se multiplica sobre el volumen base de flota y de almacén (no de clasificadores, que ya van por presupuesto).
+  pctDistribuido: number
+  diasHabilesBase: number
+  realDistDiaBase: number        // HL distribuidos por día, real del mes base (pc_volumen_diario)
+  pptoDistDiaBase: number        // hlBase × pct ÷ días hábiles del mes base
+  anclaje: number                // 1 si no hay real del mes base
 }
 
 export interface DimPlan {
@@ -491,6 +506,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       horas_vuelta_extra: 4,
       horas_fijas_generales: 2,
       umbral_ocupacion_ociosa: 0.7,
+      pct_distribuido: 0.8,
     }
     {
       const { data: hve } = await supabase.from("dim_config").select("horas_vuelta_extra").eq("id", 1).maybeSingle()
@@ -504,6 +520,12 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       if (Number.isFinite(hf) && hf >= 0) config.horas_fijas_generales = hf
       const uo = Number(ext?.umbral_ocupacion_ociosa)
       if (Number.isFinite(uo) && uo > 0 && uo < 1) config.umbral_ocupacion_ociosa = uo
+    }
+    {
+      // migración 20260923120000: fracción del presupuesto que se distribuye
+      const { data: ext } = await supabase.from("dim_config").select("pct_distribuido").eq("id", 1).maybeSingle()
+      const pd = Number(ext?.pct_distribuido)
+      if (Number.isFinite(pd) && pd > 0 && pd <= 1.5) config.pct_distribuido = pd
     }
     // Dotación efectiva de almacén: descuenta el ausentismo promedio (1 decimal).
     const efAlmacen = (dot: number) => Math.round(dot * (1 - config.ausentismo_almacen) * 10) / 10
@@ -850,8 +872,26 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       repartoError = e instanceof Error ? e.message : "Error reparto"
     }
 
-    // Proyección de dotación vs volumen futuro (HL/mes presupuesto). Escala los necesarios
-    // de cada recurso por el índice hl_mes/hl_mes_actual y compara con la dotación fija.
+    // HL DISTRIBUIDOS con flota propia por mes (pc_volumen_diario, Chess + GESCOM sin patentes),
+    // año anterior y en curso. Alimenta el anclaje de la proyección y el cuadro anual.
+    const hlMesDist = new Map<string, { hl: number; dias: number }>()
+    {
+      const filas = await todas<{ fecha: string; bultos_distribuidos: number | string | null }>((a, b) =>
+        supabase.from("pc_volumen_diario").select("fecha, bultos_distribuidos")
+          .gte("fecha", `${hoy.getFullYear() - 1}-01-01`).lte("fecha", `${hoy.getFullYear()}-12-31`).order("fecha").range(a, b))
+      for (const r of filas) {
+        const k = String(r.fecha).slice(0, 7)
+        const hl = Number(r.bultos_distribuidos ?? 0)
+        if (!Number.isFinite(hl) || hl <= 0) continue
+        const cur = hlMesDist.get(k) ?? { hl: 0, dias: 0 }
+        cur.hl += hl; cur.dias++
+        hlMesDist.set(k, cur)
+      }
+    }
+
+    // Proyección de dotación vs volumen futuro (HL/mes presupuesto × pct_distribuido). Escala
+    // los necesarios de cada recurso por el índice de volumen POR DÍA de cada mes respecto
+    // del mes base, ancla el volumen base al presupuesto a distribuir y compara con la dotación fija.
     let proyeccion: ProyeccionData | null = null
     let proyeccionError: string | null = null
     try {
@@ -868,6 +908,14 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const hlBasePresupuesto = base?.hl ?? 0
       const ajusteBasePct = base?.pct ?? 0
       const hlBase = hlBasePresupuesto * (1 + ajusteBasePct / 100)
+      const pctDist = config.pct_distribuido
+      const diasHabilesBase = diasHabilesDelMes(anioActual, mesActual) || 1
+      // Anclaje: volumen a distribuir por día que dice el presupuesto del mes base, contra
+      // lo que realmente se distribuyó por día en lo que va del mes base.
+      const distBase = hlMesDist.get(mesAA)
+      const realDistDiaBase = distBase && distBase.dias > 0 ? distBase.hl / distBase.dias : 0
+      const pptoDistDiaBase = (hlBase * pctDist) / diasHabilesBase
+      const anclaje = realDistDiaBase > 0 && pptoDistDiaBase > 0 ? pptoDistDiaBase / realDistDiaBase : 1
       if (hlBase > 0) {
         const meses: ProyeccionMes[] = []
         // Arranca en el mes EN CURSO (no en el siguiente): la reunión de cierre del
@@ -878,7 +926,12 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           if (v && v.hl > 0) {
             // escenario: el % de ajuste del mes escala el HL del presupuesto (y por lo tanto el índice)
             const hl = v.hl * (1 + v.pct / 100)
-            meses.push({ mes: `${anioActual}-${String(m).padStart(2, "0")}`, hl, hlPresupuesto: v.hl, ajustePct: v.pct, indice: hl / hlBase })
+            const dh = diasHabilesDelMes(anioActual, m) || 1
+            meses.push({
+              mes: `${anioActual}-${String(m).padStart(2, "0")}`, hl, hlPresupuesto: v.hl, ajustePct: v.pct,
+              diasHabiles: dh, hlDistribuir: hl * pctDist,
+              indice: (hl / dh) / (hlBase / diasHabilesBase),
+            })
           }
         }
         if (meses.length > 0) {
@@ -908,7 +961,9 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           const maxPesoNorm = Math.max(...pesos) / sumaPesos
           const ausAlm = 1 - config.ausentismo_almacen
           const almacenProy: ProyeccionAlmacenRol[] = rolesAlm.map((r) => {
-            const volBase = Math.max(0, (r.rolFte?.volumenProm ?? 0) - r.volFijo) // promedio diario VARIABLE (NO el pico)
+            // promedio diario VARIABLE (NO el pico), anclado al presupuesto a distribuir
+            // (clasificadores ya van por presupuesto: sin anclaje)
+            const volBase = Math.max(0, (r.rolFte?.volumenProm ?? 0) - r.volFijo) * (r.unidad === "HL" ? 1 : anclaje)
             const dotEfectiva = efAlmacen(r.dotacion)                             // descuenta ausentismo
             const capDiaria = (r.rolFte?.capDiariaFte ?? 0) * dotEfectiva         // dotación efectiva
             const capPersona = r.rolFte?.capDiariaFte ?? 0                        // por persona
@@ -965,7 +1020,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           const capCamionViaje = capCamion * viajes
           const choferesDisp = Math.round(reparto?.choferes.dotacionProm ?? 0)
           const ayudantesDisp = Math.round(reparto?.ayudantes.dotacionProm ?? 0)
-          const ceqProm = metricas?.volumenCeqPromedio ?? 0
+          const ceqProm = (metricas?.volumenCeqPromedio ?? 0) * anclaje // CEq/día anclado al presupuesto a distribuir
           const recursosFlota = [
             { rol: "Camiones", dotacion: camionesDisp, tripulacion: 1 },
             { rol: "Choferes", dotacion: choferesDisp, tripulacion: config.choferes_por_camion },
@@ -1047,6 +1102,9 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             pesos: pesos.map((x) => Math.round((x / sumaPesos) * 1000) / 1000),
             costoHh, horasVueltaExtra: config.horas_vuelta_extra, vlc,
             ocupacionMes, capacidadInstalada: Math.round(capacidadInstaladaDiaria), umbralOciosa: config.umbral_ocupacion_ociosa,
+            pctDistribuido: pctDist, diasHabilesBase,
+            realDistDiaBase: Math.round(realDistDiaBase * 10) / 10, pptoDistDiaBase: Math.round(pptoDistDiaBase * 10) / 10,
+            anclaje: Math.round(anclaje * 1000) / 1000,
           }
         }
       }
@@ -1060,25 +1118,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
     try {
       const anio = hoy.getFullYear()
       const mesHoy = hoy.getMonth() + 1
-      const filas: { fecha: string; bultos_distribuidos: number | string | null }[] = []
-      for (let off = 0; ; off += 1000) {
-        const { data: pv, error: pvErr } = await supabase
-          .from("pc_volumen_diario").select("fecha, bultos_distribuidos")
-          .gte("fecha", `${anio - 1}-01-01`).lte("fecha", `${anio}-12-31`)
-          .order("fecha").range(off, off + 999)
-        if (pvErr || !pv) break
-        filas.push(...pv)
-        if (pv.length < 1000) break
-      }
-      const hlMes = new Map<string, { hl: number; dias: number }>()
-      for (const r of filas) {
-        const k = String(r.fecha).slice(0, 7)
-        const hl = Number(r.bultos_distribuidos ?? 0)
-        if (!Number.isFinite(hl) || hl <= 0) continue
-        const cur = hlMes.get(k) ?? { hl: 0, dias: 0 }
-        cur.hl += hl; cur.dias++
-        hlMes.set(k, cur)
-      }
+      const hlMes = hlMesDist
       const { data: ppto } = await supabase.from("dim_volumen_proyectado").select("mes, hl, ajuste_pct").eq("anio", anio)
       const pptoMes = new Map((ppto ?? []).map((r) => [Number(r.mes), { hl: Number(r.hl), pct: Number((r as { ajuste_pct?: number }).ajuste_pct ?? 0) }]))
       // HL VENDIDOS (facturado Chess neto): misma cuenta que `sueno_kpi_detalle('vlc_hl')` —
@@ -1099,11 +1139,15 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         const kAA = `${anio - 1}-${String(m).padStart(2, "0")}`
         const real = hlMes.get(k), aa = hlMes.get(kAA), p = pptoMes.get(m)
         const vend = vendidoMes.get(m)
+        const fc = p && p.hl > 0 ? p.hl * (1 + p.pct / 100) : null
         escenarios.push({
           mes: m,
           aa: aa ? Math.round(aa.hl) : null,
           presupuesto: p && p.hl > 0 ? Math.round(p.hl) : null,
-          forecast: p && p.hl > 0 ? Math.round(p.hl * (1 + p.pct / 100)) : null,
+          forecast: fc != null ? Math.round(fc) : null,
+          aDistribuir: p && p.hl > 0 ? Math.round(p.hl * config.pct_distribuido) : null,
+          forecastDistribuir: fc != null ? Math.round(fc * config.pct_distribuido) : null,
+          pctReal: real && vend != null && vend > 0 ? Math.round((real.hl / vend) * 1000) / 1000 : null,
           vendido: vend != null && vend > 0 ? Math.round(vend) : null,
           real: real ? Math.round(real.hl) : null,
           diasReal: real?.dias ?? 0,
@@ -1293,6 +1337,7 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         horas_vuelta_extra: Math.min(12, Math.max(0.5, Number(config.horas_vuelta_extra) || 4)),
         horas_fijas_generales: Math.min(24, Math.max(0, Number(config.horas_fijas_generales) || 0)),
         umbral_ocupacion_ociosa: Math.min(0.99, Math.max(0.05, Number(config.umbral_ocupacion_ociosa) || 0.7)),
+        pct_distribuido: Math.min(1.5, Math.max(0.05, Number(config.pct_distribuido) || 0.8)),
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
       })

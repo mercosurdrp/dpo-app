@@ -122,10 +122,13 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
   const pctDe = (mes: string, saved: number) => (pct[mes] !== undefined ? Number(pct[mes]) || 0 : saved)
   const hlBase = proy.hlBasePresupuesto * (1 + pctDe(proy.mesBase, proy.ajusteBasePct) / 100)
   if (hlBase <= 0) return proy
+  // índice = volumen POR DÍA HÁBIL del mes respecto del mes base (mismo criterio que el server)
+  const dhBase = proy.diasHabilesBase || 1
   const meses = proy.meses.map((m) => {
     const pc = pctDe(m.mes, m.ajustePct)
     const hl = m.hlPresupuesto * (1 + pc / 100)
-    return { ...m, hl, ajustePct: pc, indice: hl / hlBase }
+    const dh = m.diasHabiles || 1
+    return { ...m, hl, ajustePct: pc, hlDistribuir: hl * proy.pctDistribuido, indice: (hl / dh) / (hlBase / dhBase) }
   })
   const pesos = proy.pesos
   const maxPeso = Math.max(...pesos)
@@ -1425,8 +1428,20 @@ function VolumenProyectadoTable({ proy, saved, escenario, canEdit, run, isPendin
               ))}
             </TableRow>
           )}
+          <TableRow className="bg-slate-50">
+            <TableCell className="font-medium">HL a distribuir <span className="text-xs font-normal text-muted-foreground">(× {Math.round(proy.pctDistribuido * 100)} %)</span></TableCell>
+            {todos.map((m) => (
+              <TableCell key={m.mes} className="text-right font-semibold">
+                {fmt(Math.round(m.hlPresupuesto * (1 + pctDe(m.mes) / 100) * proy.pctDistribuido))}
+              </TableCell>
+            ))}
+          </TableRow>
         </TableBody>
       </Table>
+      <p className="text-xs text-muted-foreground">
+        El presupuesto es venta facturada; lo que se pickea y sale con flota propia es el <b>{Math.round(proy.pctDistribuido * 100) } %</b> (parámetro en Parámetros de cálculo). La proyección se dimensiona sobre esos HL a distribuir: el volumen base de flota y almacén se ancla al presupuesto a distribuir del mes en curso
+        {" "}({fmt(proy.pptoDistDiaBase)} HL/día hábil contra {fmt(proy.realDistDiaBase)} HL/día distribuidos reales → <b className={proy.anclaje > 1.05 ? "text-amber-700" : proy.anclaje < 0.95 ? "text-sky-700" : ""}>factor ×{proy.anclaje.toFixed(2).replace(".", ",")}</b>), y cada mes escala por su volumen por día hábil.
+      </p>
       {canEdit && (
         <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" disabled={isPending} onClick={guardar}>Guardar escenario</Button>
@@ -1475,6 +1490,11 @@ function ConfigCard({ config, run, isPending }: { config: DimConfig; run: RunFn;
             onChange={(e) => setC((s) => ({ ...s, dias_operativos_mes: Number(e.target.value) }))} />
         </div>
         <div>
+          <Label className="text-xs">% del presupuesto que se distribuye (0–1)</Label>
+          <Input type="number" step="0.01" className="h-8 w-28" value={c.pct_distribuido}
+            onChange={(e) => setC((s) => ({ ...s, pct_distribuido: Number(e.target.value) }))} />
+        </div>
+        <div>
           <Label className="text-xs">Umbral capacidad ociosa (0–1)</Label>
           <Input type="number" step="0.05" className="h-8 w-28" value={c.umbral_ocupacion_ociosa}
             onChange={(e) => setC((s) => ({ ...s, umbral_ocupacion_ociosa: Number(e.target.value) }))} />
@@ -1484,6 +1504,7 @@ function ConfigCard({ config, run, isPending }: { config: DimConfig; run: RunFn;
         </Button>
         <p className="w-full text-xs text-muted-foreground">
           El factor convierte los bultos ruteados a cajas equivalentes (CEq = bultos × factor). «↻ Recalcular» lo recomputa con el mix del mes anterior cerrado en Chess, excluyendo envases (CEq = 120 × bultos / bultosPallet).
+          {" "}<b>% del presupuesto que se distribuye</b>: el presupuesto es venta facturada; esta fracción es lo que se pickea y sale con flota propia (0,80; el cuadro anual muestra el % real de cada mes para calibrarlo). La proyección se dimensiona sobre presupuesto × este %.
           {" "}<b>Umbral de capacidad ociosa</b>: si la ocupación de la flota (CEq ÷ capacidad instalada) o la de un rol (necesarios ÷ dotación) queda por debajo, el estado pasa a «Capacidad ociosa» — la alerta por exceso del SOP (70 %).
         </p>
       </CardContent>
