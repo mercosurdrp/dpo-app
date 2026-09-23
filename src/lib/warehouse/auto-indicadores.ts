@@ -809,7 +809,15 @@ function computePrecisionDelSheet(
   for (const [fecha, bultos] of Object.entries(bultosPorPickeo)) {
     if (fecha < erroresSheet.inicioMedicion) continue
     const errados = erroresSheet.bultosErradosPorDia[fecha] ?? 0
-    precision[fecha] = Math.round(((bultos - errados) / bultos) * 10000) / 100
+    const cruda = ((bultos - errados) / bultos) * 100
+    const redondeada = Math.round(cruda * 100) / 100
+    // 🚨 Un día CON errores nunca puede quedar en 100,00: con errores chicos
+    // (p. ej. 0,14 bultos sobre 4.116 el 2026-09-22 → 99,997 %) el redondeo a
+    // 2 decimales lo empuja a 100 y el guardián de más abajo ("errores > 0 y
+    // precisión 100 ⇒ celda vacía") borraba la celda de la reunión. Se topea
+    // acá en 99,9 (mismo criterio que capPrecision en actions/reuniones.ts,
+    // que llegaba tarde porque ya recibía el 100 redondeado).
+    precision[fecha] = errados > 0 && redondeada >= 100 ? 99.9 : redondeada
   }
   return Object.keys(precision).length > 0 ? precision : null
 }
