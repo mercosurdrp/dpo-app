@@ -10,13 +10,4 @@ begin;
 
 ALTER TABLE dim_config ADD COLUMN IF NOT EXISTS pct_distribuido numeric NOT NULL DEFAULT 0.80;
 
--- Ocupación de bodega (del camión) por temporada, para dimensionar la flota:
--- camiones necesarios = volumen ÷ (capacidad del camión × ocupación de bodega del mes).
--- Temporada alta (ene, feb, mar, nov, dic) 60 %; baja (el resto) 35 %. Pedido de
--- Sebastián del 23/09/2026; replica la fila "Ocupación de Bodega" del Simulador
--- de Flota de Casa Central (pallets reales por viaje, por mes).
-ALTER TABLE dim_config ADD COLUMN IF NOT EXISTS ocup_bodega_alta     numeric NOT NULL DEFAULT 0.60;
-ALTER TABLE dim_config ADD COLUMN IF NOT EXISTS ocup_bodega_baja     numeric NOT NULL DEFAULT 0.35;
-ALTER TABLE dim_config ADD COLUMN IF NOT EXISTS meses_temporada_alta text    NOT NULL DEFAULT '1,2,3,11,12';
-
 commit;

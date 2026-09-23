@@ -138,10 +138,7 @@ async function construirResumen(fechaReunion: string): Promise<Result<ResumenDim
     const nec = r.necesariosProm?.[i] ?? 0
     const sobran = r.sobran?.[i] ?? 0
     const ocupacion = r.rol === "Camiones" ? (p.ocupacionMes?.[i] ?? 0) : (r.dotacion > 0 ? nec / r.dotacion : 0)
-    // Camiones: ociosa si la ocupación proyectada queda debajo de la ocupación de bodega objetivo del mes
-    // (temporada alta / baja); tripulación: debajo del umbral general.
-    const corte = r.rol === "Camiones" ? (mm.ocupObjetivo ?? umbral) : umbral
-    const ociosa = ocupacion > 0 && ocupacion < corte
+    const ociosa = ocupacion > 0 && ocupacion < umbral
     const estado: Estado = sv ? "faltan" : dias > 0 ? "extras_pico" : ociosa ? "ociosa" : "cubre"
     return {
       necesariosProm: nec,

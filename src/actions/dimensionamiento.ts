@@ -149,18 +149,6 @@ export interface DimConfig {
   horas_fijas_generales: number // horas/día de tareas generales que no dependen del volumen (limpieza, prensa, orden)
   umbral_ocupacion_ociosa: number // ocupación (0–1) por debajo de la cual se marca "capacidad ociosa" (SOP: 0,70)
   pct_distribuido: number       // fracción del presupuesto de venta que se pickea y sale con flota propia (0,80)
-  // Ocupación de bodega (del camión) por temporada: fracción de la capacidad CEq con la que
-  // realmente sale un camión. Camiones necesarios = volumen ÷ (capacidad × ocupación del mes).
-  ocup_bodega_alta: number      // temporada alta (0,60)
-  ocup_bodega_baja: number      // temporada baja (0,35)
-  meses_temporada_alta: string  // "1,2,3,11,12"
-}
-
-/** Ocupación de bodega objetivo (0–1) del mes según temporada. */
-function ocupacionBodegaDe(config: Pick<DimConfig, "ocup_bodega_alta" | "ocup_bodega_baja" | "meses_temporada_alta">, mes: number): number {
-  const alta = new Set(String(config.meses_temporada_alta ?? "").split(",").map((s) => Number(s.trim())).filter((n) => n >= 1 && n <= 12))
-  const v = alta.has(mes) ? config.ocup_bodega_alta : config.ocup_bodega_baja
-  return v > 0 && v <= 1 ? v : 1
 }
 
 // Volumen del año, mes a mes, en HL: año anterior (AA), presupuesto, forecast
@@ -249,8 +237,6 @@ export interface MetricasDistribucion {
   dropsizeCeqPromedio: number
   pctNoRuteadoPromedio: number
   ocupacionPromedio: number
-  ocupacionObjetivo: number        // ocupación de bodega objetivo del mes (0–1), según temporada
-  capCamionEfectiva: number        // CEq que se le carga a un camión por día = capacidad × viajes × ocupación objetivo
   camionesNecesariosPromedio: number
   camionesNecesariosPico: number
 }
@@ -283,8 +269,6 @@ export interface ProyeccionMes {
   ajustePct: number       // % de ajuste de escenario cargado para el mes (0 = sin ajuste)
   diasHabiles: number     // lun-sáb sin feriados: el HL/mes se lleva a HL/día con esto
   hlDistribuir: number    // hl × pct_distribuido: el volumen que se dimensiona
-  ocupObjetivo: number    // ocupación de bodega objetivo del mes (0–1), por temporada
-  capCamionViajeEf: number // CEq por camión y día que se dimensiona = capacidad × viajes × ocupObjetivo
   indice: number          // (hl ÷ díasHábiles) ÷ (hlBase ÷ díasHábilesBase): volumen POR DÍA relativo al mes base
 }
 // Almacén: dotación fija → horas extra (hora-hombre) por mes en los días que el volumen supera la capacidad.
@@ -523,9 +507,6 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       horas_fijas_generales: 2,
       umbral_ocupacion_ociosa: 0.7,
       pct_distribuido: 0.8,
-      ocup_bodega_alta: 0.6,
-      ocup_bodega_baja: 0.35,
-      meses_temporada_alta: "1,2,3,11,12",
     }
     {
       const { data: hve } = await supabase.from("dim_config").select("horas_vuelta_extra").eq("id", 1).maybeSingle()
@@ -542,16 +523,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
     }
     {
       // migración 20260923120000: fracción del presupuesto que se distribuye
-      const { data: ext } = await supabase.from("dim_config").select("pct_distribuido, ocup_bodega_alta, ocup_bodega_baja, meses_temporada_alta").eq("id", 1).maybeSingle()
+      const { data: ext } = await supabase.from("dim_config").select("pct_distribuido").eq("id", 1).maybeSingle()
       const pd = Number(ext?.pct_distribuido)
       if (Number.isFinite(pd) && pd > 0 && pd <= 1.5) config.pct_distribuido = pd
-      const oa = Number(ext?.ocup_bodega_alta), ob2 = Number(ext?.ocup_bodega_baja)
-      if (Number.isFinite(oa) && oa > 0 && oa <= 1) config.ocup_bodega_alta = oa
-      if (Number.isFinite(ob2) && ob2 > 0 && ob2 <= 1) config.ocup_bodega_baja = ob2
-      if (typeof ext?.meses_temporada_alta === "string" && ext.meses_temporada_alta.trim()) config.meses_temporada_alta = ext.meses_temporada_alta
     }
-    const ocupObj = (mes: number) => ocupacionBodegaDe(config, mes)
-    const mesNum = (k: string) => Number(k.slice(5, 7))
     // Dotación efectiva de almacén: descuenta el ausentismo promedio (1 decimal).
     const efAlmacen = (dot: number) => Math.round(dot * (1 - config.ausentismo_almacen) * 10) / 10
     const objetivos = (objetivosRes.data ?? []) as KpiObjetivo[]
@@ -618,18 +593,13 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const avg = (arr: number[]) => arr.reduce((s, x) => s + x, 0) / n
       const volProm = avg(filas.map((x) => x.ceq))
       const volPico = Math.max(...filas.map((x) => x.ceq))
-      // Capacidad EFECTIVA por camión: capacidad × ocupación de bodega objetivo del mes (temporada).
-      const ocupO = ocupObj(mesNum(mes))
-      const capEf = capUnidad * ocupO
-      // Camiones por COBERTURA DE ZONAS: máx(mínimo, volumen×peso ÷ capacidad efectiva) por zona; fallback a capacidad pura.
+      // Camiones por COBERTURA DE ZONAS: máx(mínimo, volumen×peso ÷ capacidad) por zona; fallback a capacidad pura.
       const camionesNec = (vol: number) => zonas.length > 0
-        ? camionesPorZonas(vol, zonas, capEf, volProm)
-        : (capEf > 0 ? Math.ceil(vol / capEf) : 0)
+        ? camionesPorZonas(vol, zonas, capUnidad, volProm)
+        : (capUnidad > 0 ? Math.ceil(vol / capUnidad) : 0)
       return {
         mes,
         diasCerrados: n,
-        ocupacionObjetivo: ocupO,
-        capCamionEfectiva: Math.round(capEf),
         volumenCeqPromedio: Math.round(volProm),
         volumenCeqPico: Math.round(volPico),
         clientesPromedio: Math.round(avg(filas.map((x) => x.clientes))),
@@ -957,11 +927,9 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             // escenario: el % de ajuste del mes escala el HL del presupuesto (y por lo tanto el índice)
             const hl = v.hl * (1 + v.pct / 100)
             const dh = diasHabilesDelMes(anioActual, m) || 1
-            const ocupO = ocupObj(m)
             meses.push({
               mes: `${anioActual}-${String(m).padStart(2, "0")}`, hl, hlPresupuesto: v.hl, ajustePct: v.pct,
               diasHabiles: dh, hlDistribuir: hl * pctDist,
-              ocupObjetivo: ocupO, capCamionViajeEf: 0, // capCamionViajeEf se completa abajo, cuando se conoce la capacidad por camión
               indice: (hl / dh) / (hlBase / diasHabilesBase),
             })
           }
@@ -1058,9 +1026,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             { rol: "Choferes", dotacion: choferesDisp, tripulacion: config.choferes_por_camion },
             { rol: "Ayudantes", dotacion: ayudantesDisp, tripulacion: config.ayudantes_por_camion },
           ]
-          // Capacidad efectiva por camión y mes: capacidad × viajes × ocupación de bodega objetivo (temporada).
-          for (const mm of meses) mm.capCamionViajeEf = Math.round(capCamionViaje * mm.ocupObjetivo)
-          const camionesDe = (ceqDia: number, capEf: number) => zonas.length > 0 ? camionesPorZonas(ceqDia, zonas, capEf, ceqProm) : (capEf > 0 ? Math.ceil(ceqDia / capEf) : 0)
+          const camionesDe = (ceqDia: number) => zonas.length > 0 ? camionesPorZonas(ceqDia, zonas, capCamionViaje, ceqProm) : (capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0)
           const flotaProy: ProyeccionFlotaRol[] = recursosFlota.map((rf) => {
             const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = [], personaDias: number[] = []
             const necesariosProm: number[] = [], sobran: number[] = []
@@ -1071,7 +1037,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
                 const w = pesoDe(wd)
                 if (w <= 0) continue
                 const ceqDia = ceqMes * DIAS_SEMANA * w
-                const camionesDia = camionesDe(ceqDia, mm.capCamionViajeEf)
+                const camionesDia = camionesDe(ceqDia)
                 const necesarios = camionesDia * rf.tripulacion
                 if (necesarios > rf.dotacion) { dias++; pdias += necesarios - rf.dotacion }
                 if (camionesDia > camionesDisp) sv = true
@@ -1080,7 +1046,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
               diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv)
               personaDias.push(Math.round(pdias * 10) / 10)
               // día promedio del mes: cuántos hacen falta y cuántos sobran de la dotación
-              const necProm = camionesDe(ceqMes, mm.capCamionViajeEf) * rf.tripulacion
+              const necProm = camionesDe(ceqMes) * rf.tripulacion
               necesariosProm.push(necProm)
               sobran.push(Math.max(0, rf.dotacion - necProm))
             }
@@ -1208,8 +1174,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           for (const c of (cierresAnio ?? []).filter((x) => String(x.fecha).startsWith(k))) {
             const ceq = (Number(c.pergamino_bultos ?? 0) + Number(c.ramallo_bultos ?? 0)) * f
             if (ceq <= 0) continue
-            const capEfK = capUnidad * ocupObj(mesNum(k))
-            const cam = zonas.length > 0 ? camionesPorZonas(ceq, zonas, capEfK, mf.volumenCeqPromedio) : (capEfK > 0 ? Math.ceil(ceq / capEfK) : 0)
+            const cam = zonas.length > 0 ? camionesPorZonas(ceq, zonas, capUnidad, mf.volumenCeqPromedio) : (capUnidad > 0 ? Math.ceil(ceq / capUnidad) : 0)
             if (cam > disponibles.length) diasRef++
             pdias += Math.max(0, cam * config.choferes_por_camion - choDisp) + Math.max(0, cam * config.ayudantes_por_camion - ayuDisp)
           }
@@ -1373,9 +1338,6 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         horas_fijas_generales: Math.min(24, Math.max(0, Number(config.horas_fijas_generales) || 0)),
         umbral_ocupacion_ociosa: Math.min(0.99, Math.max(0.05, Number(config.umbral_ocupacion_ociosa) || 0.7)),
         pct_distribuido: Math.min(1.5, Math.max(0.05, Number(config.pct_distribuido) || 0.8)),
-        ocup_bodega_alta: Math.min(1, Math.max(0.05, Number(config.ocup_bodega_alta) || 0.6)),
-        ocup_bodega_baja: Math.min(1, Math.max(0.05, Number(config.ocup_bodega_baja) || 0.35)),
-        meses_temporada_alta: String(config.meses_temporada_alta ?? "").split(",").map((s) => Number(s.trim())).filter((n) => n >= 1 && n <= 12).join(",") || "1,2,3,11,12",
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
       })

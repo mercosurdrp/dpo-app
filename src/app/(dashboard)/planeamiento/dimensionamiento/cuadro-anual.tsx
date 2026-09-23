@@ -67,12 +67,6 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
     if (c.tipo === "futuro" && proy) return Math.round((proy.ocupacionMes[c.pi] ?? 0) * 1000) / 10
     return null
   }
-  const ocupObjetivo = (c: Col): number | null => {
-    if (c.tipo === "cerrado") return histDe(c)?.flota?.ocupacionObjetivo ?? null
-    if (c.tipo === "actual") return data.metricas?.ocupacionObjetivo ?? proy?.meses[0]?.ocupObjetivo ?? null
-    if (c.pi >= 0 && proy) return proy.meses[c.pi].ocupObjetivo
-    return null
-  }
   const camiones = (c: Col): { prom: number; pico: number } | null => {
     if (c.tipo === "cerrado") { const f = histDe(c)?.flota; return f ? { prom: f.camionesNecesariosPromedio, pico: f.camionesNecesariosPico } : null }
     if (c.tipo === "actual" && data.metricas) return { prom: data.metricas.camionesNecesariosPromedio, pico: data.metricas.camionesNecesariosPico }
@@ -196,8 +190,7 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
               {fila("Distribuido vs año anterior", (c) => { const e = esc(c.m); if (!e || e.parcial) return dash; return fmtPct(pct(e.real, e.aa)) }, true)}
 
               {grupo(`Flota / entrega (${camDisp} camiones · capacidad ${fmt(proy?.capacidadInstalada ?? Math.round(data.capacidadInstaladaDiaria))} CEq/día)`)}
-              {fila("Ocupación de bodega objetivo", (c) => { const v = ocupObjetivo(c); return v == null ? dash : `${Math.round(v * 100)} %` }, true)}
-              {fila("Ocupación de flota real", (c) => { const v = ocupacion(c); const obj = ocupObjetivo(c); return v == null ? dash : <span className={obj != null && v < obj * 100 ? "font-semibold text-sky-700" : ""}>{Math.round(v)} %</span> })}
+              {fila("Ocupación de flota", (c) => { const v = ocupacion(c); return v == null ? dash : <span className={v < umbral * 100 ? "font-semibold text-sky-700" : ""}>{Math.round(v)} %</span> })}
               {fila("Camiones necesarios (prom / pico)", (c) => { const v = camiones(c); return v ? <><span>{v.prom}</span> / <span className={v.pico > camDisp ? "font-semibold text-red-700" : ""}>{v.pico}</span></> : dash })}
               {fila("Días con refuerzo o 2ª vuelta", (c) => { const v = diasRefuerzo(c); return v == null ? dash : v > 0 ? <span className="font-semibold text-amber-700">{v}</span> : "✓" })}
               {fila("Choferes (nec. / dotación)", (c) => necDot(tripulacion(c, "Choferes"), true))}
@@ -222,7 +215,7 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           Columnas <b>real</b> = meses cerrados calculados con los datos del mes (cierres de ruteo, ocupación de bodega, carga y acarreo, fichadas) y la estructura de hoy; <b>en curso</b> = lo que muestran las solapas; <b>proy.</b> = presupuesto × escenario sobre el volumen real actual. * = mes incompleto.
-          <b>Presupuesto a distribuir</b> = presupuesto (o forecast) × {Math.round(pctDist * 100)} %: el presupuesto es venta facturada y el depósito y la flota mueven esa fracción; sobre ese volumen se dimensiona la proyección. <b>Vendido real</b> = HL facturados netos (Chess + mostrador − notas de crédito), la misma cuenta que el VLC/HL del Sueño y que el Presupuesto. <b>Distribuido con flota propia</b> = HL que salieron a reparto con nuestros camiones (Chess + GESCOM sin patentes, la base de Períodos Críticos): se compara con el presupuesto a distribuir y con el año anterior; «% distribuido real» = distribuido ÷ vendido, en ámbar cuando se aleja más de 5 puntos del {Math.round(pctDist * 100)} % (para recalibrar el parámetro). Flota: los camiones necesarios se calculan con la capacidad nominal × la <b>ocupación de bodega objetivo</b> de la temporada ({Math.round(data.config.ocup_bodega_alta * 100)} % en meses {data.config.meses_temporada_alta}, {Math.round(data.config.ocup_bodega_baja * 100)} % el resto); la ocupación real en azul cuando queda debajo de la objetivo. «nec. / dotación» = necesarios en el día promedio (almacén: ÷ (1 − ausentismo)) contra la dotación nominal; <span className="text-red-700">faltan</span> = temporales requeridos, <span className="text-sky-700">sobran</span> en azul = ocupación por debajo del {Math.round(umbral * 100)} % (capacidad ociosa).
+          <b>Presupuesto a distribuir</b> = presupuesto (o forecast) × {Math.round(pctDist * 100)} %: el presupuesto es venta facturada y el depósito y la flota mueven esa fracción; sobre ese volumen se dimensiona la proyección. <b>Vendido real</b> = HL facturados netos (Chess + mostrador − notas de crédito), la misma cuenta que el VLC/HL del Sueño y que el Presupuesto. <b>Distribuido con flota propia</b> = HL que salieron a reparto con nuestros camiones (Chess + GESCOM sin patentes, la base de Períodos Críticos): se compara con el presupuesto a distribuir y con el año anterior; «% distribuido real» = distribuido ÷ vendido, en ámbar cuando se aleja más de 5 puntos del {Math.round(pctDist * 100)} % (para recalibrar el parámetro). «nec. / dotación» = necesarios en el día promedio (almacén: ÷ (1 − ausentismo)) contra la dotación nominal; <span className="text-red-700">faltan</span> = temporales requeridos, <span className="text-sky-700">sobran</span> en azul = ocupación por debajo del {Math.round(umbral * 100)} % (capacidad ociosa).
           Horas extra: reales de almacén = deposito-esteban (indicador DPO #39); reales de distribución = fichadas del sector con la regla de pago (50 % lun-vie, 100 % sáb); dimensionadas = lo que pide el modelo; presupuestadas = «Q Horas Extras» del EERR cargado en Costo/HL. En rojo cuando superan el presupuesto.
           {desvio != null && Math.abs(desvio) >= 0.1 ? <> <b className={desvio < 0 ? "text-red-700" : "text-sky-700"}>Lo distribuido en los meses cerrados va {fmtPct(desvio)} contra el presupuesto a distribuir</b>: si el desvío se mantiene, cargalo como escenario en los meses que faltan o revisá el % que se distribuye.</> : null}
         </p>
