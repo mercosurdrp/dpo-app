@@ -63,6 +63,7 @@ const ESTADO_BADGE = {
   cubre: { txt: "Cubre", cls: "bg-emerald-500 hover:bg-emerald-500" },
   extras_pico: { txt: "Horas extra", cls: "bg-amber-500 hover:bg-amber-500" },
   faltan: { txt: "Falta gente", cls: "bg-red-500 hover:bg-red-500" },
+  ociosa: { txt: "Capacidad ociosa", cls: "bg-sky-600 hover:bg-sky-600" },
 } as const
 
 export function SeccionDimensionamiento({
@@ -185,7 +186,7 @@ export function SeccionDimensionamiento({
                             {r.horasExtra > 0 ? <>{fmt(r.horasExtra)} h<span className="block text-[10px] font-normal text-muted-foreground">{money(r.costoHorasExtra)}</span></> : "—"}
                           </TableCell>
                           <TableCell>
-                            <Badge className={b.cls}>{b.txt}{r.estado === "faltan" ? ` (${r.faltanPico})` : ""}</Badge>
+                            <Badge className={b.cls}>{b.txt}{r.estado === "faltan" ? ` (${r.faltanPico})` : r.estado === "ociosa" && (r.sobran ?? 0) > 0 ? ` (sobran ${fmt(r.sobran ?? 0)})` : ""}</Badge>
                           </TableCell>
                         </TableRow>
                       )
@@ -196,6 +197,7 @@ export function SeccionDimensionamiento({
                   {totalHhAlmacen > 0
                     ? <><b>Almacén necesita {fmt(totalHhAlmacen)} hora-hombre extra</b> en {mesLargo(d.mesEntrante)} ({money(costoAlmacen)}).{d.almacen.some((r) => r.estado === "faltan") ? <> En el día pico no alcanza la gente en: <b>{d.almacen.filter((r) => r.estado === "faltan").map((r) => r.rol).join(", ")}</b>.</> : null}</>
                     : <>La dotación de almacén <b className="text-emerald-700">cubre el mes sin horas extra</b>.</>}
+                  {d.almacen.some((r) => r.estado === "ociosa") ? <> <b className="text-sky-700">Capacidad ociosa</b> en: {d.almacen.filter((r) => r.estado === "ociosa").map((r) => `${r.rol} (sobran ${fmt(r.sobran ?? 0)})`).join(", ")} → vacaciones, reasignar o no reponer bajas (SOP §6).</> : null}
                 </p>
               </div>
 
@@ -226,7 +228,10 @@ export function SeccionDimensionamiento({
                             {r.horasExtra > 0 ? <>{fmt(r.horasExtra)} h<span className="block text-[10px] font-normal text-muted-foreground">{money(r.costoHorasExtra)}</span></> : "—"}
                           </TableCell>
                           <TableCell>
-                            <Badge className={b.cls}>{r.segundaVuelta ? "2ª vuelta" : b.txt}</Badge>
+                            <Badge className={b.cls}>
+                              {r.segundaVuelta ? "2ª vuelta" : b.txt}
+                              {r.estado === "ociosa" ? (r.ocupacion != null ? ` (${Math.round(r.ocupacion * 100)} %)` : (r.sobran ?? 0) > 0 ? ` (sobran ${fmt(r.sobran ?? 0)})` : "") : ""}
+                            </Badge>
                           </TableCell>
                         </TableRow>
                       )
@@ -237,6 +242,7 @@ export function SeccionDimensionamiento({
                   {totalHhFlota > 0 || d.flota.some((r) => r.diasRefuerzo > 0)
                     ? <><b>Distribución necesita {fmt(totalHhFlota)} hora-hombre extra</b> ({money(costoFlota)}).{d.flota.some((r) => r.segundaVuelta) ? <b className="text-red-700"> Hay días que superan la flota: 2ª vuelta obligada.</b> : null}</>
                     : <>La flota y la dotación de reparto <b className="text-emerald-700">cubren el mes sin refuerzo</b>.</>}
+                  {d.flota.some((r) => r.estado === "ociosa") ? <> <b className="text-sky-700">Capacidad ociosa</b>: {d.flota.filter((r) => r.estado === "ociosa").map((r) => r.ocupacion != null ? `${r.recurso} al ${Math.round(r.ocupacion * 100)} % de ocupación` : `${r.recurso} (sobran ${fmt(r.sobran ?? 0)})`).join(", ")} → mantenimientos mayores en meses valle o revisar unidades (SOP §8).</> : null}
                 </p>
               </div>
 
