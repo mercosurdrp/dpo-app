@@ -164,9 +164,10 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
     return { ...r, horasExtra, faltanPico, volPicoDia, necesariosProm, sobran, temporales }
   })
 
-  const camionesDe = (ceqDia: number) => zonas.length > 0 && proy.capCamionViaje > 0
-    ? camionesPorZonasCli(ceqDia, proy.flotaCeqPromBase, zonas, proy.capCamionViaje)
-    : (proy.capCamionViaje > 0 ? Math.ceil(ceqDia / proy.capCamionViaje) : 0)
+  // capacidad efectiva del mes = capacidad × ocupación de bodega objetivo (temporada)
+  const camionesDe = (ceqDia: number, capEf: number) => zonas.length > 0 && capEf > 0
+    ? camionesPorZonasCli(ceqDia, proy.flotaCeqPromBase, zonas, capEf)
+    : (capEf > 0 ? Math.ceil(ceqDia / capEf) : 0)
   const flota = proy.flota.map((rf) => {
     const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = [], personaDias: number[] = []
     const necesariosProm: number[] = [], sobran: number[] = []
@@ -177,7 +178,7 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
         const w = pesoDe(wd)
         if (w <= 0) continue
         const ceqDia = ceqMes * 6 * w
-        const camionesDia = camionesDe(ceqDia)
+        const camionesDia = camionesDe(ceqDia, mm.capCamionViajeEf)
         const necesarios = camionesDia * rf.tripulacion
         if (necesarios > rf.dotacion) { dias++; pdias += necesarios - rf.dotacion }
         if (camionesDia > proy.camionesDisp) sv = true
@@ -185,7 +186,7 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
       }
       diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv)
       personaDias.push(Math.round(pdias * 10) / 10)
-      const necProm = camionesDe(ceqMes) * rf.tripulacion
+      const necProm = camionesDe(ceqMes, mm.capCamionViajeEf) * rf.tripulacion
       necesariosProm.push(necProm)
       sobran.push(Math.max(0, rf.dotacion - necProm))
     }
@@ -547,10 +548,12 @@ type RunFn = (fn: () => Promise<{ error?: string } | unknown>, ok: string) => vo
 // ─── Solapa Flota / Entrega — única (datos de entrada + resultados) ──────────
 
 // Modal por celda (recurso de flota + mes): desglose por día de semana del volumen CEq vs capacidad.
-function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje, camionesDisp, zonas }: {
+function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje: capNominal, camionesDisp, zonas }: {
   rol: ProyeccionFlotaRol; mes: ProyeccionMes; pesos: number[]; ceqPromBase: number; capCamionViaje: number; camionesDisp: number; zonas: ZonaReparto[]
 }) {
   const ceqProm = ceqPromBase * mes.indice
+  // capacidad con la que se dimensiona el mes: nominal × ocupación de bodega objetivo (temporada)
+  const capCamionViaje = mes.capCamionViajeEf > 0 ? mes.capCamionViajeEf : capNominal
   // camiones por cobertura de zonas (mismo criterio que el cálculo del backend)
   const camionesDeVol = (ceqDia: number) => zonas.length > 0 && capCamionViaje > 0
     ? camionesPorZonasCli(ceqDia, ceqPromBase, zonas, capCamionViaje)
@@ -567,7 +570,7 @@ function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje, camio
     <DialogContent className="max-w-lg">
       <DialogHeader><DialogTitle>{rol.rol} — {mesLabel(mes.mes)}</DialogTitle></DialogHeader>
       <p className="text-sm text-muted-foreground">
-        Dotación: <b>{fmt(rol.dotacion)}</b>{rol.tripulacion !== 1 ? ` · ${fmt(rol.tripulacion)} por camión` : ""}. Capacidad de un camión: <b>{fmt(capCamionViaje)} CEq/día</b>. Volumen CEq prom del mes: <b>{fmt(Math.round(ceqProm))}/día</b> · índice ×{mes.indice.toFixed(2).replace(".", ",")}{mes.ajustePct !== 0 ? <> · <b className="text-sky-700">escenario {mes.ajustePct > 0 ? "+" : ""}{mes.ajustePct}%</b></> : null}.
+        Dotación: <b>{fmt(rol.dotacion)}</b>{rol.tripulacion !== 1 ? ` · ${fmt(rol.tripulacion)} por camión` : ""}. Capacidad de un camión: <b>{fmt(capCamionViaje)} CEq/día</b> ({fmt(capNominal)} nominal × <b>{Math.round(mes.ocupObjetivo * 100)} %</b> de ocupación de bodega objetivo del mes). Volumen CEq prom del mes: <b>{fmt(Math.round(ceqProm))}/día</b> · índice ×{mes.indice.toFixed(2).replace(".", ",")}{mes.ajustePct !== 0 ? <> · <b className="text-sky-700">escenario {mes.ajustePct > 0 ? "+" : ""}{mes.ajustePct}%</b></> : null}.
       </p>
       <Table>
         <TableHeader><TableRow>
@@ -625,7 +628,7 @@ function DetalleHoyCamionesModal({ m, zonas, capCamVj, dispo, totalFlota, viajes
       <p className="text-sm text-muted-foreground">
         Demanda: volumen ruteado del mes (ruteo_cierres, {fmt(m.diasCerrados)} días cerrados) convertido a cajas equivalentes.
         Flota: {fmt(totalFlota)} unidades de distribución, <b>{fmt(dispo)} operativas</b> (el dimensionamiento las toma todas operativas; no descuenta las que estén en taller).
-        Capacidad de un camión: <b>{fmt(Math.round(capCamVj))} CEq/día</b> ({fmt(viajes)} viaje{viajes === 1 ? "" : "s"}/día).
+        Capacidad de un camión: <b>{fmt(Math.round(capCamVj))} CEq/día</b> ({fmt(viajes)} viaje{viajes === 1 ? "" : "s"}/día, ya con la <b>ocupación de bodega objetivo del {Math.round(m.ocupacionObjetivo * 100)} %</b> de la temporada aplicada sobre la capacidad nominal).
       </p>
       <Table>
         <TableHeader><TableRow>
@@ -774,15 +777,17 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
   const umbral = data.config.umbral_ocupacion_ociosa
   // ocupacion: fracción de la capacidad que usa la demanda promedio (CEq ÷ instalada para
   // camiones; necesarios ÷ dotación para la tripulación). Debajo del umbral → capacidad ociosa.
-  const estado = (nec: number, dot: number, pico: number, ocupacion?: number) => {
+  // corte: para camiones, la ocupación de bodega objetivo del mes (temporada); para la tripulación, el umbral general.
+  const estado = (nec: number, dot: number, pico: number, ocupacion?: number, corte = umbral) => {
     if (nec > dot) return { t: `Faltan ${nec - dot}`, c: "text-red-700 font-semibold" }
     if (pico > dot) return { t: "Refuerzo en pico", c: "text-amber-700" }
     const oc = ocupacion ?? (dot > 0 ? nec / dot : 1)
-    if (oc > 0 && oc < umbral) return { t: `Capacidad ociosa (${Math.round(oc * 100)} %)`, c: "text-sky-700 font-semibold" }
+    if (oc > 0 && oc < corte) return { t: `Capacidad ociosa (${Math.round(oc * 100)} % vs ${Math.round(corte * 100)} %)`, c: "text-sky-700 font-semibold" }
     return { t: "Cubre", c: "text-emerald-700" }
   }
-  // capacidad de un camión por día (CEq) para el desglose por zona
-  const capCamVj = dispo > 0 ? data.capacidadInstaladaDiaria / dispo : 0
+  // capacidad EFECTIVA de un camión por día (CEq) para el desglose por zona: nominal × ocupación de bodega objetivo del mes
+  const ocupObjHoy = m?.ocupacionObjetivo ?? 1
+  const capCamVj = (dispo > 0 ? data.capacidadInstaladaDiaria / dispo : 0) * ocupObjHoy
   const volProm = m?.volumenCeqPromedio ?? 0
   const sumaPesos = zonas.reduce((s, z) => s + (Number(z.peso) || 0), 0)
   const camZona = (peso: number, min: number) => Math.max(min, capCamVj > 0 ? Math.ceil((volProm * peso) / capCamVj) : 0)
@@ -881,12 +886,12 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                 <TableRow>
                   <TableCell className="font-medium">Camiones</TableCell>
                   <TableCell className="text-right">{fmt(m.volumenCeqPromedio)} CEq <span className="text-xs text-muted-foreground">(pico {fmt(m.volumenCeqPico)})</span></TableCell>
-                  <TableCell className="text-right">{fmt(dispo)} unid · {fmt(Math.round(data.capacidadInstaladaDiaria))} CEq</TableCell>
+                  <TableCell className="text-right">{fmt(dispo)} unid · {fmt(Math.round(data.capacidadInstaladaDiaria))} CEq <span className="block text-[10px] text-muted-foreground">ocupación objetivo {Math.round(ocupObjHoy * 100)} % → {fmt(Math.round(capCamVj))} CEq/camión</span></TableCell>
                   <TableCell className="text-right font-semibold">{m.camionesNecesariosPromedio} (pico {m.camionesNecesariosPico})</TableCell>
                   <TableCell className="p-0">
                     <Dialog>
-                      <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico, m.ocupacionPromedio / 100).c}`}>
-                        {estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico, m.ocupacionPromedio / 100).t} <span className="text-[10px] font-normal text-muted-foreground">¿por qué?</span>
+                      <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico, m.ocupacionPromedio / 100, ocupObjHoy).c}`}>
+                        {estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico, m.ocupacionPromedio / 100, ocupObjHoy).t} <span className="text-[10px] font-normal text-muted-foreground">¿por qué?</span>
                       </DialogTrigger>
                       <DetalleHoyCamionesModal m={m} zonas={data.zonas} capCamVj={capCamVj} dispo={dispo} totalFlota={data.flota.length} viajes={data.config.viajes_por_dia} />
                     </Dialog>
@@ -914,7 +919,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                 })}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Camiones necesarios = máx(mínimo de cobertura por zona, volumen CEq × peso de la zona ÷ capacidad por camión). Choferes/ayudantes = camiones × tripulación. Dotación de reparto = plantel cargado o promedio real diario (registros_vehiculos). «Cubre» = alcanza incluso en el pico · «Capacidad ociosa» = la demanda promedio usa menos del {Math.round(umbral * 100)} % de la capacidad (para camiones, CEq ÷ capacidad instalada de {fmt(Math.round(data.capacidadInstaladaDiaria))} CEq). <b>Tocá el estado</b> para ver el desglose por zona y el cálculo paso a paso.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Camiones necesarios = máx(mínimo de cobertura por zona, volumen CEq × peso de la zona ÷ capacidad efectiva por camión), donde la capacidad efectiva = nominal × <b>ocupación de bodega objetivo</b> de la temporada ({Math.round(data.config.ocup_bodega_alta * 100)} % alta en meses {data.config.meses_temporada_alta}, {Math.round(data.config.ocup_bodega_baja * 100)} % baja el resto). Choferes/ayudantes = camiones × tripulación. Dotación de reparto = plantel cargado o promedio real diario (registros_vehiculos). «Cubre» = alcanza incluso en el pico · «Capacidad ociosa» = para camiones, la ocupación real (CEq ÷ capacidad instalada de {fmt(Math.round(data.capacidadInstaladaDiaria))} CEq) queda debajo de la objetivo del mes; para la tripulación, los necesarios usan menos del {Math.round(umbral * 100)} % de la dotación. <b>Tocá el estado</b> para ver el desglose por zona y el cálculo paso a paso.</p>
           </CardContent>
         </Card>
       )}
@@ -927,10 +932,15 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
               <TableHeader><TableRow><TableHead>Recurso</TableHead>{proy.meses.map((mm) => (<TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>))}</TableRow></TableHeader>
               <TableBody>
                 <TableRow className="bg-slate-50">
-                  <TableCell className="text-xs font-medium">Ocupación de flota <span className="font-normal text-muted-foreground">(CEq ÷ {fmt(proy.capacidadInstalada)})</span></TableCell>
-                  {proy.ocupacionMes.map((oc, i) => (
-                    <TableCell key={i} className={`text-right text-xs ${oc > 0 && oc < proy.umbralOciosa ? "text-sky-700 font-semibold" : ""}`}>{Math.round(oc * 100)} %</TableCell>
-                  ))}
+                  <TableCell className="text-xs font-medium">Ocupación de flota <span className="font-normal text-muted-foreground">(CEq ÷ {fmt(proy.capacidadInstalada)} · objetivo de la temporada)</span></TableCell>
+                  {proy.ocupacionMes.map((oc, i) => {
+                    const obj = proy.meses[i]?.ocupObjetivo ?? proy.umbralOciosa
+                    return (
+                      <TableCell key={i} className={`text-right text-xs ${oc > 0 && oc < obj ? "text-sky-700 font-semibold" : ""}`}>
+                        {Math.round(oc * 100)} %<span className="block text-[10px] font-normal text-muted-foreground">obj. {Math.round(obj * 100)} %</span>
+                      </TableCell>
+                    )
+                  })}
                 </TableRow>
                 {proy.flota.map((r) => (
                   <TableRow key={r.rol}>
@@ -939,7 +949,8 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                       const sv = r.segundaVueltaMeses[i]
                       const sobran = r.sobran?.[i] ?? 0
                       const oc = r.rol === "Camiones" ? (proy.ocupacionMes[i] ?? 0) : (r.dotacion > 0 ? (r.necesariosProm?.[i] ?? 0) / r.dotacion : 1)
-                      const ociosa = d === 0 && oc > 0 && oc < proy.umbralOciosa
+                      const corte = r.rol === "Camiones" ? (proy.meses[i]?.ocupObjetivo ?? proy.umbralOciosa) : proy.umbralOciosa
+                      const ociosa = d === 0 && oc > 0 && oc < corte
                       const cls = d > 0 ? (sv ? "bg-red-100 text-red-700 font-semibold" : "bg-amber-50 text-amber-700") : ociosa ? "text-sky-700" : "text-emerald-700"
                       return (
                         <TableCell key={i} className="p-0">
@@ -1495,6 +1506,21 @@ function ConfigCard({ config, run, isPending }: { config: DimConfig; run: RunFn;
             onChange={(e) => setC((s) => ({ ...s, pct_distribuido: Number(e.target.value) }))} />
         </div>
         <div>
+          <Label className="text-xs">Ocupación de bodega alta (0–1)</Label>
+          <Input type="number" step="0.05" className="h-8 w-28" value={c.ocup_bodega_alta}
+            onChange={(e) => setC((s) => ({ ...s, ocup_bodega_alta: Number(e.target.value) }))} />
+        </div>
+        <div>
+          <Label className="text-xs">Ocupación de bodega baja (0–1)</Label>
+          <Input type="number" step="0.05" className="h-8 w-28" value={c.ocup_bodega_baja}
+            onChange={(e) => setC((s) => ({ ...s, ocup_bodega_baja: Number(e.target.value) }))} />
+        </div>
+        <div>
+          <Label className="text-xs">Meses de temporada alta</Label>
+          <Input type="text" className="h-8 w-32" value={c.meses_temporada_alta} placeholder="1,2,3,11,12"
+            onChange={(e) => setC((s) => ({ ...s, meses_temporada_alta: e.target.value }))} />
+        </div>
+        <div>
           <Label className="text-xs">Umbral capacidad ociosa (0–1)</Label>
           <Input type="number" step="0.05" className="h-8 w-28" value={c.umbral_ocupacion_ociosa}
             onChange={(e) => setC((s) => ({ ...s, umbral_ocupacion_ociosa: Number(e.target.value) }))} />
@@ -1505,7 +1531,8 @@ function ConfigCard({ config, run, isPending }: { config: DimConfig; run: RunFn;
         <p className="w-full text-xs text-muted-foreground">
           El factor convierte los bultos ruteados a cajas equivalentes (CEq = bultos × factor). «↻ Recalcular» lo recomputa con el mix del mes anterior cerrado en Chess, excluyendo envases (CEq = 120 × bultos / bultosPallet).
           {" "}<b>% del presupuesto que se distribuye</b>: el presupuesto es venta facturada; esta fracción es lo que se pickea y sale con flota propia (0,80; el cuadro anual muestra el % real de cada mes para calibrarlo). La proyección se dimensiona sobre presupuesto × este %.
-          {" "}<b>Umbral de capacidad ociosa</b>: si la ocupación de la flota (CEq ÷ capacidad instalada) o la de un rol (necesarios ÷ dotación) queda por debajo, el estado pasa a «Capacidad ociosa» — la alerta por exceso del SOP (70 %).
+          {" "}<b>Ocupación de bodega</b>: fracción de la capacidad CEq con la que realmente sale un camión; la flota se dimensiona con capacidad × ocupación del mes (temporada alta 0,60 en los meses listados, baja 0,35 el resto; es la fila «Ocupación de Bodega» del simulador de Casa Central). Es también el objetivo mensual del KPI de ocupación.
+          {" "}<b>Umbral de capacidad ociosa</b>: para la tripulación y el almacén, si la ocupación (CEq ÷ capacidad instalada) o la de un rol (necesarios ÷ dotación) queda por debajo, el estado pasa a «Capacidad ociosa» — la alerta por exceso del SOP (70 %).
         </p>
       </CardContent>
     </Card>
@@ -1583,8 +1610,12 @@ function KpiObjetivosTable({ data, canEdit, run, isPending }: { data: DimData; c
       <TableBody>
         {data.objetivos.map((o) => {
           const r = real[o.kpi]
-          const cumple = r == null ? null : o.mejor_si === "mayor" ? r >= o.objetivo : r <= o.objetivo
-          return <KpiObjRow key={o.kpi} o={o} real={r} cumple={cumple} canEdit={canEdit} run={run} isPending={isPending} />
+          // Ocupación de flota: el objetivo es la ocupación de bodega de la temporada (Parámetros), no el valor fijo.
+          const oo = o.kpi === "ocupacion_pct" && m
+            ? { ...o, objetivo: Math.round(m.ocupacionObjetivo * 100), nombre: `${o.nombre} (objetivo de la temporada)` }
+            : o
+          const cumple = r == null ? null : oo.mejor_si === "mayor" ? r >= oo.objetivo : r <= oo.objetivo
+          return <KpiObjRow key={o.kpi} o={oo} real={r} cumple={cumple} canEdit={canEdit && o.kpi !== "ocupacion_pct"} run={run} isPending={isPending} />
         })}
       </TableBody>
     </Table>
