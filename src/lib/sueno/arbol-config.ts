@@ -33,8 +33,8 @@ export interface SuenoNodo extends SuenoNodoConfig {
   anio: number
   valorYtd: number | null
   meta: number | null
-  /** "ly" cuando la meta es el mismo período del año anterior, calculada en vivo (TQI y FGLI). */
-  metaOrigen?: "ly" | null
+  /** Sólo referencia (TQI y FGLI): el mismo KPI del año anterior sobre los mismos meses, en vivo. No manda el semáforo. */
+  referenciaLy?: number | null
   gatillo: number | null
   nota: string | null
   estado: EstadoSemaforo
@@ -107,12 +107,11 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // 20260918120000_sueno_tqi_fgli_metas_mejorar_2025.sql.
   // FGLI 2026-09-21 a la mañana: meta fija 1.700 / gatillo 1.900 (Sebastián);
   // la de 2.100 había quedado holgada. Ver 20260921150000_sueno_fgli_meta_1700.sql.
-  // 2026-09-21 a la tarde (usuario: "ponemos ese target"): la meta ya NO es un
-  // número fijo. Es el mismo KPI del año anterior sobre los mismos meses (Σ HL
-  // ÷ Σ #28 del LY, en PPM), calculada en vivo en computarArbolSueno desde
-  // dpo_base.anterior del tablero; igual que /indicadores. El metaDefault y
-  // la fila de la tabla (1.700 / 1.900) quedan sólo como respaldo si el
-  // depósito no responde.
+  // 2026-09-21 a la tarde se probó la meta dinámica "mismo período del año
+  // anterior" (dpo_base.anterior del tablero). 2026-09-23 (Sebastián: "las
+  // metas dicen 2025, necesito poner las metas 2026 que habíamos hablado"):
+  // vuelve a mandar la fila 2026 de la tabla, TQI y FGLI 1.700 / 1.900. El
+  // número del año anterior queda sólo como referencia en el detalle.
   { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 1700 },
   { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.4 },
 

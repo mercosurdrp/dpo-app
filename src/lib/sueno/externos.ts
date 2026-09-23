@@ -66,11 +66,11 @@ export interface ResumenExterno {
   generado_en: string | null
   meses: ResumenExternoMes[]
   /**
-   * Meta "mejorar el año anterior" (regla del Reporte DPO, adoptada para el
-   * árbol el 2026-09-21): el mismo KPI del año anterior calculado sobre LOS
-   * MISMOS MESES que ya tienen dato este año (Σ HL ÷ Σ #28 de ene..mes en
-   * curso del LY). Sólo TQI y FGLI lo informan; null cuando el depósito no
-   * tiene el año anterior.
+   * Referencia "mismo período del año anterior" (regla del Reporte DPO): el
+   * mismo KPI del año anterior calculado sobre LOS MISMOS MESES que ya tienen
+   * dato este año (Σ HL ÷ Σ #28 de ene..mes en curso del LY). Sólo TQI y FGLI
+   * lo informan; null cuando el depósito no tiene el año anterior. Desde el
+   * 2026-09-23 NO es la meta (esa es la fija de la tabla): sólo se muestra.
    */
   meta_ly?: number | null
 }
@@ -155,8 +155,9 @@ export const KPI_EXTERNOS: Record<
       "número anual es Σ HL rotos ÷ Σ HL despachados del año, no el promedio " +
       "de los meses. Fuente: tablero del depósito (deposito-esteban " +
       "/indicadores, base del Reporte DPO), mismo número que muestra ahí. " +
-      "Meta = mejorar el año anterior (regla del Reporte DPO): el mismo TQI del " +
-      "año pasado sobre los mismos meses que ya tienen dato este año, en PPM.",
+      "Meta 2026 = 1.700 PPM (gatillo 1.900): el real 2025 fue 1.866 y la meta " +
+      "es mejorarlo un 10 %. Como referencia, el detalle muestra el mismo TQI " +
+      "del año pasado sobre los mismos meses que ya tienen dato este año.",
     detalleLabel: "HL rotos",
     detalle2Label: "HL entregado",
   },
@@ -173,10 +174,10 @@ export const KPI_EXTERNOS: Record<
       "van al SCL y al «HL perdidos» de la reunión de warehouse). El detalle " +
       "muestra los HL perdidos de cada mes y cuánto de eso es inventario + " +
       "vencidos; el resto es rotura (TQI). Fuente: tablero del depósito " +
-      "(deposito-esteban /indicadores, base del Reporte DPO). Meta = mejorar " +
-      "el año anterior (regla del Reporte DPO): el mismo FGLI del año pasado " +
-      "sobre los mismos meses que ya tienen dato este año, en PPM, así acompaña " +
-      "el volumen vendido. Se recalcula sola cada mes.",
+      "(deposito-esteban /indicadores, base del Reporte DPO). Meta 2026 = " +
+      "1.700 PPM (gatillo 1.900): exige sostener el ritmo de mayo-septiembre " +
+      "(el real 2025 fue 2.359). Como referencia, el detalle muestra el mismo " +
+      "FGLI del año pasado sobre los mismos meses que ya tienen dato este año.",
     detalleLabel: "HL perdidos",
     detalle2Label: "Inventario + vencidos",
   },
