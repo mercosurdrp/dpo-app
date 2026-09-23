@@ -157,10 +157,13 @@ export interface DimConfig {
 // Chess + GESCOM, la misma base de Períodos Críticos).
 export interface EscenarioVolumenMes {
   mes: number
-  aa: number | null           // HL real del mismo mes del año anterior
-  presupuesto: number | null
+  aa: number | null           // HL DISTRIBUIDOS del mismo mes del año anterior (pc_volumen_diario)
+  presupuesto: number | null  // HL del presupuesto anual ("Total en HL" del EERR: venta facturada)
   forecast: number | null     // presupuesto × (1 + ajuste_pct/100); null si no hay presupuesto
-  real: number | null         // HL real del mes; null si no hay días cargados
+  vendido: number | null      // HL VENDIDOS del mes = facturado Chess neto (chess + mostrador − NC), la misma
+                              // definición que el VLC/HL del Sueño y el Presupuesto → comparable con el presupuesto
+  real: number | null         // HL DISTRIBUIDOS con flota propia (Chess + GESCOM sin patentes, base de Períodos
+                              // Críticos) → lo que mueve la flota y el depósito; comparable con el año anterior
   diasReal: number            // días con dato en el mes
   parcial: boolean            // mes en curso (real incompleto)
 }
@@ -1078,15 +1081,30 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       }
       const { data: ppto } = await supabase.from("dim_volumen_proyectado").select("mes, hl, ajuste_pct").eq("anio", anio)
       const pptoMes = new Map((ppto ?? []).map((r) => [Number(r.mes), { hl: Number(r.hl), pct: Number((r as { ajuste_pct?: number }).ajuste_pct ?? 0) }]))
+      // HL VENDIDOS (facturado Chess neto): misma cuenta que `sueno_kpi_detalle('vlc_hl')` —
+      // ventas_diarias origen chess + mostrador (FCVTA, PRVTA) − notas de crédito (DVVTA, PRDVO).
+      const vendidoMes = new Map<number, number>()
+      const vd = await todas<{ fecha: string; total_hl: number | string | null }>((a, b) =>
+        supabase.from("ventas_diarias").select("fecha, total_hl").eq("origen", "chess").gte("fecha", `${anio}-01-01`).lte("fecha", `${anio}-12-31`).order("fecha").range(a, b))
+      for (const r of vd) { const m = Number(String(r.fecha).slice(5, 7)); vendidoMes.set(m, (vendidoMes.get(m) ?? 0) + Number(r.total_hl ?? 0)) }
+      const vm = await todas<{ fecha: string; ds_documento: string | null; total_hl: number | string | null }>((a, b) =>
+        supabase.from("ventas_mostrador_diarias").select("fecha, ds_documento, total_hl").gte("fecha", `${anio}-01-01`).lte("fecha", `${anio}-12-31`).order("fecha").range(a, b))
+      for (const r of vm) {
+        const m = Number(String(r.fecha).slice(5, 7))
+        const hl = Number(r.total_hl ?? 0) * (r.ds_documento === "DVVTA" || r.ds_documento === "PRDVO" ? -1 : 1)
+        vendidoMes.set(m, (vendidoMes.get(m) ?? 0) + hl)
+      }
       for (let m = 1; m <= 12; m++) {
         const k = `${anio}-${String(m).padStart(2, "0")}`
         const kAA = `${anio - 1}-${String(m).padStart(2, "0")}`
         const real = hlMes.get(k), aa = hlMes.get(kAA), p = pptoMes.get(m)
+        const vend = vendidoMes.get(m)
         escenarios.push({
           mes: m,
           aa: aa ? Math.round(aa.hl) : null,
           presupuesto: p && p.hl > 0 ? Math.round(p.hl) : null,
           forecast: p && p.hl > 0 ? Math.round(p.hl * (1 + p.pct / 100)) : null,
+          vendido: vend != null && vend > 0 ? Math.round(vend) : null,
           real: real ? Math.round(real.hl) : null,
           diasReal: real?.dias ?? 0,
           parcial: m === mesHoy,
