@@ -875,7 +875,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
 
       {proy && proy.flota.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Proyección a diciembre — días con refuerzo y sobrantes por mes</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Proyección a diciembre — días con 2ª vuelta o falta de gente, y sobrantes</CardTitle></CardHeader>
           <CardContent>
             <Table>
               <TableHeader><TableRow><TableHead>Recurso</TableHead>{proy.meses.map((mm) => (<TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>))}</TableRow></TableHeader>
@@ -899,7 +899,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                         <TableCell key={i} className="p-0">
                           <Dialog>
                             <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-right hover:brightness-95 ${cls}`}>
-                              {d > 0 ? `${d} días` : (r.diasFlotaCompleta?.[i] ?? 0) > 0 ? <span className="font-semibold text-amber-700">{r.diasFlotaCompleta[i]} días con los {fmt(r.dotacion)}</span> : "✓"}
+                              {d > 0 ? `${d} días ${r.rol === "Camiones" ? "con 2ª vuelta" : "falta gente"}` : (r.diasFlotaCompleta?.[i] ?? 0) > 0 ? <span className="font-semibold text-amber-700">{r.diasFlotaCompleta[i]} días con los {fmt(r.dotacion)}</span> : "✓"}
                               {d === 0 && sobran > 0 ? <span className={`block text-[10px] ${ociosa ? "font-semibold" : "font-normal text-muted-foreground"}`}>sobran {fmt(sobran)}</span> : null}
                             </DialogTrigger>
                             <DetalleFlotaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} ceqPromBase={proy.flotaCeqPromBase} capCamionViaje={proy.capCamionViaje} camionesDisp={proy.camionesDisp} zonas={data.zonas} />
@@ -911,7 +911,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">«N días» = días del mes donde el volumen supera lo que la dotación cubre en los viajes actuales → contratar o 2ª vuelta. «N días con los 10» = días en que se necesita toda la dotación, sin margen: cualquier unidad en taller o ausencia ya obliga a refuerzo. Fondo <span className="font-medium text-red-700">rojo fuerte</span> = algún día supera los {proy.camionesDisp} camiones (2ª vuelta obligada). «sobran N» = dotación menos necesarios en el día promedio del mes; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación queda por debajo del {Math.round(proy.umbralOciosa * 100)} % (capacidad ociosa: evaluar reasignación o reducción, SOP §8). Tocá una celda para ver el desglose por día.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Camiones: «N días con 2ª vuelta» = días en que el volumen pide más camiones de los que hay, así que alguno vuelve a cargar y sale de nuevo; hasta la cantidad de camiones disponibles es una vuelta común. Choferes y ayudantes: «N días falta gente» = días en que hacen falta más personas que las del plantel. «N días con los 10» = días que usan toda la dotación en una vuelta común, sin margen: cualquier unidad en taller o ausencia ya obliga a 2ª vuelta o refuerzo. Fondo <span className="font-medium text-red-700">rojo fuerte</span> = algún día supera los {proy.camionesDisp} camiones (2ª vuelta obligada). «sobran N» = dotación menos necesarios en el día promedio del mes; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación queda por debajo del {Math.round(proy.umbralOciosa * 100)} % (capacidad ociosa: evaluar reasignación o reducción, SOP §8). Tocá una celda para ver el desglose por día.</p>
           </CardContent>
         </Card>
       )}

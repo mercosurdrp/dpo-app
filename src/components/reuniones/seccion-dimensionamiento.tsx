@@ -211,7 +211,7 @@ export function SeccionDimensionamiento({
                     <TableHead>Recurso</TableHead>
                     <TableHead className="text-right">Disponible</TableHead>
                     <TableHead className="text-right">Necesarios en el pico</TableHead>
-                    <TableHead className="text-right">Días con refuerzo</TableHead>
+                    <TableHead className="text-right">Días con 2ª vuelta / falta gente</TableHead>
                     <TableHead>Estado</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
@@ -236,7 +236,7 @@ export function SeccionDimensionamiento({
                 </Table>
                 <p className="mt-2 rounded-md bg-slate-50 p-2 text-sm">
                   {d.flota.some((r) => r.diasRefuerzo > 0)
-                    ? <><b>Distribución necesita refuerzo {Math.max(...d.flota.map((r) => r.diasRefuerzo))} días</b> del mes (camiones o tripulación por encima de la dotación).{d.flota.some((r) => r.segundaVuelta) ? <b className="text-red-700"> Hay días que superan la flota: 2ª vuelta obligada.</b> : null}</>
+                    ? <><b>Distribución tiene {Math.max(...d.flota.map((r) => r.diasRefuerzo))} días</b> del mes con 2ª vuelta (más camiones que los disponibles) o con falta de choferes o ayudantes.{d.flota.some((r) => r.segundaVuelta) ? <b className="text-red-700"> Hay días que superan la flota: 2ª vuelta obligada.</b> : null}</>
                     : <>La flota y la dotación de reparto <b className="text-emerald-700">cubren el mes sin refuerzo</b>.</>}
                   {d.flota.some((r) => r.estado === "ociosa") ? <> <b className="text-sky-700">Capacidad ociosa</b>: {d.flota.filter((r) => r.estado === "ociosa").map((r) => r.ocupacion != null ? `${r.recurso} al ${Math.round(r.ocupacion * 100)} % de ocupación` : `${r.recurso} (sobran ${fmt(r.sobran ?? 0)})`).join(", ")} → mantenimientos mayores en meses valle o revisar unidades (SOP §8).</> : null}
                 </p>
