@@ -480,16 +480,20 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
         </p>
       </div>
 
-      <CuadroAnualCard data={data} proy={proyLive} />
-
-      <Tabs defaultValue="flotaentrega">
+      <Tabs defaultValue="resumen">
         <TabsList>
+          <TabsTrigger value="resumen">Resumen</TabsTrigger>
           <TabsTrigger value="flotaentrega">Flota / Entrega</TabsTrigger>
           <TabsTrigger value="almacen">Almacén</TabsTrigger>
           <TabsTrigger value="costo">Costo / HL</TabsTrigger>
           <TabsTrigger value="kpis">KPIs de distribución</TabsTrigger>
           <TabsTrigger value="planes">Planes & Reunión</TabsTrigger>
         </TabsList>
+
+        {/* ─── Resumen: cuadro anual ─── */}
+        <TabsContent value="resumen" className="space-y-4">
+          <CuadroAnualCard data={data} proy={proyLive} />
+        </TabsContent>
 
         {/* ─── Flota / Entrega ─── */}
         <TabsContent value="flotaentrega" className="space-y-4">
