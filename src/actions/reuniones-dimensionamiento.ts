@@ -50,7 +50,7 @@ export interface ResumenFlotaRecurso {
   dotacion: number
   picoNecesario: number     // necesarios el día más cargado
   diasRefuerzo: number      // días del mes que piden más de lo que hay
-  horasExtra: number        // hora-hombre extra (solo choferes/ayudantes)
+  horasExtra: number        // siempre 0 desde el 24/09/2026 (flota sin horas extra); se conserva por los snapshots viejos
   costoHorasExtra: number
   segundaVuelta: boolean
   necesariosProm?: number   // necesarios en el día promedio
@@ -133,8 +133,8 @@ async function construirResumen(fechaReunion: string): Promise<Result<ResumenDim
   const flota: ResumenFlotaRecurso[] = p.flota.map((r) => {
     const dias = r.diasRefuerzo[i] ?? 0
     const sv = r.segundaVueltaMeses[i] ?? false
-    // Los camiones son un activo, no hora-hombre: no generan horas extra.
-    const hh = r.rol === "Camiones" ? 0 : Math.round((r.personaDias?.[i] ?? 0) * p.horasVueltaExtra * 10) / 10
+    // Flota / Entrega se dimensiona en camiones y gente: sin horas extra (decisión del 24/09/2026).
+    const hh = 0
     const nec = r.necesariosProm?.[i] ?? 0
     const sobran = r.sobran?.[i] ?? 0
     const ocupacion = r.rol === "Camiones" ? (p.ocupacionMes?.[i] ?? 0) : (r.dotacion > 0 ? nec / r.dotacion : 0)

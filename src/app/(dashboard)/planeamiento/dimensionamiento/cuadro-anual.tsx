@@ -107,13 +107,9 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
     return null
   }
   // horas extra dimensionadas: histórico (server) para cerrados; proyección EN VIVO para el resto
-  const dimHh = (c: Col): { alm: number; dis: number } | null => {
-    if (c.tipo === "cerrado") { const h = hx(c.m); return h && h.dimAlmacen != null ? { alm: h.dimAlmacen, dis: h.dimDistribucion ?? 0 } : null }
-    if (c.pi >= 0 && proy) {
-      const alm = proy.almacen.reduce((s, r) => s + (r.horasExtra[c.pi] ?? 0), 0)
-      const dis = proy.flota.filter((r) => r.rol !== "Camiones").reduce((s, r) => s + (r.personaDias?.[c.pi] ?? 0), 0) * proy.horasVueltaExtra
-      return { alm: Math.round(alm * 10) / 10, dis: Math.round(dis * 10) / 10 }
-    }
+  const dimHh = (c: Col): { alm: number } | null => {
+    if (c.tipo === "cerrado") { const h = hx(c.m); return h && h.dimAlmacen != null ? { alm: h.dimAlmacen } : null }
+    if (c.pi >= 0 && proy) return { alm: Math.round(proy.almacen.reduce((s, r) => s + (r.horasExtra[c.pi] ?? 0), 0) * 10) / 10 }
     return null
   }
 
@@ -207,17 +203,13 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
               {fila("de las cuales sábados (regla)", (c) => { const v = c.tipo === "cerrado" ? hx(c.m)?.dimSabadoAlmacen : c.pi >= 0 && proy ? proy.almacen.reduce((s, r) => s + (r.horasSabado?.[c.pi] ?? 0), 0) : null; return v == null ? dash : `${fmt1(v)} h` }, true)}
               {fila("Presupuestadas", (c) => hhCell(hx(c.m)?.realAlmacen, dimHh(c)?.alm, hx(c.m)?.pptoAlmacen, "ppto"))}
 
-              {grupo("Horas extra — distribución")}
-              {fila("Reales (fichadas)", (c) => hhCell(hx(c.m)?.realDistribucion, dimHh(c)?.dis, hx(c.m)?.pptoDistribucion, "real"))}
-              {fila("Dimensionadas (modelo)", (c) => hhCell(hx(c.m)?.realDistribucion, dimHh(c)?.dis, hx(c.m)?.pptoDistribucion, "dim"))}
-              {fila("Presupuestadas", (c) => hhCell(hx(c.m)?.realDistribucion, dimHh(c)?.dis, hx(c.m)?.pptoDistribucion, "ppto"))}
             </TableBody>
           </Table>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           Columnas <b>real</b> = meses cerrados calculados con los datos del mes (cierres de ruteo, bultos despachados del depósito, carga y acarreo, fichadas) y la estructura de hoy; <b>en curso</b> = lo que muestran las solapas; <b>proy.</b> = presupuesto × escenario sobre el volumen real actual. * = mes incompleto.
           <b>Presupuesto a distribuir</b> = presupuesto (o forecast) × {Math.round(pctDist * 100)} %: el presupuesto es venta facturada y el depósito y la flota mueven esa fracción; sobre ese volumen se dimensiona la proyección. <b>Vendido real</b> = HL facturados netos (Chess + mostrador − notas de crédito), la misma cuenta que el VLC/HL del Sueño y que el Presupuesto. <b>Distribuido con flota propia</b> = HL que salieron a reparto con nuestros camiones (Chess + GESCOM sin patentes, la base de Períodos Críticos): se compara con el presupuesto a distribuir y con el año anterior; «% distribuido real» = distribuido ÷ vendido, en ámbar cuando se aleja más de 5 puntos del {Math.round(pctDist * 100)} % (para recalibrar el parámetro). «nec. / dotación» = necesarios en el día promedio (almacén: ÷ (1 − ausentismo)) contra la dotación nominal; <span className="text-red-700">faltan</span> = temporales requeridos, <span className="text-sky-700">sobran</span> en azul = ocupación por debajo del {Math.round(umbral * 100)} % (capacidad ociosa).
-          Horas extra: reales de almacén = deposito-esteban (indicador DPO #39); dimensionadas de almacén = excedente por volumen de lunes a viernes más la regla de sábado (todos entran a las 7, el turno normal termina a las {data.config.sabado_fin_normal} h y la operación cierra a las {data.config.sabado_fin_alta} h en temporada alta y {data.config.sabado_fin_baja} h en baja); reales de distribución = fichadas del sector con la regla de pago (50 % lun-vie, 100 % sáb); dimensionadas = lo que pide el modelo; presupuestadas = «Q Horas Extras» del EERR cargado en Costo/HL. En rojo cuando superan el presupuesto.
+          Horas extra: reales de almacén = deposito-esteban (indicador DPO #39); dimensionadas de almacén = excedente por volumen de lunes a viernes más la regla de sábado (todos entran a las 7, el turno normal termina a las {data.config.sabado_fin_normal} h y la operación cierra a las {data.config.sabado_fin_alta} h en temporada alta y {data.config.sabado_fin_baja} h en baja); dimensionadas = lo que pide el modelo; presupuestadas = «Q Horas Extras» del EERR cargado en Costo/HL. En rojo cuando superan el presupuesto. Flota / Entrega se dimensiona sólo en camiones y personas: sus horas extra no entran en el modelo.
           {desvio != null && Math.abs(desvio) >= 0.1 ? <> <b className={desvio < 0 ? "text-red-700" : "text-sky-700"}>Lo distribuido en los meses cerrados va {fmtPct(desvio)} contra el presupuesto a distribuir</b>: si el desvío se mantiene, cargalo como escenario en los meses que faltan o revisá el % que se distribuye.</> : null}
         </p>
       </CardContent>

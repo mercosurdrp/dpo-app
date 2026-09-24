@@ -102,8 +102,8 @@ export function SeccionDimensionamiento({
 
   const d = snap?.datos ?? null
   const totalHhAlmacen = d ? d.almacen.reduce((s, r) => s + r.horasExtra, 0) : 0
-  const totalHhFlota = d ? d.flota.reduce((s, r) => s + r.horasExtra, 0) : 0
   const costoAlmacen = d ? d.almacen.reduce((s, r) => s + r.costoHorasExtra, 0) : 0
+  // Flota sin horas extra desde el 24/09/2026; los snapshots viejos pueden traer un costo de distribución
   const costoFlota = d ? d.flota.reduce((s, r) => s + r.costoHorasExtra, 0) : 0
 
   return (
@@ -212,7 +212,6 @@ export function SeccionDimensionamiento({
                     <TableHead className="text-right">Disponible</TableHead>
                     <TableHead className="text-right">Necesarios en el pico</TableHead>
                     <TableHead className="text-right">Días con refuerzo</TableHead>
-                    <TableHead className="text-right">Horas extra</TableHead>
                     <TableHead>Estado</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
@@ -224,9 +223,6 @@ export function SeccionDimensionamiento({
                           <TableCell className="text-right">{fmt(r.dotacion)}</TableCell>
                           <TableCell className={`text-right font-semibold ${r.picoNecesario > r.dotacion ? "text-amber-700" : ""}`}>{fmt(r.picoNecesario)}</TableCell>
                           <TableCell className="text-right">{r.diasRefuerzo > 0 ? `${r.diasRefuerzo} días` : "—"}</TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {r.horasExtra > 0 ? <>{fmt(r.horasExtra)} h<span className="block text-[10px] font-normal text-muted-foreground">{money(r.costoHorasExtra)}</span></> : "—"}
-                          </TableCell>
                           <TableCell>
                             <Badge className={b.cls}>
                               {r.segundaVuelta ? "2ª vuelta" : b.txt}
@@ -239,8 +235,8 @@ export function SeccionDimensionamiento({
                   </TableBody>
                 </Table>
                 <p className="mt-2 rounded-md bg-slate-50 p-2 text-sm">
-                  {totalHhFlota > 0 || d.flota.some((r) => r.diasRefuerzo > 0)
-                    ? <><b>Distribución necesita {fmt(totalHhFlota)} hora-hombre extra</b> ({money(costoFlota)}).{d.flota.some((r) => r.segundaVuelta) ? <b className="text-red-700"> Hay días que superan la flota: 2ª vuelta obligada.</b> : null}</>
+                  {d.flota.some((r) => r.diasRefuerzo > 0)
+                    ? <><b>Distribución necesita refuerzo {Math.max(...d.flota.map((r) => r.diasRefuerzo))} días</b> del mes (camiones o tripulación por encima de la dotación).{d.flota.some((r) => r.segundaVuelta) ? <b className="text-red-700"> Hay días que superan la flota: 2ª vuelta obligada.</b> : null}</>
                     : <>La flota y la dotación de reparto <b className="text-emerald-700">cubren el mes sin refuerzo</b>.</>}
                   {d.flota.some((r) => r.estado === "ociosa") ? <> <b className="text-sky-700">Capacidad ociosa</b>: {d.flota.filter((r) => r.estado === "ociosa").map((r) => r.ocupacion != null ? `${r.recurso} al ${Math.round(r.ocupacion * 100)} % de ocupación` : `${r.recurso} (sobran ${fmt(r.sobran ?? 0)})`).join(", ")} → mantenimientos mayores en meses valle o revisar unidades (SOP §8).</> : null}
                 </p>
@@ -251,7 +247,7 @@ export function SeccionDimensionamiento({
                 <p className="mb-1 font-semibold">Cuánto cuesta</p>
                 {d.costoTotal > 0 ? (
                   <p>
-                    Las horas extra de {mesLargo(d.mesEntrante)} suman <b>{money(d.costoTotal)}</b> ({money(costoAlmacen)} almacén + {money(costoFlota)} distribución)
+                    Las horas extra de almacén de {mesLargo(d.mesEntrante)} suman <b>{money(d.costoTotal)}</b>{costoFlota > 0 ? <> ({money(costoAlmacen)} almacén + {money(costoFlota)} distribución)</> : null}
                     sobre {fmt(d.hlProyectados)} HL → <b className="text-amber-700">{money(d.costoPorHl)}/HL</b> por encima del costo actual
                     {d.vlc.valorMes != null ? <> de <b>{money(d.vlc.valorMes)}/HL</b></> : null}.
                     {d.vlc.meta != null && d.vlc.meta > 0 && d.vlc.valorMes != null && (
