@@ -466,7 +466,18 @@ export interface DimData {
   escenarios: EscenarioVolumenMes[]   // 12 meses del año en curso: AA / presupuesto / forecast / real
   historico: HistoricoMes[]           // meses cerrados del año con datos reales
   horasExtra: HorasExtraMes[]         // 12 meses: reales / dimensionadas / presupuestadas por sector
+  retornable: RetornablePresupuesto   // retornables a clasificar, del presupuesto (viajes × paletas)
   planes: DimPlan[]
+}
+
+// Retornables a clasificar según el presupuesto de acarreo: viajes de cerveza retornable por mes
+// × paletas por viaje. Paletas a clasificar por día = viajes × paletas ÷ días hábiles.
+export interface RetornablePresupuesto {
+  anio: number
+  fuente: "presupuesto" | "codigo"   // tabla dim_retornable_presupuesto, o constantes 2026 de retornable.ts
+  paletasPorViaje: number
+  hlPorPaleta: number
+  meses: { mes: number; viajes: number; hl: number; diasHabiles: number; paletasDia: number }[]
 }
 
 // ─── Carga principal ────────────────────────────────────────────────────────
@@ -564,6 +575,36 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       if (typeof ext?.meses_temporada_alta === "string" && ext.meses_temporada_alta.trim()) config.meses_temporada_alta = ext.meses_temporada_alta
     }
     const hSabado = (mes: number) => horasSabadoDe(config, mes)
+
+    const anioHoyR = new Date().getFullYear(), mesHoyR = new Date().getMonth() + 1
+    // Retornables a clasificar: viajes de acarreo de cerveza retornable presupuestados por mes
+    // (hoja ACARREO PXQ del presupuesto anual) × paletas por viaje (26) × 6 HL/paleta. Si el año
+    // no está cargado en la tabla, cae a los HL fijos de retornable.ts (sólo 2026).
+    const retMeses = new Map<string, { viajes: number; pal: number; hlPal: number }>()
+    {
+      const { data: rp } = await supabase.from("dim_retornable_presupuesto").select("anio, mes, viajes, paletas_por_viaje, hl_por_paleta").in("anio", [anioHoyR, anioHoyR + 1])
+      for (const r of rp ?? []) retMeses.set(`${r.anio}-${r.mes}`, { viajes: Number(r.viajes ?? 0), pal: Number(r.paletas_por_viaje ?? 26) || 26, hlPal: Number(r.hl_por_paleta ?? 6) || 6 })
+    }
+    const retDe = (anio: number, mes: number) => retMeses.get(`${anio}-${mes}`)
+    const hlPorPaleta = retDe(anioHoyR, mesHoyR)?.hlPal ?? HL_POR_PALETA_RETORNABLE
+    /** HL de retornable a clasificar por día hábil del mes (tabla del presupuesto, o constantes 2026). */
+    const hlRetDia = (mes: number, anio: number): number => {
+      const r = retDe(anio, mes)
+      if (!r) return hlRetornablePorDia(mes, anio)
+      const dias = diasHabilesDelMes(anio, mes)
+      return r.viajes > 0 && dias > 0 ? (r.viajes * r.pal * r.hlPal) / dias : 0
+    }
+    const retornable: RetornablePresupuesto = {
+      anio: anioHoyR,
+      fuente: retDe(anioHoyR, mesHoyR) ? "presupuesto" : "codigo",
+      paletasPorViaje: retDe(anioHoyR, mesHoyR)?.pal ?? 26,
+      hlPorPaleta,
+      meses: Array.from({ length: 12 }, (_, i) => {
+        const m = i + 1, r = retDe(anioHoyR, m), dias = diasHabilesDelMes(anioHoyR, m)
+        const hl = r ? r.viajes * r.pal * r.hlPal : hlRetornablePorDia(m, anioHoyR) * dias
+        return { mes: m, viajes: r ? r.viajes : Math.round(hl / (26 * HL_POR_PALETA_RETORNABLE)), hl: Math.round(hl), diasHabiles: dias, paletasDia: dias > 0 ? Math.round((hl / hlPorPaleta / dias) * 10) / 10 : 0 }
+      }),
+    }
     // Dotación efectiva de almacén: descuenta el ausentismo promedio (1 decimal).
     const efAlmacen = (dot: number) => Math.round(dot * (1 - config.ausentismo_almacen) * 10) / 10
     const objetivos = (objetivosRes.data ?? []) as KpiObjetivo[]
@@ -742,8 +783,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       // Quilmes en HL (acarreo-rdf), repartido uniforme entre días hábiles → HL/día.
       // NO es auto-reportado: reemplaza al pallets_total manual de clasificacion_envases.
       // Todo en HL: la productividad (config, en pal/HH) se convierte con 6 HL/paleta.
-      const hlClasifDia = hlRetornablePorDia(hoy.getMonth() + 1, hoy.getFullYear())
-      const prodClasifHlHh = config.prod_clasif_pal_h * HL_POR_PALETA_RETORNABLE
+      const hlClasifDia = hlRetDia(hoy.getMonth() + 1, hoy.getFullYear())
+      const prodClasifHlHh = config.prod_clasif_pal_h * hlPorPaleta
       const capClasif = prodClasifHlHh * config.horas_turno * config.util_clasif
       // Productividad REAL medida del mes (pal/HH), solo como control/referencia en la UI.
       const { data: clz } = await supabase
@@ -835,7 +876,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       }
       for (let mN = 1; mN < hoy.getMonth() + 1; mN++) {
         const k = `${hoy.getFullYear()}-${String(mN).padStart(2, "0")}`
-        const hlDia = hlRetornablePorDia(mN, hoy.getFullYear())
+        const hlDia = hlRetDia(mN, hoy.getFullYear())
         const clasifMap = new Map<string, number>()
         if (hlDia > 0) for (let d = 1; d <= diasHabilesDelMes(hoy.getFullYear(), mN); d++) clasifMap.set(`${k}-h${d}`, hlDia)
         const reMap = new Map([...soloMes(reempaquePorDiaAnio, k)].map(([f, b]) => [f, horasVar(b)]))
@@ -995,7 +1036,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           // escala con el volumen, las horas fijas (volFijo) no. prodH = 1 (una hora es una hora).
           const rolesAlm: Array<{ rol: string; rolFte?: RolFte; prodH: number; dotacion: number; unidad: string; volFijo: number }> = [
             { rol: "Pickeros", rolFte: almacen?.pickeros, prodH: config.prod_bul_hh, dotacion: config.dotacion_almacen, unidad: "bultos", volFijo: 0 },
-            { rol: "Clasificadores", rolFte: almacen?.clasificadores, prodH: config.prod_clasif_pal_h * HL_POR_PALETA_RETORNABLE, dotacion: config.dotacion_clasif, unidad: "HL", volFijo: 0 },
+            { rol: "Clasificadores", rolFte: almacen?.clasificadores, prodH: config.prod_clasif_pal_h * hlPorPaleta, dotacion: config.dotacion_clasif, unidad: "HL", volFijo: 0 },
             { rol: "Tareas grales (reempaque)", rolFte: almacen?.reempaque, prodH: 1, dotacion: config.dotacion_reempaque, unidad: "horas", volFijo: config.horas_fijas_generales },
             { rol: "Maquinistas", rolFte: almacen?.maquinistas, prodH: config.prod_pal_h, dotacion: config.dotacion_maquinistas, unidad: "pallets", volFijo: 0 },
           ]
@@ -1027,7 +1068,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             if (r.rol === "Clasificadores") {
               for (const mm of meses) {
                 const mesN = Number(mm.mes.split("-")[1])
-                const volDia = hlRetornablePorDia(mesN, anioActual)
+                const volDia = hlRetDia(mesN, anioActual)
                 // horas extra por volumen sólo lun-vie (los sábados van por la regla propia)
                 const diasLV = diasHabilesDelMes(anioActual, mesN) - sabadosDelMes(anioActual, mesN)
                 const hh = volDia > capDiaria && r.prodH > 0 ? ((volDia - capDiaria) / r.prodH) * diasLV : 0
@@ -1295,6 +1336,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         escenarios,
         historico,
         horasExtra,
+        retornable,
         planes: (planesRes.data ?? []) as DimPlan[],
       },
     }
@@ -1627,6 +1669,79 @@ export async function recalcularProductividadAlmacen(): Promise<Result<Productiv
     if (error) return { error: error.message }
     revalidatePath("/planeamiento/dimensionamiento")
     return { data: { picking, maquinistas, clasif, reempaque } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error" }
+  }
+}
+
+/** Guarda los viajes de retornable presupuestados por mes (y paletas por viaje) del año. */
+export async function guardarRetornablePresupuesto(
+  anio: number,
+  filas: { mes: number; viajes: number }[],
+  paletasPorViaje: number,
+): Promise<Result<true>> {
+  try {
+    const profile = await requireRole(ROLES_EDICION)
+    if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+    const supabase = await createClient()
+    const rows = filas
+      .filter((f) => Number(f.mes) >= 1 && Number(f.mes) <= 12)
+      .map((f) => ({
+        anio, mes: Number(f.mes),
+        viajes: Math.max(0, Number(f.viajes) || 0),
+        paletas_por_viaje: Math.max(1, Number(paletasPorViaje) || 26),
+        updated_by: profile.id, updated_at: new Date().toISOString(),
+      }))
+    if (!rows.length) return { error: "Sin filas." }
+    const { error } = await supabase.from("dim_retornable_presupuesto").upsert(rows, { onConflict: "anio,mes" })
+    if (error) return { error: error.message }
+    revalidatePath("/planeamiento/dimensionamiento")
+    return { data: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error" }
+  }
+}
+
+/**
+ * Importa los viajes de retornable del presupuesto anual cargado en la app (bucket
+ * `presupuestos`, tabla presupuestos_anuales): hoja "ACARREO PXQ mrp", fila
+ * "CERVEZAS CMQ Retornable" del bloque "Q - CANTIDAD DE VIAJES", y las paletas por
+ * viaje del bloque "Q - PALETAS X VIAJE".
+ */
+export async function importarRetornablePresupuesto(anio: number): Promise<Result<{ viajes: number[]; paletasPorViaje: number }>> {
+  try {
+    const profile = await requireRole(ROLES_EDICION)
+    if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+    const supabase = await createClient()
+    const { data: pa } = await supabase.from("presupuestos_anuales").select("archivo_url").eq("anio", anio).maybeSingle()
+    if (!pa?.archivo_url) return { error: `No hay presupuesto anual ${anio} cargado en Presupuesto.` }
+    const { data: blob, error: errDl } = await supabase.storage.from("presupuestos").download(pa.archivo_url)
+    if (errDl || !blob) return { error: `Descargando el presupuesto: ${errDl?.message ?? "sin archivo"}` }
+    const XLSX = await import("xlsx")
+    const wb = XLSX.read(await blob.arrayBuffer(), { type: "array" })
+    const nombreHoja = wb.SheetNames.find((n) => n.trim().toUpperCase().startsWith("ACARREO PXQ"))
+    if (!nombreHoja) return { error: `El presupuesto ${anio} no tiene la hoja "ACARREO PXQ".` }
+    const filas = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[nombreHoja], { header: 1, defval: null, blankrows: false })
+    const norm = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim().toUpperCase()
+    let bloque = ""
+    let viajes: number[] | null = null
+    let paletas = 26
+    for (const row of filas) {
+      const c0 = norm(row[0]), c1 = norm(row[1])
+      if (c0.startsWith("Q - CANTIDAD DE VIAJES")) bloque = "viajes"
+      else if (c0.startsWith("Q - PALETAS X VIAJE")) bloque = "paletas"
+      else if (c0.startsWith("Q -") || c0.startsWith("P -") || c0.startsWith("P X Q")) bloque = ""
+      if (c1 === "CERVEZAS CMQ RETORNABLE") {
+        if (bloque === "viajes" && !viajes) viajes = Array.from({ length: 12 }, (_, i) => Number(row[2 + i] ?? 0) || 0)
+        if (bloque === "paletas") { const p = Number(row[2]); if (Number.isFinite(p) && p > 0) paletas = p }
+      }
+    }
+    if (!viajes || viajes.every((v) => v === 0)) return { error: `No encontré la fila de viajes de "CERVEZAS CMQ Retornable" en la hoja ${nombreHoja}.` }
+    const rows = viajes.map((v, i) => ({ anio, mes: i + 1, viajes: v, paletas_por_viaje: paletas, updated_by: profile.id, updated_at: new Date().toISOString() }))
+    const { error } = await supabase.from("dim_retornable_presupuesto").upsert(rows, { onConflict: "anio,mes" })
+    if (error) return { error: error.message }
+    revalidatePath("/planeamiento/dimensionamiento")
+    return { data: { viajes, paletasPorViaje: paletas } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error" }
   }

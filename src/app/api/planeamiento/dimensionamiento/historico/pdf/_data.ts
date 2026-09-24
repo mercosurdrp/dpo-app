@@ -106,7 +106,12 @@ function camionesPorZonas(
 export async function construirHistorico(sector: SectorHistorico): Promise<HistoricoPayload> {
   const res = await getDatosDimensionamiento()
   if ("error" in res) throw new Error(res.error)
-  const { config, metricas, almacen, reparto, flota, zonas } = res.data
+  const { config, metricas, almacen, reparto, flota, zonas, retornable } = res.data
+  // Retornables a clasificar: del presupuesto (viajes × paletas) si está cargado; si no, constantes 2026.
+  const hlRetDia = (m: number, a: number) => {
+    const r = retornable.anio === a ? retornable.meses.find((x) => x.mes === m) : undefined
+    return r && r.diasHabiles > 0 ? r.hl / r.diasHabiles : hlRetornablePorDia(m, a)
+  }
 
   const supabase = await createClient()
   const now = new Date()
@@ -211,7 +216,7 @@ export async function construirHistorico(sector: SectorHistorico): Promise<Histo
   // escalan con el volumen); prodH = 1. Mismo modelo que la proyección del módulo.
   const rolesAlm = [
     { rol: "Pickeros", rf: almacen?.pickeros, prodH: config.prod_bul_hh, dot: config.dotacion_almacen, volFijo: 0 },
-    { rol: "Clasificadores", rf: almacen?.clasificadores, prodH: config.prod_clasif_pal_h * HL_POR_PALETA_RETORNABLE, dot: config.dotacion_clasif, volFijo: 0 },
+    { rol: "Clasificadores", rf: almacen?.clasificadores, prodH: config.prod_clasif_pal_h * (retornable.hlPorPaleta || HL_POR_PALETA_RETORNABLE), dot: config.dotacion_clasif, volFijo: 0 },
     { rol: "Tareas grales.", rf: almacen?.reempaque, prodH: 1, dot: config.dotacion_reempaque, volFijo: config.horas_fijas_generales },
     { rol: "Maquinistas", rf: almacen?.maquinistas, prodH: config.prod_pal_h, dot: config.dotacion_maquinistas, volFijo: 0 },
   ]
@@ -231,7 +236,7 @@ export async function construirHistorico(sector: SectorHistorico): Promise<Histo
       if (r.rol === "Clasificadores") {
         // Demanda del retornable PRESUPUESTADO del mes (Excel de acarreo), repartido
         // uniforme entre días hábiles → igual que la proyección del mes en curso.
-        const volDia = hlRetornablePorDia(m, anio)
+        const volDia = hlRetDia(m, anio)
         const diasHab = diasHabilesDelMes(anio, m)
         if (volDia > capDiaria && r.prodH > 0) hh = ((volDia - capDiaria) / r.prodH) * diasHab
       } else {

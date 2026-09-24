@@ -16,7 +16,7 @@ import {
   type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type RolReparto, type MetricasDistribucion, type ProyeccionAlmacenRol, type ProyeccionMes, type ProyeccionFlotaRol, type ProyeccionData, type ZonaReparto,
   guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi, guardarZonasReparto, guardarAjustesVolumen,
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
-  recalcularProductividadAlmacen, guardarCostoHh,
+  recalcularProductividadAlmacen, guardarCostoHh, guardarRetornablePresupuesto, importarRetornablePresupuesto,
 } from "@/actions/dimensionamiento"
 import { CuadroAnualCard } from "./cuadro-anual"
 
@@ -1150,7 +1150,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
     { n: "Pickeros", r: a.pickeros, u: "bultos", pico: false, hl: false, real: null as number | null,
       fuente: "Demanda: bultos despachados del depósito por día (líneas de venta de Chess). Productividad: promedio YTD del Árbol del Sueño (deposito-esteban), con override editable." },
     { n: "Clasificadores", r: a.clasificadores, u: "HL", pico: false, hl: true, real: a.clasificadores.prodRealPalHH,
-      fuente: "Demanda: HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf), repartidos uniforme entre los días hábiles del mes — por eso promedio y pico son iguales. Conversión: 6 HL por paleta." },
+      fuente: `Demanda: camiones de cerveza retornable presupuestados para retirar de Quilmes (${data.retornable.fuente === "presupuesto" ? "hoja ACARREO PXQ del presupuesto anual" : "constantes 2026 en código; importá el presupuesto"}) × ${fmt(data.retornable.paletasPorViaje)} paletas por camión, repartidos uniforme entre los días hábiles del mes — por eso promedio y pico son iguales. Conversión: ${fmt(data.retornable.hlPorPaleta)} HL por paleta.` },
     { n: "Tareas generales", r: a.reempaque, u: "horas", pico: false, hl: false, real: null as number | null,
       fuente: `Demanda en HORAS por día: bultos de reempaque (deposito-esteban) ÷ ${fmt(data.config.prod_reempaque_bul_hh)} bul/HH, más ${fmt(data.config.horas_fijas_generales)} h fijas de tareas generales (limpieza, prensa, orden) que no dependen del volumen. Capacidad por persona = horas de turno × utilización.` },
     { n: "Maquinistas", r: a.maquinistas, u: "pallets", pico: false, hl: false, real: null as number | null,
@@ -1215,6 +1215,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 El sábado todos entran a las 7 y el turno normal termina a las {c.sabado_fin_normal} h; lo que sigue es hora extra al 100 %. La operación cierra a las {c.sabado_fin_alta} h en temporada alta (meses {c.meses_temporada_alta}) y a las {c.sabado_fin_baja} h en baja → <b>{fmt(Math.max(0, Number(c.sabado_fin_alta) - Number(c.sabado_fin_normal)))} h</b> y <b>{fmt(Math.max(0, Number(c.sabado_fin_baja) - Number(c.sabado_fin_normal)))} h</b> extra por persona y sábado, para toda la dotación efectiva. Los sábados no se calcula además el excedente por volumen.
               </p>
             </div>
+            <RetornableCard ret={data.retornable} run={run} isPending={isPending} />
             {proy && (
               <div>
                 <p className="mb-1 text-xs font-medium text-muted-foreground">Volumen proyectado (HL/mes) — del presupuesto anual + escenario</p>
@@ -1418,6 +1419,68 @@ function VolumenProyectadoTable({ proy, saved, escenario, canEdit, run, isPendin
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+// Retornables a clasificar: viajes de cerveza retornable presupuestados por mes × paletas por
+// viaje ÷ días hábiles = paletas/día. Se importa del presupuesto anual (hoja ACARREO PXQ) o se edita.
+function RetornableCard({ ret, run, isPending }: { ret: DimData["retornable"]; run: RunFn; isPending: boolean }) {
+  const [viajes, setViajes] = useState<Record<number, string>>(() => Object.fromEntries(ret.meses.map((m) => [m.mes, String(m.viajes)])))
+  const [pal, setPal] = useState(String(ret.paletasPorViaje))
+  const [imp, startImp] = useTransition()
+  const v = (m: number) => Number(viajes[m]) || 0
+  const p = Number(pal) || 26
+  const onImportar = () => startImp(async () => {
+    const r = await importarRetornablePresupuesto(ret.anio)
+    if ("error" in r) { toast.error(r.error); return }
+    setViajes(Object.fromEntries(r.data.viajes.map((x, i) => [i + 1, String(x)])))
+    setPal(String(r.data.paletasPorViaje))
+    toast.success(`Presupuesto ${ret.anio} importado: ${r.data.viajes.reduce((s, x) => s + x, 0)} viajes de retornable en el año · ${r.data.paletasPorViaje} paletas por viaje.`)
+  })
+  const guardar = () => run(() => guardarRetornablePresupuesto(ret.anio, ret.meses.map((m) => ({ mes: m.mes, viajes: v(m.mes) })), p), "Retornables guardados")
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">
+          Retornables a clasificar {ret.anio} — camiones presupuestados por mes × paletas por camión
+          {ret.fuente === "codigo" ? <span className="ml-2 text-amber-700">(sin presupuesto cargado para {ret.anio}: usa los valores fijos de 2026)</span> : null}
+        </p>
+        <div className="flex items-center gap-2">
+          <Label className="text-xs">Paletas por camión</Label>
+          <Input type="number" step="1" className="h-8 w-16" value={pal} onChange={(e) => setPal(e.target.value)} />
+          <Button size="sm" variant="outline" disabled={imp} onClick={onImportar}>{imp ? "Importando…" : "↻ Importar del presupuesto"}</Button>
+          <Button size="sm" disabled={isPending} onClick={guardar}>Guardar</Button>
+        </div>
+      </div>
+      <Table>
+        <TableHeader><TableRow>
+          <TableHead></TableHead>
+          {ret.meses.map((m) => <TableHead key={m.mes} className="text-right">{MES_ABBR[m.mes]}</TableHead>)}
+          <TableHead className="text-right">Año</TableHead>
+        </TableRow></TableHeader>
+        <TableBody>
+          <TableRow>
+            <TableCell className="text-xs font-medium">Camiones</TableCell>
+            {ret.meses.map((m) => (
+              <TableCell key={m.mes} className="text-right">
+                <Input type="number" step="1" className="h-8 w-16 text-right" value={viajes[m.mes] ?? ""} onChange={(e) => setViajes((s) => ({ ...s, [m.mes]: e.target.value }))} />
+              </TableCell>
+            ))}
+            <TableCell className="text-right text-xs font-semibold">{fmt(ret.meses.reduce((s, m) => s + v(m.mes), 0))}</TableCell>
+          </TableRow>
+          <TableRow className="text-xs text-muted-foreground">
+            <TableCell>Paletas / día hábil</TableCell>
+            {ret.meses.map((m) => (
+              <TableCell key={m.mes} className="text-right">{m.diasHabiles > 0 ? fmt(Math.round((v(m.mes) * p) / m.diasHabiles * 10) / 10) : "—"}<span className="block text-[10px]">{m.diasHabiles} días</span></TableCell>
+            ))}
+            <TableCell className="text-right">{fmt(ret.meses.reduce((s, m) => s + v(m.mes) * p, 0))} pal</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+      <p className="mt-1 text-xs text-muted-foreground">
+        «Importar» lee la hoja <b>ACARREO PXQ</b> del presupuesto anual cargado en Presupuesto (fila «Q - Cantidad de viajes → Cervezas CMQ Retornable» y «Q - Paletas x viaje»). Es la demanda de los clasificadores: paletas por día = camiones × paletas ÷ días hábiles del mes (lun-sáb sin feriados). Se edita y se guarda por año, así 2027 se carga cuando esté el presupuesto.
+      </p>
     </div>
   )
 }
