@@ -1145,8 +1145,10 @@ export function ReunionDetallePageClient({
 
   // Action Log general (Etapa 2) = actividades sin sección. Las de cada sección
   // (ej. Rechazos) se muestran dentro de su propia sección.
+  // Los compromisos de dimensionamiento van en AMBAS: en el action log general (para no
+  // perderlos, la sección sólo aparece el último día hábil del mes) y en su sección.
   const actividades = useMemo(
-    () => actividadesAll.filter((a) => !a.seccion),
+    () => actividadesAll.filter((a) => !a.seccion || a.seccion === SECCION_DIMENSIONAMIENTO),
     [actividadesAll],
   )
   const actividadesAvanceVenta = useMemo(
