@@ -1193,7 +1193,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
 
   const rolesHoy = a ? [
     { n: "Pickeros", r: a.pickeros, u: "bultos", pico: false, hl: false, real: null as number | null,
-      fuente: "Demanda: bultos despachados por día (ocupacion_bodega_diaria, líneas de venta de Chess). Productividad: promedio YTD del Árbol del Sueño (deposito-esteban), con override editable." },
+      fuente: "Demanda: bultos despachados del depósito por día (líneas de venta de Chess). Productividad: promedio YTD del Árbol del Sueño (deposito-esteban), con override editable." },
     { n: "Clasificadores", r: a.clasificadores, u: "HL", pico: false, hl: true, real: a.clasificadores.prodRealPalHH,
       fuente: "Demanda: HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf), repartidos uniforme entre los días hábiles del mes — por eso promedio y pico son iguales. Conversión: 6 HL por paleta." },
     { n: "Tareas generales", r: a.reempaque, u: "horas", pico: false, hl: false, real: null as number | null,
