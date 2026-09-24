@@ -170,7 +170,7 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
     : (proy.capCamionViaje > 0 ? Math.ceil(ceqDia / proy.capCamionViaje) : 0)
   const flota = proy.flota.map((rf) => {
     const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = []
-    const necesariosProm: number[] = [], sobran: number[] = [], diasFlotaCompleta: number[] = []
+    const necesariosProm: number[] = [], necesariosPromDia: number[] = [], sobran: number[] = [], diasFlotaCompleta: number[] = []
     for (const mm of meses) {
       const ceqMes = proy.flotaCeqPromBase * mm.indice
       let dias = 0, pico = 0, sv = false, completos = 0
@@ -186,11 +186,12 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
         pico = Math.max(pico, necesarios)
       }
       diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv); diasFlotaCompleta.push(completos)
-      const necProm = camionesDe(ceqMes) * rf.tripulacion
-      necesariosProm.push(necProm)
-      sobran.push(Math.max(0, rf.dotacion - necProm))
+      // necesarios del mes = los del día pico (flota no se promedia); el promedio queda de referencia
+      necesariosProm.push(pico)
+      necesariosPromDia.push(camionesDe(ceqMes) * rf.tripulacion)
+      sobran.push(Math.max(0, rf.dotacion - pico))
     }
-    return { ...rf, diasRefuerzo, picoNecesario, segundaVueltaMeses, diasFlotaCompleta, necesariosProm, sobran }
+    return { ...rf, diasRefuerzo, picoNecesario, segundaVueltaMeses, diasFlotaCompleta, necesariosProm, necesariosPromDia, sobran }
   })
   const ocupacionMes = meses.map((mm) => (proy.capacidadInstalada > 0 ? Math.round(((proy.flotaCeqPromBase * mm.indice) / proy.capacidadInstalada) * 1000) / 1000 : 0))
 
@@ -835,11 +836,11 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                   <TableCell className="font-medium">Camiones</TableCell>
                   <TableCell className="text-right">{fmt(m.volumenCeqPromedio)} CEq <span className="text-xs text-muted-foreground">(pico {fmt(m.volumenCeqPico)})</span></TableCell>
                   <TableCell className="text-right">{fmt(dispo)} unid · {fmt(Math.round(data.capacidadInstaladaDiaria))} CEq</TableCell>
-                  <TableCell className="text-right font-semibold">{m.camionesNecesariosPromedio} (pico {m.camionesNecesariosPico})</TableCell>
+                  <TableCell className="text-right font-semibold">{m.camionesNecesariosPico} <span className="text-xs font-normal text-muted-foreground">(día pico · prom. {m.camionesNecesariosPromedio})</span></TableCell>
                   <TableCell className="p-0">
                     <Dialog>
-                      <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico, m.ocupacionPromedio / 100).c}`}>
-                        {estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico, m.ocupacionPromedio / 100).t} <span className="text-[10px] font-normal text-muted-foreground">¿por qué?</span>
+                      <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${estado(m.camionesNecesariosPico, dispo, m.camionesNecesariosPico, m.ocupacionPromedio / 100).c}`}>
+                        {estado(m.camionesNecesariosPico, dispo, m.camionesNecesariosPico, m.ocupacionPromedio / 100).t} <span className="text-[10px] font-normal text-muted-foreground">¿por qué?</span>
                       </DialogTrigger>
                       <DetalleHoyCamionesModal m={m} zonas={data.zonas} capCamVj={capCamVj} dispo={dispo} totalFlota={data.flota.length} viajes={data.config.viajes_por_dia} />
                     </Dialog>
@@ -853,7 +854,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                       <TableCell className="font-medium capitalize">{k}</TableCell>
                       <TableCell className="text-right text-muted-foreground">{m.camionesNecesariosPromedio} camiones × {fmt(r.porCamion)}</TableCell>
                       <TableCell className="text-right">{fmt(dot)} <span className="text-xs text-muted-foreground">(real)</span></TableCell>
-                      <TableCell className="text-right font-semibold">{r.fteNecesariosProm} (pico {r.fteNecesariosPico})</TableCell>
+                      <TableCell className="text-right font-semibold">{r.fteNecesariosPico} <span className="text-xs font-normal text-muted-foreground">(día pico)</span></TableCell>
                       <TableCell className="p-0">
                         <Dialog>
                           <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${e.c}`}>
@@ -867,7 +868,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                 })}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Camiones necesarios = máx(mínimo de cobertura por zona, volumen CEq × peso de la zona ÷ capacidad por camión). Choferes/ayudantes = camiones × tripulación. Dotación de reparto = plantel cargado o promedio real diario (registros_vehiculos). «Cubre» = alcanza incluso en el pico · «Capacidad ociosa» = la demanda promedio usa menos del {Math.round(umbral * 100)} % de la capacidad (para camiones, CEq ÷ capacidad instalada de {fmt(Math.round(data.capacidadInstaladaDiaria))} CEq). <b>Tocá el estado</b> para ver el desglose por zona y el cálculo paso a paso.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Camiones necesarios = máx(mínimo de cobertura por zona, volumen CEq × peso de la zona ÷ capacidad por camión). Choferes/ayudantes = camiones × tripulación. <b>Lo que se necesita en el mes es lo del día pico</b>: la flota no se promedia, el pedido de ese día sale ese día. Dotación de reparto = plantel cargado o promedio real diario (registros_vehiculos). «Cubre» = alcanza incluso en el pico · «Capacidad ociosa» = la demanda promedio usa menos del {Math.round(umbral * 100)} % de la capacidad (para camiones, CEq ÷ capacidad instalada de {fmt(Math.round(data.capacidadInstaladaDiaria))} CEq). <b>Tocá el estado</b> para ver el desglose por zona y el cálculo paso a paso.</p>
           </CardContent>
         </Card>
       )}

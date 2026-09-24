@@ -327,8 +327,9 @@ export interface ProyeccionFlotaRol {
   picoNecesario: number[]        // por mes: necesarios el día más cargado
   segundaVueltaMeses: boolean[]  // por mes: algún día supera los camiones disponibles (2ª vuelta obligada)
   diasFlotaCompleta: number[]    // por mes: días en que se necesita TODA la dotación (necesarios = dotación): sin margen
-  necesariosProm: number[]       // por mes: necesarios en el día promedio (camiones por zonas × tripulación)
-  sobran: number[]               // por mes: dotación − necesarios en el día promedio, si > 0
+  necesariosProm: number[]       // por mes: necesarios del MES = los del día pico (flota no se promedia: el día pico tiene que salir igual)
+  necesariosPromDia: number[]    // por mes: necesarios en el día promedio, sólo como referencia
+  sobran: number[]               // por mes: dotación − necesarios del día pico, si > 0
 }
 export interface ProyeccionData {
   mesBase: string
@@ -986,7 +987,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         const efectiva = Math.round((override > 0 ? override : obsProm) * ausRep * 10) / 10
         return {
           porCamion,
-          fteNecesariosProm: Math.ceil(cnProm * porCamion),
+          fteNecesariosProm: Math.ceil(cnPico * porCamion), // necesarios del mes = los del día pico (no se promedia)
           fteNecesariosPico: Math.ceil(cnPico * porCamion),
           dotacionProm: efectiva,
           dotacionPico: Math.round((override > 0 ? override : obsPico) * ausRep * 10) / 10,
@@ -1157,7 +1158,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           const camionesDe = (ceqDia: number) => zonas.length > 0 ? camionesPorZonas(ceqDia, zonas, capCamionViaje, ceqProm) : (capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0)
           const flotaProy: ProyeccionFlotaRol[] = recursosFlota.map((rf) => {
             const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = []
-            const necesariosProm: number[] = [], sobran: number[] = [], diasFlotaCompleta: number[] = []
+            const necesariosProm: number[] = [], necesariosPromDia: number[] = [], sobran: number[] = [], diasFlotaCompleta: number[] = []
             for (const mm of meses) {
               const ceqMes = ceqProm * mm.indice
               let dias = 0, pico = 0, sv = false, completos = 0
@@ -1173,12 +1174,13 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
                 pico = Math.max(pico, necesarios)
               }
               diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv); diasFlotaCompleta.push(completos)
-              // día promedio del mes: cuántos hacen falta y cuántos sobran de la dotación
-              const necProm = camionesDe(ceqMes) * rf.tripulacion
-              necesariosProm.push(necProm)
-              sobran.push(Math.max(0, rf.dotacion - necProm))
+              // Lo que se necesita en el MES es lo del día pico (decisión de Sebastián, 24/09/2026: "si un día pico
+              // necesito los 10 camiones, que el mes sean 10, que no me haga un promedio"). El promedio queda de referencia.
+              necesariosProm.push(pico)
+              necesariosPromDia.push(camionesDe(ceqMes) * rf.tripulacion)
+              sobran.push(Math.max(0, rf.dotacion - pico))
             }
-            return { rol: rf.rol, dotacion: rf.dotacion, tripulacion: rf.tripulacion, diasRefuerzo, picoNecesario, segundaVueltaMeses, diasFlotaCompleta, necesariosProm, sobran }
+            return { rol: rf.rol, dotacion: rf.dotacion, tripulacion: rf.tripulacion, diasRefuerzo, picoNecesario, segundaVueltaMeses, diasFlotaCompleta, necesariosProm, necesariosPromDia, sobran }
           })
           // Ocupación proyectada de la flota por mes (capacidad instalada, no descuenta taller).
           const ocupacionMes = meses.map((mm) => (capacidadInstaladaDiaria > 0 ? Math.round(((ceqProm * mm.indice) / capacidadInstaladaDiaria) * 1000) / 1000 : 0))
