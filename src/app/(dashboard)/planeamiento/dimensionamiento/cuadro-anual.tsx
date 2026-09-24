@@ -60,6 +60,7 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
   const umbral = data.config.umbral_ocupacion_ociosa
   const pctDist = proy?.pctDistribuido ?? data.config.pct_distribuido
 
+  const camDisp = proy?.camionesDisp ?? data.unidadesDisponibles
   const colCls = (c: Col) => (c.tipo === "actual" ? "bg-sky-50" : c.tipo === "futuro" ? "text-slate-500" : "")
   const dash = <span className="text-muted-foreground">—</span>
   // meses cerrados sin cierres de ruteo (antes del 23/05/2026): flota estimada desde HL distribuidos
@@ -73,11 +74,13 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
     if (c.tipo === "futuro" && proy) return Math.round((proy.ocupacionMes[c.pi] ?? 0) * 1000) / 10
     return null
   }
-  const camiones = (c: Col): { prom: number; pico: number } | null => {
-    if (c.tipo === "cerrado") { const f = histDe(c)?.flota; return f ? { prom: f.camionesNecesariosPromedio, pico: f.camionesNecesariosPico } : null }
-    if (c.tipo === "actual" && data.metricas) return { prom: data.metricas.camionesNecesariosPromedio, pico: data.metricas.camionesNecesariosPico }
+  // pico = camiones del día pico con tope en la flota; vueltas = segundas vueltas del mes (lo que pasa de la flota, por día)
+  const camiones = (c: Col): { prom: number; pico: number; vueltas: number } | null => {
+    const tope = (n: number) => (camDisp > 0 ? Math.min(n, camDisp) : n)
+    if (c.tipo === "cerrado") { const h = histDe(c); const f = h?.flota; return f ? { prom: tope(f.camionesNecesariosPromedio), pico: tope(f.camionesNecesariosPico), vueltas: h?.segundasVueltasFlota ?? f.segundasVueltasMes ?? 0 } : null }
+    if (c.tipo === "actual" && data.metricas) return { prom: tope(data.metricas.camionesNecesariosPromedio), pico: tope(data.metricas.camionesNecesariosPico), vueltas: data.metricas.segundasVueltasMes ?? 0 }
     const r = flotaRol("Camiones")
-    if (c.pi >= 0 && r) return { prom: r.necesariosPromDia?.[c.pi] ?? r.necesariosProm?.[c.pi] ?? 0, pico: r.picoNecesario[c.pi] ?? 0 }
+    if (c.pi >= 0 && r) return { prom: r.necesariosPromDia?.[c.pi] ?? r.necesariosProm?.[c.pi] ?? 0, pico: r.picoNecesario[c.pi] ?? 0, vueltas: r.segundasVueltas?.[c.pi] ?? 0 }
     return null
   }
   const diasRefuerzo = (c: Col): number | null => {
@@ -93,7 +96,7 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
       const h = histDe(c)
       if (!h?.flota) return null
       const obs = rol === "Choferes" ? h.repartoObs?.choferes : h.repartoObs?.ayudantes
-      return { nec: Math.ceil(h.flota.camionesNecesariosPico * porCamion), dot: plantel > 0 ? plantel : Math.round(obs ?? 0) }
+      return { nec: Math.ceil((camDisp > 0 ? Math.min(h.flota.camionesNecesariosPico, camDisp) : h.flota.camionesNecesariosPico) * porCamion), dot: plantel > 0 ? plantel : Math.round(obs ?? 0) }
     }
     if (c.tipo === "actual" && data.reparto) {
       const r = rol === "Choferes" ? data.reparto.choferes : data.reparto.ayudantes
@@ -195,7 +198,6 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
       {cols.map((c) => (<TableCell key={c.key} className={`text-right text-xs ${colCls(c)}`}>{cell(c)}</TableCell>))}
     </TableRow>
   )
-  const camDisp = proy?.camionesDisp ?? data.unidadesDisponibles
 
   // sobran / temporales con color: sobran en azul (ocioso) cuando nec/dot < umbral
   const necDot = (v: { nec: number; dot: number; sobran?: number; temporales?: number } | null, entero = false) => {
@@ -251,7 +253,7 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
 
               {grupo(`Flota / entrega (${camDisp} camiones · capacidad ${fmt(proy?.capacidadInstalada ?? Math.round(data.capacidadInstaladaDiaria))} CEq/día)`)}
               {fila("Ocupación de flota", (c) => { const v = ocupacion(c); return v == null ? dash : est(c, <span className={v < umbral * 100 ? "font-semibold text-sky-700" : ""}>{Math.round(v)} %</span>) })}
-              {fila("Camiones necesarios (día pico)", (c) => { const v = camiones(c); return v ? est(c, <><span className={v.pico > camDisp ? "font-semibold text-red-700" : v.pico === camDisp ? "font-semibold text-amber-700" : "font-semibold"}>{v.pico}</span>{v.pico > camDisp ? <span className="block text-[10px] font-semibold text-red-700">faltan {v.pico - camDisp}</span> : v.pico === camDisp ? <span className="block text-[10px] font-semibold text-amber-700">toda la flota</span> : null}<span className="block text-[10px] font-normal text-muted-foreground">prom. {v.prom}</span></>) : dash })}
+              {fila("Camiones necesarios (día pico)", (c) => { const v = camiones(c); return v ? est(c, <><span className={v.vueltas > 0 ? "font-semibold text-red-700" : v.pico === camDisp ? "font-semibold text-amber-700" : "font-semibold"}>{v.pico}</span>{v.vueltas > 0 ? <span className="block text-[10px] font-semibold text-red-700">+ {fmt(v.vueltas)} 2ª vueltas en el mes</span> : v.pico === camDisp ? <span className="block text-[10px] font-semibold text-amber-700">toda la flota</span> : null}<span className="block text-[10px] font-normal text-muted-foreground">prom. {v.prom}</span></>) : dash })}
               {fila(<>Días con 2ª vuelta <span className="text-xs font-normal text-muted-foreground">(más de {camDisp} camiones)</span></>, (c) => { const v = diasRefuerzo(c); if (v == null) return dash; const fc = diasFlotaCompleta(c); return est(c, v > 0 ? <span className="font-semibold text-amber-700">{v}</span> : fc > 0 ? <span className="font-semibold text-amber-700" title="Días en que se necesita toda la flota">{fc} con los {camDisp}</span> : "✓") })}
               {fila("Choferes (nec. / dotación)", (c) => est(c, necDot(tripulacion(c, "Choferes"), true)))}
               {fila("Ayudantes (nec. / dotación)", (c) => est(c, necDot(tripulacion(c, "Ayudantes"), true)))}

@@ -170,28 +170,37 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
     : (proy.capCamionViaje > 0 ? Math.ceil(ceqDia / proy.capCamionViaje) : 0)
   const flota = proy.flota.map((rf) => {
     const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = []
-    const necesariosProm: number[] = [], necesariosPromDia: number[] = [], sobran: number[] = [], diasFlotaCompleta: number[] = []
+    const necesariosProm: number[] = [], necesariosPromDia: number[] = [], sobran: number[] = [], diasFlotaCompleta: number[] = [], segundasVueltas: number[] = []
+    const disp = proy.camionesDisp
     for (const mm of meses) {
       const ceqMes = proy.flotaCeqPromBase * mm.indice
-      let dias = 0, pico = 0, sv = false, completos = 0
+      let dias = 0, pico = 0, sv = false, completos = 0, vueltas = 0
       for (const wd of weekdaysDelMes(mm.mes)) {
         const w = pesoDe(wd)
         if (w <= 0) continue
         const ceqDia = ceqMes * 6 * w
         const camionesDia = camionesDe(ceqDia)
-        const necesarios = camionesDia * rf.tripulacion
-        if (necesarios > rf.dotacion) dias++
-        else if (rf.dotacion > 0 && necesarios === rf.dotacion) completos++
-        if (camionesDia > proy.camionesDisp) sv = true
+        // la flota es el máximo: lo que pasa de los disponibles son segundas vueltas (misma tripulación)
+        const usados = disp > 0 ? Math.min(camionesDia, disp) : camionesDia
+        const vueltasDia = Math.max(0, camionesDia - usados)
+        const necesarios = usados * rf.tripulacion
+        if (rf.rol === "Camiones") {
+          if (vueltasDia > 0) { dias++; vueltas += vueltasDia }
+          else if (rf.dotacion > 0 && usados === rf.dotacion) completos++
+        } else {
+          if (necesarios > rf.dotacion) dias++
+          else if (rf.dotacion > 0 && necesarios === rf.dotacion) completos++
+        }
+        if (vueltasDia > 0) sv = true
         pico = Math.max(pico, necesarios)
       }
-      diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv); diasFlotaCompleta.push(completos)
+      diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv); diasFlotaCompleta.push(completos); segundasVueltas.push(vueltas)
       // necesarios del mes = los del día pico (flota no se promedia); el promedio queda de referencia
       necesariosProm.push(pico)
-      necesariosPromDia.push(camionesDe(ceqMes) * rf.tripulacion)
+      necesariosPromDia.push((disp > 0 ? Math.min(camionesDe(ceqMes), disp) : camionesDe(ceqMes)) * rf.tripulacion)
       sobran.push(Math.max(0, rf.dotacion - pico))
     }
-    return { ...rf, diasRefuerzo, picoNecesario, segundaVueltaMeses, diasFlotaCompleta, necesariosProm, necesariosPromDia, sobran }
+    return { ...rf, diasRefuerzo, picoNecesario, segundaVueltaMeses, diasFlotaCompleta, segundasVueltas, necesariosProm, necesariosPromDia, sobran }
   })
   const ocupacionMes = meses.map((mm) => (proy.capacidadInstalada > 0 ? Math.round(((proy.flotaCeqPromBase * mm.indice) / proy.capacidadInstalada) * 1000) / 1000 : 0))
 
@@ -836,7 +845,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                   <TableCell className="font-medium">Camiones</TableCell>
                   <TableCell className="text-right">{fmt(m.volumenCeqPromedio)} CEq <span className="text-xs text-muted-foreground">(pico {fmt(m.volumenCeqPico)})</span></TableCell>
                   <TableCell className="text-right">{fmt(dispo)} unid · {fmt(Math.round(data.capacidadInstaladaDiaria))} CEq</TableCell>
-                  <TableCell className="text-right font-semibold">{m.camionesNecesariosPico} <span className="text-xs font-normal text-muted-foreground">(día pico · prom. {m.camionesNecesariosPromedio})</span></TableCell>
+                  <TableCell className="text-right font-semibold">{m.camionesUsadosPico ?? m.camionesNecesariosPico}{(m.segundasVueltasPico ?? 0) > 0 ? <span className="text-red-700"> + {m.segundasVueltasPico} 2ª vuelta{m.segundasVueltasPico === 1 ? "" : "s"}</span> : null} <span className="text-xs font-normal text-muted-foreground">(día pico · prom. {m.camionesNecesariosPromedio}{(m.segundasVueltasMes ?? 0) > 0 ? ` · ${m.segundasVueltasMes} 2ª vueltas en el mes` : ""})</span></TableCell>
                   <TableCell className="p-0">
                     <Dialog>
                       <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${estado(m.camionesNecesariosPico, dispo, m.camionesNecesariosPico, m.ocupacionPromedio / 100).c}`}>
@@ -899,7 +908,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                         <TableCell key={i} className="p-0">
                           <Dialog>
                             <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-right hover:brightness-95 ${cls}`}>
-                              {d > 0 ? `${d} días ${r.rol === "Camiones" ? "con 2ª vuelta" : "falta gente"}` : (r.diasFlotaCompleta?.[i] ?? 0) > 0 ? <span className="font-semibold text-amber-700">{r.diasFlotaCompleta[i]} días con los {fmt(r.dotacion)}</span> : "✓"}
+                              {d > 0 ? `${d} días ${r.rol === "Camiones" ? `con 2ª vuelta (${fmt(r.segundasVueltas?.[i] ?? 0)} vueltas)` : "falta gente"}` : (r.diasFlotaCompleta?.[i] ?? 0) > 0 ? <span className="font-semibold text-amber-700">{r.diasFlotaCompleta[i]} días con los {fmt(r.dotacion)}</span> : "✓"}
                               {d === 0 && sobran > 0 ? <span className={`block text-[10px] ${ociosa ? "font-semibold" : "font-normal text-muted-foreground"}`}>sobran {fmt(sobran)}</span> : null}
                             </DialogTrigger>
                             <DetalleFlotaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} ceqPromBase={proy.flotaCeqPromBase} capCamionViaje={proy.capCamionViaje} camionesDisp={proy.camionesDisp} zonas={data.zonas} />
@@ -911,7 +920,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Camiones: «N días con 2ª vuelta» = días en que el volumen pide más camiones de los que hay, así que alguno vuelve a cargar y sale de nuevo; hasta la cantidad de camiones disponibles es una vuelta común. Choferes y ayudantes: «N días falta gente» = días en que hacen falta más personas que las del plantel. «N días con los 10» = días que usan toda la dotación en una vuelta común, sin margen: cualquier unidad en taller o ausencia ya obliga a 2ª vuelta o refuerzo. Fondo <span className="font-medium text-red-700">rojo fuerte</span> = algún día supera los {proy.camionesDisp} camiones (2ª vuelta obligada). «sobran N» = dotación menos necesarios en el día promedio del mes; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación queda por debajo del {Math.round(proy.umbralOciosa * 100)} % (capacidad ociosa: evaluar reasignación o reducción, SOP §8). Tocá una celda para ver el desglose por día.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Camiones: la flota es siempre el máximo (los {fmt(proy.camionesDisp)} disponibles); «N días con 2ª vuelta (M vueltas)» = días en que el volumen pide más camiones de los que hay, y M = cuántos vuelven a cargar y salen de nuevo en el mes (un día que pide 12 son 10 camiones + 2 segundas vueltas, con la misma tripulación). Hasta {fmt(proy.camionesDisp)} es una vuelta común. Choferes y ayudantes: «N días falta gente» = días en que hacen falta más personas que las del plantel. «N días con los 10» = días que usan toda la dotación en una vuelta común, sin margen: cualquier unidad en taller o ausencia ya obliga a 2ª vuelta o refuerzo. Fondo <span className="font-medium text-red-700">rojo fuerte</span> = algún día supera los {proy.camionesDisp} camiones (2ª vuelta obligada). «sobran N» = dotación menos necesarios en el día promedio del mes; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación queda por debajo del {Math.round(proy.umbralOciosa * 100)} % (capacidad ociosa: evaluar reasignación o reducción, SOP §8). Tocá una celda para ver el desglose por día.</p>
           </CardContent>
         </Card>
       )}

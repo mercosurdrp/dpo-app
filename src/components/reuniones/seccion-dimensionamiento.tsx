@@ -222,7 +222,7 @@ export function SeccionDimensionamiento({
                           <TableCell className="font-medium">{r.recurso}</TableCell>
                           <TableCell className="text-right">{fmt(r.dotacion)}</TableCell>
                           <TableCell className={`text-right font-semibold ${r.picoNecesario >= r.dotacion && r.dotacion > 0 ? "font-semibold text-amber-700" : ""}`}>{fmt(r.picoNecesario)}{r.picoNecesario === r.dotacion && r.dotacion > 0 ? <span className="block text-[10px] font-normal">toda la dotación</span> : null}</TableCell>
-                          <TableCell className="text-right">{r.diasRefuerzo > 0 ? `${r.diasRefuerzo} días` : "—"}</TableCell>
+                          <TableCell className="text-right">{r.diasRefuerzo > 0 ? <>{r.diasRefuerzo} días{(r.segundasVueltas ?? 0) > 0 ? <span className="block text-[10px] text-red-700">{fmt(r.segundasVueltas ?? 0)} segundas vueltas</span> : null}</> : "—"}</TableCell>
                           <TableCell>
                             <Badge className={b.cls}>
                               {r.segundaVuelta ? "2ª vuelta" : b.txt}

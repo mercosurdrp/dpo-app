@@ -253,7 +253,10 @@ export interface MetricasDistribucion {
   pctNoRuteadoPromedio: number
   ocupacionPromedio: number
   camionesNecesariosPromedio: number
-  camionesNecesariosPico: number
+  camionesNecesariosPico: number   // día pico, SIN tope (puede superar la flota)
+  camionesUsadosPico: number       // día pico, con tope en la flota disponible (máximo 10)
+  segundasVueltasPico: number      // día pico: necesarios − flota, si > 0 (camiones que vuelven a cargar y salen de nuevo)
+  segundasVueltasMes: number       // Σ segundas vueltas de todos los días del mes
   estimado?: boolean               // mes sin cierres de ruteo: CEq estimados desde HL distribuidos × CEq/HL medido
 }
 
@@ -327,6 +330,7 @@ export interface ProyeccionFlotaRol {
   picoNecesario: number[]        // por mes: necesarios el día más cargado
   segundaVueltaMeses: boolean[]  // por mes: algún día supera los camiones disponibles (2ª vuelta obligada)
   diasFlotaCompleta: number[]    // por mes: días en que se necesita TODA la dotación (necesarios = dotación): sin margen
+  segundasVueltas: number[]      // por mes (sólo Camiones): Σ camiones que vuelven a cargar y salen de nuevo (necesarios − flota, por día)
   necesariosProm: number[]       // por mes: necesarios del MES = los del día pico (flota no se promedia: el día pico tiene que salir igual)
   necesariosPromDia: number[]    // por mes: necesarios en el día promedio, sólo como referencia
   sobran: number[]               // por mes: dotación − necesarios del día pico, si > 0
@@ -434,7 +438,8 @@ export interface HistoricoMes {
   mes: string               // "2026-03"
   flota: MetricasDistribucion | null          // métricas reales de los cierres de ruteo del mes
   repartoObs: { choferes: number; ayudantes: number } | null // dotación observada (personas distintas/día)
-  diasRefuerzoFlota: number // días del mes con camiones necesarios > disponibles
+  diasRefuerzoFlota: number // días del mes con camiones necesarios > disponibles (2ª vuelta)
+  segundasVueltasFlota: number // Σ segundas vueltas del mes (necesarios − flota, por día)
   almacen: {
     pickeros: HistoricoRol | null
     clasificadores: HistoricoRol | null
@@ -692,6 +697,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           capacidadInstaladaDiaria > 0 ? Math.round((volProm / capacidadInstaladaDiaria) * 1000) / 10 : 0,
         camionesNecesariosPromedio: camionesNec(volProm),
         camionesNecesariosPico: camionesNec(volPico),
+        // La flota es siempre el máximo (10): lo que un día pide por encima son segundas vueltas.
+        camionesUsadosPico: Math.min(camionesNec(volPico), disponibles.length || Infinity),
+        segundasVueltasPico: disponibles.length > 0 ? Math.max(0, camionesNec(volPico) - disponibles.length) : 0,
+        segundasVueltasMes: disponibles.length > 0 ? filas.reduce((s, x) => s + Math.max(0, camionesNec(x.ceq) - disponibles.length), 0) : 0,
       }
     }
     if (cierresErr) metricasError = cierresErr.message
@@ -976,7 +985,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         repartoObsPorMes.set(k, { choferes: Math.round(avgN(sizes(choByDiaAnio, k)) * 10) / 10, ayudantes: Math.round(avgN(sizes(ayuByDiaAnio, k)) * 10) / 10 })
       }
       const cnProm = metricas?.camionesNecesariosPromedio ?? 0
-      const cnPico = metricas?.camionesNecesariosPico ?? 0
+      const cnPico = metricas?.camionesUsadosPico ?? metricas?.camionesNecesariosPico ?? 0 // con tope en la flota: la 2ª vuelta la hace la misma tripulación
       // dotación efectiva: plantel cargado a mano si >0, si no el promedio real observado.
       // Al plantel se le descuenta el ausentismo de reparto (el observado ya lo trae implícito,
       // pero el parámetro aplica igual por si se quiere simular; default 0).
@@ -1158,29 +1167,38 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           const camionesDe = (ceqDia: number) => zonas.length > 0 ? camionesPorZonas(ceqDia, zonas, capCamionViaje, ceqProm) : (capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0)
           const flotaProy: ProyeccionFlotaRol[] = recursosFlota.map((rf) => {
             const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = []
-            const necesariosProm: number[] = [], necesariosPromDia: number[] = [], sobran: number[] = [], diasFlotaCompleta: number[] = []
+            const necesariosProm: number[] = [], necesariosPromDia: number[] = [], sobran: number[] = [], diasFlotaCompleta: number[] = [], segundasVueltas: number[] = []
             for (const mm of meses) {
               const ceqMes = ceqProm * mm.indice
-              let dias = 0, pico = 0, sv = false, completos = 0
+              let dias = 0, pico = 0, sv = false, completos = 0, vueltas = 0
               for (const wd of weekdaysDelMes(Number(mm.mes.split("-")[1]))) {
                 const w = pesoDe(wd)
                 if (w <= 0) continue
                 const ceqDia = ceqMes * DIAS_SEMANA * w
                 const camionesDia = camionesDe(ceqDia)
-                const necesarios = camionesDia * rf.tripulacion
-                if (necesarios > rf.dotacion) dias++
-                else if (rf.dotacion > 0 && necesarios === rf.dotacion) completos++
-                if (camionesDia > camionesDisp) sv = true
+                // La flota es el máximo: lo que pasa de los camiones disponibles son segundas vueltas
+                // (el camión vuelve a cargar y sale de nuevo, con la misma tripulación).
+                const usados = camionesDisp > 0 ? Math.min(camionesDia, camionesDisp) : camionesDia
+                const vueltasDia = Math.max(0, camionesDia - usados)
+                const necesarios = usados * rf.tripulacion
+                if (rf.rol === "Camiones") {
+                  if (vueltasDia > 0) { dias++; vueltas += vueltasDia }
+                  else if (rf.dotacion > 0 && usados === rf.dotacion) completos++
+                } else {
+                  if (necesarios > rf.dotacion) dias++
+                  else if (rf.dotacion > 0 && necesarios === rf.dotacion) completos++
+                }
+                if (vueltasDia > 0) sv = true
                 pico = Math.max(pico, necesarios)
               }
-              diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv); diasFlotaCompleta.push(completos)
+              diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv); diasFlotaCompleta.push(completos); segundasVueltas.push(vueltas)
               // Lo que se necesita en el MES es lo del día pico (decisión de Sebastián, 24/09/2026: "si un día pico
               // necesito los 10 camiones, que el mes sean 10, que no me haga un promedio"). El promedio queda de referencia.
               necesariosProm.push(pico)
-              necesariosPromDia.push(camionesDe(ceqMes) * rf.tripulacion)
+              necesariosPromDia.push((camionesDisp > 0 ? Math.min(camionesDe(ceqMes), camionesDisp) : camionesDe(ceqMes)) * rf.tripulacion)
               sobran.push(Math.max(0, rf.dotacion - pico))
             }
-            return { rol: rf.rol, dotacion: rf.dotacion, tripulacion: rf.tripulacion, diasRefuerzo, picoNecesario, segundaVueltaMeses, diasFlotaCompleta, necesariosProm, necesariosPromDia, sobran }
+            return { rol: rf.rol, dotacion: rf.dotacion, tripulacion: rf.tripulacion, diasRefuerzo, picoNecesario, segundaVueltaMeses, diasFlotaCompleta, segundasVueltas, necesariosProm, necesariosPromDia, sobran }
           })
           // Ocupación proyectada de la flota por mes (capacidad instalada, no descuenta taller).
           const ocupacionMes = meses.map((mm) => (capacidadInstaladaDiaria > 0 ? Math.round(((ceqProm * mm.indice) / capacidadInstaladaDiaria) * 1000) / 1000 : 0))
@@ -1300,18 +1318,18 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       for (const k of [...mesesCerrados].sort()) {
         const mf = metricasPorMes.get(k) ?? null
         const obs = repartoObsPorMes.get(k) ?? null
-        // día por día: cuántos superaron los camiones disponibles
-        let diasRef = 0
+        // día por día: cuántos superaron los camiones disponibles (2ª vuelta) y cuántas vueltas sumaron
+        let diasRef = 0, vueltasMes = 0
         if (mf) {
           for (const c of cierresTodos.filter((x) => String(x.fecha).startsWith(k))) {
             const ceq = (Number(c.pergamino_bultos ?? 0) + Number(c.ramallo_bultos ?? 0)) * f
             if (ceq <= 0) continue
             const cam = zonas.length > 0 ? camionesPorZonas(ceq, zonas, capUnidad, mf.volumenCeqPromedio) : (capUnidad > 0 ? Math.ceil(ceq / capUnidad) : 0)
-            if (cam > disponibles.length) diasRef++
+            if (cam > disponibles.length) { diasRef++; vueltasMes += cam - disponibles.length }
           }
         }
         historico.push({
-          mes: k, flota: mf, repartoObs: obs, diasRefuerzoFlota: diasRef,
+          mes: k, flota: mf, repartoObs: obs, diasRefuerzoFlota: diasRef, segundasVueltasFlota: vueltasMes,
           almacen: almacenHist.get(k) ?? { pickeros: null, clasificadores: null, reempaque: null, maquinistas: null },
         })
       }

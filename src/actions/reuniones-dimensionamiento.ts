@@ -53,6 +53,7 @@ export interface ResumenFlotaRecurso {
   horasExtra: number        // siempre 0 desde el 24/09/2026 (flota sin horas extra); se conserva por los snapshots viejos
   costoHorasExtra: number
   segundaVuelta: boolean
+  segundasVueltas?: number  // sólo camiones: Σ segundas vueltas del mes (necesarios − flota, por día)
   necesariosProm?: number   // necesarios en el día promedio
   sobran?: number           // dotación − necesarios en el día promedio, si > 0
   ocupacion?: number        // sólo camiones: CEq promedio ÷ capacidad instalada (0–1)
@@ -146,6 +147,7 @@ async function construirResumen(fechaReunion: string): Promise<Result<ResumenDim
       necesariosProm: nec,
       sobran,
       ocupacion: r.rol === "Camiones" ? Math.round(ocupacion * 1000) / 1000 : undefined,
+      segundasVueltas: r.rol === "Camiones" ? r.segundasVueltas?.[i] ?? 0 : undefined,
       recurso: r.rol,
       dotacion: r.dotacion,
       picoNecesario: r.picoNecesario[i] ?? 0,
