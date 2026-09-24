@@ -185,7 +185,6 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
               {fila(<b>Distribuido con flota propia</b>, (c) => { const e = esc(c.m); return e?.real == null ? dash : <b>{fmt(e.real)}{e.parcial ? "*" : ""}</b> })}
               {fila("Distribuido vs presupuesto a distribuir", (c) => { const e = esc(c.m); if (!e || e.parcial) return dash; const v = pct(e.real, e.forecastDistribuir ?? e.aDistribuir); return <span className={v != null && v < -0.1 ? "text-red-700" : v != null && v > 0.1 ? "text-sky-700" : ""}>{fmtPct(v)}</span> }, true)}
               {fila("% distribuido real (÷ vendido)", (c) => { const e = esc(c.m); if (!e || e.parcial || e.pctReal == null) return dash; return <span className={Math.abs(e.pctReal - pctDist) > 0.05 ? "font-semibold text-amber-700" : ""}>{Math.round(e.pctReal * 100)} %</span> }, true)}
-              {fila("Distribuido año anterior", (c) => { const v = esc(c.m)?.aa; return v == null ? dash : fmt(v) })}
               {fila("Distribuido vs año anterior", (c) => { const e = esc(c.m); if (!e || e.parcial) return dash; return fmtPct(pct(e.real, e.aa)) }, true)}
 
               {grupo(`Flota / entrega (${camDisp} camiones · capacidad ${fmt(proy?.capacidadInstalada ?? Math.round(data.capacidadInstaladaDiaria))} CEq/día)`)}
