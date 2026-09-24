@@ -1330,10 +1330,10 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                             <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-right hover:brightness-95 ${cls}`}>
                               {hh > 0 ? `${fmt(hh)} h` : "✓"}
                               {(r.horasSabado?.[i] ?? 0) > 0 ? <span className="block text-[10px] font-normal text-muted-foreground">sáb. {fmt(r.horasSabado[i])} h</span> : null}
-                              {falta > 0 ? <span className="block text-[10px] font-normal">falta {falta} en pico</span> : null}
+                              {falta > 0 ? <span className="block text-[10px] font-normal">el día pico pide {falta} más</span> : null}
                               {temporales > 0
-                                ? <span className="block text-[10px] font-semibold text-red-700">temporales {fmt(temporales)}</span>
-                                : sobran > 0 ? <span className={`block text-[10px] ${ociosa ? "font-semibold" : "font-normal text-muted-foreground"}`}>sobran {fmt(sobran)}</span> : null}
+                                ? <span className="block text-[10px] font-semibold text-red-700">faltan {fmt(temporales)} en el mes</span>
+                                : falta === 0 && sobran > 0 ? <span className={`block text-[10px] ${ociosa ? "font-semibold" : "font-normal text-muted-foreground"}`}>sobran {fmt(sobran)}</span> : null}
                             </DialogTrigger>
                             <DetalleCeldaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} horasExtraMes={hh} volDiaMes={r.volPicoDia[i]} />
                           </Dialog>
@@ -1344,7 +1344,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Hora-hombre extra estimadas cuando el volumen del día de lunes a viernes (volumen del presupuesto repartido por el peso del día de semana) supera la capacidad de la dotación fija, <b>más la regla de sábado</b> («sáb. N h» = dotación efectiva × horas después del turno normal × sábados del mes; ya incluidas en el total). «falta N en pico» = personas que faltarían el día pico para no hacer horas extra. «sobran N» / «temporales N» = lectura mensual estilo Casa Central: necesarios del día promedio llevados a nómina (÷ (1 − ausentismo)) contra la dotación; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación del rol queda por debajo del {Math.round(umbralAlm * 100)} % (capacidad ociosa: vacaciones, reasignar o no reponer bajas, SOP §6). <span className="text-emerald-700">✓</span> = cubre sin extras. <b>Tocá cualquier celda</b> para ver el desglose por día de ese mes.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Hora-hombre extra estimadas cuando el volumen del día de lunes a viernes (volumen del presupuesto repartido por el peso del día de semana) supera la capacidad de la dotación fija, <b>más la regla de sábado</b> («sáb. N h» = dotación efectiva × horas después del turno normal × sábados del mes; ya incluidas en el total). Cada celda tiene dos lecturas: la del <b>día pico</b> («el día pico pide N más» = personas que harían falta el día más cargado para no hacer horas extra; si no aparece, el pico se cubre) y la del <b>mes</b> («faltan N en el mes» = necesarios del día promedio llevados a nómina, ÷ (1 − ausentismo), por encima de la dotación; «sobran N» = lo contrario, y sólo se muestra cuando tampoco aprieta el pico). Cuando el promedio sobra pero el pico pide más, lo que sale son horas extra, no un temporal; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación del rol queda por debajo del {Math.round(umbralAlm * 100)} % (capacidad ociosa: vacaciones, reasignar o no reponer bajas, SOP §6). <span className="text-emerald-700">✓</span> = cubre sin extras. <b>Tocá cualquier celda</b> para ver el desglose por día de ese mes.</p>
           </CardContent>
         </Card>
       )}
