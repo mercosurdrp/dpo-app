@@ -151,14 +151,14 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
               <TableCell className={`text-right font-bold ${faltan ? "text-red-700" : "text-sky-700"}`}>{fmt1(Math.abs(d.brechaHh))} h</TableCell>
             </TableRow>
             <TableRow className="text-xs text-muted-foreground"><TableCell colSpan={2}>{fmt1(Math.abs(d.v.nec - d.v.dot))} personas × {fmt1(d.horasTurno)} h de turno × {d.dias} días hábiles</TableCell></TableRow>
-            <TableRow className="border-t-2"><TableCell className="font-medium">Horas extra que pide el modelo</TableCell><TableCell className="text-right font-semibold">{fmt1(d.hhExtra)} h</TableCell></TableRow>
-            {d.tarifa > 0 && (
+            {rol.k !== "reempaque" && <TableRow className="border-t-2"><TableCell className="font-medium">Horas extra que pide el modelo</TableCell><TableCell className="text-right font-semibold">{fmt1(d.hhExtra)} h</TableCell></TableRow>}
+            {rol.k !== "reempaque" && d.tarifa > 0 && (
               <TableRow><TableCell className="font-medium">Costo de esas horas extra</TableCell><TableCell className="text-right font-semibold">{money(d.hhExtra * d.tarifa)}</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
         <p className="text-xs text-muted-foreground">
-          {rol.k === "reempaque" ? <>Puesto fijo: 1 persona con tareas que no dependen del volumen; lo que no hace un día lo hace al otro, así que no genera horas extra por volumen ni cuenta como sobrante. Los «necesarios» son sólo la parte del día que ocupa el reempaque. </> : null}
+          {rol.k === "reempaque" ? <>Puesto fijo: 1 persona con tareas que no dependen del volumen; lo que no hace un día lo hace al otro, así que no genera horas extra (ni por volumen ni los sábados) ni cuenta como sobrante. Los «necesarios» son sólo la parte del día que ocupa el reempaque. </> : null}
           {faltan
             ? <>Faltan {fmt1(d.v.temporales)} personas en el día promedio: cubrirlo con la dotación actual son <b>{fmt1(Math.abs(d.brechaHh))} horas-hombre</b> en el mes (o un temporal). Las «horas extra que pide el modelo» son las que salen día por día cuando la demanda supera la capacidad; pueden ser menos que la brecha mensual porque los días flojos compensan.</>
             : <>La dotación cubre el día promedio con {fmt1(d.v.sobran)} personas de sobra, equivalentes a <b>{fmt1(Math.abs(d.brechaHh))} horas-hombre</b> en el mes. Las horas extra que quedan son las del pico de algunos días y las de los sábados.</>}

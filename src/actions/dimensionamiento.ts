@@ -913,7 +913,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         // horas extra por volumen sólo de lunes a viernes: el sábado va por la regla propia
         let hh = 0
         if (!puestoFijo) for (const [f, v] of m) { if (esSabado(f)) continue; const d = v + fijo; if (d > capEquipo && prodH > 0) hh += (d - capEquipo) / prodH }
-        const hhSab = efAlmacen(dotacion) * hSabado(mesN) * sabadosDelMes(hoy.getFullYear(), mesN)
+        const hhSab = puestoFijo ? 0 : efAlmacen(dotacion) * hSabado(mesN) * sabadosDelMes(hoy.getFullYear(), mesN)
         const volProm = st.prom + fijo, volPico = st.pico + fijo
         const nec = capPersona > 0 && ausAlm > 0 ? Math.round((volProm / capPersona / ausAlm) * 10) / 10 : 0
         return {
@@ -1088,7 +1088,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             const necesariosProm: number[] = [], sobran: number[] = [], temporales: number[] = []
             const horasSabado: number[] = []
             // Regla de sábado: toda la dotación efectiva hace (fin − 11) h extra cada sábado del mes.
-            const sabadoDe = (mesN: number) => Math.round(dotEfectiva * hSabado(mesN) * sabadosDelMes(anioActual, mesN) * 10) / 10
+            // puesto fijo (tareas generales): sin horas extra de ningún tipo, tampoco sábados
+            const sabadoDe = (mesN: number) => (r.fijo ? 0 : Math.round(dotEfectiva * hSabado(mesN) * sabadosDelMes(anioActual, mesN) * 10) / 10)
             // Lectura mensual (Casa Central): necesarios del día promedio llevados a nómina
             // (÷ (1 − ausentismo)) contra la dotación nominal → sobran / temporales.
             const mensual = (volPromDia: number) => {
