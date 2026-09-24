@@ -59,6 +59,9 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
 
   const colCls = (c: Col) => (c.tipo === "actual" ? "bg-sky-50" : c.tipo === "futuro" ? "text-slate-500" : "")
   const dash = <span className="text-muted-foreground">—</span>
+  // meses cerrados sin cierres de ruteo (antes del 23/05/2026): flota estimada desde HL distribuidos
+  const flotaEstimada = (c: Col) => c.tipo === "cerrado" && Boolean(histDe(c)?.flota?.estimado)
+  const est = (c: Col, v: React.ReactNode) => (flotaEstimada(c) ? <span title="Estimado desde HL distribuidos (sin cierres de ruteo)">≈{v}</span> : v)
 
   // ── celdas ──
   const ocupacion = (c: Col): number | null => {
@@ -186,11 +189,11 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
               {fila("Distribuido vs año anterior", (c) => { const e = esc(c.m); if (!e || e.parcial) return dash; return fmtPct(pct(e.real, e.aa)) }, true)}
 
               {grupo(`Flota / entrega (${camDisp} camiones · capacidad ${fmt(proy?.capacidadInstalada ?? Math.round(data.capacidadInstaladaDiaria))} CEq/día)`)}
-              {fila("Ocupación de flota", (c) => { const v = ocupacion(c); return v == null ? dash : <span className={v < umbral * 100 ? "font-semibold text-sky-700" : ""}>{Math.round(v)} %</span> })}
-              {fila("Camiones necesarios (prom / pico)", (c) => { const v = camiones(c); return v ? <><span>{v.prom}</span> / <span className={v.pico > camDisp ? "font-semibold text-red-700" : ""}>{v.pico}</span></> : dash })}
-              {fila("Días con refuerzo o 2ª vuelta", (c) => { const v = diasRefuerzo(c); return v == null ? dash : v > 0 ? <span className="font-semibold text-amber-700">{v}</span> : "✓" })}
-              {fila("Choferes (nec. / dotación)", (c) => necDot(tripulacion(c, "Choferes"), true))}
-              {fila("Ayudantes (nec. / dotación)", (c) => necDot(tripulacion(c, "Ayudantes"), true))}
+              {fila("Ocupación de flota", (c) => { const v = ocupacion(c); return v == null ? dash : est(c, <span className={v < umbral * 100 ? "font-semibold text-sky-700" : ""}>{Math.round(v)} %</span>) })}
+              {fila("Camiones necesarios (prom / pico)", (c) => { const v = camiones(c); return v ? est(c, <><span>{v.prom}</span> / <span className={v.pico > camDisp ? "font-semibold text-red-700" : ""}>{v.pico}</span></>) : dash })}
+              {fila("Días con refuerzo o 2ª vuelta", (c) => { const v = diasRefuerzo(c); return v == null ? dash : est(c, v > 0 ? <span className="font-semibold text-amber-700">{v}</span> : "✓") })}
+              {fila("Choferes (nec. / dotación)", (c) => est(c, necDot(tripulacion(c, "Choferes"), true)))}
+              {fila("Ayudantes (nec. / dotación)", (c) => est(c, necDot(tripulacion(c, "Ayudantes"), true)))}
 
               {grupo("Almacén (necesarios con ausentismo / dotación)")}
               {ROLES.map((rol) => (
@@ -207,7 +210,7 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
           </Table>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Columnas <b>real</b> = meses cerrados calculados con los datos del mes (cierres de ruteo, bultos despachados del depósito, carga y acarreo, fichadas) y la estructura de hoy; <b>en curso</b> = lo que muestran las solapas; <b>proy.</b> = presupuesto × escenario sobre el volumen real actual. * = mes incompleto.
+          Columnas <b>real</b> = meses cerrados calculados con los datos del mes (cierres de ruteo, bultos despachados del depósito, carga y acarreo, fichadas) y la estructura de hoy; en flota, los meses anteriores a los cierres de ruteo (desde el 23/05/2026) van con <b>≈</b>: CEq estimados desde los HL distribuidos por día × la relación CEq/HL medida en los días que tienen ambas fuentes, con la dotación de reparto observada en los registros de vehículos; <b>en curso</b> = lo que muestran las solapas; <b>proy.</b> = presupuesto × escenario sobre el volumen real actual. * = mes incompleto.
           <b>Presupuesto a distribuir</b> = presupuesto (o forecast) × {Math.round(pctDist * 100)} %: el presupuesto es venta facturada y el depósito y la flota mueven esa fracción; sobre ese volumen se dimensiona la proyección. <b>Vendido real</b> = HL facturados netos (Chess + mostrador − notas de crédito), la misma cuenta que el VLC/HL del Sueño y que el Presupuesto. <b>Distribuido con flota propia</b> = HL que salieron a reparto con nuestros camiones (Chess + GESCOM sin patentes, la base de Períodos Críticos): se compara con el presupuesto a distribuir y con el año anterior; «% distribuido real» = distribuido ÷ vendido, en ámbar cuando se aleja más de 5 puntos del {Math.round(pctDist * 100)} % (para recalibrar el parámetro). «nec. / dotación» = necesarios en el día promedio (almacén: ÷ (1 − ausentismo)) contra la dotación nominal; <span className="text-red-700">faltan</span> = temporales requeridos, <span className="text-sky-700">sobran</span> en azul = ocupación por debajo del {Math.round(umbral * 100)} % (capacidad ociosa).
           Horas extra: reales de almacén = deposito-esteban (indicador DPO #39); dimensionadas de almacén = excedente por volumen de lunes a viernes más la regla de sábado (todos entran a las 7, el turno normal termina a las {data.config.sabado_fin_normal} h y la operación cierra a las {data.config.sabado_fin_alta} h en temporada alta y {data.config.sabado_fin_baja} h en baja); dimensionadas = lo que pide el modelo; presupuestadas = «Q Horas Extras» del EERR cargado en Costo/HL. En rojo cuando superan el presupuesto. Flota / Entrega se dimensiona sólo en camiones y personas: sus horas extra no entran en el modelo.
           {desvio != null && Math.abs(desvio) >= 0.1 ? <> <b className={desvio < 0 ? "text-red-700" : "text-sky-700"}>Lo distribuido en los meses cerrados va {fmtPct(desvio)} contra el presupuesto a distribuir</b>: si el desvío se mantiene, cargalo como escenario en los meses que faltan o revisá el % que se distribuye.</> : null}

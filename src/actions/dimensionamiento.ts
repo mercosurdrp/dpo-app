@@ -253,6 +253,7 @@ export interface MetricasDistribucion {
   ocupacionPromedio: number
   camionesNecesariosPromedio: number
   camionesNecesariosPico: number
+  estimado?: boolean               // mes sin cierres de ruteo: CEq estimados desde HL distribuidos × CEq/HL medido
 }
 
 // FTE de reparto (flota/entrega): atado a camiones necesarios × tripulación.
@@ -692,12 +693,56 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
     if (cierresErr) metricasError = cierresErr.message
     else if (cierres.length > 0) metricas = metricasDe(mesAA, cierres)
     // Meses cerrados del año con cierres de ruteo → métricas reales por mes.
+    // HL DISTRIBUIDOS con flota propia por mes (pc_volumen_diario, Chess + GESCOM sin patentes),
+    // año anterior y en curso. Alimenta el anclaje de la proyección y el cuadro anual.
+    const hlMesDist = new Map<string, { hl: number; dias: number }>()
+    const hlDiaDist = new Map<string, number>() // fecha → HL distribuidos ese día
+    {
+      const filas = await todas<{ fecha: string; bultos_distribuidos: number | string | null }>((a, b) =>
+        supabase.from("pc_volumen_diario").select("fecha, bultos_distribuidos")
+          .gte("fecha", `${hoy.getFullYear() - 1}-01-01`).lte("fecha", `${hoy.getFullYear()}-12-31`).order("fecha").range(a, b))
+      for (const r of filas) {
+        const k = String(r.fecha).slice(0, 7)
+        const hl = Number(r.bultos_distribuidos ?? 0)
+        if (!Number.isFinite(hl) || hl <= 0) continue
+        hlDiaDist.set(String(r.fecha), hl)
+        const cur = hlMesDist.get(k) ?? { hl: 0, dias: 0 }
+        cur.hl += hl; cur.dias++
+        hlMesDist.set(k, cur)
+      }
+    }
+
     const metricasPorMes = new Map<string, MetricasDistribucion>()
     for (const c of cierresAnio ?? []) {
       const k = String(c.fecha).slice(0, 7)
       if (k >= mesAA || metricasPorMes.has(k)) continue
       metricasPorMes.set(k, metricasDe(k, (cierresAnio ?? []).filter((x) => String(x.fecha).startsWith(k))))
     }
+    // Meses cerrados SIN cierres de ruteo (empezaron el 23/05/2026): se estiman desde los HL
+    // distribuidos por día (pc_volumen_diario) × CEq por HL medido en los días que tienen ambas
+    // fuentes. Sin clientes ni no-ruteado; queda marcado como estimado.
+    const cierresEstimados: Cierre[] = []
+    {
+      let sCeq = 0, sHl = 0
+      for (const c of cierresAnio ?? []) {
+        const b = Number(c.pergamino_bultos ?? 0) + Number(c.ramallo_bultos ?? 0)
+        const h = hlDiaDist.get(String(c.fecha)) ?? 0
+        if (b > 0 && h > 0) { sCeq += b * f; sHl += h }
+      }
+      const ceqPorHl = sHl > 0 ? sCeq / sHl : 0
+      if (ceqPorHl > 0 && f > 0) {
+        const anioStr = String(hoy.getFullYear())
+        for (const [fecha, hl] of hlDiaDist) {
+          const k = fecha.slice(0, 7)
+          if (!fecha.startsWith(anioStr) || k >= mesAA || metricasPorMes.has(k)) continue
+          cierresEstimados.push({ fecha, pergamino_bultos: (hl * ceqPorHl) / f, pergamino_clientes: 0, ramallo_bultos: 0, ramallo_clientes: 0, bultos_no_ruteados: 0 } as Cierre)
+        }
+        for (const k of new Set(cierresEstimados.map((c) => String(c.fecha).slice(0, 7)))) {
+          metricasPorMes.set(k, { ...metricasDe(k, cierresEstimados.filter((x) => String(x.fecha).startsWith(k))), estimado: true })
+        }
+      }
+    }
+    const cierresTodos: Cierre[] = [...(cierresAnio ?? []), ...cierresEstimados]
 
     // Almacén (FTE): pickeros (bultos procesados) + maquinistas (pallets a procesar).
     let almacen: AlmacenData | null = null
@@ -952,23 +997,6 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       }
     } catch (e) {
       repartoError = e instanceof Error ? e.message : "Error reparto"
-    }
-
-    // HL DISTRIBUIDOS con flota propia por mes (pc_volumen_diario, Chess + GESCOM sin patentes),
-    // año anterior y en curso. Alimenta el anclaje de la proyección y el cuadro anual.
-    const hlMesDist = new Map<string, { hl: number; dias: number }>()
-    {
-      const filas = await todas<{ fecha: string; bultos_distribuidos: number | string | null }>((a, b) =>
-        supabase.from("pc_volumen_diario").select("fecha, bultos_distribuidos")
-          .gte("fecha", `${hoy.getFullYear() - 1}-01-01`).lte("fecha", `${hoy.getFullYear()}-12-31`).order("fecha").range(a, b))
-      for (const r of filas) {
-        const k = String(r.fecha).slice(0, 7)
-        const hl = Number(r.bultos_distribuidos ?? 0)
-        if (!Number.isFinite(hl) || hl <= 0) continue
-        const cur = hlMesDist.get(k) ?? { hl: 0, dias: 0 }
-        cur.hl += hl; cur.dias++
-        hlMesDist.set(k, cur)
-      }
     }
 
     // Proyección de dotación vs volumen futuro (HL/mes presupuesto × pct_distribuido). Escala
@@ -1263,7 +1291,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         // día por día: cuántos superaron los camiones disponibles
         let diasRef = 0
         if (mf) {
-          for (const c of (cierresAnio ?? []).filter((x) => String(x.fecha).startsWith(k))) {
+          for (const c of cierresTodos.filter((x) => String(x.fecha).startsWith(k))) {
             const ceq = (Number(c.pergamino_bultos ?? 0) + Number(c.ramallo_bultos ?? 0)) * f
             if (ceq <= 0) continue
             const cam = zonas.length > 0 ? camionesPorZonas(ceq, zonas, capUnidad, mf.volumenCeqPromedio) : (capUnidad > 0 ? Math.ceil(ceq / capUnidad) : 0)
