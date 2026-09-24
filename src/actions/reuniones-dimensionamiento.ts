@@ -111,7 +111,8 @@ async function construirResumen(fechaReunion: string): Promise<Result<ResumenDim
     const faltan = r.faltanPico[i] ?? 0
     const nec = r.necesariosProm?.[i] ?? 0
     const sobran = r.sobran?.[i] ?? 0
-    const ociosa = r.dotacion > 0 && nec > 0 && nec / r.dotacion < umbral
+    // tareas generales es puesto fijo: nunca "ociosa"
+    const ociosa = !r.puestoFijo && r.dotacion > 0 && nec > 0 && nec / r.dotacion < umbral
     const estado: Estado = faltan > 0 ? "faltan" : hh > 0 ? "extras_pico" : ociosa ? "ociosa" : "cubre"
     return {
       necesariosProm: nec,

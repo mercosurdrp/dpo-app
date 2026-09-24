@@ -136,7 +136,7 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
 
   const almacen = proy.almacen.map((r) => {
     // Clasificadores (HL): demanda del presupuesto retornable, no depende del escenario → queda como vino del server.
-    if (r.unidadVol === "HL") return r
+    if (r.unidadVol === "HL" || r.puestoFijo) return r
     // capPersona viene del server (capDiaria ya descuenta ausentismo, no sirve para derivarla)
     const capPersona = r.capPersona ?? (r.dotacion > 0 ? r.capDiaria / r.dotacion : 0)
     const ausAlm = r.dotacion > 0 ? r.dotacionEfectiva / r.dotacion : 1 // 1 − ausentismo
@@ -1112,7 +1112,6 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
     prod_reempaque_bul_hh: String(data.config.prod_reempaque_bul_hh), util_reempaque: String(data.config.util_reempaque), dotacion_reempaque: String(data.config.dotacion_reempaque),
     prod_pal_h: String(data.config.prod_pal_h), util_maquinistas: String(data.config.util_maquinistas), dotacion_maquinistas: String(data.config.dotacion_maquinistas),
     horas_turno: String(data.config.horas_turno), ausentismo_almacen: String(data.config.ausentismo_almacen),
-    horas_fijas_generales: String(data.config.horas_fijas_generales),
     peso_lun: String(data.config.peso_lun), peso_mar: String(data.config.peso_mar), peso_mie: String(data.config.peso_mie),
     peso_jue: String(data.config.peso_jue), peso_vie: String(data.config.peso_vie), peso_sab: String(data.config.peso_sab),
     sabado_fin_normal: String(data.config.sabado_fin_normal), sabado_fin_alta: String(data.config.sabado_fin_alta),
@@ -1139,7 +1138,6 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
     prod_reempaque_bul_hh: Number(c.prod_reempaque_bul_hh), util_reempaque: Number(c.util_reempaque), dotacion_reempaque: Number(c.dotacion_reempaque),
     prod_pal_h: Number(c.prod_pal_h), util_maquinistas: Number(c.util_maquinistas), dotacion_maquinistas: Number(c.dotacion_maquinistas),
     horas_turno: Number(c.horas_turno), ausentismo_almacen: Number(c.ausentismo_almacen),
-    horas_fijas_generales: Number(c.horas_fijas_generales),
     peso_lun: Number(c.peso_lun), peso_mar: Number(c.peso_mar), peso_mie: Number(c.peso_mie),
     peso_jue: Number(c.peso_jue), peso_vie: Number(c.peso_vie), peso_sab: Number(c.peso_sab),
     sabado_fin_normal: Number(c.sabado_fin_normal), sabado_fin_alta: Number(c.sabado_fin_alta),
@@ -1152,7 +1150,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
     { n: "Clasificadores", r: a.clasificadores, u: "HL", pico: false, hl: true, real: a.clasificadores.prodRealPalHH,
       fuente: `Demanda: camiones de cerveza retornable presupuestados para retirar de Quilmes (${data.retornable.fuente === "presupuesto" ? "hoja ACARREO PXQ del presupuesto anual" : "constantes 2026 en código; importá el presupuesto"}) × ${fmt(data.retornable.paletasPorViaje)} paletas por camión, repartidos uniforme entre los días hábiles del mes — por eso promedio y pico son iguales. Conversión: ${fmt(data.retornable.hlPorPaleta)} HL por paleta.` },
     { n: "Tareas generales", r: a.reempaque, u: "horas", pico: false, hl: false, real: null as number | null,
-      fuente: `Demanda en HORAS por día: bultos de reempaque (deposito-esteban) ÷ ${fmt(data.config.prod_reempaque_bul_hh)} bul/HH, más ${fmt(data.config.horas_fijas_generales)} h fijas de tareas generales (limpieza, prensa, orden) que no dependen del volumen. Capacidad por persona = horas de turno × utilización.` },
+      fuente: `PUESTO FIJO: 1 persona que hace tareas que no dependen del volumen (limpieza, prensa, orden, apoyo); lo que no hace un día lo hace al otro, así que no genera horas extra por volumen ni cuenta como sobrante. Lo único que se mide por productividad es el reempaque: bultos por día (deposito-esteban) ÷ ${fmt(data.config.prod_reempaque_bul_hh)} bul/HH = horas de su día que ocupa.` },
     { n: "Maquinistas", r: a.maquinistas, u: "pallets", pico: false, hl: false, real: null as number | null,
       fuente: `Demanda: pallets de acarreo descargado (recepcion_acarreos) + carga a distribución (deposito-esteban) × (1 + factor de retorno ${fmt(a.maquinistas.factorRetorno)}). Promedios del mes: ${fmt(a.maquinistas.palAcarreoProm)} pal de acarreo y ${fmt(a.maquinistas.palCargaProm)} pal de carga por día.` },
   ] : []
@@ -1160,6 +1158,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
   // ocupación (necesarios ÷ dotación efectiva) → capacidad ociosa: la alerta por exceso.
   const umbralAlm = data.config.umbral_ocupacion_ociosa
   const estadoHoy = (r: RolFte) => {
+    if (r.puestoFijo && r.fteNecesariosProm <= r.dotacionEfectiva) return { txt: "Puesto fijo", cls: "text-slate-700" }
     if (r.fteNecesariosProm > r.dotacionEfectiva) return { txt: `Faltan ${fmt(Math.round((r.fteNecesariosProm - r.dotacionEfectiva) * 10) / 10)}`, cls: "text-red-700 font-semibold" }
     if (r.fteNecesariosPico > r.dotacionEfectiva) return { txt: "Extras en pico", cls: "text-amber-700" }
     const oc = r.dotacionEfectiva > 0 ? r.fteNecesariosProm / r.dotacionEfectiva : 1
@@ -1197,7 +1196,6 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
             <div className="flex flex-wrap items-end gap-3">
               <div><Label className="text-xs">Horas / turno</Label><Input type="number" step="0.1" className="h-8 w-20" value={c.horas_turno} onChange={(e) => setC((s) => ({ ...s, horas_turno: e.target.value }))} /></div>
               <div><Label className="text-xs">Ausentismo (0–1)</Label><Input type="number" step="0.01" className="h-8 w-20" value={c.ausentismo_almacen} onChange={(e) => setC((s) => ({ ...s, ausentismo_almacen: e.target.value }))} /></div>
-              <div><Label className="text-xs">Horas fijas tareas grales. (h/día)</Label><Input type="number" step="0.5" className="h-8 w-20" value={c.horas_fijas_generales} onChange={(e) => setC((s) => ({ ...s, horas_fijas_generales: e.target.value }))} /></div>
               <span className="self-center text-xs font-medium text-muted-foreground">Peso de volumen por día:</span>
               {([["peso_lun", "Lun"], ["peso_mar", "Mar"], ["peso_mie", "Mié"], ["peso_jue", "Jue"], ["peso_vie", "Vie"], ["peso_sab", "Sáb"]] as const).map(([k, l]) => (
                 <div key={k}><Label className="text-xs">{l}</Label><Input type="number" step="0.05" className="h-8 w-16" value={c[k]} onChange={(e) => setC((s) => ({ ...s, [k]: e.target.value }))} /></div>
@@ -1223,7 +1221,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              Productividad y volumen vienen vinculados: «↻ Traer productividad real» toma el promedio del mes de <b>deposito-esteban</b> (picking/maquinistas/reempaque) y de la tabla de clasificación de <b>dpo-app</b>; el volumen sale del <b>presupuesto anual</b>. Todo es editable como override. <b>Utilización</b> = fracción del turno aplicada a la tarea pura: picking 0,80 (decisión del 22/09/2026; Casa Central asume 2 h netas sobre 8). <b>Ausentismo</b> = fracción de la dotación que en promedio no está (vacaciones, licencias, faltas); la dotación efectiva = dotación × (1 − ausentismo) es la que se compara contra la demanda. <b>Horas fijas</b> = horas/día de tareas generales que no dependen del volumen (limpieza, prensa, orden), se suman al reempaque. Los <b>pesos por día</b> salen del volumen real de los cierres de ruteo 2026 (lun 0,14 · mar 0,15 · mié 0,22 · jue 0,21 · vie 0,13 · sáb 0,15). Tras recalcular, revisá y tocá <b>Guardar</b>.
+              Productividad y volumen vienen vinculados: «↻ Traer productividad real» toma el promedio del mes de <b>deposito-esteban</b> (picking/maquinistas/reempaque) y de la tabla de clasificación de <b>dpo-app</b>; el volumen sale del <b>presupuesto anual</b>. Todo es editable como override. <b>Utilización</b> = fracción del turno aplicada a la tarea pura: picking 0,80 (decisión del 22/09/2026; Casa Central asume 2 h netas sobre 8). <b>Ausentismo</b> = fracción de la dotación que en promedio no está (vacaciones, licencias, faltas); la dotación efectiva = dotación × (1 − ausentismo) es la que se compara contra la demanda. <b>Tareas generales</b> es un puesto fijo: 1 persona con tareas que no dependen del volumen; sólo el reempaque se mide por productividad y no genera horas extra de lunes a viernes. Los <b>pesos por día</b> salen del volumen real de los cierres de ruteo 2026 (lun 0,14 · mar 0,15 · mié 0,22 · jue 0,21 · vie 0,13 · sáb 0,15). Tras recalcular, revisá y tocá <b>Guardar</b>.
             </p>
           </CardContent>
         </Card>
@@ -1292,7 +1290,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 })}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación <b>efectiva</b> (descontado el ausentismo) × productividad × horas/turno × utilización. Clasificadores: la demanda son los HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf) repartidos entre los días hábiles del mes; se convierten a paletas con 6 HL/paleta. Productividad = estándar de junio (4,35 pal/HH ≈ 26 HL/HH). Tareas generales: demanda en horas/día (reempaque ÷ bul/HH + horas fijas). «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio · «Capacidad ociosa» = los necesarios usan menos del {Math.round(umbralAlm * 100)} % de la dotación efectiva (alerta por exceso, SOP §3). Los <b>necesarios van con un decimal</b> (no redondeados hacia arriba) para que sean comparables con la dotación efectiva: 2,7 necesarios contra 2,76 efectivos <b>cubre</b>. <b>Tocá el estado</b> para ver el cálculo paso a paso, la fuente de cada dato y qué significa la brecha.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación <b>efectiva</b> (descontado el ausentismo) × productividad × horas/turno × utilización. Clasificadores: la demanda son los HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf) repartidos entre los días hábiles del mes; se convierten a paletas con 6 HL/paleta. Productividad = estándar de junio (4,35 pal/HH ≈ 26 HL/HH). Tareas generales: puesto fijo (1 persona, tareas que no dependen del volumen); sólo se mide el reempaque en horas/día (bultos ÷ bul/HH), sin horas extra por volumen ni sobrantes. «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio · «Capacidad ociosa» = los necesarios usan menos del {Math.round(umbralAlm * 100)} % de la dotación efectiva (alerta por exceso, SOP §3). Los <b>necesarios van con un decimal</b> (no redondeados hacia arriba) para que sean comparables con la dotación efectiva: 2,7 necesarios contra 2,76 efectivos <b>cubre</b>. <b>Tocá el estado</b> para ver el cálculo paso a paso, la fuente de cada dato y qué significa la brecha.</p>
           </CardContent>
         </Card>
       )}

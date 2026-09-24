@@ -215,6 +215,7 @@ export interface RolFte {
   dotacionEfectiva: number      // dotación × (1 − ausentismo): contra esto se compara
   utilizacion: number           // % del turno aplicado a la tarea (0–1)
   capDiariaFte: number          // capacidad efectiva por persona/día = prod × horas × utilización
+  puestoFijo?: boolean          // tareas generales: 1 persona fija, sin horas extra por volumen ni sobrantes
 }
 
 export interface AlmacenData {
@@ -306,6 +307,7 @@ export interface ProyeccionAlmacenRol {
   sobran: number[]         // por mes: dotación − necesarios, si > 0 ("jornales sobrantes")
   temporales: number[]     // por mes: necesarios − dotación, si > 0 ("temporales requeridos")
   horasSabado: number[]    // por mes: horas extra estructurales de sábado (dotación efectiva × (fin − 11) × sábados); YA incluidas en horasExtra
+  puestoFijo?: boolean     // tareas generales: sin horas extra por volumen, sin sobrantes
 }
 // Regla de sábado del almacén, para mostrarla y recalcularla en el cliente.
 export interface SabadosAlmacen {
@@ -876,8 +878,12 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       // (limpieza, prensa, orden) que no dependen del volumen. Capacidad por persona =
       // horas de turno × utilización. Con 6-11 bultos/día el FTE por bultos daba 0,1 y
       // escondía que la persona está ocupada igual.
+      // PUESTO FIJO (decisión de Sebastián, 24/09/2026): la persona de tareas generales está
+      // siempre y hace tareas que no dependen del volumen; lo que no hace un día lo hace al otro,
+      // así que NO genera horas extra por volumen. Sólo el reempaque se mide por productividad,
+      // para ver qué parte de su día ocupa. horas_fijas_generales ya no se usa.
       const prodRe = config.prod_reempaque_bul_hh
-      const horasFijas = config.horas_fijas_generales
+      const horasFijas = 0
       const horasVar = (b: number) => (prodRe > 0 ? b / prodRe : 0)
       const capReempaque = config.horas_turno * config.util_reempaque // horas/persona/día
       const hProm = horasVar(re.prom) + horasFijas
@@ -891,6 +897,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         dotacionEfectiva: efAlmacen(config.dotacion_reempaque),
         utilizacion: config.util_reempaque,
         capDiariaFte: Math.round(capReempaque * 10) / 10,
+        puestoFijo: true,
       }
 
       if (pk.dias > 0 || mq.dias > 0 || hlClasifDia > 0 || re.dias > 0 || horasFijas > 0)
@@ -899,13 +906,13 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       // ── Cuadro anual: meses cerrados con volumen REAL, misma estructura y parámetros de hoy ──
       const ausAlm = 1 - config.ausentismo_almacen
       const esSabado = (fecha: string) => /^\d{4}-\d{2}-\d{2}$/.test(fecha) && new Date(`${fecha}T12:00:00`).getDay() === 6
-      const rolHist = (m: Map<string, number>, capPersona: number, dotacion: number, prodH: number, mesN: number, fijo = 0): HistoricoRol | null => {
+      const rolHist = (m: Map<string, number>, capPersona: number, dotacion: number, prodH: number, mesN: number, fijo = 0, puestoFijo = false): HistoricoRol | null => {
         const st = statsPorDia(m)
         if (st.dias === 0 && fijo === 0) return null
         const capEquipo = capPersona * efAlmacen(dotacion)
         // horas extra por volumen sólo de lunes a viernes: el sábado va por la regla propia
         let hh = 0
-        for (const [f, v] of m) { if (esSabado(f)) continue; const d = v + fijo; if (d > capEquipo && prodH > 0) hh += (d - capEquipo) / prodH }
+        if (!puestoFijo) for (const [f, v] of m) { if (esSabado(f)) continue; const d = v + fijo; if (d > capEquipo && prodH > 0) hh += (d - capEquipo) / prodH }
         const hhSab = efAlmacen(dotacion) * hSabado(mesN) * sabadosDelMes(hoy.getFullYear(), mesN)
         const volProm = st.prom + fijo, volPico = st.pico + fijo
         const nec = capPersona > 0 && ausAlm > 0 ? Math.round((volProm / capPersona / ausAlm) * 10) / 10 : 0
@@ -913,7 +920,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           volumenProm: Math.round(volProm * 10) / 10, volumenPico: Math.round(volPico * 10) / 10, dias: st.dias,
           necesariosProm: nec,
           necesariosPico: capPersona > 0 ? Math.round((volPico / capPersona) * 10) / 10 : 0,
-          sobran: Math.max(0, Math.round((dotacion - nec) * 10) / 10),
+          sobran: puestoFijo ? 0 : Math.max(0, Math.round((dotacion - nec) * 10) / 10),
           temporales: Math.max(0, Math.round((nec - dotacion) * 10) / 10),
           horasExtra: Math.round((hh + hhSab) * 10) / 10,
           horasSabado: Math.round(hhSab * 10) / 10,
@@ -928,7 +935,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         const almHist = {
           pickeros: rolHist(soloMes(bultosPorDiaAnio, k), capPicker, config.dotacion_almacen, prodPicking, mN),
           clasificadores: rolHist(clasifMap, capClasif, config.dotacion_clasif, prodClasifHlHh, mN),
-          reempaque: rolHist(reMap, capReempaque, config.dotacion_reempaque, 1, mN, horasFijas),
+          reempaque: rolHist(reMap, capReempaque, config.dotacion_reempaque, 1, mN, 0, true),
           maquinistas: rolHist(soloMes(palPorDiaAnio, k), capMaq, config.dotacion_maquinistas, config.prod_pal_h, mN),
         }
         if (Object.values(almHist).some((x) => x && x.dias > 0)) almacenHist.set(k, almHist)
@@ -1062,10 +1069,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           // Base = volumen PROMEDIO diario; el pico del día lo genera el peso del día de semana (jue/vie ×1,5).
           // Tareas generales va en HORAS: la parte variable (bultos de reempaque ÷ bul/HH)
           // escala con el volumen, las horas fijas (volFijo) no. prodH = 1 (una hora es una hora).
-          const rolesAlm: Array<{ rol: string; rolFte?: RolFte; prodH: number; dotacion: number; unidad: string; volFijo: number }> = [
+          const rolesAlm: Array<{ rol: string; rolFte?: RolFte; prodH: number; dotacion: number; unidad: string; volFijo: number; fijo?: boolean }> = [
             { rol: "Pickeros", rolFte: almacen?.pickeros, prodH: config.prod_bul_hh, dotacion: config.dotacion_almacen, unidad: "bultos", volFijo: 0 },
             { rol: "Clasificadores", rolFte: almacen?.clasificadores, prodH: config.prod_clasif_pal_h * hlPorPaleta, dotacion: config.dotacion_clasif, unidad: "HL", volFijo: 0 },
-            { rol: "Tareas grales (reempaque)", rolFte: almacen?.reempaque, prodH: 1, dotacion: config.dotacion_reempaque, unidad: "horas", volFijo: config.horas_fijas_generales },
+            { rol: "Tareas grales (reempaque)", rolFte: almacen?.reempaque, prodH: 1, dotacion: config.dotacion_reempaque, unidad: "horas", volFijo: 0, fijo: true },
             { rol: "Maquinistas", rolFte: almacen?.maquinistas, prodH: config.prod_pal_h, dotacion: config.dotacion_maquinistas, unidad: "pallets", volFijo: 0 },
           ]
           const maxPesoNorm = Math.max(...pesos) / sumaPesos
@@ -1087,10 +1094,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             const mensual = (volPromDia: number) => {
               const nec = capPersona > 0 && ausAlm > 0 ? Math.round((volPromDia / capPersona / ausAlm) * 10) / 10 : 0
               necesariosProm.push(nec)
-              sobran.push(Math.max(0, Math.round((r.dotacion - nec) * 10) / 10))
+              sobran.push(r.fijo ? 0 : Math.max(0, Math.round((r.dotacion - nec) * 10) / 10))
               temporales.push(Math.max(0, Math.round((nec - r.dotacion) * 10) / 10))
             }
-            const base = { rol: r.rol, dotacion: r.dotacion, dotacionEfectiva: dotEfectiva, capDiaria: Math.round(capDiaria), capPersona: Math.round(capPersona * 10) / 10, unidadVol: r.unidad, volPromBase: Math.round(volBase * 10) / 10, volFijo: r.volFijo, prodH: r.prodH }
+            const base = { rol: r.rol, dotacion: r.dotacion, dotacionEfectiva: dotEfectiva, capDiaria: Math.round(capDiaria), capPersona: Math.round(capPersona * 10) / 10, unidadVol: r.unidad, volPromBase: Math.round(volBase * 10) / 10, volFijo: r.volFijo, prodH: r.prodH, puestoFijo: Boolean(r.fijo) }
             // Clasificadores: la demanda es el presupuesto retornable del mes (HL) repartido
             // uniforme entre días hábiles → no escala por índice ni tiene pico por día de semana.
             if (r.rol === "Clasificadores") {
@@ -1117,7 +1124,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
                 const w = pesoDe(wd)
                 if (w <= 0 || wd === 6) continue // sábado: va por la regla propia, no por volumen
                 const volDia = volMes * DIAS_SEMANA * w + r.volFijo
-                if (volDia > capDiaria && r.prodH > 0) hh += (volDia - capDiaria) / r.prodH
+                if (!r.fijo && volDia > capDiaria && r.prodH > 0) hh += (volDia - capDiaria) / r.prodH
               }
               const hs = sabadoDe(mesN)
               const pico = volMes * DIAS_SEMANA * maxPesoNorm + r.volFijo         // volumen del día más cargado
@@ -1125,7 +1132,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
               horasSabado.push(hs)
               volPicoDia.push(Math.round(pico))
               // personas extra para cubrir el pico SIN horas extra; redondeo normal (evita "falta 1" por excedente mínimo)
-              faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((pico - capDiaria) / capPersona)) : 0)
+              faltanPico.push(!r.fijo && capPersona > 0 ? Math.max(0, Math.round((pico - capDiaria) / capPersona)) : 0)
               mensual(volMes + r.volFijo)
             }
             return { ...base, horasExtra, faltanPico, volPicoDia, necesariosProm, sobran, temporales, horasSabado }

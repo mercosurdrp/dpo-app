@@ -38,7 +38,7 @@ interface Col {
 const ROLES = [
   { k: "pickeros", n: "Pickeros", proy: "Pickeros" },
   { k: "clasificadores", n: "Clasificadores", proy: "Clasificadores" },
-  { k: "reempaque", n: "Tareas generales", proy: "Tareas grales (reempaque)" },
+  { k: "reempaque", n: "Tareas generales (puesto fijo)", proy: "Tareas grales (reempaque)" },
   { k: "maquinistas", n: "Maquinistas", proy: "Maquinistas" },
 ] as const
 
@@ -158,6 +158,7 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
           </TableBody>
         </Table>
         <p className="text-xs text-muted-foreground">
+          {rol.k === "reempaque" ? <>Puesto fijo: 1 persona con tareas que no dependen del volumen; lo que no hace un día lo hace al otro, así que no genera horas extra por volumen ni cuenta como sobrante. Los «necesarios» son sólo la parte del día que ocupa el reempaque. </> : null}
           {faltan
             ? <>Faltan {fmt1(d.v.temporales)} personas en el día promedio: cubrirlo con la dotación actual son <b>{fmt1(Math.abs(d.brechaHh))} horas-hombre</b> en el mes (o un temporal). Las «horas extra que pide el modelo» son las que salen día por día cuando la demanda supera la capacidad; pueden ser menos que la brecha mensual porque los días flojos compensan.</>
             : <>La dotación cubre el día promedio con {fmt1(d.v.sobran)} personas de sobra, equivalentes a <b>{fmt1(Math.abs(d.brechaHh))} horas-hombre</b> en el mes. Las horas extra que quedan son las del pico de algunos días y las de los sábados.</>}
