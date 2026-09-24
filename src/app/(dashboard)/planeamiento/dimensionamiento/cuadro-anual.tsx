@@ -15,7 +15,10 @@
 import { Fragment } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import type { DimData, ProyeccionData, HistoricoRol } from "@/actions/dimensionamiento"
+import { diasHabilesDelMes } from "@/lib/dimensionamiento/retornable"
+const money = (v: number) => `$${Math.round(v).toLocaleString("es-AR")}`
 
 const MES_ABBR = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const fmt = (v: number) => v.toLocaleString("es-AR")
@@ -109,6 +112,59 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
     if (c.pi >= 0 && r) return { nec: r.necesariosProm?.[c.pi] ?? 0, dot: r.dotacion, sobran: r.sobran?.[c.pi] ?? 0, temporales: r.temporales?.[c.pi] ?? 0 }
     return null
   }
+  // Detalle de un rol de almacén en un mes: qué representan en horas-hombre los que faltan (o sobran).
+  const detalleAlmacen = (c: Col, rol: (typeof ROLES)[number]) => {
+    const v = almacen(c, rol)
+    if (!v) return null
+    const r = almRol(rol.proy)
+    const h: HistoricoRol | null | undefined = c.tipo === "cerrado" ? histDe(c)?.almacen[rol.k] : undefined
+    const hhExtra = h ? h.horasExtra : c.pi >= 0 && r ? r.horasExtra[c.pi] ?? 0 : 0
+    const dias = diasHabilesDelMes(anio, c.m)
+    const horasTurno = data.config.horas_turno
+    // brecha en horas-hombre del mes: personas que faltan (o sobran) × horas de turno × días hábiles
+    const brechaHh = Math.round((v.nec - v.dot) * horasTurno * dias * 10) / 10
+    const tarifa = proy?.costoHh.find((x) => x.mes === c.m)?.almacen ?? 0
+    const volProm = h ? h.volumenProm : c.pi >= 0 && r ? Math.round(r.volPromBase * (proy?.meses[c.pi]?.indice ?? 1) * 10) / 10 + (r.volFijo ?? 0) : null
+    const unidad = r?.unidadVol ?? ""
+    const capPersona = r?.capPersona ?? 0
+    return { v, hhExtra, dias, horasTurno, brechaHh, tarifa, volProm, unidad, capPersona }
+  }
+  const DetalleAlmacenModal = ({ c, rol }: { c: Col; rol: (typeof ROLES)[number] }) => {
+    const d = detalleAlmacen(c, rol)
+    if (!d) return null
+    const faltan = d.v.temporales > 0
+    return (
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{rol.n} — {MES_ABBR[c.m]} {anio}{c.tipo === "cerrado" ? " (real)" : c.tipo === "actual" ? " (en curso)" : " (proyección)"}</DialogTitle></DialogHeader>
+        <Table>
+          <TableBody>
+            <TableRow><TableCell className="font-medium">Demanda promedio por día</TableCell><TableCell className="text-right">{d.volProm == null ? "—" : `${fmt1(d.volProm)} ${d.unidad}`}</TableCell></TableRow>
+            <TableRow><TableCell className="font-medium">Capacidad por persona y día</TableCell><TableCell className="text-right">{d.capPersona > 0 ? `${fmt1(d.capPersona)} ${d.unidad}` : "—"}</TableCell></TableRow>
+            <TableRow><TableCell className="font-medium">Necesarios (con ausentismo)</TableCell><TableCell className="text-right font-semibold">{fmt1(d.v.nec)}</TableCell></TableRow>
+            <TableRow><TableCell className="font-medium">Dotación</TableCell><TableCell className="text-right">{fmt1(d.v.dot)}</TableCell></TableRow>
+            <TableRow className="border-t-2">
+              <TableCell className="font-bold">{faltan ? "Faltan" : "Sobran"}</TableCell>
+              <TableCell className={`text-right font-bold ${faltan ? "text-red-700" : "text-sky-700"}`}>{fmt1(faltan ? d.v.temporales : d.v.sobran)} personas</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-bold">En horas-hombre del mes</TableCell>
+              <TableCell className={`text-right font-bold ${faltan ? "text-red-700" : "text-sky-700"}`}>{fmt1(Math.abs(d.brechaHh))} h</TableCell>
+            </TableRow>
+            <TableRow className="text-xs text-muted-foreground"><TableCell colSpan={2}>{fmt1(Math.abs(d.v.nec - d.v.dot))} personas × {fmt1(d.horasTurno)} h de turno × {d.dias} días hábiles</TableCell></TableRow>
+            <TableRow className="border-t-2"><TableCell className="font-medium">Horas extra que pide el modelo</TableCell><TableCell className="text-right font-semibold">{fmt1(d.hhExtra)} h</TableCell></TableRow>
+            {d.tarifa > 0 && (
+              <TableRow><TableCell className="font-medium">Costo de esas horas extra</TableCell><TableCell className="text-right font-semibold">{money(d.hhExtra * d.tarifa)}</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+        <p className="text-xs text-muted-foreground">
+          {faltan
+            ? <>Faltan {fmt1(d.v.temporales)} personas en el día promedio: cubrirlo con la dotación actual son <b>{fmt1(Math.abs(d.brechaHh))} horas-hombre</b> en el mes (o un temporal). Las «horas extra que pide el modelo» son las que salen día por día cuando la demanda supera la capacidad; pueden ser menos que la brecha mensual porque los días flojos compensan.</>
+            : <>La dotación cubre el día promedio con {fmt1(d.v.sobran)} personas de sobra, equivalentes a <b>{fmt1(Math.abs(d.brechaHh))} horas-hombre</b> en el mes. Las horas extra que quedan son las del pico de algunos días y las de los sábados.</>}
+        </p>
+      </DialogContent>
+    )
+  }
   // horas extra dimensionadas: histórico (server) para cerrados; proyección EN VIVO para el resto
   const dimHh = (c: Col): { alm: number } | null => {
     if (c.tipo === "cerrado") { const h = hx(c.m); return h && h.dimAlmacen != null ? { alm: h.dimAlmacen } : null }
@@ -196,13 +252,24 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
 
               {grupo("Almacén (necesarios con ausentismo / dotación)")}
               {ROLES.map((rol) => (
-                <Fragment key={rol.k}>{fila(rol.n, (c) => necDot(almacen(c, rol)))}</Fragment>
+                <Fragment key={rol.k}>{fila(rol.n, (c) => {
+                  const v = almacen(c, rol)
+                  if (!v) return dash
+                  // clic → pop-up con lo que representan en horas-hombre los que faltan (o sobran)
+                  return (
+                    <Dialog>
+                      <DialogTrigger className={`w-full cursor-pointer text-right underline decoration-dotted underline-offset-4 hover:brightness-95 ${v.temporales > 0 ? "rounded bg-red-50 px-1" : ""}`} title="Ver en horas-hombre">
+                        {necDot(v)}
+                      </DialogTrigger>
+                      <DetalleAlmacenModal c={c} rol={rol} />
+                    </Dialog>
+                  )
+                })}</Fragment>
               ))}
 
               {grupo("Horas extra — almacén")}
               {fila("Reales", (c) => hhCell(hx(c.m)?.realAlmacen, dimHh(c)?.alm, hx(c.m)?.pptoAlmacen, "real"))}
               {fila("Dimensionadas (modelo)", (c) => hhCell(hx(c.m)?.realAlmacen, dimHh(c)?.alm, hx(c.m)?.pptoAlmacen, "dim"))}
-              {fila("de las cuales sábados (regla)", (c) => { const v = c.tipo === "cerrado" ? hx(c.m)?.dimSabadoAlmacen : c.pi >= 0 && proy ? proy.almacen.reduce((s, r) => s + (r.horasSabado?.[c.pi] ?? 0), 0) : null; return v == null ? dash : `${fmt1(v)} h` }, true)}
               {fila("Presupuestadas", (c) => hhCell(hx(c.m)?.realAlmacen, dimHh(c)?.alm, hx(c.m)?.pptoAlmacen, "ppto"))}
 
             </TableBody>
