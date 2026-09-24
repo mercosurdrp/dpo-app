@@ -65,6 +65,18 @@ export function diasHabilesDelMes(anio: number, mes: number): number {
   return n
 }
 
+/** Sábados operativos del mes (sin feriados). Para la regla de horas extra de sábado del almacén. */
+export function sabadosDelMes(anio: number, mes: number): number {
+  const ultimoDia = new Date(Date.UTC(anio, mes, 0)).getUTCDate()
+  let n = 0
+  for (let d = 1; d <= ultimoDia; d++) {
+    if (new Date(Date.UTC(anio, mes - 1, d)).getUTCDay() !== 6) continue
+    if (FERIADOS_2026.has(iso(anio, mes, d))) continue
+    n++
+  }
+  return n
+}
+
 /** HL de cerveza retornable a clasificar por día hábil del mes. 0 si sin datos. */
 export function hlRetornablePorDia(mes: number, anio: number): number {
   const hl = getHlRetornable(mes, anio)

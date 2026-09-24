@@ -16,6 +16,7 @@ import { IS_MISIONES } from "@/lib/empresa"
 import {
   hlRetornablePorDia,
   diasHabilesDelMes,
+  sabadosDelMes,
   HL_POR_PALETA_RETORNABLE,
 } from "@/lib/dimensionamiento/retornable"
 import { hheePorLegajo, type MarcaHheeRow } from "@/lib/asistencia/horas-extras"
@@ -149,6 +150,20 @@ export interface DimConfig {
   horas_fijas_generales: number // horas/día de tareas generales que no dependen del volumen (limpieza, prensa, orden)
   umbral_ocupacion_ociosa: number // ocupación (0–1) por debajo de la cual se marca "capacidad ociosa" (SOP: 0,70)
   pct_distribuido: number       // fracción del presupuesto de venta que se pickea y sale con flota propia (0,80)
+  // Sábados del ALMACÉN: turno normal hasta sabado_fin_normal (11 h); la operación termina a
+  // sabado_fin_alta (14) en temporada alta y sabado_fin_baja (12) en baja → horas extra al 100 %
+  // por persona = fin − 11, para toda la dotación efectiva, cada sábado del mes.
+  sabado_fin_normal: number
+  sabado_fin_alta: number
+  sabado_fin_baja: number
+  meses_temporada_alta: string  // "1,2,3,11,12"
+}
+
+/** Horas extra por persona de un sábado del mes (0 si el fin no supera el turno normal). */
+function horasSabadoDe(config: Pick<DimConfig, "sabado_fin_normal" | "sabado_fin_alta" | "sabado_fin_baja" | "meses_temporada_alta">, mes: number): number {
+  const alta = new Set(String(config.meses_temporada_alta ?? "").split(",").map((s) => Number(s.trim())).filter((n) => n >= 1 && n <= 12))
+  const fin = alta.has(mes) ? config.sabado_fin_alta : config.sabado_fin_baja
+  return Math.max(0, Math.round((fin - config.sabado_fin_normal) * 10) / 10)
 }
 
 // Volumen del año, mes a mes, en HL: año anterior (AA), presupuesto, forecast
@@ -290,6 +305,16 @@ export interface ProyeccionAlmacenRol {
   necesariosProm: number[] // por mes: FTE necesarios con ausentismo (1 decimal)
   sobran: number[]         // por mes: dotación − necesarios, si > 0 ("jornales sobrantes")
   temporales: number[]     // por mes: necesarios − dotación, si > 0 ("temporales requeridos")
+  horasSabado: number[]    // por mes: horas extra estructurales de sábado (dotación efectiva × (fin − 11) × sábados); YA incluidas en horasExtra
+}
+// Regla de sábado del almacén, para mostrarla y recalcularla en el cliente.
+export interface SabadosAlmacen {
+  finNormal: number
+  finAlta: number
+  finBaja: number
+  mesesAlta: string
+  sabadosMes: number[]      // por mes de la proyección: sábados operativos
+  horasPersonaMes: number[] // por mes: horas extra por persona y sábado (fin − normal)
 }
 // Flota: por recurso (camiones/choferes/ayudantes), dotación fija → días/mes que requieren refuerzo.
 export interface ProyeccionFlotaRol {
@@ -332,6 +357,7 @@ export interface ProyeccionData {
   realDistDiaBase: number        // HL distribuidos por día, real del mes base (pc_volumen_diario)
   pptoDistDiaBase: number        // hlBase × pct ÷ días hábiles del mes base
   anclaje: number                // 1 si no hay real del mes base
+  sabados: SabadosAlmacen
 }
 
 export interface DimPlan {
@@ -399,7 +425,8 @@ export interface HistoricoRol {
   necesariosPico: number
   sobran: number            // dotación − necesarios, si > 0
   temporales: number        // necesarios − dotación, si > 0
-  horasExtra: number        // hora-hombre que el modelo hubiera pedido (Σ días con demanda > capacidad)
+  horasExtra: number        // hora-hombre que el modelo hubiera pedido (Σ lun-vie con demanda > capacidad + regla de sábado)
+  horasSabado: number       // de las cuales, regla de sábado (dotación efectiva × (fin − 11) × sábados del mes)
 }
 export interface HistoricoMes {
   mes: string               // "2026-03"
@@ -421,6 +448,7 @@ export interface HorasExtraMes {
   realAlmacen: number | null     // Σ horas extra de almacén (deposito-esteban, indicador DPO #39)
   realDistribucion: number | null // Σ horas extra 50 % + 100 % de las fichadas de distribución
   dimAlmacen: number | null      // modelo: histórico (meses cerrados) o proyección (mes en curso y futuros)
+  dimSabadoAlmacen: number | null // de las cuales, regla de sábado del almacén
   dimDistribucion: number | null
   pptoAlmacen: number | null     // dim_costo_hh.hh_ppto_*
   pptoDistribucion: number | null
@@ -507,6 +535,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       horas_fijas_generales: 2,
       umbral_ocupacion_ociosa: 0.7,
       pct_distribuido: 0.8,
+      sabado_fin_normal: 11,
+      sabado_fin_alta: 14,
+      sabado_fin_baja: 12,
+      meses_temporada_alta: "1,2,3,11,12",
     }
     {
       const { data: hve } = await supabase.from("dim_config").select("horas_vuelta_extra").eq("id", 1).maybeSingle()
@@ -527,6 +559,17 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const pd = Number(ext?.pct_distribuido)
       if (Number.isFinite(pd) && pd > 0 && pd <= 1.5) config.pct_distribuido = pd
     }
+    {
+      // migración 20260924120000: regla de sábado del almacén
+      const { data: ext } = await supabase.from("dim_config").select("sabado_fin_normal, sabado_fin_alta, sabado_fin_baja, meses_temporada_alta").eq("id", 1).maybeSingle()
+      const h = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n >= 0 && n <= 24 ? n : null }
+      const fn = h(ext?.sabado_fin_normal), fa = h(ext?.sabado_fin_alta), fb = h(ext?.sabado_fin_baja)
+      if (fn != null) config.sabado_fin_normal = fn
+      if (fa != null) config.sabado_fin_alta = fa
+      if (fb != null) config.sabado_fin_baja = fb
+      if (typeof ext?.meses_temporada_alta === "string" && ext.meses_temporada_alta.trim()) config.meses_temporada_alta = ext.meses_temporada_alta
+    }
+    const hSabado = (mes: number) => horasSabadoDe(config, mes)
     // Dotación efectiva de almacén: descuenta el ausentismo promedio (1 decimal).
     const efAlmacen = (dot: number) => Math.round(dot * (1 - config.ausentismo_almacen) * 10) / 10
     const objetivos = (objetivosRes.data ?? []) as KpiObjetivo[]
@@ -775,12 +818,15 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
 
       // ── Cuadro anual: meses cerrados con volumen REAL, misma estructura y parámetros de hoy ──
       const ausAlm = 1 - config.ausentismo_almacen
-      const rolHist = (m: Map<string, number>, capPersona: number, dotacion: number, prodH: number, fijo = 0): HistoricoRol | null => {
+      const esSabado = (fecha: string) => /^\d{4}-\d{2}-\d{2}$/.test(fecha) && new Date(`${fecha}T12:00:00`).getDay() === 6
+      const rolHist = (m: Map<string, number>, capPersona: number, dotacion: number, prodH: number, mesN: number, fijo = 0): HistoricoRol | null => {
         const st = statsPorDia(m)
         if (st.dias === 0 && fijo === 0) return null
         const capEquipo = capPersona * efAlmacen(dotacion)
+        // horas extra por volumen sólo de lunes a viernes: el sábado va por la regla propia
         let hh = 0
-        for (const v of m.values()) { const d = v + fijo; if (d > capEquipo && prodH > 0) hh += (d - capEquipo) / prodH }
+        for (const [f, v] of m) { if (esSabado(f)) continue; const d = v + fijo; if (d > capEquipo && prodH > 0) hh += (d - capEquipo) / prodH }
+        const hhSab = efAlmacen(dotacion) * hSabado(mesN) * sabadosDelMes(hoy.getFullYear(), mesN)
         const volProm = st.prom + fijo, volPico = st.pico + fijo
         const nec = capPersona > 0 && ausAlm > 0 ? Math.round((volProm / capPersona / ausAlm) * 10) / 10 : 0
         return {
@@ -789,7 +835,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           necesariosPico: capPersona > 0 ? Math.round((volPico / capPersona) * 10) / 10 : 0,
           sobran: Math.max(0, Math.round((dotacion - nec) * 10) / 10),
           temporales: Math.max(0, Math.round((nec - dotacion) * 10) / 10),
-          horasExtra: Math.round(hh * 10) / 10,
+          horasExtra: Math.round((hh + hhSab) * 10) / 10,
+          horasSabado: Math.round(hhSab * 10) / 10,
         }
       }
       for (let mN = 1; mN < hoy.getMonth() + 1; mN++) {
@@ -799,10 +846,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         if (hlDia > 0) for (let d = 1; d <= diasHabilesDelMes(hoy.getFullYear(), mN); d++) clasifMap.set(`${k}-h${d}`, hlDia)
         const reMap = new Map([...soloMes(reempaquePorDiaAnio, k)].map(([f, b]) => [f, horasVar(b)]))
         const almHist = {
-          pickeros: rolHist(soloMes(bultosPorDiaAnio, k), capPicker, config.dotacion_almacen, prodPicking),
-          clasificadores: rolHist(clasifMap, capClasif, config.dotacion_clasif, prodClasifHlHh),
-          reempaque: rolHist(reMap, capReempaque, config.dotacion_reempaque, 1, horasFijas),
-          maquinistas: rolHist(soloMes(palPorDiaAnio, k), capMaq, config.dotacion_maquinistas, config.prod_pal_h),
+          pickeros: rolHist(soloMes(bultosPorDiaAnio, k), capPicker, config.dotacion_almacen, prodPicking, mN),
+          clasificadores: rolHist(clasifMap, capClasif, config.dotacion_clasif, prodClasifHlHh, mN),
+          reempaque: rolHist(reMap, capReempaque, config.dotacion_reempaque, 1, mN, horasFijas),
+          maquinistas: rolHist(soloMes(palPorDiaAnio, k), capMaq, config.dotacion_maquinistas, config.prod_pal_h, mN),
         }
         if (Object.values(almHist).some((x) => x && x.dias > 0)) almacenHist.set(k, almHist)
       }
@@ -969,6 +1016,9 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             const capPersona = r.rolFte?.capDiariaFte ?? 0                        // por persona
             const horasExtra: number[] = [], faltanPico: number[] = [], volPicoDia: number[] = []
             const necesariosProm: number[] = [], sobran: number[] = [], temporales: number[] = []
+            const horasSabado: number[] = []
+            // Regla de sábado: toda la dotación efectiva hace (fin − 11) h extra cada sábado del mes.
+            const sabadoDe = (mesN: number) => Math.round(dotEfectiva * hSabado(mesN) * sabadosDelMes(anioActual, mesN) * 10) / 10
             // Lectura mensual (Casa Central): necesarios del día promedio llevados a nómina
             // (÷ (1 − ausentismo)) contra la dotación nominal → sobran / temporales.
             const mensual = (volPromDia: number) => {
@@ -984,32 +1034,38 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
               for (const mm of meses) {
                 const mesN = Number(mm.mes.split("-")[1])
                 const volDia = hlRetornablePorDia(mesN, anioActual)
-                const diasHab = diasHabilesDelMes(anioActual, mesN)
-                const hh = volDia > capDiaria && r.prodH > 0 ? ((volDia - capDiaria) / r.prodH) * diasHab : 0
-                horasExtra.push(Math.round(hh * 10) / 10)
+                // horas extra por volumen sólo lun-vie (los sábados van por la regla propia)
+                const diasLV = diasHabilesDelMes(anioActual, mesN) - sabadosDelMes(anioActual, mesN)
+                const hh = volDia > capDiaria && r.prodH > 0 ? ((volDia - capDiaria) / r.prodH) * diasLV : 0
+                const hs = sabadoDe(mesN)
+                horasExtra.push(Math.round((hh + hs) * 10) / 10)
+                horasSabado.push(hs)
                 volPicoDia.push(Math.round(volDia))
                 faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((volDia - capDiaria) / capPersona)) : 0)
                 mensual(volDia)
               }
-              return { ...base, horasExtra, faltanPico, volPicoDia, necesariosProm, sobran, temporales }
+              return { ...base, horasExtra, faltanPico, volPicoDia, necesariosProm, sobran, temporales, horasSabado }
             }
             for (const mm of meses) {
+              const mesN = Number(mm.mes.split("-")[1])
               const volMes = volBase * mm.indice
               let hh = 0
-              for (const wd of weekdaysDelMes(Number(mm.mes.split("-")[1]))) {
+              for (const wd of weekdaysDelMes(mesN)) {
                 const w = pesoDe(wd)
-                if (w <= 0) continue
+                if (w <= 0 || wd === 6) continue // sábado: va por la regla propia, no por volumen
                 const volDia = volMes * DIAS_SEMANA * w + r.volFijo
                 if (volDia > capDiaria && r.prodH > 0) hh += (volDia - capDiaria) / r.prodH
               }
+              const hs = sabadoDe(mesN)
               const pico = volMes * DIAS_SEMANA * maxPesoNorm + r.volFijo         // volumen del día más cargado
-              horasExtra.push(Math.round(hh * 10) / 10)
+              horasExtra.push(Math.round((hh + hs) * 10) / 10)
+              horasSabado.push(hs)
               volPicoDia.push(Math.round(pico))
               // personas extra para cubrir el pico SIN horas extra; redondeo normal (evita "falta 1" por excedente mínimo)
               faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((pico - capDiaria) / capPersona)) : 0)
               mensual(volMes + r.volFijo)
             }
-            return { ...base, horasExtra, faltanPico, volPicoDia, necesariosProm, sobran, temporales }
+            return { ...base, horasExtra, faltanPico, volPicoDia, necesariosProm, sobran, temporales, horasSabado }
           })
 
           // Flota → por recurso, días que requieren refuerzo (2ª vuelta o contratar).
@@ -1105,6 +1161,11 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             pctDistribuido: pctDist, diasHabilesBase,
             realDistDiaBase: Math.round(realDistDiaBase * 10) / 10, pptoDistDiaBase: Math.round(pptoDistDiaBase * 10) / 10,
             anclaje: Math.round(anclaje * 1000) / 1000,
+            sabados: {
+              finNormal: config.sabado_fin_normal, finAlta: config.sabado_fin_alta, finBaja: config.sabado_fin_baja, mesesAlta: config.meses_temporada_alta,
+              sabadosMes: meses.map((mm) => sabadosDelMes(anioActual, Number(mm.mes.split("-")[1]))),
+              horasPersonaMes: meses.map((mm) => hSabado(Number(mm.mes.split("-")[1]))),
+            },
           }
         }
       }
@@ -1211,16 +1272,18 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const { data: ch } = await supabase.from("dim_costo_hh").select("mes, hh_ppto_almacen, hh_ppto_entrega").eq("anio", anio)
       const ppto = new Map((ch ?? []).map((r) => [Number(r.mes), r as { hh_ppto_almacen?: number; hh_ppto_entrega?: number }]))
       // Dimensionadas: histórico para los meses cerrados, proyección para el mes en curso y los que vienen.
-      const dimAlm = new Map<number, number>(), dimDis = new Map<number, number>()
+      const dimAlm = new Map<number, number>(), dimDis = new Map<number, number>(), dimSab = new Map<number, number>()
       for (const h of historico) {
         const m = Number(h.mes.slice(5, 7))
         dimAlm.set(m, Object.values(h.almacen).reduce((s, r) => s + (r?.horasExtra ?? 0), 0))
+        dimSab.set(m, Object.values(h.almacen).reduce((s, r) => s + (r?.horasSabado ?? 0), 0))
         dimDis.set(m, h.horasExtraDistribucion)
       }
       if (proyeccion) {
         proyeccion.meses.forEach((mm, i) => {
           const m = Number(mm.mes.slice(5, 7))
           dimAlm.set(m, proyeccion!.almacen.reduce((s, r) => s + (r.horasExtra[i] ?? 0), 0))
+          dimSab.set(m, proyeccion!.almacen.reduce((s, r) => s + (r.horasSabado?.[i] ?? 0), 0))
           dimDis.set(m, proyeccion!.flota.filter((r) => r.rol !== "Camiones").reduce((s, r) => s + (r.personaDias[i] ?? 0), 0) * proyeccion!.horasVueltaExtra)
         })
       }
@@ -1232,6 +1295,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           realAlmacen: realAlm.has(m) ? r1(realAlm.get(m)!) : null,
           realDistribucion: realDis.has(m) ? r1(realDis.get(m)!) : null,
           dimAlmacen: dimAlm.has(m) ? r1(dimAlm.get(m)!) : null,
+          dimSabadoAlmacen: dimSab.has(m) ? r1(dimSab.get(m)!) : null,
           dimDistribucion: dimDis.has(m) ? r1(dimDis.get(m)!) : null,
           pptoAlmacen: p ? Number(p.hh_ppto_almacen ?? 0) : null,
           pptoDistribucion: p ? Number(p.hh_ppto_entrega ?? 0) : null,
@@ -1338,6 +1402,10 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         horas_fijas_generales: Math.min(24, Math.max(0, Number(config.horas_fijas_generales) || 0)),
         umbral_ocupacion_ociosa: Math.min(0.99, Math.max(0.05, Number(config.umbral_ocupacion_ociosa) || 0.7)),
         pct_distribuido: Math.min(1.5, Math.max(0.05, Number(config.pct_distribuido) || 0.8)),
+        sabado_fin_normal: Math.min(24, Math.max(0, Number(config.sabado_fin_normal) || 11)),
+        sabado_fin_alta: Math.min(24, Math.max(0, Number(config.sabado_fin_alta) || 14)),
+        sabado_fin_baja: Math.min(24, Math.max(0, Number(config.sabado_fin_baja) || 12)),
+        meses_temporada_alta: String(config.meses_temporada_alta ?? "").split(",").map((s) => Number(s.trim())).filter((n) => n >= 1 && n <= 12).join(",") || "1,2,3,11,12",
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
       })

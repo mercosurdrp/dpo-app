@@ -148,12 +148,13 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
       let hh = 0
       for (const wd of weekdaysDelMes(mm.mes)) {
         const w = pesoDe(wd)
-        if (w <= 0) continue
+        if (w <= 0 || wd === 6) continue // sábado: regla propia (viene del server en horasSabado)
         const volDia = volMes * 6 * w + volFijo
         if (volDia > r.capDiaria && r.prodH > 0) hh += (volDia - r.capDiaria) / r.prodH
       }
       const pico = volMes * 6 * maxPeso + volFijo
-      horasExtra.push(Math.round(hh * 10) / 10)
+      const i = meses.indexOf(mm)
+      horasExtra.push(Math.round((hh + (r.horasSabado?.[i] ?? 0)) * 10) / 10)
       volPicoDia.push(Math.round(pico))
       faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((pico - r.capDiaria) / capPersona)) : 0)
       const nec = capPersona > 0 && ausAlm > 0 ? Math.round(((volMes + volFijo) / capPersona / ausAlm) * 10) / 10 : 0
@@ -1168,6 +1169,8 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
     horas_fijas_generales: String(data.config.horas_fijas_generales),
     peso_lun: String(data.config.peso_lun), peso_mar: String(data.config.peso_mar), peso_mie: String(data.config.peso_mie),
     peso_jue: String(data.config.peso_jue), peso_vie: String(data.config.peso_vie), peso_sab: String(data.config.peso_sab),
+    sabado_fin_normal: String(data.config.sabado_fin_normal), sabado_fin_alta: String(data.config.sabado_fin_alta),
+    sabado_fin_baja: String(data.config.sabado_fin_baja), meses_temporada_alta: String(data.config.meses_temporada_alta),
   })
   const [recalc, startRecalc] = useTransition()
   const onRecalcProd = () =>
@@ -1193,6 +1196,8 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
     horas_fijas_generales: Number(c.horas_fijas_generales),
     peso_lun: Number(c.peso_lun), peso_mar: Number(c.peso_mar), peso_mie: Number(c.peso_mie),
     peso_jue: Number(c.peso_jue), peso_vie: Number(c.peso_vie), peso_sab: Number(c.peso_sab),
+    sabado_fin_normal: Number(c.sabado_fin_normal), sabado_fin_alta: Number(c.sabado_fin_alta),
+    sabado_fin_baja: Number(c.sabado_fin_baja), meses_temporada_alta: c.meses_temporada_alta,
   }), "Datos de almacén guardados")
 
   const rolesHoy = a ? [
@@ -1252,6 +1257,17 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 <div key={k}><Label className="text-xs">{l}</Label><Input type="number" step="0.05" className="h-8 w-16" value={c[k]} onChange={(e) => setC((s) => ({ ...s, [k]: e.target.value }))} /></div>
               ))}
               <Button size="sm" disabled={isPending} onClick={guardar}>Guardar</Button>
+            </div>
+            <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-slate-50 p-2">
+              <span className="self-center text-xs font-medium text-muted-foreground">Sábados (horas extra al 100 %):</span>
+              <div><Label className="text-xs">Fin del turno normal (h)</Label><Input type="number" step="0.5" className="h-8 w-20" value={c.sabado_fin_normal} onChange={(e) => setC((s) => ({ ...s, sabado_fin_normal: e.target.value }))} /></div>
+              <div><Label className="text-xs">Fin real temporada alta (h)</Label><Input type="number" step="0.5" className="h-8 w-20" value={c.sabado_fin_alta} onChange={(e) => setC((s) => ({ ...s, sabado_fin_alta: e.target.value }))} /></div>
+              <div><Label className="text-xs">Fin real temporada baja (h)</Label><Input type="number" step="0.5" className="h-8 w-20" value={c.sabado_fin_baja} onChange={(e) => setC((s) => ({ ...s, sabado_fin_baja: e.target.value }))} /></div>
+              <div><Label className="text-xs">Meses de temporada alta</Label><Input type="text" className="h-8 w-32" value={c.meses_temporada_alta} placeholder="1,2,3,11,12" onChange={(e) => setC((s) => ({ ...s, meses_temporada_alta: e.target.value }))} /></div>
+              <Button size="sm" disabled={isPending} onClick={guardar}>Guardar</Button>
+              <p className="w-full text-xs text-muted-foreground">
+                El sábado todos entran a las 7 y el turno normal termina a las {c.sabado_fin_normal} h; lo que sigue es hora extra al 100 %. La operación cierra a las {c.sabado_fin_alta} h en temporada alta (meses {c.meses_temporada_alta}) y a las {c.sabado_fin_baja} h en baja → <b>{fmt(Math.max(0, Number(c.sabado_fin_alta) - Number(c.sabado_fin_normal)))} h</b> y <b>{fmt(Math.max(0, Number(c.sabado_fin_baja) - Number(c.sabado_fin_normal)))} h</b> extra por persona y sábado, para toda la dotación efectiva. Los sábados no se calcula además el excedente por volumen.
+              </p>
             </div>
             {proy && (
               <div>
@@ -1356,6 +1372,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                           <Dialog>
                             <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-right hover:brightness-95 ${cls}`}>
                               {hh > 0 ? `${fmt(hh)} h` : "✓"}
+                              {(r.horasSabado?.[i] ?? 0) > 0 ? <span className="block text-[10px] font-normal text-muted-foreground">sáb. {fmt(r.horasSabado[i])} h</span> : null}
                               {falta > 0 ? <span className="block text-[10px] font-normal">falta {falta} en pico</span> : null}
                               {temporales > 0
                                 ? <span className="block text-[10px] font-semibold text-red-700">temporales {fmt(temporales)}</span>
@@ -1370,7 +1387,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Hora-hombre extra estimadas cuando el volumen del día (volumen del presupuesto repartido por el peso del día de semana) supera la capacidad de la dotación fija. «falta N en pico» = personas que faltarían el día pico para no hacer horas extra. «sobran N» / «temporales N» = lectura mensual estilo Casa Central: necesarios del día promedio llevados a nómina (÷ (1 − ausentismo)) contra la dotación; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación del rol queda por debajo del {Math.round(umbralAlm * 100)} % (capacidad ociosa: vacaciones, reasignar o no reponer bajas, SOP §6). <span className="text-emerald-700">✓</span> = cubre sin extras. <b>Tocá cualquier celda</b> para ver el desglose por día de ese mes.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Hora-hombre extra estimadas cuando el volumen del día de lunes a viernes (volumen del presupuesto repartido por el peso del día de semana) supera la capacidad de la dotación fija, <b>más la regla de sábado</b> («sáb. N h» = dotación efectiva × horas después del turno normal × sábados del mes; ya incluidas en el total). «falta N en pico» = personas que faltarían el día pico para no hacer horas extra. «sobran N» / «temporales N» = lectura mensual estilo Casa Central: necesarios del día promedio llevados a nómina (÷ (1 − ausentismo)) contra la dotación; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación del rol queda por debajo del {Math.round(umbralAlm * 100)} % (capacidad ociosa: vacaciones, reasignar o no reponer bajas, SOP §6). <span className="text-emerald-700">✓</span> = cubre sin extras. <b>Tocá cualquier celda</b> para ver el desglose por día de ese mes.</p>
           </CardContent>
         </Card>
       )}
