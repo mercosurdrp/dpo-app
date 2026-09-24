@@ -221,7 +221,7 @@ export function SeccionDimensionamiento({
                         <TableRow key={r.recurso}>
                           <TableCell className="font-medium">{r.recurso}</TableCell>
                           <TableCell className="text-right">{fmt(r.dotacion)}</TableCell>
-                          <TableCell className={`text-right font-semibold ${r.picoNecesario > r.dotacion ? "text-amber-700" : ""}`}>{fmt(r.picoNecesario)}</TableCell>
+                          <TableCell className={`text-right font-semibold ${r.picoNecesario >= r.dotacion && r.dotacion > 0 ? "font-semibold text-amber-700" : ""}`}>{fmt(r.picoNecesario)}{r.picoNecesario === r.dotacion && r.dotacion > 0 ? <span className="block text-[10px] font-normal">toda la dotación</span> : null}</TableCell>
                           <TableCell className="text-right">{r.diasRefuerzo > 0 ? `${r.diasRefuerzo} días` : "—"}</TableCell>
                           <TableCell>
                             <Badge className={b.cls}>

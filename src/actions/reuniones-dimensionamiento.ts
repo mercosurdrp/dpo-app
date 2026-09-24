@@ -140,7 +140,8 @@ async function construirResumen(fechaReunion: string): Promise<Result<ResumenDim
     const sobran = r.sobran?.[i] ?? 0
     const ocupacion = r.rol === "Camiones" ? (p.ocupacionMes?.[i] ?? 0) : (r.dotacion > 0 ? nec / r.dotacion : 0)
     const ociosa = ocupacion > 0 && ocupacion < umbral
-    const estado: Estado = sv ? "faltan" : dias > 0 ? "extras_pico" : ociosa ? "ociosa" : "cubre"
+    const alLimite = (r.picoNecesario[i] ?? 0) >= r.dotacion && r.dotacion > 0 // algún día usa TODA la dotación
+    const estado: Estado = sv ? "faltan" : dias > 0 || alLimite ? "extras_pico" : ociosa ? "ociosa" : "cubre"
     return {
       necesariosProm: nec,
       sobran,

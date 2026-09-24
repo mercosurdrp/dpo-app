@@ -170,10 +170,10 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
     : (proy.capCamionViaje > 0 ? Math.ceil(ceqDia / proy.capCamionViaje) : 0)
   const flota = proy.flota.map((rf) => {
     const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = []
-    const necesariosProm: number[] = [], sobran: number[] = []
+    const necesariosProm: number[] = [], sobran: number[] = [], diasFlotaCompleta: number[] = []
     for (const mm of meses) {
       const ceqMes = proy.flotaCeqPromBase * mm.indice
-      let dias = 0, pico = 0, sv = false
+      let dias = 0, pico = 0, sv = false, completos = 0
       for (const wd of weekdaysDelMes(mm.mes)) {
         const w = pesoDe(wd)
         if (w <= 0) continue
@@ -181,15 +181,16 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
         const camionesDia = camionesDe(ceqDia)
         const necesarios = camionesDia * rf.tripulacion
         if (necesarios > rf.dotacion) dias++
+        else if (rf.dotacion > 0 && necesarios === rf.dotacion) completos++
         if (camionesDia > proy.camionesDisp) sv = true
         pico = Math.max(pico, necesarios)
       }
-      diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv)
+      diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv); diasFlotaCompleta.push(completos)
       const necProm = camionesDe(ceqMes) * rf.tripulacion
       necesariosProm.push(necProm)
       sobran.push(Math.max(0, rf.dotacion - necProm))
     }
-    return { ...rf, diasRefuerzo, picoNecesario, segundaVueltaMeses, necesariosProm, sobran }
+    return { ...rf, diasRefuerzo, picoNecesario, segundaVueltaMeses, diasFlotaCompleta, necesariosProm, sobran }
   })
   const ocupacionMes = meses.map((mm) => (proy.capacidadInstalada > 0 ? Math.round(((proy.flotaCeqPromBase * mm.indice) / proy.capacidadInstalada) * 1000) / 1000 : 0))
 
@@ -728,6 +729,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
   const estado = (nec: number, dot: number, pico: number, ocupacion?: number) => {
     if (nec > dot) return { t: `Faltan ${nec - dot}`, c: "text-red-700 font-semibold" }
     if (pico > dot) return { t: "Refuerzo en pico", c: "text-amber-700" }
+    if (dot > 0 && pico === dot) return { t: `Al límite: el pico usa los ${fmt(dot)}`, c: "text-amber-700" }
     const oc = ocupacion ?? (dot > 0 ? nec / dot : 1)
     if (oc > 0 && oc < umbral) return { t: `Capacidad ociosa (${Math.round(oc * 100)} %)`, c: "text-sky-700 font-semibold" }
     return { t: "Cubre", c: "text-emerald-700" }
@@ -896,7 +898,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                         <TableCell key={i} className="p-0">
                           <Dialog>
                             <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-right hover:brightness-95 ${cls}`}>
-                              {d > 0 ? `${d} días` : "✓"}
+                              {d > 0 ? `${d} días` : (r.diasFlotaCompleta?.[i] ?? 0) > 0 ? <span className="font-semibold text-amber-700">{r.diasFlotaCompleta[i]} días con los {fmt(r.dotacion)}</span> : "✓"}
                               {d === 0 && sobran > 0 ? <span className={`block text-[10px] ${ociosa ? "font-semibold" : "font-normal text-muted-foreground"}`}>sobran {fmt(sobran)}</span> : null}
                             </DialogTrigger>
                             <DetalleFlotaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} ceqPromBase={proy.flotaCeqPromBase} capCamionViaje={proy.capCamionViaje} camionesDisp={proy.camionesDisp} zonas={data.zonas} />
@@ -908,7 +910,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">«N días» = días del mes donde el volumen supera lo que la dotación cubre en los viajes actuales → contratar o 2ª vuelta. Fondo <span className="font-medium text-red-700">rojo fuerte</span> = algún día supera los {proy.camionesDisp} camiones (2ª vuelta obligada). «sobran N» = dotación menos necesarios en el día promedio del mes; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación queda por debajo del {Math.round(proy.umbralOciosa * 100)} % (capacidad ociosa: evaluar reasignación o reducción, SOP §8). Tocá una celda para ver el desglose por día.</p>
+            <p className="mt-2 text-xs text-muted-foreground">«N días» = días del mes donde el volumen supera lo que la dotación cubre en los viajes actuales → contratar o 2ª vuelta. «N días con los 10» = días en que se necesita toda la dotación, sin margen: cualquier unidad en taller o ausencia ya obliga a refuerzo. Fondo <span className="font-medium text-red-700">rojo fuerte</span> = algún día supera los {proy.camionesDisp} camiones (2ª vuelta obligada). «sobran N» = dotación menos necesarios en el día promedio del mes; en <span className="font-medium text-sky-700">azul</span> cuando la ocupación queda por debajo del {Math.round(proy.umbralOciosa * 100)} % (capacidad ociosa: evaluar reasignación o reducción, SOP §8). Tocá una celda para ver el desglose por día.</p>
           </CardContent>
         </Card>
       )}

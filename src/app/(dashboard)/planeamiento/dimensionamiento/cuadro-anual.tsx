@@ -85,6 +85,7 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
     const r = flotaRol("Camiones")
     return c.pi >= 0 && r ? r.diasRefuerzo[c.pi] ?? 0 : null
   }
+  const diasFlotaCompleta = (c: Col): number => { const r = flotaRol("Camiones"); return c.pi >= 0 && r ? r.diasFlotaCompleta?.[c.pi] ?? 0 : 0 }
   const tripulacion = (c: Col, rol: "Choferes" | "Ayudantes"): { nec: number; dot: number } | null => {
     const porCamion = rol === "Choferes" ? data.config.choferes_por_camion : data.config.ayudantes_por_camion
     const plantel = rol === "Choferes" ? data.config.dotacion_choferes : data.config.dotacion_ayudantes
@@ -250,8 +251,8 @@ export function CuadroAnualCard({ data, proy }: { data: DimData; proy: Proyeccio
 
               {grupo(`Flota / entrega (${camDisp} camiones · capacidad ${fmt(proy?.capacidadInstalada ?? Math.round(data.capacidadInstaladaDiaria))} CEq/día)`)}
               {fila("Ocupación de flota", (c) => { const v = ocupacion(c); return v == null ? dash : est(c, <span className={v < umbral * 100 ? "font-semibold text-sky-700" : ""}>{Math.round(v)} %</span>) })}
-              {fila("Camiones necesarios (prom / pico)", (c) => { const v = camiones(c); return v ? est(c, <><span>{v.prom}</span> / <span className={v.pico > camDisp ? "font-semibold text-red-700" : ""}>{v.pico}</span></>) : dash })}
-              {fila("Días con refuerzo o 2ª vuelta", (c) => { const v = diasRefuerzo(c); return v == null ? dash : est(c, v > 0 ? <span className="font-semibold text-amber-700">{v}</span> : "✓") })}
+              {fila("Camiones necesarios (prom / pico)", (c) => { const v = camiones(c); return v ? est(c, <><span>{v.prom}</span> / <span className={v.pico > camDisp ? "font-semibold text-red-700" : v.pico === camDisp ? "font-semibold text-amber-700" : ""}>{v.pico}</span>{v.pico === camDisp ? <span className="block text-[10px] font-semibold text-amber-700">toda la flota</span> : null}</>) : dash })}
+              {fila("Días con refuerzo o 2ª vuelta", (c) => { const v = diasRefuerzo(c); if (v == null) return dash; const fc = diasFlotaCompleta(c); return est(c, v > 0 ? <span className="font-semibold text-amber-700">{v}</span> : fc > 0 ? <span className="font-semibold text-amber-700" title="Días en que se necesita toda la flota">{fc} con los {camDisp}</span> : "✓") })}
               {fila("Choferes (nec. / dotación)", (c) => est(c, necDot(tripulacion(c, "Choferes"), true)))}
               {fila("Ayudantes (nec. / dotación)", (c) => est(c, necDot(tripulacion(c, "Ayudantes"), true)))}
 
