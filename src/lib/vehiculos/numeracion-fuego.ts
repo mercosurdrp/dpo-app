@@ -149,3 +149,59 @@ export function validarLoteFuego(numeros: string[], serie: SerieFuego): Validaci
   }
   return { ok: true }
 }
+
+/* ------------------------------------------------------------------ */
+/* Vueltas de recapado                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Cuántas veces se recapó la cubierta.
+ *
+ * El dato bueno es `vueltas_recapado`, que lleva la cuenta desde que se carga
+ * un remito de recapado. Para las cubiertas que entraron con la importación de
+ * Cloudfleet ese contador quedó en 0 aunque ya venían recapadas: la única
+ * marca es la "R" pegada al número ("27R") o el `tipo`. En ese caso se asume
+ * una vuelta, que es lo que decía la planilla vieja.
+ */
+export function vueltasRecapado(n: {
+  numero?: string | null
+  tipo?: string | null
+  vueltas_recapado?: number | null
+}): number {
+  const v = Math.trunc(Number(n.vueltas_recapado ?? 0))
+  if (Number.isFinite(v) && v >= 1) return v
+  if (parseNumeroFuego(n.numero)?.recapada) return 1
+  if (n.tipo === "recapado") return 1
+  return 0
+}
+
+/** "R1" la primera vuelta, "R2" la segunda… null si es cubierta nueva. */
+export function sufijoRecapado(n: {
+  numero?: string | null
+  tipo?: string | null
+  vueltas_recapado?: number | null
+}): string | null {
+  const v = vueltasRecapado(n)
+  return v >= 1 ? `R${v}` : null
+}
+
+/**
+ * El número grabado, sin la "R" de arrastre: esa información ahora la lleva el
+ * sufijo de vueltas, y dejarla pegada al número mostraría "27R · R1".
+ */
+export function numeroGrabado(numero: string | null | undefined, vacio = "s/n"): string {
+  const t = (numero ?? "").trim()
+  if (!t) return vacio
+  const p = parseNumeroFuego(t)
+  return p ? String(p.n) : t
+}
+
+/** Cómo se nombra una cubierta en texto plano: "27 R1", "84", "s/n". */
+export function etiquetaCubierta(
+  n: { numero?: string | null; tipo?: string | null; vueltas_recapado?: number | null },
+  vacio = "s/n"
+): string {
+  const base = numeroGrabado(n.numero, vacio)
+  const suf = sufijoRecapado(n)
+  return suf ? `${base} ${suf}` : base
+}

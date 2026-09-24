@@ -88,8 +88,11 @@ import {
 } from "@/lib/vehiculos/neumaticos-tipos"
 import {
   analizarSerieFuego,
+  etiquetaCubierta,
+  numeroGrabado,
   parseNumeroFuego,
   siguientesFuego,
+  sufijoRecapado,
   type SerieFuego,
 } from "@/lib/vehiculos/numeracion-fuego"
 import { PlanesNeumaticos } from "./_components/planes-neumaticos"
@@ -181,6 +184,31 @@ interface Props {
 }
 
 const TIPO_LABEL: Record<string, string> = { nuevo: "Nuevo", recapado: "Recapado" }
+
+/**
+ * El número de fuego tal como se lee en el flanco, con las vueltas de recapado
+ * al lado ("27 R1"). La vuelta no va pegada al número porque el grabado no
+ * cambia cuando la cubierta se recapa: es el mismo número, una vida más.
+ */
+function NumFuego({
+  n,
+  vacio = "—",
+}: {
+  n: { numero?: string | null; tipo?: string | null; vueltas_recapado?: number | null }
+  vacio?: string
+}) {
+  const suf = sufijoRecapado(n)
+  return (
+    <span className="inline-flex items-baseline gap-1">
+      <span className="tabular-nums">{numeroGrabado(n.numero, vacio)}</span>
+      {suf && (
+        <span className="rounded bg-amber-100 px-1 text-[10px] font-semibold leading-4 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+          {suf}
+        </span>
+      )}
+    </span>
+  )
+}
 
 /** Opción "sin filtrar" del selector de unidad (el Select no admite value=""). */
 const TODAS_LAS_UNIDADES = "__todas__"
@@ -723,7 +751,7 @@ export function NeumaticosModule({
                                 {n.posicion || "—"}
                               </span>
                             </td>
-                            <td className="tabular-nums font-medium">{n.numero || "—"}</td>
+                            <td className="font-medium"><NumFuego n={n} /></td>
                             <td className="text-muted-foreground">
                               {n.marca || "—"}
                               {n.medida ? ` · ${n.medida}` : ""}
@@ -970,7 +998,7 @@ export function NeumaticosModule({
                     key={n.id}
                     className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
                   >
-                    <td className="py-2 font-medium">{n.numero || "—"}</td>
+                    <td className="py-2 font-medium"><NumFuego n={n} /></td>
                     <td>{TIPO_LABEL[n.tipo]}</td>
                     <td className="text-muted-foreground">{n.marca || "—"}</td>
                     <td className="text-muted-foreground">{n.medida || "—"}</td>
@@ -1100,7 +1128,7 @@ export function NeumaticosModule({
                     key={n.id}
                     className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
                   >
-                    <td className="py-2 font-medium">{n.numero || "—"}</td>
+                    <td className="py-2 font-medium"><NumFuego n={n} /></td>
                     <td>{TIPO_LABEL[n.tipo]}</td>
                     <td className="text-muted-foreground">{n.medida || "—"}</td>
                     <td className="text-muted-foreground">{fmtFecha(n.fecha_baja)}</td>
@@ -2450,7 +2478,7 @@ function DiagramaEjes({
           const dest = badges?.[p.code]
           const title = `${p.label} · ${p.eje ?? "libre"}${
             n
-              ? ` · ${n.numero || "s/n"} (${n.profundidad_actual_mm ?? "?"} mm${
+              ? ` · ${etiquetaCubierta(n)} (${n.profundidad_actual_mm ?? "?"} mm${
                   ultimaPresion(n) != null ? `, ${ultimaPresion(n)} psi` : ""
                 })`
               : " · vacía"
@@ -2472,7 +2500,7 @@ function DiagramaEjes({
                 )}
               </span>
               <span className="max-w-[74px] truncate text-[11px] font-medium leading-tight text-muted-foreground">
-                {n ? n.numero || "s/n" : "—"}
+                {n ? <NumFuego n={n} vacio="s/n" /> : "—"}
               </span>
               {dest && (
                 <span className="rounded bg-sky-500/10 px-1 text-[8px] font-semibold leading-none text-sky-600 dark:text-sky-400">
@@ -2605,7 +2633,7 @@ function Diagrama({
             const glyph = (
               <TireGlyph
                 label={p.label}
-                sub={n ? n.numero || "s/n" : null}
+                sub={n ? etiquetaCubierta(n) : null}
                 mm={n?.profundidad_actual_mm ?? null}
                 eje={p.eje}
                 wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted"}
@@ -2613,7 +2641,7 @@ function Diagrama({
                 badge={dest ? `→${dest}` : null}
               />
             )
-            const title = `${p.label} · ${p.eje ?? "libre"}${n ? ` · ${n.numero || "s/n"} (${n.profundidad_actual_mm ?? "?"} mm${ultimaPresion(n) != null ? `, ${ultimaPresion(n)} psi` : ""})` : " · vacía"}${dest ? ` → ${dest}` : ""}`
+            const title = `${p.label} · ${p.eje ?? "libre"}${n ? ` · ${etiquetaCubierta(n)} (${n.profundidad_actual_mm ?? "?"} mm${ultimaPresion(n) != null ? `, ${ultimaPresion(n)} psi` : ""})` : " · vacía"}${dest ? ` → ${dest}` : ""}`
             const pos = { left: `${p.x}%`, top: `${p.y}%` }
             return onPos ? (
               <button
@@ -2691,7 +2719,7 @@ function ResumenDetalleDialog({
     setVolviendo(null)
     if ("error" in res) toast.error(res.error)
     else {
-      toast.success(`Cubierta ${n.numero || "s/n"} volvió del recapado y está en stock`)
+      toast.success(`Cubierta ${etiquetaCubierta(n)} volvió del recapado y está en stock`)
       onRefresh()
     }
   }
@@ -2797,7 +2825,7 @@ function ResumenDetalleDialog({
                     key={n.id}
                     className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
                   >
-                    <td className="py-1.5 font-medium">{n.numero || "s/n"}</td>
+                    <td className="py-1.5 font-medium"><NumFuego n={n} vacio="s/n" /></td>
                     <td className="text-muted-foreground">{TIPO_LABEL[n.tipo]}</td>
                     <td className="text-muted-foreground">{n.medida || "—"}</td>
                     <td
@@ -3477,7 +3505,7 @@ function MontajeDialog({
     setSel(null)
     if ("error" in res) toast.error(res.error)
     else {
-      toast.success(`Cubierta ${n.numero || "s/n"} montada en ${pos.label}`)
+      toast.success(`Cubierta ${etiquetaCubierta(n)} montada en ${pos.label}`)
       onRefresh()
     }
   }
@@ -3495,10 +3523,10 @@ function MontajeDialog({
     else {
       toast.success(
         destino === "para_recapar"
-          ? `Cubierta ${n.numero || "s/n"} desmontada y enviada a recapar`
+          ? `Cubierta ${etiquetaCubierta(n)} desmontada y enviada a recapar`
           : destino === "para_desecho"
-            ? `Cubierta ${n.numero || "s/n"} desmontada y puesta para desecho`
-            : `Cubierta ${n.numero || "s/n"} desmontada al stock`
+            ? `Cubierta ${etiquetaCubierta(n)} desmontada y puesta para desecho`
+            : `Cubierta ${etiquetaCubierta(n)} desmontada al stock`
       )
       onRefresh()
     }
@@ -3618,7 +3646,7 @@ function MontajeDialog({
                       key={p.code}
                       data-draggable
                       onPointerDown={startDrag({ origen: "diagrama", n, pos: p })}
-                      title={`${p.label} · ${n.numero || "s/n"} — arrastrá al stock para desmontar`}
+                      title={`${p.label} · ${etiquetaCubierta(n)} — arrastrá al stock para desmontar`}
                       style={{ left: `${p.x}%`, top: `${p.y}%` }}
                       className={cn(
                         "absolute -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none select-none rounded-lg",
@@ -3628,7 +3656,7 @@ function MontajeDialog({
                     >
                       <TireGlyph
                         label={p.label}
-                        sub={n.numero || "s/n"}
+                        sub={etiquetaCubierta(n)}
                         eje={p.eje}
                         wearClass={colorDesgaste(n.profundidad_actual_mm)}
                         empty={false}
@@ -3691,7 +3719,7 @@ function MontajeDialog({
                       key={n.id}
                       data-draggable
                       onPointerDown={startDrag({ origen: "stock", n })}
-                      title={`${n.numero || "s/n"} — arrastrá a una posición vacía para montar`}
+                      title={`${etiquetaCubierta(n)} — arrastrá a una posición vacía para montar`}
                       className={cn(
                         "flex cursor-grab touch-none select-none flex-col items-center rounded-md border border-border bg-card p-1.5 shadow-sm",
                         sel?.n.id === n.id && "ring-2 ring-emerald-500",
@@ -3699,7 +3727,7 @@ function MontajeDialog({
                       )}
                     >
                       <TireGlyph
-                        label={n.numero || "s/n"}
+                        label={etiquetaCubierta(n)}
                         sub={[TIPO_LABEL[n.tipo], n.medida].filter(Boolean).join(" · ")}
                         eje={null}
                         wearClass={colorDesgaste(n.profundidad_actual_mm)}
@@ -3738,7 +3766,7 @@ function MontajeDialog({
                 </p>
                 {paraRecapar.length > 0 && (
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    {paraRecapar.map((n) => n.numero || "s/n").join(" · ")}
+                    {paraRecapar.map((n) => etiquetaCubierta(n)).join(" · ")}
                   </p>
                 )}
               </div>
@@ -3766,7 +3794,7 @@ function MontajeDialog({
                 </p>
                 {paraDesecho.length > 0 && (
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    {paraDesecho.map((n) => n.numero || "s/n").join(" · ")}
+                    {paraDesecho.map((n) => etiquetaCubierta(n)).join(" · ")}
                   </p>
                 )}
               </div>
@@ -3776,7 +3804,7 @@ function MontajeDialog({
 
         <DialogFooter>
           <span className="mr-auto text-xs text-muted-foreground">
-            {saving ? "Guardando…" : sel ? `Seleccionada: ${sel.n.numero || "s/n"} — tocá el destino` : ""}
+            {saving ? "Guardando…" : sel ? `Seleccionada: ${etiquetaCubierta(sel.n)} — tocá el destino` : ""}
           </span>
           <Button variant="outline" onClick={onClose}>
             Listo
@@ -3834,7 +3862,7 @@ function MontajeDialog({
             style={{ left: ghost.x, top: ghost.y }}
           >
             <TireGlyph
-              label={drag.n.numero || "s/n"}
+              label={etiquetaCubierta(drag.n)}
               eje={null}
               wearClass={colorDesgaste(drag.n.profundidad_actual_mm)}
               empty={false}
@@ -4089,7 +4117,7 @@ function PosicionDialog({
           </DialogTitle>
           <DialogDescription>
             {actual
-              ? `Cubierta ${actual.numero || "s/n"} (${TIPO_LABEL[actual.tipo]})`
+              ? `Cubierta ${etiquetaCubierta(actual)} (${TIPO_LABEL[actual.tipo]})`
               : "Posición vacía — cargá una cubierta acá mismo o asigná una del stock."}
           </DialogDescription>
         </DialogHeader>
@@ -4165,7 +4193,7 @@ function PosicionDialog({
                   <SelectContent>
                     {stock.map((n) => (
                       <SelectItem key={n.id} value={n.id}>
-                        {(n.numero || "s/n") +
+                        {etiquetaCubierta(n) +
                           ` · ${TIPO_LABEL[n.tipo]}` +
                           (n.medida ? ` · ${n.medida}` : "") +
                           (n.profundidad_actual_mm != null ? ` · ${n.profundidad_actual_mm}mm` : "")}

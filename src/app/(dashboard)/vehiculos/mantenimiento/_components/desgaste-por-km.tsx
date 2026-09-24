@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { etiquetaCubierta } from "@/lib/vehiculos/numeracion-fuego"
 import {
   DESVIO_ALERTA_PCT,
   MIN_KM_TRAMO,
@@ -952,7 +953,7 @@ function TablaCubiertas({
                   )}{" "}
                   <span className="font-medium">{f.cubierta.posicion || ""}</span>
                   <span className="block text-[11px] text-muted-foreground">
-                    N° {f.cubierta.numero || "s/n"}
+                    N° {etiquetaCubierta(f.cubierta)}
                   </span>
                 </td>
                 <td className="max-w-[12rem] truncate px-2 text-muted-foreground">
@@ -1013,7 +1014,7 @@ function TablaCubiertas({
                 <span className="font-medium">
                   {f.cubierta.dominio} {f.cubierta.posicion || ""}
                 </span>
-                <span className="block text-[11px]">N° {f.cubierta.numero || "s/n"}</span>
+                <span className="block text-[11px]">N° {etiquetaCubierta(f.cubierta)}</span>
               </td>
               <td className="max-w-[12rem] truncate px-2">{f.cubierta.marca || "—"}</td>
               <td className="px-2">

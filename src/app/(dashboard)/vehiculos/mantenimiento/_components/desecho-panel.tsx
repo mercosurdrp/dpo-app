@@ -33,6 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { etiquetaCubierta } from "@/lib/vehiculos/numeracion-fuego"
 import {
   marcarParaDesecho,
   registrarRetiroRecicladora,
@@ -210,7 +211,7 @@ export function DesechoPanel({
                         if ("error" in res) toast.error(res.error)
                         else {
                           toast.success(
-                            `Cubierta ${n.numero || "s/n"} devuelta al stock`
+                            `Cubierta ${etiquetaCubierta(n)} devuelta al stock`
                           )
                           onRefresh()
                         }
@@ -823,7 +824,7 @@ function DetalleRetiroDialog({
               <div className="flex flex-wrap gap-1">
                 {cubiertas.map((n) => (
                   <Badge key={n.id} variant="outline" className="text-[11px]">
-                    {n.numero || "s/n"}
+                    {etiquetaCubierta(n)}
                     {n.medida ? ` · ${n.medida}` : ""}
                   </Badge>
                 ))}

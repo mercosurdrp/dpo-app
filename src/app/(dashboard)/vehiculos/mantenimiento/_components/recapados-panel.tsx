@@ -40,6 +40,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { etiquetaCubierta } from "@/lib/vehiculos/numeracion-fuego"
 import {
   crearEnvioRecapado,
   eliminarEnvioRecapado,
@@ -88,7 +89,7 @@ function hoyISO(): string {
 }
 
 const etiqueta = (n: { numero?: string | null; marca?: string | null; medida?: string | null }) =>
-  [n.numero ? `N° ${n.numero}` : "sin código", n.marca, n.medida]
+  [n.numero ? `N° ${etiquetaCubierta(n)}` : "sin código", n.marca, n.medida]
     .filter(Boolean)
     .join(" · ")
 
@@ -513,7 +514,7 @@ function NuevoEnvioDialog({
                           checked={sel.has(n.id)}
                           onCheckedChange={() => toggle(n.id)}
                         />
-                        <span className="font-medium">{n.numero || "sin código"}</span>
+                        <span className="font-medium">{etiquetaCubierta(n, "sin código")}</span>
                         <span className="text-muted-foreground">
                           {[n.marca, n.medida].filter(Boolean).join(" · ")}
                         </span>

@@ -9,6 +9,7 @@ import {
 } from "@/actions/mis-neumaticos"
 import { motivoDesvio, validarProfundidad } from "@/lib/flota/neumaticos-control"
 import { cn } from "@/lib/utils"
+import { etiquetaCubierta } from "@/lib/vehiculos/numeracion-fuego"
 
 const TIPO_LABEL: Record<string, string> = {
   camion: "Camión",
@@ -276,7 +277,7 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
                           ) : null}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {c.numero ? `N° ${c.numero}` : ""}
+                          {c.numero ? `N° ${etiquetaCubierta(c)}` : ""}
                           {c.profundidadActual != null
                             ? ` · último ${c.profundidadActual} mm`
                             : ""}

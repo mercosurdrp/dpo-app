@@ -39,6 +39,9 @@ export interface CubiertaMedir {
   posicion: string | null
   eje: string | null
   numero: string | null
+  /** Cubierta nueva o recapada, y cuántas vueltas de recapado lleva. */
+  tipo: string | null
+  vueltas_recapado: number | null
   marca: string | null
   medida: string | null
   /** Último dibujo conocido, para que el chofer vea de dónde viene. */
@@ -117,7 +120,9 @@ export async function getMisNeumaticos(): Promise<
         .order("dominio"),
       supabase
         .from("mantenimiento_neumaticos")
-        .select("id, dominio, posicion, eje, numero, marca, medida, profundidad_actual_mm")
+        .select(
+        "id, dominio, posicion, eje, numero, marca, medida, profundidad_actual_mm, tipo, vueltas_recapado"
+      )
         .eq("estado", "instalado")
         .order("posicion"),
     ])
@@ -177,6 +182,8 @@ export async function getMisNeumaticos(): Promise<
           posicion: c.posicion,
           eje: c.eje,
           numero: c.numero,
+          tipo: c.tipo,
+          vueltas_recapado: c.vueltas_recapado,
           marca: c.marca,
           medida: c.medida,
           profundidadActual: c.profundidad_actual_mm,
