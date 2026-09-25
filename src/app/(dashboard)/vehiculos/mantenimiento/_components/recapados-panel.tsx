@@ -1039,9 +1039,17 @@ function EditorFacturaRecapado({
   const [nuevas, setNuevas] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
 
-  const recapadas = r.items.filter((it) => it.resultado === "recapada").length
+  const items = r.items.filter((it) => it.resultado === "recapada")
+  const recapadas = items.length
   const total = costo.trim() ? Number(costo) : null
   const porCubierta = total != null && recapadas > 0 ? total / recapadas : null
+  // El remito que volvió en tandas trae cubiertas ya facturadas y otras sin
+  // costo. Como el reparto es plano sobre TODAS las recapadas, guardar acá
+  // recalcula también las viejas: el monto tiene que ser el total del remito,
+  // no el de la factura nueva.
+  const yaImputadas = items.filter((it) => it.costo != null).length
+  const porTandas = yaImputadas > 0 && yaImputadas < recapadas
+  const imputado = items.reduce((a, it) => a + Number(it.costo ?? 0), 0)
 
   const guardar = async () => {
     if (total != null && !Number.isFinite(total)) {
@@ -1129,6 +1137,18 @@ function EditorFacturaRecapado({
         label="Agregar la foto o el PDF de la factura"
       />
 
+      {porTandas && (
+        <p className="flex items-start gap-1.5 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            Este remito volvió en tandas: {yaImputadas} de {recapadas} cubiertas ya tienen
+            costo ({fmtMoney(imputado)} en total) y el reparto es plano sobre las{" "}
+            {recapadas}. Cargá el <span className="font-medium">total del remito</span>{" "}
+            —lo ya facturado más lo nuevo—, no sólo el monto de esta factura, o el costo de
+            las anteriores se recalcula para abajo.
+          </span>
+        </p>
+      )}
       {porCubierta != null && (
         <p className="text-xs text-muted-foreground">
           Se reparte entre las {recapadas} recapada{recapadas > 1 ? "s" : ""} de este
