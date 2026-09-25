@@ -19,6 +19,7 @@ import {
   CircleDollarSign,
   PackageCheck,
   Paperclip,
+  Pencil,
   Recycle,
   Send,
   Trash2,
@@ -42,6 +43,7 @@ import {
 import { cn } from "@/lib/utils"
 import { etiquetaCubierta } from "@/lib/vehiculos/numeracion-fuego"
 import {
+  actualizarFacturaRecapado,
   crearEnvioRecapado,
   eliminarEnvioRecapado,
   registrarRecepcionRecapado,
@@ -374,7 +376,17 @@ export function RecapadosPanel({
           }}
         />
       )}
-      {ver && <DetalleRecapadoDialog recapado={ver} onClose={() => setVer(null)} />}
+      {ver && (
+        <DetalleRecapadoDialog
+          recapado={ver}
+          puedeEditar={puedeEditar}
+          onClose={() => setVer(null)}
+          onDone={() => {
+            setVer(null)
+            onRefresh()
+          }}
+        />
+      )}
     </Card>
   )
 }
@@ -877,12 +889,17 @@ function RecepcionDialog({
 
 function DetalleRecapadoDialog({
   recapado: r,
+  puedeEditar,
   onClose,
+  onDone,
 }: {
   recapado: Recapado
+  puedeEditar: boolean
   onClose: () => void
+  onDone: () => void
 }) {
   const recapadas = r.items.filter((it) => it.resultado === "recapada")
+  const [editando, setEditando] = useState(false)
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-2xl">
@@ -948,8 +965,29 @@ function DetalleRecapadoDialog({
           )}
 
           <div>
-            <p className="mb-1 text-xs font-medium text-muted-foreground">Factura</p>
-            {(r.factura_urls?.length ?? 0) === 0 ? (
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <p className="text-xs font-medium text-muted-foreground">Factura</p>
+              {puedeEditar && !editando && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setEditando(true)}
+                >
+                  <Pencil className="mr-1 size-3" />
+                  {(r.factura_urls?.length ?? 0) > 0 || r.costo_total != null
+                    ? "Editar factura"
+                    : "Cargar factura"}
+                </Button>
+              )}
+            </div>
+            {editando ? (
+              <EditorFacturaRecapado
+                recapado={r}
+                onCancel={() => setEditando(false)}
+                onDone={onDone}
+              />
+            ) : (r.factura_urls?.length ?? 0) === 0 ? (
               <p className="text-muted-foreground/70">No tiene factura cargada.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
@@ -980,6 +1018,140 @@ function DetalleRecapadoDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// La factura del recapado suele llegar días después de que la goma volvió, y
+// hasta ahora el único campo para cargarla vivía en el diálogo de recepción:
+// cerrado el remito, no había dónde adjuntarla. Esto la deja editable siempre.
+function EditorFacturaRecapado({
+  recapado: r,
+  onCancel,
+  onDone,
+}: {
+  recapado: Recapado
+  onCancel: () => void
+  onDone: () => void
+}) {
+  const [numero, setNumero] = useState(r.factura_numero ?? "")
+  const [costo, setCosto] = useState(r.costo_total != null ? String(r.costo_total) : "")
+  const [urls, setUrls] = useState<string[]>(r.factura_urls ?? [])
+  const [nuevas, setNuevas] = useState<File[]>([])
+  const [saving, setSaving] = useState(false)
+
+  const recapadas = r.items.filter((it) => it.resultado === "recapada").length
+  const total = costo.trim() ? Number(costo) : null
+  const porCubierta = total != null && recapadas > 0 ? total / recapadas : null
+
+  const guardar = async () => {
+    if (total != null && !Number.isFinite(total)) {
+      toast.error("El costo total no es un número")
+      return
+    }
+    setSaving(true)
+    const subidas = await subirFacturasNeumaticos(nuevas)
+    if (subidas === null) {
+      setSaving(false)
+      return
+    }
+    const res = await actualizarFacturaRecapado({
+      id: r.id,
+      factura_numero: numero,
+      factura_urls: [...urls, ...subidas],
+      costo_total: total,
+      // el prorrateo entre las recapadas lo rehace la action
+    })
+    setSaving(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    toast.success(
+      porCubierta != null
+        ? `Factura guardada · ${fmtMoney(porCubierta)} por cubierta`
+        : "Factura guardada"
+    )
+    onDone()
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border border-border bg-muted/30 p-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label className="text-xs text-muted-foreground">N° de factura</Label>
+          <Input value={numero} onChange={(e) => setNumero(e.target.value)} />
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">Costo total ($)</Label>
+          <Input
+            type="number"
+            value={costo}
+            onChange={(e) => setCosto(e.target.value)}
+            placeholder="Lo facturado por este remito"
+          />
+        </div>
+      </div>
+
+      {urls.length > 0 && (
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">Ya cargadas</p>
+          <div className="flex flex-wrap gap-2">
+            {urls.map((url) => (
+              <span
+                key={url}
+                className="inline-flex items-center gap-2 rounded-md border bg-white px-2 py-1 text-xs dark:bg-transparent"
+              >
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                >
+                  <Paperclip className="size-3" />
+                  {nombreDeFacturaUrl(url)}
+                </a>
+                <button
+                  type="button"
+                  className="text-destructive hover:underline"
+                  onClick={() => setUrls((prev) => prev.filter((u) => u !== url))}
+                >
+                  quitar
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <FacturaField
+        files={nuevas}
+        onChange={setNuevas}
+        label="Agregar la foto o el PDF de la factura"
+      />
+
+      {porCubierta != null && (
+        <p className="text-xs text-muted-foreground">
+          Se reparte entre las {recapadas} recapada{recapadas > 1 ? "s" : ""} de este
+          remito: <span className="font-medium">{fmtMoney(porCubierta)}</span> cada una.
+        </p>
+      )}
+      {total != null && recapadas === 0 && (
+        <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+          <TriangleAlert className="size-3.5 shrink-0" />
+          Este remito no tiene cubiertas recapadas: el monto queda cargado pero no se le
+          imputa a ninguna.
+        </p>
+      )}
+
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>
+          Cancelar
+        </Button>
+        <Button size="sm" onClick={guardar} disabled={saving}>
+          {saving ? "Guardando…" : "Guardar factura"}
+        </Button>
+      </div>
+    </div>
   )
 }
 
