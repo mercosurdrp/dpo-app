@@ -156,6 +156,10 @@ export interface DimConfig {
   sabado_fin_alta: number
   sabado_fin_baja: number
   meses_temporada_alta: string  // "1,2,3,11,12"
+  // Costo de LO EXTRA que pide el dimensionamiento (R2.3.5): temporales de reparto y segundas vueltas.
+  costo_mes_chofer_temporal: number    // $/mes de un chofer temporal, con cargas
+  costo_mes_ayudante_temporal: number  // $/mes de un ayudante temporal, con cargas
+  costo_segunda_vuelta: number         // $ de una segunda vuelta (tripulación + combustible)
 }
 
 /** Horas extra por persona de un sábado del mes (0 si el fin no supera el turno normal). */
@@ -550,6 +554,9 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       horas_fijas_generales: 2,
       umbral_ocupacion_ociosa: 0.7,
       pct_distribuido: 0.8,
+      costo_mes_chofer_temporal: 1440000,
+      costo_mes_ayudante_temporal: 1440000,
+      costo_segunda_vuelta: 125000,
       sabado_fin_normal: 11,
       sabado_fin_alta: 14,
       sabado_fin_baja: 12,
@@ -585,6 +592,15 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       if (typeof ext?.meses_temporada_alta === "string" && ext.meses_temporada_alta.trim()) config.meses_temporada_alta = ext.meses_temporada_alta
     }
     const hSabado = (mes: number) => horasSabadoDe(config, mes)
+    {
+      // migración 20260925120000: costo de lo extra (temporales y segundas vueltas)
+      const { data: ext } = await supabase.from("dim_config").select("costo_mes_chofer_temporal, costo_mes_ayudante_temporal, costo_segunda_vuelta").eq("id", 1).maybeSingle()
+      const n = (v: unknown) => { const x = Number(v); return Number.isFinite(x) && x >= 0 ? x : null }
+      const a = n(ext?.costo_mes_chofer_temporal), b = n(ext?.costo_mes_ayudante_temporal), c = n(ext?.costo_segunda_vuelta)
+      if (a != null) config.costo_mes_chofer_temporal = a
+      if (b != null) config.costo_mes_ayudante_temporal = b
+      if (c != null) config.costo_segunda_vuelta = c
+    }
 
     const anioHoyR = new Date().getFullYear(), mesHoyR = new Date().getMonth() + 1
     // Retornables a clasificar: viajes de acarreo de cerveza retornable presupuestados por mes
@@ -1476,6 +1492,9 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         sabado_fin_normal: Math.min(24, Math.max(0, Number(config.sabado_fin_normal) || 11)),
         sabado_fin_alta: Math.min(24, Math.max(0, Number(config.sabado_fin_alta) || 14)),
         sabado_fin_baja: Math.min(24, Math.max(0, Number(config.sabado_fin_baja) || 12)),
+        costo_mes_chofer_temporal: Math.max(0, Number(config.costo_mes_chofer_temporal) || 0),
+        costo_mes_ayudante_temporal: Math.max(0, Number(config.costo_mes_ayudante_temporal) || 0),
+        costo_segunda_vuelta: Math.max(0, Number(config.costo_segunda_vuelta) || 0),
         meses_temporada_alta: String(config.meses_temporada_alta ?? "").split(",").map((s) => Number(s.trim())).filter((n) => n >= 1 && n <= 12).join(",") || "1,2,3,11,12",
         updated_by: profile.id,
         updated_at: new Date().toISOString(),

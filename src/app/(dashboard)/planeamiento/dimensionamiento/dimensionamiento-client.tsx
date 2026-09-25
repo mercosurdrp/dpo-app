@@ -224,12 +224,17 @@ function hhSabadoDelMes(proy: ProyeccionData, i: number) {
   return Math.round(proy.almacen.reduce((s, r) => s + (r.horasSabado?.[i] ?? 0), 0) * 10) / 10
 }
 
-function CostoTab({ proyLive, canEdit, run, isPending }: {
+function CostoTab({ data, proyLive, canEdit, run, isPending }: {
   data: DimData; proyLive: ProyeccionData | null; canEdit: boolean; run: RunFn; isPending: boolean
 }) {
   const proy = proyLive
   const [tar, setTar] = useState<Record<number, { a: string; pa: string }>>(() =>
     Object.fromEntries((proy?.costoHh ?? []).map((c) => [c.mes, { a: String(c.almacen), pa: String(c.hhPptoAlmacen ?? 0) }])))
+  const [cx, setCx] = useState({
+    chofer: String(data.config.costo_mes_chofer_temporal),
+    ayudante: String(data.config.costo_mes_ayudante_temporal),
+    vuelta: String(data.config.costo_segunda_vuelta),
+  })
 
   if (!proy) return <p className="text-sm text-muted-foreground">Sin proyección de volumen: cargá el presupuesto anual para ver el costo.</p>
 
@@ -239,18 +244,42 @@ function CostoTab({ proyLive, canEdit, run, isPending }: {
     const c = proy.costoHh.find((x) => x.mes === mesN)
     return campo === "a" ? c?.almacen ?? 0 : c?.hhPptoAlmacen ?? 0
   }
+  const $chofer = Number(cx.chofer) || 0, $ayudante = Number(cx.ayudante) || 0, $vuelta = Number(cx.vuelta) || 0
+  const rolFlota = (rol: string) => proy.flota.find((r) => r.rol === rol)
 
+  // Lo EXTRA que pide el dimensionamiento cada mes: horas extra de almacén, temporales de
+  // reparto (lo que falta contra el plantel en el día pico) y segundas vueltas de la flota.
   const filas = proy.meses.map((mm, i) => {
     const mesN = Number(mm.mes.split("-")[1])
     const hh = hhAlmacenDelMes(proy, i)
     const sab = hhSabadoDelMes(proy, i)
-    const total = hh * tarifaDe(mesN, "a")
+    const $hh = hh * tarifaDe(mesN, "a")
     const ppto = tarifaDe(mesN, "pa")
-    return { mm, mesN, hh, sab, total, hl: mm.hl, porHl: mm.hl > 0 ? total / mm.hl : 0, ppto, excede: ppto > 0 && hh > ppto }
+    const cho = rolFlota("Choferes"), ayu = rolFlota("Ayudantes"), cam = rolFlota("Camiones")
+    const tCho = cho ? Math.max(0, (cho.necesariosProm?.[i] ?? 0) - cho.dotacion) : 0
+    const tAyu = ayu ? Math.max(0, (ayu.necesariosProm?.[i] ?? 0) - ayu.dotacion) : 0
+    const $temp = tCho * $chofer + tAyu * $ayudante
+    const vueltas = cam?.segundasVueltas?.[i] ?? 0
+    const $vueltas = vueltas * $vuelta
+    const total = $hh + $temp + $vueltas
+    return { mm, mesN, hh, sab, $hh, ppto, excede: ppto > 0 && hh > ppto, tCho, tAyu, $temp, vueltas, $vueltas, total, hl: mm.hl, porHl: mm.hl > 0 ? total / mm.hl : 0 }
   })
-  const tot = filas.reduce((s, f) => ({ hh: s.hh + f.hh, sab: s.sab + f.sab, total: s.total + f.total, hl: s.hl + f.hl, ppto: s.ppto + f.ppto }), { hh: 0, sab: 0, total: 0, hl: 0, ppto: 0 })
+  const tot = filas.reduce((s, f) => ({
+    hh: s.hh + f.hh, $hh: s.$hh + f.$hh, ppto: s.ppto + f.ppto, tCho: Math.max(s.tCho, f.tCho), tAyu: Math.max(s.tAyu, f.tAyu),
+    $temp: s.$temp + f.$temp, vueltas: s.vueltas + f.vueltas, $vueltas: s.$vueltas + f.$vueltas, total: s.total + f.total, hl: s.hl + f.hl,
+  }), { hh: 0, $hh: 0, ppto: 0, tCho: 0, tAyu: 0, $temp: 0, vueltas: 0, $vueltas: 0, total: 0, hl: 0 })
   const vlc = proy.vlc
   const sinTarifas = proy.costoHh.every((c) => c.almacen === 0)
+
+  const guardarTodo = () => run(async () => {
+    const r1 = await guardarCostoHh(Number(proy.mesBase.split("-")[0]), proy.meses.map((mm) => {
+      const mesN = Number(mm.mes.split("-")[1])
+      const c = proy.costoHh.find((x) => x.mes === mesN)
+      return { mes: mesN, almacen: tarifaDe(mesN, "a"), entrega: c?.entrega ?? 0, pptoAlmacen: tarifaDe(mesN, "pa"), pptoEntrega: c?.hhPptoEntrega ?? 0 }
+    }))
+    if ((r1 as { error?: string })?.error) return r1
+    return guardarConfigDim({ ...data.config, costo_mes_chofer_temporal: $chofer, costo_mes_ayudante_temporal: $ayudante, costo_segunda_vuelta: $vuelta })
+  }, "Costos guardados")
 
   return (
     <div className="space-y-6">
@@ -290,10 +319,10 @@ function CostoTab({ proyLive, canEdit, run, isPending }: {
         </CardContent>
       </Card>
 
-      {/* ════ Datos de entrada — valor de la hora extra de almacén ════ */}
+      {/* ════ Datos de entrada — qué cuesta cada extra ════ */}
       {canEdit && (
         <Card className="border-sky-200">
-          <CardHeader className="pb-2"><CardTitle className="text-base">1 · Hora extra de almacén: valor y presupuesto</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">1 · Qué cuesta cada extra</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <Table>
               <TableHeader><TableRow>
@@ -301,7 +330,7 @@ function CostoTab({ proyLive, canEdit, run, isPending }: {
                 {proy.meses.map((mm) => <TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>)}
               </TableRow></TableHeader>
               <TableBody>
-                {([["a", "$/hora extra — Almacén", "1"], ["pa", "Horas presupuestadas — Almacén", "0.01"]] as const).map(([campo, label, step]) => (
+                {([["a", "$/hora extra — Almacén", "1"], ["pa", "Horas extra presupuestadas — Almacén", "0.01"]] as const).map(([campo, label, step]) => (
                   <TableRow key={campo} className={campo === "pa" ? "bg-slate-50" : ""}>
                     <TableCell className="font-medium">{label}</TableCell>
                     {proy.meses.map((mm) => {
@@ -322,24 +351,22 @@ function CostoTab({ proyLive, canEdit, run, isPending }: {
               </TableBody>
             </Table>
             <div className="flex flex-wrap items-end gap-3">
-              <Button size="sm" disabled={isPending} onClick={() => run(() => guardarCostoHh(Number(proy.mesBase.split("-")[0]), proy.meses.map((mm) => {
-                const mesN = Number(mm.mes.split("-")[1])
-                const c = proy.costoHh.find((x) => x.mes === mesN)
-                // las tarifas de entrega se conservan tal como están cargadas (hoy no se usan en el modelo)
-                return { mes: mesN, almacen: tarifaDe(mesN, "a"), entrega: c?.entrega ?? 0, pptoAlmacen: tarifaDe(mesN, "pa"), pptoEntrega: c?.hhPptoEntrega ?? 0 }
-              })), "Costos guardados")}>Guardar</Button>
+              <div><Label className="text-xs">$/mes chofer temporal (con cargas)</Label><Input type="number" step="1000" className="h-8 w-32" value={cx.chofer} onChange={(e) => setCx((s) => ({ ...s, chofer: e.target.value }))} /></div>
+              <div><Label className="text-xs">$/mes ayudante temporal (con cargas)</Label><Input type="number" step="1000" className="h-8 w-32" value={cx.ayudante} onChange={(e) => setCx((s) => ({ ...s, ayudante: e.target.value }))} /></div>
+              <div><Label className="text-xs">$ por segunda vuelta</Label><Input type="number" step="1000" className="h-8 w-32" value={cx.vuelta} onChange={(e) => setCx((s) => ({ ...s, vuelta: e.target.value }))} /></div>
+              <Button size="sm" disabled={isPending} onClick={guardarTodo}>Guardar</Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Valores del <b>presupuesto PxQ 2026</b> (hoja ALMACEN del EERR), con el recargo 50 %/100 % ya incluido e inflación del 2 % mensual. Editalos si el valor real de liquidación difiere.
-              Las <b>horas presupuestadas</b> son las que el EERR previó para cada mes: contra ellas se semaforiza lo que proyecta el modelo.
+              Hora extra de almacén: valores del <b>presupuesto PxQ 2026</b> (hoja ALMACEN del EERR), con el recargo ya incluido; las <b>horas presupuestadas</b> son las que el EERR previó para cada mes.
+              Temporales: costo mensual con cargas de un chofer y de un ayudante (por defecto, el sueldo bruto promedio del presupuesto GENTE PxQ × 1,5 de cargas). Segunda vuelta: lo que cuesta que un camión vuelva a cargar y salga de nuevo (tripulación y combustible).
             </p>
           </CardContent>
         </Card>
       )}
 
-      {/* ════ Resultado — cuánto cuesta hacer las extras ════ */}
+      {/* ════ Resultado — lo extra que pide el dimensionamiento, cuánto cuesta ════ */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">2 · Si hacés las horas extra de almacén, cuánto cuesta</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-base">2 · Lo extra que pide el dimensionamiento: cuánto cuesta y cuánto suma al costo por HL</CardTitle></CardHeader>
         <CardContent>
           {sinTarifas && <p className="mb-2 text-sm text-amber-700">Cargá el valor de la hora extra arriba para ver los importes.</p>}
           <div className="overflow-x-auto">
@@ -347,9 +374,12 @@ function CostoTab({ proyLive, canEdit, run, isPending }: {
               <TableHeader><TableRow>
                 <TableHead>Mes</TableHead>
                 <TableHead className="text-right">HH extra almacén</TableHead>
-                <TableHead className="text-right">de las cuales sábados</TableHead>
-                <TableHead className="text-right">Ppto</TableHead>
-                <TableHead className="text-right">$ almacén</TableHead>
+                <TableHead className="text-right">$ horas extra</TableHead>
+                <TableHead className="text-right">Temporales reparto</TableHead>
+                <TableHead className="text-right">$ temporales</TableHead>
+                <TableHead className="text-right">2ª vueltas</TableHead>
+                <TableHead className="text-right">$ 2ª vueltas</TableHead>
+                <TableHead className="text-right">$ total extra</TableHead>
                 <TableHead className="text-right">HL del mes</TableHead>
                 <TableHead className="text-right">$/HL extra</TableHead>
                 {vlc.valorMes != null && <TableHead className="text-right">Costo/HL proyectado</TableHead>}
@@ -366,10 +396,16 @@ function CostoTab({ proyLive, canEdit, run, isPending }: {
                       </TableCell>
                       <TableCell className={`text-right ${f.excede ? "font-semibold text-red-700" : ""}`}>
                         {f.hh > 0 ? `${fmt(f.hh)} h` : "—"}
-                        {f.excede ? <span className="block text-[10px] font-normal">+{fmt(Math.round((f.hh - f.ppto) * 10) / 10)} h</span> : null}
+                        {f.sab > 0 ? <span className="block text-[10px] font-normal text-muted-foreground">sáb. {fmt(f.sab)} h</span> : null}
+                        {f.excede ? <span className="block text-[10px] font-normal">+{fmt(Math.round((f.hh - f.ppto) * 10) / 10)} h sobre ppto ({fmt(f.ppto)})</span> : f.ppto > 0 ? <span className="block text-[10px] font-normal text-muted-foreground">ppto {fmt(f.ppto)} h</span> : null}
                       </TableCell>
-                      <TableCell className="text-right text-muted-foreground">{f.sab > 0 ? `${fmt(f.sab)} h` : "—"}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">{f.ppto > 0 ? `${fmt(f.ppto)} h` : "—"}</TableCell>
+                      <TableCell className="text-right">{f.$hh > 0 ? money(f.$hh) : "—"}</TableCell>
+                      <TableCell className={`text-right ${f.tCho + f.tAyu > 0 ? "font-semibold text-red-700" : ""}`}>
+                        {f.tCho + f.tAyu > 0 ? <>{f.tCho > 0 ? `${fmt(f.tCho)} chofer${f.tCho === 1 ? "" : "es"}` : ""}{f.tCho > 0 && f.tAyu > 0 ? " + " : ""}{f.tAyu > 0 ? `${fmt(f.tAyu)} ayudante${f.tAyu === 1 ? "" : "s"}` : ""}</> : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">{f.$temp > 0 ? money(f.$temp) : "—"}</TableCell>
+                      <TableCell className={`text-right ${f.vueltas > 0 ? "font-semibold text-red-700" : ""}`}>{f.vueltas > 0 ? fmt(f.vueltas) : "—"}</TableCell>
+                      <TableCell className="text-right">{f.$vueltas > 0 ? money(f.$vueltas) : "—"}</TableCell>
                       <TableCell className="text-right font-semibold">{f.total > 0 ? money(f.total) : "—"}</TableCell>
                       <TableCell className="text-right text-muted-foreground">{fmt(Math.round(f.hl))}</TableCell>
                       <TableCell className={`text-right font-semibold ${f.porHl > 0 ? "text-amber-700" : ""}`}>{f.porHl > 0 ? money2(f.porHl) : "—"}</TableCell>
@@ -382,8 +418,11 @@ function CostoTab({ proyLive, canEdit, run, isPending }: {
                 <TableRow className="border-t-2">
                   <TableCell className="font-bold">Total</TableCell>
                   <TableCell className={`text-right font-bold ${tot.ppto > 0 && tot.hh > tot.ppto ? "text-red-700" : ""}`}>{fmt(Math.round(tot.hh))} h</TableCell>
-                  <TableCell className="text-right font-bold text-muted-foreground">{fmt(Math.round(tot.sab))} h</TableCell>
-                  <TableCell className="text-right font-bold text-muted-foreground">{fmt(Math.round(tot.ppto))} h</TableCell>
+                  <TableCell className="text-right font-bold">{money(tot.$hh)}</TableCell>
+                  <TableCell className="text-right font-bold">{tot.tCho + tot.tAyu > 0 ? `hasta ${fmt(tot.tCho)} + ${fmt(tot.tAyu)}` : "—"}</TableCell>
+                  <TableCell className="text-right font-bold">{money(tot.$temp)}</TableCell>
+                  <TableCell className="text-right font-bold">{tot.vueltas > 0 ? fmt(tot.vueltas) : "—"}</TableCell>
+                  <TableCell className="text-right font-bold">{money(tot.$vueltas)}</TableCell>
                   <TableCell className="text-right font-bold">{money(tot.total)}</TableCell>
                   <TableCell className="text-right font-bold text-muted-foreground">{fmt(Math.round(tot.hl))}</TableCell>
                   <TableCell className="text-right font-bold">{tot.hl > 0 ? money2(tot.total / tot.hl) : "—"}</TableCell>
@@ -393,11 +432,8 @@ function CostoTab({ proyLive, canEdit, run, isPending }: {
             </Table>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            <b>HH extra almacén</b> = horas-hombre que la dotación fija no llega a cubrir de lunes a viernes (pickeros + clasificadores + tareas generales + maquinistas) más la regla de sábado.
-            <b> $/HL extra</b> = lo que suman esas horas al costo por HL de ese mes; el <b>costo/HL proyectado</b> lo suma al {money(vlc.valorMes ?? 0)}/HL de hoy.
-            La columna <b>Ppto</b> son las horas extra que el presupuesto previó para ese mes; si lo proyectado las supera, la celda se marca en <b className="text-red-700">rojo</b> con el exceso.
-            Flota / Entrega se dimensiona en camiones y personas: sus horas extra no entran en este costo.
-            Los HL siguen el escenario cargado en Flota o Almacén: si cambiás un %, esta tabla se actualiza sola.
+            Es lo que el dimensionamiento pide <b>por encima de la estructura</b> que ya está en el presupuesto: las <b>horas extra de almacén</b> (lunes a viernes por volumen más los sábados), los <b>temporales de reparto</b> (choferes y ayudantes que faltan contra el plantel para cubrir el día pico, × su costo mensual) y las <b>segundas vueltas</b> (días en que el volumen pide más de {fmt(proy.camionesDisp)} camiones).
+            <b> $/HL extra</b> = lo que suma todo eso al costo por HL de ese mes; el <b>costo/HL proyectado</b> lo suma al {money(vlc.valorMes ?? 0)}/HL de hoy. Los HL siguen el escenario cargado en Flota o Almacén.
           </p>
         </CardContent>
       </Card>
