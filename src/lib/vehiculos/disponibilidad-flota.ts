@@ -162,21 +162,25 @@ function diasEntre(desde: string, hasta: string): number {
 /**
  * Unidades no disponibles en una fecha puntual, con el motivo de cada parada.
  * Usa la MISMA prioridad que el estado día a día del cálculo mensual
- * (correctivo > preventivo > indisponible), así el detalle de un día siempre
- * coincide con lo que ese día aportó al % del mes.
+ * (ruteó > correctivo > preventivo > indisponible), así el detalle de un día
+ * siempre coincide con lo que ese día aportó al % del mes.
  */
 export function noDisponiblesEnFecha(
   fecha: string,
   flota: UnidadFlota[],
   mantenimientos: MantenimientoRealizado[],
   indisponibilidades: FlotaIndisponibilidad[],
-  hoy: string
+  hoy: string,
+  /** Días ruteados. Si se pasa, la unidad que ruteó ese día NO figura parada
+   *  (misma regla que `calcularDisponibilidadMes`: el ruteo gana). */
+  ruteoSet?: Set<string>
 ): UnidadNoDisponible[] {
   const paradas = paradasPorDominio(mantenimientos, hoy)
   const inds = indisponibilidadesPorDominio(indisponibilidades)
 
   const out: UnidadNoDisponible[] = []
   for (const u of flota) {
+    if (ruteoSet?.has(`${u.dominio}|${fecha}`)) continue
     const cubre = (p: ParadaFlota) => fecha >= p.desde && fecha <= p.hasta
     const ps = (paradas.get(u.dominio) ?? []).filter(cubre)
     const is = (inds.get(u.dominio) ?? []).filter(cubre)
@@ -236,9 +240,21 @@ export function calcularDisponibilidadMes(
     const is = inds.get(u.dominio) ?? []
     for (let d = 1; d <= diasPeriodo; d++) {
       const fecha = `${mesSel}-${pad(d)}`
-      // Prioridad: correctivo > preventivo > indisponible > ruteó(DRT) > disponible
-      let est: EstadoDiaFlota | null = null
-      for (const p of ps) {
+      // Prioridad: ruteó(DRT) > correctivo > preventivo > indisponible > disponible
+      //
+      // 🚨 El ruteo GANA sobre cualquier parada: si la unidad hizo su reparto
+      // ese día, estuvo disponible ese día. Las tres causas de parada son
+      // declarativas y ninguna tiene resolución horaria:
+      //  - `fuera_servicio_desde/hasta` lo lleva TODA OT de taller (no mide
+      //    gravedad), así que una OT de un solo día —soldar una guía, cambiar
+      //    cubiertas— pintaba como parado un día en que el camión ruteó igual.
+      //  - La IND documental la abre el cron de requisitos legales desde la
+      //    fecha de vencimiento, sin saber si la unidad salió o no.
+      // Contarlos hundía la disponibilidad con paradas que nunca existieron:
+      // el AF028YB daba 73,1 % con 7 días parados sobre 26, y 4 de esos 7 los
+      // ruteó completos.
+      let est: EstadoDiaFlota | null = ruteoSet.has(`${u.dominio}|${fecha}`) ? "DRT" : null
+      if (est == null) for (const p of ps) {
         if (fecha >= p.desde && fecha <= p.hasta) {
           if (p.causa === "PMC") { est = "PMC"; break }
           est = "PMP"
@@ -249,10 +265,7 @@ export function calcularDisponibilidadMes(
           if (fecha >= i.desde && fecha <= i.hasta) { est = "IND"; break }
         }
       }
-      if (est == null) {
-        if (ruteoSet.has(`${u.dominio}|${fecha}`)) est = "DRT"
-        else est = laboral.has(d) ? "DSP" : "LIB" // LIB = día no laboral
-      }
+      if (est == null) est = laboral.has(d) ? "DSP" : "LIB" // LIB = día no laboral
       porDia.set(d, est)
     }
     let pmc = 0, pmp = 0, ind = 0, drt = 0, dsp = 0, lib = 0

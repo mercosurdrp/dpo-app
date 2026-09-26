@@ -8,6 +8,17 @@ import type { EstadoPlanVehiculo } from "@/types/database"
 /**
  * Tareas al día ÷ tareas con datos, con el tamaño de la muestra.
  *
+ * 🚨 "Al día" es NO VENCIDA: `proximo` suma como cumplida. `proximo` es el
+ * aviso anticipado del plan (80 % del intervalo consumido, o el service a
+ * menos de X km/días), no un incumplimiento — la tarea todavía está en fecha.
+ * Contarlo como fallo hacía que el KPI no pudiera llegar nunca a su meta,
+ * porque una flota bien mantenida SIEMPRE tiene tareas entrando en aviso, y lo
+ * hacía saltar solo: el 25/09/2026 marcaba 81,4 % y al día siguiente 75,2 %
+ * sin que se venciera nada, sólo porque tres camiones cruzaron el umbral de
+ * aviso el mismo día. Con el criterio correcto ese día daba 93,8 %: 7 celdas
+ * vencidas, todas del mismo camión (el AF664NY, con el service pasado por
+ * 1.148 km). Lo vencido ya tiene su propio PI en "Services vencidos".
+ *
  * 🚨 La cobertura no es un extra decorativo: las celdas `sin_datos` quedan fuera
  * del denominador, así que el porcentaje habla sólo de las tareas que alguien
  * cargó alguna vez. En agosto de 2026 el KPI daba 100 % en verde sobre **13 de
@@ -29,8 +40,8 @@ export function cumplimientoPlanDesdeEstados(estados: EstadoPlanVehiculo[]): {
   for (const e of estados) {
     for (const c of e.celdas) {
       total++
-      if (c.estado === "ok") ok++
-      else if (c.estado === "proximo" || c.estado === "vencido") noOk++
+      if (c.estado === "ok" || c.estado === "proximo") ok++
+      else if (c.estado === "vencido") noOk++
     }
   }
   const conDato = ok + noOk

@@ -880,7 +880,10 @@ export async function getFlotaKpiSeriesExtra(): Promise<
           ym,
           valor: ym === meses[meses.length - 1] ? (tasa?.mmPorMilKm ?? null) : null,
           n: ym === meses[meses.length - 1] ? (tasa?.cubiertas ?? 0) : null,
-          nTotal: ym === meses[meses.length - 1] ? (tasa?.kmMedidos ?? null) : null,
+          // 🚨 Sin nTotal: `n` son cubiertas y el universo NO son los km del
+          // ajuste. Cuando iba `kmMedidos` acá, la tarjeta imprimía
+          // "(n=32 de 235.196 cubiertas en el ajuste)".
+          nTotal: null,
         })),
         // Cuánto de la rutina mensual se cumplió.
         neumaticos_medicion: meses.map((ym) => {

@@ -110,8 +110,11 @@ interface KpiDef {
    * semáforo falso en las DOS direcciones — falso rojo en los de "más es mejor"
    * (el CIL con 8 de 30 tareas) y falso verde en los de "menos es mejor" (el CO2
    * o el costo, que arrancan el mes en cero y cumplen cualquier tope).
-   * Los porcentuales (disponibilidad, conformidad) NO son acumulativos: valen
-   * igual el día 7 que el 30.
+   * Los porcentuales de ESTADO (disponibilidad, conformidad) NO son
+   * acumulativos: valen igual el día 7 que el 30. Un porcentaje SÍ es
+   * acumulativo cuando el numerador se va juntando durante el mes contra un
+   * denominador fijo —la medición de neumáticos, que el día 3 da 4 % porque
+   * todavía no se midió, no porque la rutina esté incumplida—.
    */
   acumulativo?: boolean
   /**
@@ -340,6 +343,11 @@ const KPI_DEFS: KpiDef[] = [
     conSerie: true,
     dpo: "3.4",
     nLabel: { sing: "cubierta medida", plural: "cubiertas medidas" },
+    // 🚨 Es un % pero se ACUMULA: las mediciones se van cargando a lo largo del
+    // mes contra un denominador fijo (las cubiertas instaladas), así que el
+    // día 3 marca 4 % y pinta rojo una rutina que todavía no tenía por qué
+    // estar hecha. Se juzga contra la meta recién con el mes cerrado.
+    acumulativo: true,
   },
   {
     kpi: "neumaticos_conformidad",

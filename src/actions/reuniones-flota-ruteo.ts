@@ -204,7 +204,8 @@ export async function getFlotaRuteoReunion(
     flota,
     mttos,
     indisp,
-    fechaReunion
+    fechaReunion,
+    ruteoSet
   )
 
   // ── Flota: combustible del mes ────────────────────────────────────────────

@@ -54,8 +54,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: errReq.message }, { status: 500 })
   }
 
+  // Se depura SIEMPRE, aunque no haya ningún requisito en ventana de alerta:
+  // justamente el caso a limpiar es el del documento ya renovado.
+  const depuradas = await depurarIndisponibilidadDocumental(supabase)
+
   if (!requisitos || requisitos.length === 0) {
-    return NextResponse.json({ ok: true, requisitos: 0, alertas: 0 })
+    return NextResponse.json({ ok: true, requisitos: 0, alertas: 0, depuradas })
   }
 
   const indisponibilidad = await syncIndisponibilidadDocumental(supabase, hoy, requisitos)
@@ -197,6 +201,7 @@ export async function GET(req: Request) {
     requisitos_evaluados: requisitos.length,
     alertas_creadas: totalAlertas,
     indisponibilidad,
+    depuradas,
     detalle,
   })
 }
@@ -326,6 +331,147 @@ async function syncIndisponibilidadDocumental(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error(`[cron-alertas] Falla sync indisponibilidad documental: ${msg}`)
+    return { error: msg }
+  }
+}
+
+/**
+ * Borra o recorta las indisponibilidades documentales cuyo hueco de cobertura
+ * resultó ser menor —o inexistente— que lo que el cron había registrado.
+ *
+ * 🚨 El sync de arriba abre la parada con lo que sabe a la hora que corre, y
+ * la papelería se carga después. El 15/09/2026 la póliza de flota venció el 14
+ * y la renovación —emitida ESE MISMO 14, sin un día de hueco— se cargó a las
+ * 15:37: el cron ya había abierto 13 indisponibilidades de un día, una por
+ * camión, por una falta de cobertura que nunca existió.
+ *
+ * El hueco real de cada documento va desde el día siguiente al vencimiento que
+ * el cron dejó escrito en el motivo hasta el día anterior a la EMISIÓN del
+ * documento que lo reemplazó. Si el reemplazo se emitió antes de que venciera
+ * el anterior, no hubo hueco y la parada se borra.
+ *
+ * 🚨 Sólo RECORTA, nunca extiende: `requisitos_legales` guarda la versión
+ * vigente y pisa la anterior, así que de un documento renovado dos veces sólo
+ * se ve la última emisión, y estirar el hueco hasta ahí inventaría meses de
+ * parada. Lo que no se puede probar queda como está.
+ *
+ * Sólo toca las que generó el cron (motivo "Documentación vencida…"): las que
+ * carga alguien a mano no se tocan nunca.
+ */
+async function depurarIndisponibilidadDocumental(
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<{ borradas: number; recortadas: number } | { error: string }> {
+  try {
+    const [catsRes, indRes] = await Promise.all([
+      supabase
+        .from("requisitos_legales_categorias")
+        .select("id, nombre")
+        .eq("tipo_identificador", "vehiculo"),
+      supabase
+        .from("flota_indisponibilidad")
+        .select("id, dominio, fecha_desde, fecha_hasta, motivo")
+        .like("motivo", `${MOTIVO_DOC}%`),
+    ])
+    if (catsRes.error) throw new Error(catsRes.error.message)
+    if (indRes.error) throw new Error(indRes.error.message)
+
+    const filas = indRes.data ?? []
+    const catIds = (catsRes.data ?? []).map((c) => c.id)
+    if (filas.length === 0 || catIds.length === 0) return { borradas: 0, recortadas: 0 }
+
+    const { data: reqs, error: errReqs } = await supabase
+      .from("requisitos_legales")
+      .select("nombre, categoria_id, fecha_emision, fecha_vencimiento")
+      .in("categoria_id", catIds)
+    if (errReqs) throw new Error(errReqs.message)
+
+    const catNombre = new Map((catsRes.data ?? []).map((c) => [c.id, c.nombre]))
+    // Documento vigente hoy, por dominio + categoría.
+    const vigente = new Map<string, { emision: string | null; vence: string | null }>()
+    for (const r of reqs ?? []) {
+      const cat = catNombre.get(r.categoria_id)
+      if (!cat) continue
+      vigente.set(`${r.nombre.trim().toUpperCase()}|${cat}`, {
+        emision: r.fecha_emision ?? null,
+        vence: r.fecha_vencimiento ?? null,
+      })
+    }
+
+    const masUnDia = (iso: string) => {
+      const d = new Date(`${iso}T00:00:00`)
+      d.setDate(d.getDate() + 1)
+      return isoDate(d)
+    }
+    const menosUnDia = (iso: string) => {
+      const d = new Date(`${iso}T00:00:00`)
+      d.setDate(d.getDate() - 1)
+      return isoDate(d)
+    }
+
+    let borradas = 0
+    let recortadas = 0
+    for (const f of filas) {
+      // "Documentación vencida: VTV (venció 2026-09-16), SENASA (venció …)"
+      const docs = [...String(f.motivo ?? "").matchAll(/([^:,]+?)s+(venciós+(d{4}-d{2}-d{2}))/g)]
+      if (docs.length === 0) continue
+
+      const dominio = f.dominio.trim().toUpperCase()
+      let inicio: string | null = null
+      let fin: string | null = null
+      let indeterminado = false
+
+      for (const [, catRaw, vencio] of docs) {
+        const doc = vigente.get(`${dominio}|${catRaw.trim()}`)
+        // Documento que ya no está cargado, o sin fecha de emisión: no hay con
+        // qué acotar el hueco, así que la parada queda como está.
+        if (!doc || !doc.emision || !doc.vence) {
+          indeterminado = true
+          break
+        }
+        // Todavía no se renovó: el hueco sigue abierto, lo maneja el sync.
+        if (doc.vence <= vencio) {
+          indeterminado = true
+          break
+        }
+        // Renovado antes de vencer: nunca hubo descobertura por este documento.
+        if (doc.emision <= vencio) continue
+        const desde = masUnDia(vencio)
+        const hasta = menosUnDia(doc.emision)
+        if (hasta < desde) continue
+        if (inicio == null || desde < inicio) inicio = desde
+        if (fin == null || hasta > fin) fin = hasta
+      }
+      if (indeterminado) continue
+
+      if (inicio == null || fin == null) {
+        const { error } = await supabase.from("flota_indisponibilidad").delete().eq("id", f.id)
+        if (error) throw new Error(error.message)
+        borradas += 1
+        continue
+      }
+      // Intersección con lo registrado: sólo se recorta.
+      const desde = inicio > f.fecha_desde ? inicio : f.fecha_desde
+      const hasta = fin < f.fecha_hasta ? fin : f.fecha_hasta
+      if (hasta < desde) {
+        const { error } = await supabase.from("flota_indisponibilidad").delete().eq("id", f.id)
+        if (error) throw new Error(error.message)
+        borradas += 1
+        continue
+      }
+      if (desde !== f.fecha_desde || hasta !== f.fecha_hasta) {
+        const { error } = await supabase
+          .from("flota_indisponibilidad")
+          .update({ fecha_desde: desde, fecha_hasta: hasta })
+          .eq("id", f.id)
+        if (error) throw new Error(error.message)
+        recortadas += 1
+      }
+    }
+
+    return { borradas, recortadas }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error(`[cron-alertas] Falla depuración de indisponibilidad documental: ${msg}`)
     return { error: msg }
   }
 }
