@@ -22,7 +22,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { ClipboardList, Pencil, Plus, Trash2 } from "lucide-react"
+import { ArrowRight, ClipboardList, Pencil, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard, type EstadoKpi } from "./_components/kpi-card"
@@ -1070,12 +1070,6 @@ function KpiIndicadorCard({
       estado={estado}
       delta={delta}
       mejora={mejora ?? undefined}
-      onClick={onAbrir}
-      sub={
-        onAbrir ? (
-          <span className="text-primary">{DESTINO_KPI[def.kpi]?.label} →</span>
-        ) : undefined
-      }
       valor={
         <>
           {valor == null ? "—" : def.fmt(valor)}
@@ -1097,12 +1091,22 @@ function KpiIndicadorCard({
         </>
       }
     >
-      {/* 🚨 Todo lo de acá abajo es interactivo (editor de meta, planes por
-          mes) y vive DENTRO de una tarjeta clickeable: sin frenar la
-          propagación, tocar el lapicito de la meta también disparaba la
-          navegación y te sacaba de la solapa. El click de la tarjeta queda en
-          el título y el número, que es donde se mira. */}
-      <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
+      {/* 🚨 El acceso al detalle es un BOTÓN y no la tarjeta entera. La
+          tarjeta está llena de controles propios —el lapicito de la meta, los
+          tres meses con su plan—, así que hacerla clickeable entera dejaba
+          medio card con cursor de mano y sin reaccionar: se lee como roto. Un
+          botón con su texto dice exactamente qué se abre y dónde tocar. */}
+      <div className="space-y-3">
+        {onAbrir && (
+          <button
+            type="button"
+            onClick={onAbrir}
+            className="-mx-1 flex w-[calc(100%+0.5rem)] items-center justify-between gap-2 rounded-md px-1 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <span>{DESTINO_KPI[def.kpi]?.label}</span>
+            <ArrowRight className="size-3.5 shrink-0" aria-hidden />
+          </button>
+        )}
         {/* 🚨 Por qué este KPI no tiene semáforo: sin decirlo, un indicador gris
             se lee como "no hay dato" y acá el dato está — lo que falta es la
             carga que lo haría representativo. */}
