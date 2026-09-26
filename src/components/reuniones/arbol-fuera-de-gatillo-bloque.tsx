@@ -29,6 +29,11 @@ type NodoFuera = {
   foro_label: string | null
   estado_ytd: Semaforo
   estado_mtd: Semaforo
+  /** Últimos 3 meses con dato (suma en los que suman, promedio en los ratios):
+   *  es lo que decide si entra a la lista. */
+  ult3?: number | null
+  meses_3m?: number[]
+  estado_3m?: Semaforo
 }
 
 type Respuesta = {
@@ -106,7 +111,7 @@ export function ArbolFueraDeGatilloBloque() {
             )}
           </h3>
           <p className="text-[11px] text-muted-foreground">
-            Indicadores del almacén peor que su gatillo en el último mes o en el acumulado.
+            Indicadores del almacén peor que su gatillo en los últimos 3 meses (no en el acumulado del año, que arrastra lo ya corregido).
             Se leen del árbol del dashboard del depósito; la meta y el gatillo se editan allá.
           </p>
         </div>
@@ -139,6 +144,7 @@ export function ArbolFueraDeGatilloBloque() {
               <tr>
                 <th className="py-1.5 pr-2 text-left font-semibold">Indicador</th>
                 <th className="px-2 py-1.5 text-right font-semibold">Último mes</th>
+                <th className="px-2 py-1.5 text-right font-semibold">Últ. 3 meses</th>
                 <th className="px-2 py-1.5 text-right font-semibold">Acumulado</th>
                 <th className="px-2 py-1.5 text-right font-semibold">Meta</th>
                 <th className="px-2 py-1.5 text-right font-semibold">Gatillo</th>
@@ -159,7 +165,15 @@ export function ArbolFueraDeGatilloBloque() {
                       <span className="ml-1 text-[9px] font-normal uppercase text-muted-foreground">{MESES[n.mes - 1]}</span>
                     )}
                   </td>
-                  <td className={cn("px-2 py-1.5 text-right font-bold tabular-nums", n.estado_ytd ? COLOR[n.estado_ytd] : "")}>
+                  <td className={cn("px-2 py-1.5 text-right font-bold tabular-nums", n.estado_3m ? COLOR[n.estado_3m] : "")}>
+                    {fmt(n.ult3 ?? null, n.decimales)}
+                    {n.meses_3m && n.meses_3m.length > 0 && (
+                      <span className="ml-1 text-[9px] font-normal uppercase text-muted-foreground">
+                        {MESES[n.meses_3m[0] - 1]}–{MESES[n.meses_3m[n.meses_3m.length - 1] - 1]}
+                      </span>
+                    )}
+                  </td>
+                  <td className={cn("px-2 py-1.5 text-right tabular-nums", n.estado_ytd ? COLOR[n.estado_ytd] : "")}>
                     {fmt(n.ytd, n.decimales)}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{fmt(n.meta, n.decimales)}</td>
