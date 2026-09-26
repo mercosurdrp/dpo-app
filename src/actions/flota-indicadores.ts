@@ -160,6 +160,28 @@ export interface PuntoSerieKpi {
   excluidos?: number | null
 }
 
+/**
+ * Rubro de OT cuyas filas de repuesto NO entran en la trazabilidad de egresos.
+ *
+ * 🚨 Una cubierta no sale del pañol y nunca va a poder vincular: vive en el
+ * módulo de Neumáticos con su número de fuego, proveedor, factura y costo. Con
+ * las cubiertas adentro, el PI se movía según cuántas cubiertas cambiaste ese
+ * mes y no según la trazabilidad — septiembre de 2026 daba 45 % (5 de 11) y 4
+ * de las 6 filas sueltas eran las cuatro Dayton de la OT 1772. Sin ellas, 5 de
+ * 7 = 71 %, que es la proporción que el PI dice medir.
+ *
+ * Se identifica por `rubro`, no por el texto de la descripción: el rubro es un
+ * campo del sistema y "Cubierta …" escrito a mano no es un criterio.
+ */
+const RUBRO_SIN_TRAZABILIDAD = "neumaticos"
+
+/**
+ * Piso del PI de trazabilidad de egresos: antes de esta fecha el vínculo
+ * repuesto de OT → ítem del pañol no existía en la app, así que los meses
+ * anteriores dan `null` (sin dato) y no 0 %.
+ */
+const INICIO_TRAZABILIDAD = "2026-08-25"
+
 /** Ventana de matcheo defecto de checklist → OT correctiva (días). */
 const DETECCION_VENTANA_DIAS = 15
 
@@ -363,7 +385,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       // o no a un ítem del pañol. La fecha es la de la OT, no la de la fila.
       supabase
         .from("mantenimiento_realizado_repuestos")
-        .select("repuesto_id, ot:mantenimiento_realizados!inner(fecha, estado)")
+        .select("repuesto_id, ot:mantenimiento_realizados!inner(fecha, estado, rubro)")
         .neq("ot.estado", "cancelado")
         .gte("ot.fecha", inicioVentana),
     ])
@@ -393,14 +415,14 @@ export async function getFlotaKpiSeriesExtra(): Promise<
      * Piso de fecha: antes del 25/08/2026 el vínculo no existía en la app, así
      * que los meses anteriores dan `null` (sin dato) y no 0 %.
      */
-    const INICIO_TRAZABILIDAD = "2026-08-25"
     const trazaMes = new Map<string, { total: number; vinculados: number }>()
     for (const r of (repOtRes.data || []) as unknown as Array<{
       repuesto_id: string | null
-      ot: { fecha: string } | null
+      ot: { fecha: string; rubro: string | null } | null
     }>) {
       const fecha = r.ot?.fecha
       if (!fecha || fecha < INICIO_TRAZABILIDAD) continue
+      if (r.ot?.rubro === RUBRO_SIN_TRAZABILIDAD) continue
       const ym = fecha.slice(0, 7)
       const acc = trazaMes.get(ym) ?? { total: 0, vinculados: 0 }
       acc.total++
@@ -897,6 +919,285 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         }),
       },
     }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== DETALLE DE UN PI ====================
+
+/**
+ * PIs cuyo número no se puede auditar desde ninguna otra solapa: no hay una
+ * pantalla que liste las OT correctivas con su defecto previo, ni los planes
+ * con el tiempo que tardó cada uno, ni las filas de repuesto que vincularon.
+ * Para el resto la tarjeta navega a la solapa donde el dato ya está.
+ */
+export type FlotaKpiConDetalle =
+  | "checklist_deteccion"
+  | "checklist_resolucion"
+  | "repuestos_trazabilidad"
+
+export interface FilaDetalleKpi {
+  /** Qué es la fila: "OT 1768", "AF028YB", … */
+  titulo: string
+  /** Contexto de la fila (unidad, defecto, descripción del repuesto). */
+  subtitulo: string | null
+  fecha: string | null
+  /**
+   * `true` = la fila suma al numerador; `false` = está en el denominador y no
+   * suma; `null` = quedó fuera de los dos (dato inválido).
+   */
+  cuenta: boolean | null
+  /** Por qué cuenta o por qué no, en una línea. */
+  motivo: string
+  /** Valor propio de la fila cuando el PI promedia (días de resolución). */
+  valor: number | null
+}
+
+export interface DetalleKpi {
+  kpi: FlotaKpiConDetalle
+  ym: string
+  numerador: number
+  denominador: number
+  excluidos: number
+  filas: FilaDetalleKpi[]
+}
+
+const MES_MS_DIA = 86_400_000
+
+/** Primer día del mes siguiente, para acotar los rangos por fecha. */
+function finDeMes(ym: string): string {
+  const y = Number(ym.slice(0, 4))
+  const m = Number(ym.slice(5, 7))
+  const d = new Date(y, m, 1)
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-01`
+}
+
+/**
+ * Las filas detrás del número de un PI, para el mes pedido.
+ *
+ * 🚨 Rehace el mismo cálculo que `getFlotaKpiSeriesExtra` en vez de guardarlo:
+ * si los dos caminos divergen, el detalle deja de explicar la tarjeta y pasa a
+ * ser una segunda versión de la verdad. Por eso comparten los criterios
+ * (`DETECCION_VENTANA_DIAS`, `CATEGORIAS_POR_RUBRO`, `INICIO_TRAZABILIDAD`) y
+ * el numerador/denominador que devuelve tienen que dar el mismo porcentaje.
+ *
+ * Se llama on-demand al abrir la tarjeta, no en el `Promise.all` de la página:
+ * son tres consultas más y la pantalla ya carga 30 acciones.
+ */
+export async function getFlotaKpiDetalle(
+  kpi: FlotaKpiConDetalle,
+  ym: string,
+): Promise<{ data: DetalleKpi } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    if (!/^\d{4}-\d{2}$/.test(ym)) return { error: "Mes inválido" }
+    const desde = `${ym}-01`
+    const hasta = finDeMes(ym)
+
+    if (kpi === "checklist_deteccion") {
+      // Defectos desde 15 días antes del mes: una correctiva del día 3 puede
+      // estar anticipada por un defecto del mes anterior.
+      const d0 = new Date(`${desde}T00:00:00`)
+      d0.setDate(d0.getDate() - DETECCION_VENTANA_DIAS)
+      const inicioDefectos = `${d0.getFullYear()}-${pad2(d0.getMonth() + 1)}-${pad2(d0.getDate())}`
+
+      const [otRes, defRes, itemsRes] = await Promise.all([
+        supabase
+          .from("mantenimiento_realizados")
+          .select("numero_ot, dominio, fecha, rubro, observaciones")
+          .eq("tipo", "correctivo")
+          .neq("estado", "cancelado")
+          .gte("fecha", desde)
+          .lt("fecha", hasta)
+          .order("fecha", { ascending: true }),
+        supabase
+          .from("checklist_respuestas")
+          .select("item_id, cv:checklist_vehiculos!inner(fecha, dominio)")
+          .not("valor", "in", '("ok","bueno")')
+          .gte("cv.fecha", inicioDefectos)
+          .lt("cv.fecha", hasta),
+        supabase.from("checklist_items").select("id, nombre, categoria"),
+      ])
+      if (otRes.error) return { error: otRes.error.message }
+      if (defRes.error) return { error: defRes.error.message }
+      if (itemsRes.error) return { error: itemsRes.error.message }
+
+      const items = new Map(
+        ((itemsRes.data || []) as ItemChecklist[]).map((i) => [i.id, i]),
+      )
+      const porDominio = new Map<
+        string,
+        Array<{ fecha: string; nombre: string; categoria: string | null }>
+      >()
+      for (const r of (defRes.data || []) as unknown as Array<{
+        item_id: string | null
+        cv: { fecha: string; dominio: string } | null
+      }>) {
+        if (!r.cv) continue
+        const it = r.item_id ? items.get(r.item_id) : undefined
+        const arr = porDominio.get(r.cv.dominio) ?? []
+        arr.push({
+          fecha: r.cv.fecha,
+          nombre: it?.nombre ?? "defecto sin ítem",
+          categoria: it?.categoria ?? null,
+        })
+        porDominio.set(r.cv.dominio, arr)
+      }
+      for (const arr of porDominio.values()) arr.sort((a, b) => b.fecha.localeCompare(a.fecha))
+
+      const filas: FilaDetalleKpi[] = []
+      let numerador = 0
+      for (const ot of (otRes.data || []) as Array<{
+        numero_ot: number | null
+        dominio: string
+        fecha: string
+        rubro: string | null
+        observaciones: string | null
+      }>) {
+        const tOt = new Date(`${ot.fecha}T00:00:00`).getTime()
+        const admitidas = CATEGORIAS_POR_RUBRO[ot.rubro ?? "general"] ?? null
+        const match = (porDominio.get(ot.dominio) ?? []).find((d) => {
+          const t = new Date(`${d.fecha}T00:00:00`).getTime()
+          if (!(t <= tOt && tOt - t <= DETECCION_VENTANA_DIAS * MES_MS_DIA)) return false
+          return admitidas === null || admitidas.includes(d.categoria ?? "")
+        })
+        if (match) numerador++
+        filas.push({
+          titulo: ot.numero_ot ? `OT ${ot.numero_ot}` : "OT sin número",
+          subtitulo: `${ot.dominio}${ot.observaciones ? ` — ${ot.observaciones}` : ""}`,
+          fecha: ot.fecha,
+          cuenta: Boolean(match),
+          motivo: match
+            ? `Anticipada: "${match.nombre}" el ${match.fecha}`
+            : admitidas
+              ? `Sin defecto de ${admitidas.join("/")} en los ${DETECCION_VENTANA_DIAS} días previos`
+              : `Sin defecto de checklist en los ${DETECCION_VENTANA_DIAS} días previos`,
+          valor: null,
+        })
+      }
+      return {
+        data: { kpi, ym, numerador, denominador: filas.length, excluidos: 0, filas },
+      }
+    }
+
+    if (kpi === "checklist_resolucion") {
+      const { data: planes, error } = await supabase
+        .from("checklist_planes_accion")
+        .select("respuesta_id, descripcion, created_at, updated_at, resuelto_at")
+        .eq("estado", "resuelto")
+        .gte("updated_at", `${desde}T00:00:00`)
+      if (error) return { error: error.message }
+
+      // Mismo filtro de mes que la serie: cuenta el mes del CIERRE real.
+      const delMes = (planes || []).filter(
+        (p) => (p.resuelto_at ?? p.updated_at).slice(0, 7) === ym,
+      )
+      const ids = [...new Set(delMes.map((p) => p.respuesta_id).filter(Boolean))] as string[]
+      const ctx = new Map<
+        string,
+        { hora: string | null; fecha: string; dominio: string; item: string }
+      >()
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data, error: e2 } = await supabase
+          .from("checklist_respuestas")
+          .select(
+            "id, item:checklist_items(nombre), cv:checklist_vehiculos!inner(fecha, hora, dominio)",
+          )
+          .in("id", ids.slice(i, i + 200))
+        if (e2) return { error: e2.message }
+        for (const r of (data || []) as unknown as Array<{
+          id: string
+          item: { nombre: string } | null
+          cv: { fecha: string; hora: string | null; dominio: string } | null
+        }>) {
+          if (r.cv) {
+            ctx.set(r.id, {
+              hora: r.cv.hora,
+              fecha: r.cv.fecha,
+              dominio: r.cv.dominio,
+              item: r.item?.nombre ?? "—",
+            })
+          }
+        }
+      }
+
+      const filas: FilaDetalleKpi[] = []
+      let suma = 0
+      let n = 0
+      let excluidos = 0
+      for (const p of delMes) {
+        const c = p.respuesta_id ? ctx.get(p.respuesta_id) : undefined
+        const fin = p.resuelto_at ?? p.updated_at
+        const horas = horasEntre(c?.hora ?? null, fin)
+        if (horas == null) excluidos++
+        else {
+          suma += horas / 24
+          n++
+        }
+        filas.push({
+          titulo: c?.dominio ?? "—",
+          subtitulo: `${c?.item ?? "—"}${p.descripcion ? ` — ${p.descripcion}` : ""}`,
+          fecha: c?.fecha ?? fin.slice(0, 10),
+          cuenta: horas == null ? null : true,
+          motivo:
+            horas == null
+              ? "Sin hora de checklist: no hay T0 medible, queda excluido"
+              : `Observado ${c?.fecha} · cerrado ${fin.slice(0, 10)}`,
+          valor: horas == null ? null : horas / 24,
+        })
+      }
+      filas.sort((a, b) => (b.valor ?? -1) - (a.valor ?? -1))
+      return {
+        // Sin redondear: el panel divide numerador/denominador y tiene que dar
+        // exactamente el mismo número que la tarjeta.
+        data: { kpi, ym, numerador: suma, denominador: n, excluidos, filas },
+      }
+    }
+
+    // repuestos_trazabilidad
+    const { data, error } = await supabase
+      .from("mantenimiento_realizado_repuestos")
+      .select(
+        "descripcion, cantidad, repuesto_id, ot:mantenimiento_realizados!inner(numero_ot, dominio, fecha, estado, rubro)",
+      )
+      .neq("ot.estado", "cancelado")
+      .gte("ot.fecha", desde)
+      .lt("ot.fecha", hasta)
+    if (error) return { error: error.message }
+
+    const filas: FilaDetalleKpi[] = []
+    let numerador = 0
+    for (const r of (data || []) as unknown as Array<{
+      descripcion: string | null
+      cantidad: number | null
+      repuesto_id: string | null
+      ot: {
+        numero_ot: number | null
+        dominio: string
+        fecha: string
+        rubro: string | null
+      } | null
+    }>) {
+      // Mismos criterios que la serie: piso de fecha y fuera las cubiertas.
+      if (!r.ot || r.ot.fecha < INICIO_TRAZABILIDAD) continue
+      if (r.ot.rubro === RUBRO_SIN_TRAZABILIDAD) continue
+      const vinculado = Boolean(r.repuesto_id)
+      if (vinculado) numerador++
+      filas.push({
+        titulo: r.ot.numero_ot ? `OT ${r.ot.numero_ot}` : "OT sin número",
+        subtitulo: `${r.ot.dominio} — ${r.descripcion ?? "sin descripción"}`,
+        fecha: r.ot.fecha,
+        cuenta: vinculado,
+        motivo: vinculado
+          ? "Vinculado al ítem del pañol: descuenta stock solo"
+          : "Suelto: no descuenta stock (comprado contra la OT o cargado a mano)",
+        valor: null,
+      })
+    }
+    filas.sort((a, b) => (a.fecha ?? "").localeCompare(b.fecha ?? ""))
+    return { data: { kpi, ym, numerador, denominador: filas.length, excluidos: 0, filas } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

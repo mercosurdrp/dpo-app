@@ -4,7 +4,7 @@
 // tendencia de los últimos 3 meses y plan de acción por mes fuera de meta
 // (patrón TML/TI adaptado con discriminador de KPI).
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,9 +32,12 @@ import {
   createFlotaPlan,
   deleteFlotaPlan,
   deleteFlotaPlanItem,
+  getFlotaKpiDetalle,
   updateFlotaMeta,
   updateFlotaPlanItem,
+  type DetalleKpi,
   type FlotaKpi,
+  type FlotaKpiConDetalle,
   type FlotaKpiSnapshot,
   type FlotaMeta,
   type FlotaPlanConItems,
@@ -88,6 +91,162 @@ const fmtMoney = (v: number) =>
     currency: "ARS",
     maximumFractionDigits: 0,
   }).format(v)
+
+// ==================== Destino del click y panel de detalle ====================
+
+/**
+ * A dónde lleva el click de cada tarjeta.
+ *
+ * 🚨 La regla es una sola: el click tiene que terminar donde el número se
+ * puede AUDITAR, no en una pantalla parecida. Para casi todos los PI esa
+ * pantalla ya existe en otra solapa y lo único que faltaba era el atajo; para
+ * los tres que no la tienen (detección, resolución y trazabilidad) se abre el
+ * panel con las filas que forman el numerador y el denominador. Un porcentaje
+ * del que no se puede ver el detrás no se puede discutir en una reunión.
+ */
+interface DestinoKpi {
+  /** Solapa del módulo de mantenimiento. */
+  tab?: string
+  /** Ruta de otra pantalla (el módulo de combustible vive fuera). */
+  href?: string
+  /** Panel propio con las filas del cálculo. */
+  detalle?: FlotaKpiConDetalle
+  label: string
+}
+
+const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
+  disponibilidad: { tab: "seguimiento", label: "Ver día a día por unidad" },
+  utilizacion: { tab: "seguimiento", label: "Ver día a día por unidad" },
+  correctivo_dias_parado: { tab: "seguimiento", label: "Ver las paradas del mes" },
+  costo_total: { tab: "historial", label: "Ver las órdenes de trabajo" },
+  pct_preventivo: { tab: "historial", label: "Ver las órdenes de trabajo" },
+  cumplimiento_plan: { tab: "tablero", label: "Ver el plan tarea por unidad" },
+  services_vencidos: { tab: "tablero", label: "Ver el plan tarea por unidad" },
+  docs_conformidad: { tab: "tablero", label: "Ver la documentación por unidad" },
+  estandares_mandatorios: { tab: "estandares", label: "Ver la matriz de estándares" },
+  estandares_excelencia: { tab: "estandares", label: "Ver la matriz de estándares" },
+  inventario_exactitud: { tab: "repuestos", label: "Ver los conteos de stock" },
+  repuestos_stock_minimo: { tab: "repuestos", label: "Ver los conteos de stock" },
+  cil_tareas: { tab: "cil", label: "Ver las tareas CIL del mes" },
+  cil_defectos_anticipables: { tab: "analisis-items", label: "Ver los defectos por ítem" },
+  neumaticos_medicion: { tab: "neumaticos", label: "Ver las mediciones del mes" },
+  neumaticos_conformidad: { tab: "neumaticos", label: "Ver las mediciones del mes" },
+  neumaticos_desgaste: { tab: "neumaticos", label: "Ver el desgaste por km" },
+  combustible_kml: { href: "/vehiculos/combustible", label: "Ver el módulo de Combustible" },
+  co2_flota: { href: "/vehiculos/combustible", label: "Ver el módulo de Combustible" },
+  checklist_deteccion: {
+    detalle: "checklist_deteccion",
+    label: "Ver las OT correctivas del mes",
+  },
+  checklist_resolucion: {
+    detalle: "checklist_resolucion",
+    label: "Ver los planes resueltos del mes",
+  },
+  repuestos_trazabilidad: {
+    detalle: "repuestos_trazabilidad",
+    label: "Ver los repuestos cargados en OT",
+  },
+}
+
+/** Encabezado del panel: qué significan el numerador y el denominador. */
+const RESUMEN_DETALLE: Record<FlotaKpiConDetalle, (d: DetalleKpi) => string> = {
+  checklist_deteccion: (d) =>
+    `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "OT correctiva" : "OT correctivas"} venían anticipadas por un defecto de checklist`,
+  checklist_resolucion: (d) =>
+    `${d.denominador} ${d.denominador === 1 ? "plan resuelto" : "planes resueltos"}, ${(d.denominador > 0 ? d.numerador / d.denominador : 0).toFixed(1)} días promedio${d.excluidos > 0 ? ` · ${d.excluidos} sin tiempo medible` : ""}`,
+  repuestos_trazabilidad: (d) =>
+    `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "fila" : "filas"} de repuesto vinculan al ítem del pañol`,
+}
+
+function DetalleKpiDialog({
+  kpi,
+  label,
+  ym,
+  onClose,
+}: {
+  kpi: FlotaKpiConDetalle
+  label: string
+  ym: string
+  onClose: () => void
+}) {
+  const [data, setData] = useState<DetalleKpi | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // El diálogo se monta al abrirlo y se desmonta al cerrarlo (va con `key`),
+  // así que el efecto corre una sola vez y no hace falta limpiar el estado.
+  useEffect(() => {
+    let vivo = true
+    getFlotaKpiDetalle(kpi, ym).then((res) => {
+      if (!vivo) return
+      if ("error" in res) setError(res.error)
+      else setData(res.data)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [kpi, ym])
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{label}</DialogTitle>
+          <DialogDescription>
+            {fmtMesLargo(ym)}
+            {data ? ` · ${RESUMEN_DETALLE[kpi](data)}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+        {error ? (
+          <p className="text-sm text-destructive">{error}</p>
+        ) : !data ? (
+          <p className="text-sm text-muted-foreground">Cargando…</p>
+        ) : data.filas.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No hubo casos en el mes: el PI no tiene sobre qué calcularse.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border text-sm">
+            {data.filas.map((f, i) => (
+              <li key={i} className="flex items-start gap-3 py-2">
+                {/* El punto de color dice de una si la fila suma o no. */}
+                <span
+                  aria-hidden
+                  className={cn(
+                    "mt-1.5 size-2 shrink-0 rounded-full",
+                    f.cuenta === true
+                      ? "bg-emerald-500"
+                      : f.cuenta === false
+                        ? "bg-destructive"
+                        : "bg-muted-foreground/40"
+                  )}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-foreground">
+                    {f.titulo}
+                    {f.fecha && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        {f.fecha}
+                      </span>
+                    )}
+                    {f.valor != null && (
+                      <span className="ml-2 text-xs font-normal tabular-nums text-muted-foreground">
+                        {f.valor.toFixed(1)} d
+                      </span>
+                    )}
+                  </p>
+                  {f.subtitulo && (
+                    <p className="truncate text-xs text-muted-foreground">{f.subtitulo}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">{f.motivo}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 // ==================== Definición de KPIs ====================
 
@@ -272,7 +431,7 @@ const KPI_DEFS: KpiDef[] = [
     kpi: "repuestos_trazabilidad",
     label: "Trazabilidad de egresos",
     descripcion:
-      "Repuestos cargados en una OT que apuntan al ítem del pañol (y por lo tanto descuentan stock solos) ÷ repuestos cargados en OT del mes. El denominador incluye las piezas compradas contra la OT, que por diseño no vinculan: la meta es la proporción que la operación espera sacar del pañol, no 100 %. Arranca el 25/08/2026, que es cuando el vínculo existe",
+      "Repuestos cargados en una OT que apuntan al ítem del pañol (y por lo tanto descuentan stock solos) ÷ repuestos cargados en OT del mes. Las OT de rubro Neumáticos quedan afuera: la cubierta vive en su propio módulo y nunca sale del pañol. El denominador sí incluye las piezas compradas contra la OT, que por diseño no vinculan, así que la meta es la proporción que la operación espera sacar del pañol y no 100 %. Arranca el 25/08/2026, que es cuando el vínculo existe",
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
     dpo: "2.3",
@@ -415,6 +574,8 @@ interface Props {
   estandaresPctExcelencia: number | null
   puedeEditar: boolean
   esAdmin: boolean
+  /** Cambia de solapa dentro del módulo (lo provee `mantenimiento-client`). */
+  onNavegar?: (tab: string) => void
 }
 
 export function IndicadoresFlota({
@@ -435,6 +596,7 @@ export function IndicadoresFlota({
   estandaresPctExcelencia,
   puedeEditar,
   esAdmin,
+  onNavegar,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -447,6 +609,10 @@ export function IndicadoresFlota({
     meta: number | null
   } | null>(null)
   const [planVer, setPlanVer] = useState<FlotaPlanConItems | null>(null)
+  const [detalleVer, setDetalleVer] = useState<{
+    kpi: FlotaKpiConDetalle
+    label: string
+  } | null>(null)
 
   const metaBy = useMemo(() => new Map(metas.map((m) => [m.kpi, m])), [metas])
   const planBy = useMemo(
@@ -618,6 +784,20 @@ export function IndicadoresFlota({
   const valorActual = (def: KpiDef): number | null =>
     series.get(def.kpi)?.find((p) => p.ym === mesActual)?.valor ?? null
 
+  /**
+   * Acción del click de una tarjeta. Devuelve `null` cuando el PI no tiene a
+   * dónde llevar: sin destino la tarjeta NO se hace clickeable, para no
+   * prometer un detalle que no existe.
+   */
+  const abrirDe = (def: KpiDef): (() => void) | undefined => {
+    const d = DESTINO_KPI[def.kpi]
+    if (!d) return undefined
+    if (d.detalle) return () => setDetalleVer({ kpi: d.detalle!, label: def.label })
+    if (d.href) return () => router.push(d.href!)
+    if (d.tab && onNavegar) return () => onNavegar(d.tab!)
+    return undefined
+  }
+
   const planesOrdenados = useMemo(
     () =>
       [...planes].sort((a, b) =>
@@ -653,6 +833,7 @@ export function IndicadoresFlota({
             onMetaSaved={refresh}
             onCrearPlan={(ym, valor, meta) => setPlanNuevo({ def, ym, valor, meta })}
             onVerPlan={setPlanVer}
+            onAbrir={abrirDe(def)}
           />
         ))}
       </div>
@@ -744,6 +925,16 @@ export function IndicadoresFlota({
           onChanged={refresh}
         />
       )}
+
+      {detalleVer && (
+        <DetalleKpiDialog
+          key={detalleVer.kpi}
+          kpi={detalleVer.kpi}
+          label={detalleVer.label}
+          ym={mesActual}
+          onClose={() => setDetalleVer(null)}
+        />
+      )}
     </div>
   )
 }
@@ -829,6 +1020,7 @@ function KpiIndicadorCard({
   onMetaSaved,
   onCrearPlan,
   onVerPlan,
+  onAbrir,
 }: {
   def: KpiDef
   meta: FlotaMeta | null
@@ -839,6 +1031,8 @@ function KpiIndicadorCard({
   onMetaSaved: () => void
   onCrearPlan: (ym: string, valor: number | null, meta: number | null) => void
   onVerPlan: (p: FlotaPlanConItems) => void
+  /** Click de la tarjeta; `undefined` = no hay a dónde ir y no se hace clickeable. */
+  onAbrir?: () => void
 }) {
   const [editMeta, setEditMeta] = useState(false)
 
@@ -876,6 +1070,12 @@ function KpiIndicadorCard({
       estado={estado}
       delta={delta}
       mejora={mejora ?? undefined}
+      onClick={onAbrir}
+      sub={
+        onAbrir ? (
+          <span className="text-primary">{DESTINO_KPI[def.kpi]?.label} →</span>
+        ) : undefined
+      }
       valor={
         <>
           {valor == null ? "—" : def.fmt(valor)}
@@ -897,7 +1097,12 @@ function KpiIndicadorCard({
         </>
       }
     >
-      <div className="space-y-3">
+      {/* 🚨 Todo lo de acá abajo es interactivo (editor de meta, planes por
+          mes) y vive DENTRO de una tarjeta clickeable: sin frenar la
+          propagación, tocar el lapicito de la meta también disparaba la
+          navegación y te sacaba de la solapa. El click de la tarjeta queda en
+          el título y el número, que es donde se mira. */}
+      <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
         {/* 🚨 Por qué este KPI no tiene semáforo: sin decirlo, un indicador gris
             se lee como "no hay dato" y acá el dato está — lo que falta es la
             carga que lo haría representativo. */}

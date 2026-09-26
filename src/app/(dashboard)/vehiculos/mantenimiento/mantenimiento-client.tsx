@@ -824,6 +824,7 @@ export function MantenimientoClient({
             planes={flotaPlanes}
             kpiSnapshots={kpiSnapshots}
             extraSeries={kpiExtraSeries}
+            onNavegar={navegar}
             estandaresPct={estandares.pct}
             estandaresPctMandatorio={estandares.pctMandatorio}
             estandaresPctExcelencia={estandares.pctExcelencia}
