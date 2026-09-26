@@ -112,6 +112,15 @@ interface DestinoKpi {
   /** Panel propio con las filas del cálculo. */
   detalle?: FlotaKpiConDetalle
   label: string
+  /**
+   * Texto del botón cuando el mes en curso NO tiene valor.
+   *
+   * 🚨 Un "—" se lee como "la app no anda". Los dos PI de repuestos salen del
+   * conteo FÍSICO del mes, así que sin conteo no hay número — y eso no es una
+   * falla del tablero, es una tarea sin hacer. El botón lo dice y lleva a
+   * hacerla.
+   */
+  labelSinDato?: string
 }
 
 const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
@@ -125,8 +134,16 @@ const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
   docs_conformidad: { tab: "tablero", label: "Ver la documentación por unidad" },
   estandares_mandatorios: { tab: "estandares", label: "Ver la matriz de estándares" },
   estandares_excelencia: { tab: "estandares", label: "Ver la matriz de estándares" },
-  inventario_exactitud: { tab: "repuestos", label: "Ver los conteos de stock" },
-  repuestos_stock_minimo: { tab: "repuestos", label: "Ver los conteos de stock" },
+  inventario_exactitud: {
+    tab: "repuestos",
+    label: "Ver los conteos de stock",
+    labelSinDato: "Sin conteo este mes",
+  },
+  repuestos_stock_minimo: {
+    tab: "repuestos",
+    label: "Ver los conteos de stock",
+    labelSinDato: "Sin conteo este mes",
+  },
   cil_tareas: { tab: "cil", label: "Ver las tareas CIL del mes" },
   cil_defectos_anticipables: { tab: "analisis-items", label: "Ver los defectos por ítem" },
   neumaticos_medicion: { tab: "neumaticos", label: "Ver las mediciones del mes" },
@@ -1063,6 +1080,11 @@ function KpiIndicadorCard({
   // Mejora/empeora según el sentido de la meta (<= : bajar es mejorar).
   const mejora = delta == null ? null : meta?.comparador === "<=" ? delta <= 0 : delta >= 0
 
+  // El botón avisa cuando el mes no tiene número por una tarea sin hacer.
+  const destino = DESTINO_KPI[def.kpi]
+  const sinDato = valor == null && destino?.labelSinDato != null
+  const textoBoton = sinDato ? destino!.labelSinDato : destino?.label
+
   return (
     <KpiCard
       label={def.label}
@@ -1101,9 +1123,14 @@ function KpiIndicadorCard({
           <button
             type="button"
             onClick={onAbrir}
-            className="-mx-1 flex w-[calc(100%+0.5rem)] items-center justify-between gap-2 rounded-md px-1 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className={cn(
+              "-mx-1 flex w-[calc(100%+0.5rem)] items-center justify-between gap-2 rounded-md px-1 py-1 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              sinDato
+                ? "text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
+                : "text-primary hover:bg-primary/5"
+            )}
           >
-            <span>{DESTINO_KPI[def.kpi]?.label}</span>
+            <span>{textoBoton}</span>
             <ArrowRight className="size-3.5 shrink-0" aria-hidden />
           </button>
         )}
