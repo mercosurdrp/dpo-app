@@ -204,10 +204,10 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
     objeto:
       "Acuerdo de nivel de servicio entre Almacén y el equipo de Acarreo / Abastecimiento para la recepción de la mercadería. Almacén se compromete a recibir y descargar los camiones de abastecimiento dentro de una ventana horaria y un tiempo de descarga pactados, de modo de asegurar la disponibilidad de stock sin demorar al transporte.",
     nivelServicio: [
-      "Ventana de recepción: los camiones de Acarreo / Abastecimiento se reciben de 07:00 a 17:00 hs.",
+      "Ventana de recepción: los camiones de Acarreo / Abastecimiento se reciben de 08:00 a 16:00 hs.",
       "Tiempo de descarga: Almacén se compromete a descargar cada camión dentro de las 3 horas posteriores a su arribo.",
-      "El compromiso rige desde las 08:00 hs: un camión que arriba antes de esa hora se mide igual, pero el reloj de las 3 hs empieza a correr a las 08:00 (la espera previa a la apertura de la ventana no se computa como demora).",
-      "Los arribos a partir de las 16:00 hs se reciben pero no se computan en el indicador.",
+      "Un camión que arriba antes de las 08:00 hs espera a la apertura de la ventana: esa espera es responsabilidad del transporte y no se computa como demora de Almacén; el reloj empieza a correr a las 08:00.",
+      "Los arribos a partir de las 16:00 hs quedan fuera de la ventana y no se computan en el indicador.",
       "Objetivo de cumplimiento mensual: ≥ 95 % de las recepciones medidas.",
     ],
     medicion: [
