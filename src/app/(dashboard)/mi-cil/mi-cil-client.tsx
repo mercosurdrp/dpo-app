@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
+  CalendarClock,
   Check,
   CheckCircle2,
   CircleAlert,
@@ -11,8 +12,10 @@ import {
   X,
 } from "lucide-react"
 import { createMiTareaCil, type MiCilData } from "@/actions/mi-cil"
+import type { MiProgramacionCil } from "@/actions/cil-programacion"
 import { FotoInput } from "@/components/foto/foto-input"
 import { TAREAS_CIL, labelTareaCil } from "@/lib/flota/cil-tareas"
+import { fmtDiaConNombre } from "@/lib/flota/cil-programacion"
 import { cn } from "@/lib/utils"
 
 const TIPO_LABEL: Record<string, string> = {
@@ -22,7 +25,14 @@ const TIPO_LABEL: Record<string, string> = {
   acoplado: "Acoplado",
 }
 
-export function MiCilClient({ data }: { data: MiCilData }) {
+export function MiCilClient({
+  data,
+  programacion,
+}: {
+  data: MiCilData
+  /** Los días que le tocan a las unidades de este chofer. */
+  programacion: MiProgramacionCil | null
+}) {
   const router = useRouter()
   const [pendiente, iniciar] = useTransition()
   const [dominio, setDominio] = useState("")
@@ -95,6 +105,12 @@ export function MiCilClient({ data }: { data: MiCilData }) {
           unidad. Si hiciste más de una, van todas juntas en una sola carga.
         </p>
       </header>
+
+      {/* Lo primero: ¿me toca hoy? Arriba de todo porque es la única parte de la
+          pantalla que le dice al chofer qué tiene que hacer HOY. */}
+      {programacion && programacion.unidades.length > 0 && (
+        <MisDiasCil programacion={programacion} />
+      )}
 
       <div className="rounded-xl border bg-card p-4">
         <div className="flex items-baseline justify-between">
@@ -359,6 +375,97 @@ export function MiCilClient({ data }: { data: MiCilData }) {
             ))}
           </ul>
         </section>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Los días sorteados de las unidades de este chofer.
+ *
+ * 🚨 Sólo aparece si la persona logueada es la que viene cargando los checklists
+ * de esa unidad (ver `lib/flota/cil-choferes`): el que no tiene unidad propia no
+ * necesita un calendario, y un cartel con los días de otro sería ruido.
+ */
+function MisDiasCil({ programacion }: { programacion: MiProgramacionCil }) {
+  const hoyToca = programacion.unidades.filter((u) => u.esHoy)
+
+  if (hoyToca.length > 0) {
+    return (
+      <div className="rounded-xl border-2 border-sky-400 bg-sky-50 p-4 dark:border-sky-700 dark:bg-sky-950/50">
+        <p className="flex items-center gap-2 text-base font-bold text-sky-900 dark:text-sky-200">
+          <CalendarClock className="size-5 shrink-0" />
+          Hoy te toca el CIL
+        </p>
+        <ul className="mt-2 space-y-1">
+          {hoyToca.map((u) => (
+            <li key={u.dominio} className="text-sm text-sky-900 dark:text-sky-200">
+              <span className="font-semibold">
+                {u.numero ? `${u.numero} · ` : ""}
+                {u.dominio}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-xs text-sky-800 dark:text-sky-300">
+          Cargalo acá abajo con la foto. Si hoy no se puede, tenés dos días de margen
+          antes de que quede vencido.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
+        Tus días de CIL de este mes
+      </p>
+      <ul className="mt-2 space-y-2">
+        {programacion.unidades.map((u) => (
+          <li key={u.dominio} className="text-sm">
+            <span className="font-medium text-foreground">
+              {u.numero ? `${u.numero} · ` : ""}
+              {u.dominio}
+            </span>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {u.dias.map((d) => (
+                <span
+                  key={d.fecha}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium",
+                    d.estado === "hecha" || d.estado === "fuera_de_fecha"
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                      : d.estado === "vencida"
+                        ? "border-red-300 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
+                        : "text-muted-foreground",
+                  )}
+                >
+                  {d.estado === "hecha" || d.estado === "fuera_de_fecha" ? (
+                    <Check className="size-3" strokeWidth={3} />
+                  ) : d.estado === "vencida" ? (
+                    <X className="size-3" strokeWidth={3} />
+                  ) : null}
+                  {fmtDiaConNombre(d.fecha)}
+                  {d.estado === "vencida" && " · vencido"}
+                  {d.estado === "pendiente" && " · te falta"}
+                </span>
+              ))}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {/* La próxima fecha aunque caiga el mes que viene: a fin de mes la lista de
+          arriba está toda cerrada y "no tengo nada" se lee como "ya está". */}
+      {programacion.unidades.some((u) => u.proxima) && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Próximo:{" "}
+          {programacion.unidades
+            .filter((u) => u.proxima)
+            .map((u) => `${u.dominio} el ${fmtDiaConNombre(u.proxima as string)}`)
+            .join(" · ")}
+          .
+        </p>
       )}
     </div>
   )

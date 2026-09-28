@@ -55,6 +55,7 @@ import {
 import { DpoPuntoBadge, DpoSeccionCinta } from "./_components/dpo-badge"
 import { ScrollX } from "./_components/scroll-x"
 import { CoberturaCil } from "./cobertura-cil"
+import { ProgramacionCil } from "./programacion-cil"
 import { ArticulosLimpiezaSection } from "./articulos-limpieza"
 import {
   createTareaCil,
@@ -105,6 +106,11 @@ export function Cil({ tareasCil, dominiosFlota, puedeEditar }: Props) {
 
       {/* ===== Cobertura del CIL: qué unidad está al día y cuál falta (DPO 4.1) ===== */}
       <CoberturaCil mesActual={mesActualArgentina()} />
+
+      {/* ===== Programación: los 2 días del mes que le tocan a cada camión ===== */}
+      {/* Va después de la cobertura y antes del detalle: la cobertura dice CÓMO
+          viene el mes y esto dice QUÉ hay que hacer hoy. */}
+      <ProgramacionCil mesActual={mesActualArgentina()} />
 
       {/* ===== Tareas CIL / ATO (DPO 4.1) ===== */}
       <TareasCilSection

@@ -67,6 +67,10 @@
       "schedule": "30 23 * * *"
     },
     {
+      "path": "/api/vehiculos/cil-alertas",
+      "schedule": "0 11 * * *"
+    },
+    {
       "path": "/api/indicadores/quiebres-stock/cron-foto",
       "schedule": "30 9 * * *"
     },
