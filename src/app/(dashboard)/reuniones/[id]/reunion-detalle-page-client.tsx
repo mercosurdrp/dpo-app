@@ -72,6 +72,7 @@ import {
   SeccionSla,
   SLA_CODIGOS_REUNION_OPERATIVA,
   SLA_CODIGOS_REUNION_VENTAS_LOGISTICA,
+  SLA_CODIGOS_REUNION_WAREHOUSE,
 } from "@/components/reuniones/seccion-sla"
 import { TlpDetalleDiaDialog } from "@/components/reuniones/tlp-detalle-dia-dialog"
 import { WnpDetalleDiaDialog } from "@/components/reuniones/wnp-detalle-dia-dialog"
@@ -2419,7 +2420,7 @@ export function ReunionDetallePageClient({
 
       {/* ETAPA 4: CUMPLIMIENTO DE SLA — los 5 SLA operativos acordados.
           Solo en la reunión de Logística (Ventas-Logística ya tiene su propia
-          sección de SLA sin filtrar; Warehouse y Matinal no la llevan). */}
+          sección de SLA sin filtrar; Matinal no la lleva). */}
       {detalle.tipo === "logistica" && (
         <SeccionSla
           fechaReunion={detalle.fecha}
@@ -2427,6 +2428,22 @@ export function ReunionDetallePageClient({
           reunionTipo={detalle.tipo}
           titulo="Etapa 4 — Cumplimiento de SLA"
           codigos={SLA_CODIGOS_REUNION_OPERATIVA}
+          actividades={actividadesSla}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
+      {/* Warehouse revisa sólo los SLA que ejecuta el almacén: carga de los
+          camiones de distribución y descarga de los acarreos. */}
+      {!IS_MISIONES && detalle.tipo === "warehouse" && (
+        <SeccionSla
+          fechaReunion={detalle.fecha}
+          reunionId={detalle.id}
+          reunionTipo={detalle.tipo}
+          titulo="SLA de carga y descarga"
+          codigos={SLA_CODIGOS_REUNION_WAREHOUSE}
           actividades={actividadesSla}
           responsables={responsables}
           puedeEditar={puedeEditar}

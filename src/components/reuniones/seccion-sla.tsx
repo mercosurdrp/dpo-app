@@ -57,6 +57,11 @@ export const SLA_CODIGOS_REUNION_VENTAS_LOGISTICA = [
   "ent_rmd",
 ]
 
+// SLA que se revisan en la reunión de Warehouse (pedido del 28/09/2026): los
+// dos que ejecuta el almacén — carga de los camiones de distribución y
+// descarga de los acarreos (puntos DPO 5.2/5.3 y 6.2/6.3).
+export const SLA_CODIGOS_REUNION_WAREHOUSE = ["alm_carga", "alm_recepcion"]
+
 interface ResponsableOpt {
   id: string
   nombre: string
