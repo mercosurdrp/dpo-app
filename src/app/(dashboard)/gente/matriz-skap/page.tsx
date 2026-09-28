@@ -1,4 +1,5 @@
 import { getMatrizRol, getAcciones, puedeEditarRol } from "@/actions/skap-habilidades"
+import { getPlanPac, sincronizarConPac } from "@/actions/skap-pac"
 import { ROLES_SKAP } from "@/lib/skap/roles"
 import type { SkapRol } from "@/types/database"
 import { MatrizHabilidadesClient } from "./matriz-habilidades-client"
@@ -13,10 +14,14 @@ export default async function MatrizSkapHabilidadesPage({
   const params = await searchParams
   const rol = (ROLES_VALIDOS.includes(params.rol as SkapRol) ? params.rol : "chofer") as SkapRol
 
-  const [matriz, acciones, canEdit] = await Promise.all([
+  // Primero se trae del PAC lo que ya se dictó/aprobó: las acciones quedan cumplidas solas.
+  await sincronizarConPac(rol).catch(() => 0)
+
+  const [matriz, acciones, canEdit, planPac] = await Promise.all([
     getMatrizRol(rol),
     getAcciones(rol),
     puedeEditarRol(rol),
+    getPlanPac(rol),
   ])
 
   if ("error" in matriz) {
@@ -34,6 +39,7 @@ export default async function MatrizSkapHabilidadesPage({
       acciones={"error" in acciones ? [] : acciones.data}
       canEdit={canEdit}
       roles={ROLES_SKAP}
+      planPac={"error" in planPac ? null : planPac.data}
     />
   )
 }

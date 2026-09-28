@@ -4596,6 +4596,7 @@ export type SkapRol =
   | "autoelevadorista"
   | "mantenimiento"
   | "administrativo"
+  | "temporal" // sólo existe en Misiones; acá no hay ROLES_SKAP con este rol
 
 export type SkapCriticidad = "A" | "B" | "C"
 
@@ -4616,6 +4617,8 @@ export interface SkapHabilidad {
   estandar: number
   orden: number
   activo: boolean
+  /** El plan de formación de la habilidad (lo arma el store desde skap_plan_formacion). */
+  plan?: Omit<SkapPlanFormacion, "id" | "habilidad_id"> | null
 }
 
 export interface SkapPlanFormacion {

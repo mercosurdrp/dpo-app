@@ -1,11 +1,13 @@
 "use client"
 
-import { useState, useTransition, useMemo } from "react"
+import { useState, useTransition, useMemo, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { AlertTriangle, GraduationCap, ShieldCheck, Users, Wand2, BookOpen, ListChecks } from "lucide-react"
+import { AlertTriangle, GraduationCap, ShieldCheck, Users, Wand2, BookOpen, ListChecks, UserPlus, Settings2, Trash2, ArrowUp, ArrowDown, Plus, X, Award } from "lucide-react"
 import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
-import { COLOR_GAP, ESCALA_SKAP, LABEL_GAP } from "@/lib/skap/gap"
+import { PlanPacTab } from "./plan-pac-tab"
+import type { PacPlanRol } from "@/actions/skap-pac"
+import { COLOR_GAP, COLOR_NIVEL_4, ESCALA_SKAP, LABEL_GAP, colorCelda } from "@/lib/skap/gap"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -26,7 +28,14 @@ import {
   actualizarAccion,
   getPlanFormacion,
   cargarNotaBase,
+  getEmpleadosDisponibles,
+  agregarPersona,
+  quitarPersona,
+  borrarUltimaNota,
+  guardarHabilidades,
   type SkapAccionDetalle,
+  type SkapEmpleadoDisponible,
+  type SkapHabilidadEdicion,
 } from "@/actions/skap-habilidades"
 import type {
   SkapMatrizRol,
@@ -37,9 +46,18 @@ import type {
   SkapEstadoAccion,
   SkapHabilidad,
   SkapCelda,
+  SkapCriticidad,
 } from "@/types/database"
 
 const ESTADOS_ACCION: SkapEstadoAccion[] = ["pendiente", "programada", "realizada", "cerrada"]
+
+/** «realizada» se muestra como cumplida: es la que ya pasó por la capacitación del PAC. */
+const LABEL_ESTADO_ACCION: Record<SkapEstadoAccion, string> = {
+  pendiente: "pendiente",
+  programada: "programada",
+  realizada: "cumplida",
+  cerrada: "cerrada (reevaluada)",
+}
 
 /** Identidad visual por bloque (se cicla si hubiera más de 5). */
 const BLOQUE_STYLE = [
@@ -74,15 +92,17 @@ interface Props {
   acciones: SkapAccionDetalle[]
   canEdit: boolean
   roles: { rol: SkapRol; label: string; sector: string }[]
+  planPac: PacPlanRol | null
 }
 
-export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Props) {
+export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles, planPac }: Props) {
   const router = useRouter()
   const refrescarConScroll = useRefrescarConScroll()
   const [pending, startTransition] = useTransition()
-  const [vista, setVista] = useState<"matriz" | "acciones">("matriz")
+  const [vista, setVista] = useState<"matriz" | "pac" | "acciones">("matriz")
   const [evaluando, setEvaluando] = useState<SkapPersonaRow | null>(null)
   const [celdaEdit, setCeldaEdit] = useState<{ persona: SkapPersonaRow; habilidad: SkapHabilidad; celda: SkapCelda } | null>(null)
+  const [editor, setEditor] = useState<"personas" | "habilidades" | null>(null)
   const [planHabilidad, setPlanHabilidad] = useState<{ nombre: string; plan: SkapPlanFormacion | null } | null>(null)
 
   const { habilidades, personas, kpis } = matriz
@@ -99,12 +119,11 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
     const order: string[] = []
     for (const h of habilidades) if (!order.includes(h.bloque)) order.push(h.bloque)
     const idx = new Map(order.map((b, i) => [b, i]))
-    let prev: string | null = null
-    return habilidades.map((h) => {
-      const first = h.bloque !== prev
-      prev = h.bloque
-      return { h, first, blockIdx: idx.get(h.bloque)! }
-    })
+    return habilidades.map((h, i) => ({
+      h,
+      first: i === 0 || habilidades[i - 1].bloque !== h.bloque,
+      blockIdx: idx.get(h.bloque)!,
+    }))
   }, [habilidades])
 
   function cambiarRol(rol: SkapRol | null) {
@@ -113,7 +132,7 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
 
   function abrirPlan(habilidadId: string, nombre: string) {
     startTransition(async () => {
-      const res = await getPlanFormacion(habilidadId)
+      const res = await getPlanFormacion(matriz.rol, habilidadId)
       setPlanHabilidad({ nombre, plan: "error" in res ? null : res.data })
     })
   }
@@ -153,7 +172,11 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
             Matriz de habilidades · Pilar Gente 4.4 — habilidad, estándar requerido y plan de formación
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={() => router.push("/gente/matriz-skap/talento")}>
+            <Award className="mr-1 size-4" />
+            Talento
+          </Button>
           <Select value={matriz.rol} onValueChange={cambiarRol}>
             <SelectTrigger className="w-56">
               <SelectValue />
@@ -168,6 +191,14 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
           </Select>
           {canEdit && (
             <>
+              <Button variant="outline" onClick={() => setEditor("personas")} disabled={pending}>
+                <UserPlus className="mr-1 size-4" />
+                Personas
+              </Button>
+              <Button variant="outline" onClick={() => setEditor("habilidades")} disabled={pending}>
+                <Settings2 className="mr-1 size-4" />
+                Habilidades
+              </Button>
               <Button variant="outline" onClick={notaBase} disabled={pending}>
                 <ListChecks className="mr-1 size-4" />
                 Cargar nota base
@@ -210,7 +241,7 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
       </div>
 
       <div className="flex gap-2 border-b">
-        {(["matriz", "acciones"] as const).map((v) => (
+        {(["matriz", "pac", "acciones"] as const).map((v) => (
           <button
             key={v}
             onClick={() => setVista(v)}
@@ -218,7 +249,11 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
               vista === v ? "border-b-2 border-slate-900 text-slate-900" : "text-slate-500"
             }`}
           >
-            {v === "matriz" ? "Matriz" : `Plan de formación (${acciones.filter((a) => a.estado !== "cerrada").length})`}
+            {v === "matriz"
+              ? "Matriz"
+              : v === "pac"
+                ? "Plan de acción · PAC"
+                : `Plan de formación (${acciones.filter((a) => a.estado === "pendiente" || a.estado === "programada").length})`}
           </button>
         ))}
       </div>
@@ -355,7 +390,7 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
                                   title={`${LABEL_GAP[c.estado]} · estándar ${c.estandar}${
                                     c.fecha_evaluacion ? ` · evaluado ${c.fecha_evaluacion}` : ""
                                   }${canEdit ? " — clic para cambiar la nota" : ""}`}
-                                  className={`mx-auto flex size-8 items-center justify-center rounded-md text-[13px] font-bold shadow-sm transition enabled:cursor-pointer enabled:hover:scale-110 enabled:hover:ring-2 enabled:hover:ring-slate-400 ${COLOR_GAP[c.estado]}`}
+                                  className={`mx-auto flex size-8 items-center justify-center rounded-md text-[13px] font-bold shadow-sm transition enabled:cursor-pointer enabled:hover:scale-110 enabled:hover:ring-2 enabled:hover:ring-slate-400 ${colorCelda(c)}`}
                                 >
                                   {c.estado === "sin_evaluar" ? "" : c.estado === "no_aplica" ? "NA" : c.nivel}
                                 </button>
@@ -381,11 +416,17 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
                 {LABEL_GAP[e]}
               </span>
             ))}
+            <span className="flex items-center gap-1">
+              <span className={`size-3 rounded ${COLOR_NIVEL_4}`} />
+              Nivel 4 · puede instruir
+            </span>
             <span className="ml-auto">
               Niveles: 0 no conoce · 1 con supervisión · 2 sin teoría · 3 autónomo · 4 puede instruir
             </span>
           </div>
         </>
+      ) : vista === "pac" ? (
+        <PlanPacTab rol={matriz.rol} plan={planPac} canEdit={canEdit} />
       ) : (
         <AccionesTab acciones={acciones} rol={matriz.rol} canEdit={canEdit} />
       )}
@@ -397,6 +438,29 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
           onClose={() => setEvaluando(null)}
           onSaved={() => {
             setEvaluando(null)
+            refrescarConScroll()
+          }}
+        />
+      )}
+
+      {editor === "personas" && (
+        <DialogPersonas
+          rol={matriz.rol}
+          rolLabel={rolActual.label}
+          personas={personas}
+          onClose={() => setEditor(null)}
+          onChanged={refrescarConScroll}
+        />
+      )}
+
+      {editor === "habilidades" && (
+        <DialogHabilidades
+          rol={matriz.rol}
+          rolLabel={rolActual.label}
+          habilidades={habilidades}
+          onClose={() => setEditor(null)}
+          onSaved={() => {
+            setEditor(null)
             refrescarConScroll()
           }}
         />
@@ -523,6 +587,16 @@ function DialogNota({
     })
   }
 
+  function borrar() {
+    if (!confirm("¿Borrar la última nota cargada en esta celda? Vuelve a verse la anterior (o queda sin evaluar).")) return
+    startTransition(async () => {
+      const res = await borrarUltimaNota(rol, persona.empleado_id, habilidad.id)
+      if ("error" in res) { toast.error(res.error); return }
+      toast.success("Nota borrada")
+      onSaved()
+    })
+  }
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
@@ -547,7 +621,9 @@ function DialogNota({
               const color =
                 v === "NA"
                   ? "bg-slate-200 text-slate-600 hover:bg-slate-300"
-                  : gap! >= 0
+                  : v === "4" && gap! >= 0
+                    ? "bg-sky-400 text-white hover:bg-sky-500"
+                    : gap! >= 0
                     ? "bg-emerald-500 text-white hover:bg-emerald-600"
                     : gap === -1
                       ? "bg-amber-400 text-amber-950 hover:bg-amber-500"
@@ -575,9 +651,17 @@ function DialogNota({
               </li>
             ))}
           </ul>
-          <p className="text-xs text-slate-400">
-            Se guarda al hacer clic, con fecha de hoy. El color muestra cómo queda contra el estándar.
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-slate-400">
+              Se guarda al hacer clic, con fecha de hoy. El color muestra cómo queda contra el estándar.
+            </p>
+            {celda.estado !== "sin_evaluar" && (
+              <Button variant="ghost" size="sm" onClick={borrar} disabled={pending} className="shrink-0 text-red-600">
+                <Trash2 className="mr-1 size-4" />
+                Borrar última nota
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -715,8 +799,8 @@ function AccionesTab({
     return (
       <Card>
         <CardContent className="py-8 text-center text-sm text-slate-500">
-          No hay acciones de formación. Usá “Abrir acciones de los gaps” para generarlas a partir de las
-          brechas de la matriz.
+          No hay acciones de formación. Usá «Crear planes de acción de los gaps» o inscribí a la gente desde la
+          pestaña «Plan de acción · PAC».
         </CardContent>
       </Card>
     )
@@ -734,6 +818,7 @@ function AccionesTab({
                 <th className="p-2 text-center">Nivel</th>
                 <th className="p-2 text-center">Estándar</th>
                 <th className="p-2">Estado</th>
+                <th className="p-2">Capacitación (PAC)</th>
                 <th className="p-2">Programada</th>
                 <th className="p-2">Responsable</th>
                 {canEdit && <th className="p-2" />}
@@ -758,7 +843,22 @@ function AccionesTab({
                   <td className="p-2 text-center font-semibold">{a.nivel_origen ?? "—"}</td>
                   <td className="p-2 text-center text-slate-500">{a.estandar}</td>
                   <td className="p-2">
-                    <Badge variant={a.estado === "cerrada" ? "secondary" : "outline"}>{a.estado}</Badge>
+                    <Badge
+                      variant={a.estado === "cerrada" ? "secondary" : "outline"}
+                      className={a.estado === "realizada" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : ""}
+                    >
+                      {LABEL_ESTADO_ACCION[a.estado]}
+                      {a.estado === "realizada" && a.fecha_realizada ? ` ${a.fecha_realizada.slice(8, 10)}/${a.fecha_realizada.slice(5, 7)}` : ""}
+                    </Badge>
+                  </td>
+                  <td className="p-2 text-xs">
+                    {a.capacitacion ? (
+                      <a href={`/capacitaciones/${a.capacitacion.id}`} className="text-slate-700 hover:underline">
+                        {a.capacitacion.titulo}
+                      </a>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="p-2 text-slate-500">{a.fecha_programada ?? "—"}</td>
                   <td className="p-2 text-slate-500">{a.responsable ?? "—"}</td>
@@ -815,7 +915,7 @@ function AccionesTab({
                 >
                   {ESTADOS_ACCION.map((e) => (
                     <option key={e} value={e}>
-                      {e}
+                      {LABEL_ESTADO_ACCION[e]}
                     </option>
                   ))}
                 </select>
@@ -855,5 +955,284 @@ function AccionesTab({
         </Dialog>
       )}
     </>
+  )
+}
+
+/** Agregar y sacar personas del rol. Sacar NO borra sus notas. */
+function DialogPersonas({
+  rol,
+  rolLabel,
+  personas,
+  onClose,
+  onChanged,
+}: {
+  rol: SkapRol
+  rolLabel: string
+  personas: SkapPersonaRow[]
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [pending, startTransition] = useTransition()
+  const [disponibles, setDisponibles] = useState<SkapEmpleadoDisponible[] | null>(null)
+  const [buscar, setBuscar] = useState("")
+  // Se incrementa al sacar a alguien: vuelve a estar disponible para agregar.
+  const [recarga, setRecarga] = useState(0)
+
+  useEffect(() => {
+    let vigente = true
+    getEmpleadosDisponibles(rol).then((res) => {
+      if (!vigente) return
+      if ("error" in res) toast.error(res.error)
+      else setDisponibles(res.data)
+    })
+    return () => {
+      vigente = false
+    }
+  }, [rol, recarga])
+
+  function agregar(e: SkapEmpleadoDisponible) {
+    startTransition(async () => {
+      const res = await agregarPersona(rol, e.id)
+      if ("error" in res) { toast.error(res.error); return }
+      toast.success(`${e.nombre} agregado a ${rolLabel}`)
+      setDisponibles((d) => (d ?? []).filter((x) => x.id !== e.id))
+      onChanged()
+    })
+  }
+
+  function quitar(p: SkapPersonaRow) {
+    if (!confirm(`¿Sacar a ${p.nombre} de la matriz de ${rolLabel}? Sus notas quedan guardadas y vuelven si se lo agrega de nuevo.`)) return
+    startTransition(async () => {
+      const res = await quitarPersona(rol, p.empleado_id)
+      if ("error" in res) { toast.error(res.error); return }
+      toast.success(`${p.nombre} salió de ${rolLabel}`)
+      setRecarga((n) => n + 1)
+      onChanged()
+    })
+  }
+
+  const q = buscar.trim().toLowerCase()
+  const filtrados = q
+    ? (disponibles ?? []).filter((e) => e.nombre.toLowerCase().includes(q) || String(e.legajo).includes(q))
+    : []
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Personas · {rolLabel}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Agregar persona</Label>
+            <Input
+              placeholder="Buscar por nombre o legajo…"
+              value={buscar}
+              onChange={(e) => setBuscar(e.target.value)}
+            />
+            {q && (
+              <ul className="max-h-48 divide-y overflow-auto rounded-md border text-sm">
+                {filtrados.length === 0 ? (
+                  <li className="p-2 text-slate-400">{disponibles === null ? "Cargando…" : "Sin resultados"}</li>
+                ) : (
+                  filtrados.slice(0, 30).map((e) => (
+                    <li key={e.id} className="flex items-center justify-between gap-2 p-2">
+                      <span>
+                        {e.nombre} <span className="text-xs text-slate-400">#{e.legajo} · {e.sector ?? "—"}</span>
+                      </span>
+                      <Button size="sm" variant="outline" disabled={pending} onClick={() => agregar(e)}>
+                        <Plus className="mr-1 size-3.5" />
+                        Agregar
+                      </Button>
+                    </li>
+                  ))
+                )}
+              </ul>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>En la matriz ({personas.length})</Label>
+            <ul className="max-h-72 divide-y overflow-auto rounded-md border text-sm">
+              {personas.map((p) => (
+                <li key={p.empleado_id} className="flex items-center justify-between gap-2 p-2">
+                  <span>
+                    {p.nombre} <span className="text-xs text-slate-400">#{p.legajo}</span>
+                  </span>
+                  <Button size="sm" variant="ghost" className="text-red-600" disabled={pending} onClick={() => quitar(p)}>
+                    <X className="mr-1 size-3.5" />
+                    Sacar
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Editor de las habilidades del rol: nombre, bloque, criticidad, estándar, orden, alta y baja. */
+function DialogHabilidades({
+  rol,
+  rolLabel,
+  habilidades,
+  onClose,
+  onSaved,
+}: {
+  rol: SkapRol
+  rolLabel: string
+  habilidades: SkapHabilidad[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [pending, startTransition] = useTransition()
+  const [filas, setFilas] = useState<(SkapHabilidadEdicion & { key: string })[]>(() =>
+    habilidades.map((h) => ({
+      key: h.id,
+      id: h.id,
+      bloque: h.bloque,
+      criticidad: h.criticidad,
+      habilidad: h.habilidad,
+      estandar: h.estandar,
+    })),
+  )
+  const bloquesExistentes = [...new Set(filas.map((f) => f.bloque).filter(Boolean))]
+
+  function cambiar(i: number, campo: Partial<SkapHabilidadEdicion>) {
+    setFilas((fs) => fs.map((f, j) => (j === i ? { ...f, ...campo } : f)))
+  }
+  function mover(i: number, d: -1 | 1) {
+    setFilas((fs) => {
+      const j = i + d
+      if (j < 0 || j >= fs.length) return fs
+      const copia = [...fs]
+      ;[copia[i], copia[j]] = [copia[j], copia[i]]
+      return copia
+    })
+  }
+  function sacar(i: number) {
+    setFilas((fs) => fs.filter((_, j) => j !== i))
+  }
+  function nueva() {
+    setFilas((fs) => [
+      ...fs,
+      {
+        key: `nueva-${Date.now()}`,
+        id: null,
+        bloque: fs[fs.length - 1]?.bloque ?? "",
+        criticidad: "A",
+        habilidad: "",
+        estandar: 3,
+      },
+    ])
+  }
+
+  function guardar() {
+    startTransition(async () => {
+      const res = await guardarHabilidades(
+        rol,
+        filas.map(({ id, bloque, criticidad, habilidad, estandar }) => ({ id, bloque, criticidad, habilidad, estandar })),
+      )
+      if ("error" in res) { toast.error(res.error); return }
+      toast.success("Habilidades guardadas")
+      onSaved()
+    })
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Habilidades · {rolLabel}</DialogTitle>
+        </DialogHeader>
+
+        <p className="text-xs text-slate-500">
+          El orden de la lista es el orden de las columnas; las habilidades del mismo bloque van juntas. Sacar una
+          habilidad no borra sus notas: si la volvés a agregar con el mismo nombre, las recupera.
+        </p>
+
+        <datalist id="skap-bloques">
+          {bloquesExistentes.map((b) => (
+            <option key={b} value={b} />
+          ))}
+        </datalist>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase text-slate-500">
+                <th className="p-1" />
+                <th className="p-1">Bloque</th>
+                <th className="p-1">Habilidad</th>
+                <th className="p-1">Crit.</th>
+                <th className="p-1">Estándar</th>
+                <th className="p-1" />
+              </tr>
+            </thead>
+            <tbody>
+              {filas.map((f, i) => (
+                <tr key={f.key} className="border-t">
+                  <td className="p-1 whitespace-nowrap">
+                    <button className="p-1 text-slate-400 hover:text-slate-800 disabled:opacity-30" disabled={i === 0} onClick={() => mover(i, -1)} title="Subir">
+                      <ArrowUp className="size-4" />
+                    </button>
+                    <button className="p-1 text-slate-400 hover:text-slate-800 disabled:opacity-30" disabled={i === filas.length - 1} onClick={() => mover(i, 1)} title="Bajar">
+                      <ArrowDown className="size-4" />
+                    </button>
+                  </td>
+                  <td className="p-1">
+                    <Input list="skap-bloques" value={f.bloque} onChange={(e) => cambiar(i, { bloque: e.target.value })} className="h-8 min-w-40" />
+                  </td>
+                  <td className="p-1">
+                    <Input value={f.habilidad} onChange={(e) => cambiar(i, { habilidad: e.target.value })} className="h-8 min-w-72" placeholder="Nombre de la habilidad" />
+                  </td>
+                  <td className="p-1">
+                    <select
+                      value={f.criticidad}
+                      onChange={(e) => cambiar(i, { criticidad: e.target.value as SkapCriticidad })}
+                      className="h-8 rounded-md border bg-white px-2"
+                    >
+                      {["A", "B", "C"].map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="p-1">
+                    <select
+                      value={f.estandar}
+                      onChange={(e) => cambiar(i, { estandar: Number(e.target.value) })}
+                      className="h-8 rounded-md border bg-white px-2"
+                    >
+                      {[0, 1, 2, 3, 4].map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="p-1">
+                    <button className="p-1 text-red-500 hover:text-red-700" onClick={() => sacar(i)} title="Sacar habilidad">
+                      <Trash2 className="size-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <Button variant="outline" onClick={nueva} disabled={pending}>
+            <Plus className="mr-1 size-4" />
+            Agregar habilidad
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onClose} disabled={pending}>Cancelar</Button>
+            <Button onClick={guardar} disabled={pending}>Guardar cambios</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

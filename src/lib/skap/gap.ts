@@ -83,3 +83,11 @@ export function calcularCelda(
     fecha_evaluacion: evaluacion.fecha_evaluacion,
   }
 }
+
+/** Nivel 4 = «puede instruir»: se pinta aparte (celeste) aunque también cumpla. */
+export const COLOR_NIVEL_4 = "bg-sky-400 text-white"
+
+/** Color de una celda de la grilla: el 4 en celeste, el resto por el semáforo del gap. */
+export function colorCelda(c: Pick<SkapCelda, "estado" | "nivel">): string {
+  return c.estado === "cumple" && c.nivel === 4 ? COLOR_NIVEL_4 : COLOR_GAP[c.estado]
+}

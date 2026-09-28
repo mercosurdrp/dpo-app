@@ -15,6 +15,7 @@ import {
   Fingerprint,
   GraduationCap,
   Grid3x3,
+  Award,
   Truck,
   Users,
   Link2,
@@ -280,6 +281,13 @@ const navItemsFlat: NavItem[] = [
     hideForEmpleado: true,
   },
   {
+    // Padrinos, sucesores y debilidades a partir de la Matriz SKAP.
+    label: "Talento (padrinos)",
+    href: "/gente/matriz-skap/talento",
+    icon: <Award className="size-5" />,
+    hideForEmpleado: true,
+  },
+  {
     label: "Mis Capacitaciones",
     href: "/mis-capacitaciones",
     icon: <GraduationCap className="size-5" />,
@@ -440,6 +448,7 @@ export const navSections: NavGroup[] = [
     "/clima",
     "/capacitaciones",
     "/gente/matriz-skap",
+    "/gente/matriz-skap/talento",
     "/mis-capacitaciones",
     "/trivia/ranking",
     "/sugerencias",

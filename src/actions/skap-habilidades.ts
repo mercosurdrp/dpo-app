@@ -1,6 +1,9 @@
 "use server"
 
+import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
+import { createAdminClient } from "@/lib/supabase/admin"
+import { leerClave } from "@/lib/clima-store"
 import { createClient } from "@/lib/supabase/server"
 import { getProfile, requireAuth, getEmpleadoIdFromAuth } from "@/lib/session"
 import { calcularCelda } from "@/lib/skap/gap"
@@ -12,6 +15,7 @@ import type {
   SkapPlanFormacion,
   SkapAccion,
   SkapEstadoAccion,
+  SkapCriticidad,
 } from "@/types/database"
 
 type Result<T> = { data: T } | { error: string }
@@ -24,6 +28,7 @@ const SECTOR_DE_ROL: Record<SkapRol, string> = {
   autoelevadorista: "Depósito",
   mantenimiento: "Depósito",
   administrativo: "Distribución",
+  temporal: "Distribución", // no se usa en Pampeana (el rol es de Misiones)
 }
 
 /**
@@ -259,7 +264,7 @@ export async function cargarNotaBase(rol: SkapRol): Promise<Result<{ cargadas: n
 }
 
 /** Habilidad + su plan de formación, para el panel de detalle. */
-export async function getPlanFormacion(habilidadId: string): Promise<Result<SkapPlanFormacion | null>> {
+export async function getPlanFormacion(_rol: SkapRol, habilidadId: string): Promise<Result<SkapPlanFormacion | null>> {
   try {
     await requireAuth()
     const supabase = await createClient()
@@ -276,6 +281,8 @@ export async function getPlanFormacion(habilidadId: string): Promise<Result<Skap
 }
 
 export interface SkapAccionDetalle extends SkapAccion {
+  /** Capacitación del PAC con la que se cierra (tabla `capacitaciones`). */
+  capacitacion: { id: string; titulo: string; fecha: string } | null
   empleado_nombre: string
   legajo: number
   habilidad: string
@@ -304,10 +311,19 @@ export async function getAcciones(rol?: SkapRol): Promise<Result<SkapAccionDetal
       skap_habilidades: { habilidad: string; criticidad: string; rol: SkapRol; estandar: number }
     }
 
+    // La capacitación del PAC de cada acción vive en app_config (ver lib/skap/store.ts).
+    const accPac = (await leerClave<Record<string, string>>("skap:acc-pac")) ?? {}
+    const capIds = [...new Set(Object.values(accPac))]
+    const { data: caps } = capIds.length
+      ? await supabase.from("capacitaciones").select("id, titulo, fecha").in("id", capIds)
+      : { data: [] }
+    const capPorId = new Map(((caps || []) as { id: string; titulo: string; fecha: string }[]).map((c) => [c.id, c]))
+
     const acciones = ((data || []) as unknown as Row[])
       .filter((a) => !rol || a.skap_habilidades.rol === rol)
       .map((a) => ({
         ...a,
+        capacitacion: (accPac[a.id] && capPorId.get(accPac[a.id])) || null,
         empleado_nombre: a.empleados.nombre,
         legajo: a.empleados.legajo,
         habilidad: a.skap_habilidades.habilidad,
@@ -420,5 +436,161 @@ export async function getHistorial(
     return { data: data || [] }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error al cargar el historial" }
+  }
+}
+
+// ─── Edición manual: personas, habilidades y borrado de notas ───────────────
+
+export interface SkapEmpleadoDisponible {
+  id: string
+  legajo: number
+  nombre: string
+  sector: string | null
+}
+
+/** Empleados activos que todavía NO están en el rol (para el buscador de «Agregar»). */
+export async function getEmpleadosDisponibles(rol: SkapRol): Promise<Result<SkapEmpleadoDisponible[]>> {
+  try {
+    await assertPuedeEditar(rol)
+    const db = createAdminClient()
+    const [{ data: asig }, { data, error }] = await Promise.all([
+      db.from("skap_asignaciones").select("empleado_id").eq("rol", rol).eq("activo", true),
+      db.from("empleados").select("id, legajo, nombre, sector").eq("activo", true).order("nombre").limit(5000),
+    ])
+    if (error) return { error: error.message }
+    const asignados = new Set(((asig || []) as { empleado_id: string }[]).map((a) => a.empleado_id))
+    return { data: ((data || []) as SkapEmpleadoDisponible[]).filter((e) => !asignados.has(e.id)) }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error al cargar empleados" }
+  }
+}
+
+export async function agregarPersona(rol: SkapRol, empleadoId: string): Promise<Result<{ ok: true }>> {
+  try {
+    await assertPuedeEditar(rol)
+    // Si ya estuvo y se la había sacado, se reactiva la misma asignación.
+    const { error } = await createAdminClient()
+      .from("skap_asignaciones")
+      .upsert({ empleado_id: empleadoId, rol, activo: true }, { onConflict: "empleado_id,rol" })
+    if (error) return { error: error.message }
+    revalidatePath("/gente/matriz-skap")
+    return { data: { ok: true } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error al agregar la persona" }
+  }
+}
+
+/** Saca a la persona de la matriz del rol (baja lógica). Sus notas NO se borran. */
+export async function quitarPersona(rol: SkapRol, empleadoId: string): Promise<Result<{ ok: true }>> {
+  try {
+    await assertPuedeEditar(rol)
+    const { error } = await createAdminClient()
+      .from("skap_asignaciones")
+      .update({ activo: false })
+      .eq("empleado_id", empleadoId)
+      .eq("rol", rol)
+    if (error) return { error: error.message }
+    revalidatePath("/gente/matriz-skap")
+    return { data: { ok: true } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error al quitar la persona" }
+  }
+}
+
+/** Borra la nota más reciente de una celda (deshace una carga equivocada). */
+export async function borrarUltimaNota(
+  rol: SkapRol,
+  empleadoId: string,
+  habilidadId: string,
+): Promise<Result<{ ok: true }>> {
+  try {
+    await assertPuedeEditar(rol)
+    const db = createAdminClient()
+    const { data } = await db
+      .from("skap_evaluaciones")
+      .select("id")
+      .eq("empleado_id", empleadoId)
+      .eq("habilidad_id", habilidadId)
+      .order("fecha_evaluacion", { ascending: false })
+      .limit(1)
+    const ultima = (data || [])[0] as { id: string } | undefined
+    if (ultima) {
+      const { error } = await db.from("skap_evaluaciones").delete().eq("id", ultima.id)
+      if (error) return { error: error.message }
+    }
+    revalidatePath("/gente/matriz-skap")
+    return { data: { ok: true } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error al borrar la nota" }
+  }
+}
+
+export interface SkapHabilidadEdicion {
+  /** null = habilidad nueva */
+  id: string | null
+  bloque: string
+  criticidad: SkapCriticidad
+  habilidad: string
+  estandar: number
+}
+
+/**
+ * Guarda la lista de habilidades del rol tal como quedó en el editor (el orden
+ * de la lista es el orden de las columnas). Las que se sacan quedan con
+ * `activo: false` — no se borran, así sus notas y su plan siguen asociados y
+ * reaparecen si se la vuelve a agregar con el mismo nombre.
+ */
+export async function guardarHabilidades(rol: SkapRol, lista: SkapHabilidadEdicion[]): Promise<Result<{ ok: true }>> {
+  try {
+    await assertPuedeEditar(rol)
+    const limpias = lista.map((h) => ({ ...h, bloque: h.bloque.trim(), habilidad: h.habilidad.trim() }))
+    for (const h of limpias) {
+      if (!h.habilidad) return { error: "Hay una habilidad sin nombre" }
+      if (!h.bloque) return { error: `«${h.habilidad}» no tiene bloque` }
+      if (!["A", "B", "C"].includes(h.criticidad)) return { error: `Criticidad inválida en «${h.habilidad}»` }
+      if (!Number.isInteger(h.estandar) || h.estandar < 0 || h.estandar > 4) {
+        return { error: `El estándar de «${h.habilidad}» tiene que ser de 0 a 4` }
+      }
+    }
+    const nombres = limpias.map((h) => h.habilidad.toLowerCase())
+    const repetido = nombres.find((n, i) => nombres.indexOf(n) !== i)
+    if (repetido) return { error: `La habilidad «${repetido}» está repetida` }
+
+    const db = createAdminClient()
+    const { data: actualesRaw, error: errAct } = await db.from("skap_habilidades").select("*").eq("rol", rol)
+    if (errAct) return { error: errAct.message }
+    const actuales = (actualesRaw || []) as SkapHabilidad[]
+    const porId = new Map(actuales.map((h) => [h.id, h]))
+    const porNombre = new Map(actuales.map((h) => [h.habilidad.trim().toLowerCase(), h]))
+
+    // UNIQUE (rol, habilidad): una baja que se re-agrega con el mismo nombre recupera su fila.
+    const usados = new Set<string>()
+    const filas = limpias.map((h, i) => {
+      const previa = (h.id && porId.get(h.id)) || porNombre.get(h.habilidad.toLowerCase())
+      const id = previa?.id ?? randomUUID()
+      usados.add(id)
+      return { id, rol, bloque: h.bloque, criticidad: h.criticidad, habilidad: h.habilidad, estandar: h.estandar, orden: i + 1, activo: true }
+    })
+
+    // Primero las bajas (liberan nombres), después altas/cambios.
+    const bajas = actuales.filter((h) => !usados.has(h.id) && h.activo).map((h) => h.id)
+    if (bajas.length) {
+      const { error } = await db.from("skap_habilidades").update({ activo: false }).in("id", bajas)
+      if (error) return { error: error.message }
+    }
+    // Un renombre puede chocar con el nombre viejo de otra fila en el mismo upsert:
+    // se pasa por un nombre temporal.
+    const renombradas = filas.filter((f) => porId.has(f.id) && porId.get(f.id)!.habilidad !== f.habilidad)
+    for (const f of renombradas) {
+      const { error } = await db.from("skap_habilidades").update({ habilidad: `__tmp__${f.id}` }).eq("id", f.id)
+      if (error) return { error: error.message }
+    }
+    const { error } = await db.from("skap_habilidades").upsert(filas, { onConflict: "id" })
+    if (error) return { error: error.message }
+
+    revalidatePath("/gente/matriz-skap")
+    return { data: { ok: true } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error al guardar las habilidades" }
   }
 }
