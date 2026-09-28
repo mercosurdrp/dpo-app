@@ -36,6 +36,16 @@ export const TOLERANCIA_DIAS = 2
 export const VECES_POR_MES = 2
 
 /**
+ * Mínimo de días entre las dos fechas de una unidad.
+ *
+ * 🚨 La quincena sola no alcanza: en noviembre de 2026 el AE591EI salía sorteado
+ * el viernes 13 y el lunes 16 —tres días, un fin de semana en el medio— y después
+ * quedaba dos semanas sin que nadie lo toque. "Dos veces al mes" tiene que
+ * repartir el mes, no marcar dos cruces pegadas.
+ */
+export const MIN_SEPARACION_DIAS = 7
+
+/**
  * Primer mes con días asignados.
  *
  * 🚨 Los meses anteriores devuelven vacío a propósito. El sorteo es determinista
@@ -106,11 +116,23 @@ export function fechasCilDelMes(dominio: string, ym: string): string[] {
   const h = hash32(`${dominio}|${ym}`)
   // Dos tiradas del mismo hash: los bits bajos para la primera quincena y los
   // altos para la segunda, así las dos elecciones no quedan atadas entre sí.
-  const dias = [
-    primera.length > 0 ? primera[h % primera.length] : null,
-    segunda.length > 0 ? segunda[(h >>> 11) % segunda.length] : null,
-  ].filter((d): d is number => d != null)
-  return dias.map((d) => `${ym}-${String(d).padStart(2, "0")}`)
+  const d1 = primera.length > 0 ? primera[h % primera.length] : null
+  let d2: number | null = null
+  if (segunda.length > 0) {
+    const desde = (h >>> 11) % segunda.length
+    // La rotación arranca en el día sorteado y sigue hacia adelante: el primero
+    // que respeta la separación mínima es el que queda. Si ninguno la respeta
+    // —sólo puede pasar con una segunda quincena muy corta—, se toma el más
+    // lejano, que es lo mejor disponible.
+    const orden = segunda.map((_, i) => segunda[(desde + i) % segunda.length])
+    d2 =
+      orden.find((d) => d1 == null || d - d1 >= MIN_SEPARACION_DIAS) ??
+      segunda[segunda.length - 1]
+  }
+  return [d1, d2]
+    .filter((d): d is number => d != null)
+    .sort((x, y) => x - y)
+    .map((d) => `${ym}-${String(d).padStart(2, "0")}`)
 }
 
 /** ¿Hoy le toca a esta unidad? */

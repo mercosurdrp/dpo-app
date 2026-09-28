@@ -16,9 +16,11 @@ import { ScrollX } from "./_components/scroll-x"
 import {
   getProgramacionCilMes,
   type DiaCil,
+  type EstadoDiaCil,
   type ProgramacionCilMes,
 } from "@/actions/cil-programacion"
 import { PROGRAMACION_DESDE, fmtDiaConNombre } from "@/lib/flota/cil-programacion"
+import { esFeriado } from "@/lib/feriados-ar"
 
 /**
  * Los dos días del mes que le tocan a cada camión, y qué pasó con cada uno.
@@ -54,6 +56,9 @@ function mesesVisibles(mesActual: string): string[] {
 
 export function ProgramacionCil({ mesActual }: { mesActual: string }) {
   const [ym, setYm] = useState(mesActual)
+  // El calendario primero: la pregunta con la que se entra es "qué día le toca a
+  // cada uno", y eso en una tabla de dos columnas hay que reconstruirlo leyendo.
+  const [vista, setVista] = useState<"calendario" | "unidades">("calendario")
   const [data, setData] = useState<ProgramacionCilMes | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
@@ -156,6 +161,29 @@ export function ProgramacionCil({ mesActual }: { mesActual: string }) {
               </div>
             )}
 
+            <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1">
+              {(
+                [
+                  ["calendario", "Calendario"],
+                  ["unidades", "Por unidad"],
+                ] as Array<["calendario" | "unidades", string]>
+              ).map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={vista === v}
+                  onClick={() => setVista(v)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    vista === v
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Tile titulo="En fecha" valor={data.totales.hechas} tono="bien" nota="el día que le tocaba" />
               <Tile
@@ -173,6 +201,11 @@ export function ProgramacionCil({ mesActual }: { mesActual: string }) {
               />
             </div>
 
+            {vista === "calendario" && (
+              <CalendarioMes ym={ym} hoy={data.hoy} unidades={data.unidades} />
+            )}
+
+            {vista === "unidades" && (
             <ScrollX>
               <table className="w-full min-w-[40rem] text-sm">
                 <thead>
@@ -218,6 +251,7 @@ export function ProgramacionCil({ mesActual }: { mesActual: string }) {
                 </tbody>
               </table>
             </ScrollX>
+            )}
 
             <p className="text-xs text-muted-foreground">
               Un día se cumple con al menos una tarea CIL cargada ese día; con ±2 días
@@ -321,5 +355,187 @@ function ChipDia({ dia }: { dia: DiaCil }) {
       <span>{fmtDiaConNombre(dia.fecha)}</span>
       <span className="font-normal">pendiente</span>
     </span>
+  )
+}
+
+/** Los colores de cada estado, los mismos que los chips de la tabla. */
+const TONO_ESTADO: Record<EstadoDiaCil, string> = {
+  hecha:
+    "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  fuera_de_fecha:
+    "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  hoy: "border-sky-500/60 bg-sky-500/20 text-sky-800 dark:text-sky-200",
+  vencida: "border-red-500/50 bg-red-500/15 text-red-700 dark:text-red-300",
+  pendiente: "border-border bg-background text-foreground",
+}
+
+const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
+
+interface CeldaUnidad {
+  dominio: string
+  numero: string | null
+  estado: EstadoDiaCil
+}
+
+/**
+ * El mes como calendario: una columna por día de semana y las unidades que le
+ * tocan adentro del día.
+ *
+ * 🚨 Sólo lunes a viernes, las cinco columnas: el sorteo nunca cae en sábado ni
+ * domingo, y dos columnas siempre vacías achican las cinco que importan —en el
+ * celular es la diferencia entre leerlo y no—.
+ */
+function CalendarioMes({
+  ym,
+  hoy,
+  unidades,
+}: {
+  ym: string
+  hoy: string
+  unidades: ProgramacionCilMes["unidades"]
+}) {
+  const porDia = new Map<string, CeldaUnidad[]>()
+  for (const u of unidades) {
+    for (const d of u.dias) {
+      if (!porDia.has(d.fecha)) porDia.set(d.fecha, [])
+      porDia.get(d.fecha)!.push({
+        dominio: u.dominio,
+        numero: u.numero,
+        estado: d.estado,
+      })
+    }
+  }
+
+  const [a, m] = ym.split("-").map(Number)
+  const ultimo = new Date(Date.UTC(a, m, 0)).getUTCDate()
+  // Las semanas del mes, cada una con sus cinco días hábiles (null donde el mes
+  // todavía no empezó o ya terminó).
+  const semanas: Array<Array<number | null>> = []
+  let semana: Array<number | null> = [null, null, null, null, null]
+  for (let d = 1; d <= ultimo; d++) {
+    const dow = new Date(Date.UTC(a, m - 1, d)).getUTCDay()
+    if (dow === 0 || dow === 6) continue
+    if (dow === 1 && semana.some((x) => x != null)) {
+      semanas.push(semana)
+      semana = [null, null, null, null, null]
+    }
+    semana[dow - 1] = d
+  }
+  if (semana.some((x) => x != null)) semanas.push(semana)
+
+  return (
+    <div className="space-y-2">
+      <ScrollX>
+        <div className="min-w-[36rem]">
+          <div className="grid grid-cols-5 gap-1.5">
+            {DIAS_SEMANA.map((d) => (
+              <div
+                key={d}
+                className="pb-1 text-center text-[11px] font-semibold uppercase text-muted-foreground"
+              >
+                {/* En pantalla chica, las tres primeras letras: "Miércoles" era lo
+                    único que empujaba la grilla. */}
+                <span className="sm:hidden">{d.slice(0, 3)}</span>
+                <span className="hidden sm:inline">{d}</span>
+              </div>
+            ))}
+            {semanas.flatMap((sem, i) =>
+              sem.map((dia, j) => {
+                if (dia == null) {
+                  return (
+                    <div
+                      key={`${i}-${j}`}
+                      className="min-h-20 rounded-md border border-dashed border-border/40"
+                    />
+                  )
+                }
+                const fecha = `${ym}-${String(dia).padStart(2, "0")}`
+                const celdas = porDia.get(fecha) ?? []
+                const feriado = esFeriado(fecha)
+                const esHoy = fecha === hoy
+                return (
+                  <div
+                    key={`${i}-${j}`}
+                    className={`min-h-20 space-y-1 rounded-md border p-1.5 ${
+                      esHoy
+                        ? "border-sky-500 bg-sky-500/5 ring-1 ring-sky-500/40"
+                        : feriado
+                          ? "border-dashed bg-muted/30"
+                          : "bg-card"
+                    }`}
+                  >
+                    <div className="flex items-baseline justify-between">
+                      <span
+                        className={`text-xs font-semibold ${
+                          esHoy ? "text-sky-700 dark:text-sky-300" : "text-foreground"
+                        }`}
+                      >
+                        {dia}
+                      </span>
+                      {esHoy && (
+                        <span className="text-[10px] font-semibold text-sky-700 dark:text-sky-300">
+                          HOY
+                        </span>
+                      )}
+                      {feriado && !esHoy && (
+                        <span className="text-[10px] text-muted-foreground">feriado</span>
+                      )}
+                    </div>
+                    {celdas.map((c) => (
+                      <span
+                        key={c.dominio}
+                        title={`${c.dominio}${c.numero ? ` · N° ${c.numero}` : ""} — ${
+                          c.estado === "hecha"
+                            ? "hecha en fecha"
+                            : c.estado === "fuera_de_fecha"
+                              ? "hecha fuera de fecha"
+                              : c.estado === "vencida"
+                                ? "vencida"
+                                : c.estado === "hoy"
+                                  ? "le toca hoy"
+                                  : "pendiente"
+                        }`}
+                        className={`block truncate rounded border px-1 py-0.5 text-[11px] leading-tight font-medium ${TONO_ESTADO[c.estado]}`}
+                      >
+                        {/* El número de flota primero: es como se lo nombra en el
+                            galpón. La patente queda para el título. */}
+                        {c.numero ?? c.dominio}
+                      </span>
+                    ))}
+                  </div>
+                )
+              }),
+            )}
+          </div>
+        </div>
+      </ScrollX>
+      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="size-3 rounded-sm border border-emerald-500/50 bg-emerald-500/40"
+          />{" "}
+          hecha
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="size-3 rounded-sm border border-amber-500/50 bg-amber-500/40"
+          />{" "}
+          fuera de fecha
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="size-3 rounded-sm border border-red-500/50 bg-red-500/40"
+          />{" "}
+          vencida
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="size-3 rounded-sm border bg-background" /> pendiente
+        </span>
+        <span>El número es el de flota; la patente está en el globito.</span>
+      </p>
+    </div>
   )
 }
