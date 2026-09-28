@@ -43,6 +43,20 @@ export const SLA_CODIGOS_REUNION_OPERATIVA = [
   "plan_equipos_frio",
 ]
 
+// SLA que se revisan en la reunión Ventas-Logística (pedido de Sebastián,
+// 28/09/2026): los acuerdos entre Ventas y Operaciones más los cierres de
+// casos NPS/RMD. Quedan afuera Pushed, Recepción de acarreos y Peso límite,
+// que son internos de Logística. El orden replica el de getCumplimientoMes.
+export const SLA_CODIGOS_REUNION_VENTAS_LOGISTICA = [
+  "plan_syop",
+  "plan_ruteo_tiempo",
+  "plan_ruteo_capacidad",
+  "alm_carga",
+  "plan_equipos_frio",
+  "ent_nps",
+  "ent_rmd",
+]
+
 interface ResponsableOpt {
   id: string
   nombre: string

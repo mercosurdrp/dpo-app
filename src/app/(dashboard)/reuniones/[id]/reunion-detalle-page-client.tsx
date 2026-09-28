@@ -71,6 +71,7 @@ import { SeccionSobrestock } from "@/components/reuniones/seccion-sobrestock"
 import {
   SeccionSla,
   SLA_CODIGOS_REUNION_OPERATIVA,
+  SLA_CODIGOS_REUNION_VENTAS_LOGISTICA,
 } from "@/components/reuniones/seccion-sla"
 import { TlpDetalleDiaDialog } from "@/components/reuniones/tlp-detalle-dia-dialog"
 import { WnpDetalleDiaDialog } from "@/components/reuniones/wnp-detalle-dia-dialog"
@@ -1568,6 +1569,7 @@ export function ReunionDetallePageClient({
           fechaReunion={detalle.fecha}
           reunionId={detalle.id}
           reunionTipo="logistica-ventas"
+          codigos={SLA_CODIGOS_REUNION_VENTAS_LOGISTICA}
           actividades={actividadesSla}
           responsables={responsables}
           puedeEditar={puedeEditar}
