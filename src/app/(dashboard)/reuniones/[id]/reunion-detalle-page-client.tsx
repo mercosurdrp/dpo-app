@@ -1445,7 +1445,13 @@ export function ReunionDetallePageClient({
           completa en la app de mantenimiento; acá queda el registro de que se
           hizo, que es lo que pide el punto 1.7 del DPO. */}
       {detalle.tipo === "mantenimiento" && (
-        <SeccionInspeccionEdilicia fechaReunion={detalle.fecha} />
+        <SeccionInspeccionEdilicia
+          fechaReunion={detalle.fecha}
+          reunionId={detalle.id}
+          puedeEditar={puedeEditar}
+          responsables={responsables}
+          onCompromisoCreado={refrescar}
+        />
       )}
 
       {/* PARTICIPACIÓN CRUZADA (pilar Planeamiento: conectar Ventas y
