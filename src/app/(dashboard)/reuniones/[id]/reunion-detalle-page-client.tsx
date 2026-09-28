@@ -1449,14 +1449,16 @@ export function ReunionDetallePageClient({
       )}
 
       {/* PARTICIPACIÓN CRUZADA (pilar Planeamiento: conectar Ventas y
-          Operaciones). Va en todas las reuniones: el cruce puede darse en
-          cualquiera de ellas. */}
-      <SeccionParticipacionCruzada
-        reunionId={detalle.id}
-        fechaReunion={detalle.fecha}
-        tipoLabel={tipoLabel}
-        puedeEditar={puedeEditar}
-      />
+          Operaciones). Va en todas las reuniones salvo Mantenimiento, que se
+          reduce a seguridad, inspección edilicia y action log. */}
+      {detalle.tipo !== "mantenimiento" && (
+        <SeccionParticipacionCruzada
+          reunionId={detalle.id}
+          fechaReunion={detalle.fecha}
+          tipoLabel={tipoLabel}
+          puedeEditar={puedeEditar}
+        />
+      )}
 
       {/* Minuta y adjuntos — por ahora sólo en Presupuesto, que es la reunión
           que se arma por un tema puntual y deja un documento de lo hablado. */}
@@ -1781,10 +1783,12 @@ export function ReunionDetallePageClient({
 
       {/* ETAPA 3: TABLERO DE CONTROL — no aplica a Ventas-Logística (todo por
           secciones) ni a Presupuesto: no tiene indicadores configurados (mostraba
-          un tablero vacío) y su temario son los desvíos. */}
+          un tablero vacío) y su temario son los desvíos. Mantenimiento tampoco:
+          su temario es la inspección edilicia del mes. */}
       {detalle.tipo !== "logistica-ventas" &&
         detalle.tipo !== "presupuesto" &&
-        detalle.tipo !== "iniciativas-ahorro" && (
+        detalle.tipo !== "iniciativas-ahorro" &&
+        detalle.tipo !== "mantenimiento" && (
       <Card className="border-blue-200 bg-blue-50/30">
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
           <CardTitle className="flex items-center gap-2 text-lg font-bold text-blue-900">
