@@ -10,7 +10,7 @@
 // Mezclados, la solapa de checklist se leía como un cajón de sastre y las tres
 // secciones de abajo quedaban sepultadas debajo de las tablas de defectos.
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -45,7 +45,9 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  FilterX,
   ImageIcon,
+  Loader2,
   Plus,
   Trash2,
   Upload,
@@ -60,7 +62,16 @@ import {
   subirFotoTareaCil,
   type TareaCil,
 } from "@/actions/mantenimiento-vehiculos"
-import { TAREAS_CIL, labelTareaCil } from "@/lib/flota/cil-tareas"
+import {
+  CICLO_CIL_MENSUAL,
+  TAREAS_CIL,
+  labelTareaCil,
+} from "@/lib/flota/cil-tareas"
+import {
+  getHistorialCil,
+  type HistorialCil,
+  type HistoriaUnidadCil,
+} from "@/actions/cil-cobertura"
 import { FotoInput } from "@/components/foto/foto-input"
 import { toast } from "sonner"
 
@@ -115,6 +126,15 @@ export function Cil({ tareasCil, dominiosFlota, puedeEditar }: Props) {
 // supervisor, que es justo la duplicación que causó el error `23514` de agosto.
 // Ahora sale todo de `lib/flota/cil-tareas`.
 
+/** Valor centinela del select: shadcn no acepta `value=""` en un item. */
+const TODAS = "__todas__"
+
+/** Las columnas que usa la tabla, que son las que traen las dos fuentes. */
+type FilaCil = Pick<
+  TareaCil,
+  "id" | "fecha" | "dominio" | "tarea" | "operario" | "descripcion" | "foto_url"
+>
+
 function TareasCilSection({
   tareasCil,
   dominios,
@@ -126,7 +146,6 @@ function TareasCilSection({
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const refresh = () => startTransition(() => router.refresh())
   const [abrirCarga, setAbrirCarga] = useState(false)
   // 🚨 Arranca CERRADO: es el detalle fila por fila de todo el histórico y
   // empujaba para abajo la lectura que importa —la Cobertura del CIL, que está
@@ -134,13 +153,84 @@ function TareasCilSection({
   // igual se sabe cuántas hay.
   const [verDetalle, setVerDetalle] = useState(false)
 
+  // ===== Filtro por unidad y por fechas =====
+  // 🚨 La tabla mostraba las últimas 300 filas de toda la flota y no se podía
+  // buscar: para contestar "¿el OJA403 hizo alguna vez el CIL?" había que
+  // recorrer el histórico a ojo, y cualquier registro más viejo que ese recorte
+  // era invisible. Con un filtro puesto la pregunta va a la base
+  // (`getHistorialCil`), así que alcanza TODO el histórico y no sólo lo que la
+  // página trajo; además devuelve el histórico completo de la unidad, que es la
+  // pregunta de fondo y no la misma que el rango elegido.
+  const [unidad, setUnidad] = useState(TODAS)
+  const [desde, setDesde] = useState("")
+  const [hasta, setHasta] = useState("")
+  const hayFiltro = unidad !== TODAS || desde !== "" || hasta !== ""
+  const [hist, setHist] = useState<HistorialCil | null>(null)
+  const [cargando, setCargando] = useState(false)
+  const [errorHist, setErrorHist] = useState<string | null>(null)
+
+  // Sube de a uno cuando hay que volver a pedir lo mismo (después de borrar una
+  // fila o de subirle la foto).
+  const [recarga, setRecarga] = useState(0)
+
+  // 🚨 El pedido sale con un retraso corto y no en el acto: el input de fecha
+  // cambia con cada tecla y con un año a medio escribir («202…») se disparaban
+  // cuatro consultas para tirar tres.
+  useEffect(() => {
+    if (unidad === TODAS && !desde && !hasta) return
+    let vivo = true
+    const t = setTimeout(async () => {
+      setCargando(true)
+      const res = await getHistorialCil({
+        dominio: unidad === TODAS ? null : unidad,
+        desde: desde || null,
+        hasta: hasta || null,
+      })
+      // El filtro pudo cambiar mientras la consulta viajaba: la respuesta vieja
+      // no se pisa sobre la nueva.
+      if (!vivo) return
+      if ("error" in res) {
+        setErrorHist(res.error)
+        setHist(null)
+      } else {
+        setErrorHist(null)
+        setHist(res.data)
+      }
+      setCargando(false)
+    }, 250)
+    return () => {
+      vivo = false
+      clearTimeout(t)
+    }
+  }, [unidad, desde, hasta, recarga])
+
+  // Borrar una fila o subirle la foto tiene que refrescar las DOS vistas: la que
+  // vino del servidor con la página y la del filtro, que se pidió aparte.
+  const refresh = () => {
+    startTransition(() => router.refresh())
+    setRecarga((n) => n + 1)
+  }
+
+  // Sin filtro no se lee lo que quedó de la búsqueda anterior: al limpiar, la
+  // tabla tiene que volver a ser la de la página.
+  const h = hayFiltro ? hist : null
+  const filas: FilaCil[] = hayFiltro ? (h?.filas ?? []) : tareasCil
+  // Con el filtro puesto no hay que abrir el detalle aparte: lo que se buscó es
+  // justamente la lista.
+  const mostrarDetalle = verDetalle || hayFiltro
+  const limpiar = () => {
+    setUnidad(TODAS)
+    setDesde("")
+    setHasta("")
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-3">
         <CardTitle className="flex flex-wrap items-center gap-2 text-base">
           <ClipboardCheck className="size-4 text-muted-foreground" /> Tareas CIL / ATO
           <Badge variant="outline" className="bg-muted text-muted-foreground">
-            {tareasCil.length}
+            {hayFiltro ? `${h?.total ?? 0} filtradas` : tareasCil.length}
           </Badge>
           <DpoPuntoBadge numero="4.1" />
         </CardTitle>
@@ -149,15 +239,19 @@ function TareasCilSection({
             variant="ghost"
             size="sm"
             className="h-8 gap-1 text-xs"
-            aria-expanded={verDetalle}
+            aria-expanded={mostrarDetalle}
+            disabled={hayFiltro}
+            title={
+              hayFiltro ? "Con el filtro puesto el detalle queda abierto" : undefined
+            }
             onClick={() => setVerDetalle((v) => !v)}
           >
-            {verDetalle ? (
+            {mostrarDetalle ? (
               <ChevronDown className="size-3.5" />
             ) : (
               <ChevronRight className="size-3.5" />
             )}
-            {verDetalle ? "Ocultar detalle" : "Ver detalle"}
+            {mostrarDetalle ? "Ocultar detalle" : "Ver detalle"}
           </Button>
           {puedeEditar && (
             <Button size="sm" onClick={() => setAbrirCarga(true)}>
@@ -166,15 +260,105 @@ function TareasCilSection({
           )}
         </div>
       </CardHeader>
-      {verDetalle && (
-        <CardContent>
+
+      {/* El filtro va SIEMPRE visible, aunque el detalle esté cerrado: si viviera
+          adentro del detalle habría que saber que existe para encontrarlo. */}
+      <CardContent className="space-y-3 pb-4">
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-muted/40 p-3">
+          <div className="min-w-44">
+            <Label className="text-xs text-muted-foreground">Unidad</Label>
+            <Select value={unidad} onValueChange={(v) => v && setUnidad(v)}>
+              <SelectTrigger className="mt-1 h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TODAS}>Todas las unidades</SelectItem>
+                {dominios.map((d) => (
+                  <SelectItem key={d} value={d}>
+                    {d}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Desde</Label>
+            <Input
+              type="date"
+              className="mt-1 h-9 w-40"
+              value={desde}
+              max={hasta || undefined}
+              onChange={(e) => setDesde(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Hasta</Label>
+            <Input
+              type="date"
+              className="mt-1 h-9 w-40"
+              value={hasta}
+              min={desde || undefined}
+              onChange={(e) => setHasta(e.target.value)}
+            />
+          </div>
+          {hayFiltro && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 gap-1 text-xs"
+              onClick={limpiar}
+            >
+              <FilterX className="size-3.5" /> Limpiar
+            </Button>
+          )}
+          {cargando && (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" /> Buscando…
+            </span>
+          )}
+        </div>
+
+        {errorHist && <p className="text-sm text-destructive">{errorHist}</p>}
+
+        {/* El veredicto de la unidad elegida: su histórico completo, que es otra
+            pregunta que el rango. Sin esto, un rango sin filas se leía como
+            "nunca lo hizo" y podía ser al revés. */}
+        {h?.unidad && (
+          <VeredictoUnidad
+            u={h.unidad}
+            registroDesde={h.registroDesde}
+            enRango={h.total}
+            conRango={Boolean(desde || hasta)}
+          />
+        )}
+
+        {/* Sin unidad elegida pero con rango: a quién hay que ir a buscar. */}
+        {!h?.unidad && h && h.sinRegistro.length > 0 && (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <strong>Sin ninguna tarea en el rango</strong> ({h.sinRegistro.length} de
+            la flota que cuenta): {h.sinRegistro.join(", ")}.
+          </p>
+        )}
+
+        {!hayFiltro && tareasCil.length >= 300 && (
+          <p className="text-xs text-muted-foreground">
+            Se muestran las últimas 300 tareas. Para ver más atrás, filtrá por unidad o
+            por fecha: la búsqueda va a la base y alcanza todo el histórico.
+          </p>
+        )}
+      </CardContent>
+
+      {mostrarDetalle && (
+        <CardContent className="pt-0">
           <p className="mb-3 text-sm text-muted-foreground">
             Limpieza, inspección y lubricación autónomas hechas por los operarios
             (incrementales al checklist diario).
           </p>
-          {tareasCil.length === 0 ? (
+          {filas.length === 0 ? (
             <p className="py-4 text-center text-sm text-muted-foreground">
-              Sin tareas CIL registradas.
+              {hayFiltro
+                ? "Ninguna tarea CIL con ese filtro."
+                : "Sin tareas CIL registradas."}
             </p>
           ) : (
             /*
@@ -199,7 +383,7 @@ function TareasCilSection({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {tareasCil.map((t) => (
+                  {filas.map((t) => (
                     <TableRow key={t.id}>
                       <TableCell className="align-top whitespace-nowrap">
                         {fmtFecha(t.fecha)}
@@ -260,6 +444,12 @@ function TareasCilSection({
               </Table>
             </ScrollX>
           )}
+          {h?.recortada && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Hay {h.total} tareas con ese filtro y se muestran las {filas.length} más
+              nuevas. Acotá el rango para ver el resto.
+            </p>
+          )}
         </CardContent>
       )}
       {abrirCarga && (
@@ -273,6 +463,85 @@ function TareasCilSection({
         />
       )}
     </Card>
+  )
+}
+
+/**
+ * ¿Esta unidad hizo el CIL alguna vez? — su histórico completo, no el rango.
+ *
+ * 🚨 La respuesta honesta tiene que decir DESDE CUÁNDO existe el registro: la
+ * primera tarea cargada en el sistema es del 03/08/2026, así que "nunca hizo"
+ * quiere decir "no hay nada suyo desde que se empezó a registrar", no "en toda
+ * la vida del camión". Sin esa línea el cartel se lee como una acusación más
+ * grande de lo que el dato aguanta.
+ */
+function VeredictoUnidad({
+  u,
+  registroDesde,
+  enRango,
+  conRango,
+}: {
+  u: HistoriaUnidadCil
+  registroDesde: string | null
+  enRango: number
+  conRango: boolean
+}) {
+  const ciclo = CICLO_CIL_MENSUAL as readonly string[]
+  const nunca = u.total === 0
+  const completo = ciclo.every((t) => u.porLetra[t])
+  const tono = nunca
+    ? "border-destructive/30 bg-destructive/10 text-destructive"
+    : completo
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+      : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+
+  return (
+    <div className={`space-y-2 rounded-lg border px-3 py-2.5 ${tono}`}>
+      <p className="text-sm font-medium">
+        {nunca ? (
+          <>
+            {u.dominio} — nunca registró una tarea CIL
+            {registroDesde
+              ? `: no hay ninguna fila suya desde que arrancó el registro, el ${fmtFecha(registroDesde)}.`
+              : "."}
+          </>
+        ) : (
+          <>
+            {u.dominio} — {u.total} {u.total === 1 ? "tarea" : "tareas"} en total, la
+            última el {fmtFecha(u.ultima!)} (la primera, el {fmtFecha(u.primera!)}).
+          </>
+        )}
+      </p>
+      {!nunca && (
+        <div className="flex flex-wrap gap-1.5">
+          {ciclo.map((t) => {
+            const f = u.porLetra[t]
+            return (
+              <span
+                key={t}
+                title={
+                  f
+                    ? `${labelTareaCil(t)}: última vez el ${fmtFecha(f)}`
+                    : `${labelTareaCil(t)}: nunca la registró`
+                }
+                className={`inline-flex items-center gap-1 rounded-md border bg-background/60 px-1.5 py-0.5 text-[11px] font-medium ${
+                  f ? "" : "border-destructive/40 text-destructive"
+                }`}
+              >
+                {labelTareaCil(t).split(" (")[0]}: {f ? fmtFecha(f) : "nunca"}
+              </span>
+            )
+          })}
+        </div>
+      )}
+      {conRango && (
+        <p className="text-xs opacity-90">
+          {enRango === 0
+            ? "En el rango elegido no tiene ninguna."
+            : `${enRango} ${enRango === 1 ? "tarea" : "tareas"} dentro del rango elegido.`}
+        </p>
+      )}
+    </div>
   )
 }
 

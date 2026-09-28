@@ -454,3 +454,154 @@ export async function getSerieCoberturaCil(
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
 }
+
+// ----- Historial del CIL: buscar por unidad y por fechas -----
+
+/**
+ * 🚨 Existe porque la tabla de la solapa mostraba las últimas 300 filas y nada
+ * más: para contestar "¿el OJA403 hizo alguna vez el CIL?" había que buscarlo a
+ * ojo entre todas las unidades, y cualquier registro más viejo que ese recorte
+ * era invisible. Esto pregunta directo a la base, así que el rango no depende de
+ * cuántas filas haya cargadas en el medio.
+ */
+export interface FilaHistorialCil {
+  id: string
+  fecha: string
+  dominio: string
+  tarea: string
+  operario: string
+  descripcion: string | null
+  foto_url: string | null
+}
+
+/** Lo que la unidad hizo DESDE SIEMPRE, sin importar el rango pedido. */
+export interface HistoriaUnidadCil {
+  dominio: string
+  total: number
+  primera: string | null
+  ultima: string | null
+  /** Última vez que cerró cada letra del ciclo, o `null` si nunca la hizo. */
+  porLetra: Record<string, string | null>
+}
+
+export interface HistorialCil {
+  filas: FilaHistorialCil[]
+  /** Filas que cumplen el filtro, aunque se hayan recortado para mostrar. */
+  total: number
+  recortada: boolean
+  /** Sólo cuando se pidió una unidad: contesta "¿alguna vez lo hizo?". */
+  unidad: HistoriaUnidadCil | null
+  /**
+   * Unidades del alcance (camión, camioneta, autoelevador activos) que no tienen
+   * NINGUNA tarea en el rango pedido. Es la lista a la que hay que ir a buscar.
+   */
+  sinRegistro: string[]
+  /**
+   * Primera tarea CIL cargada en el sistema. Sin este dato, "nunca hizo el CIL"
+   * se lee como si el registro existiera desde siempre, y no: arrancó en agosto
+   * de 2026.
+   */
+  registroDesde: string | null
+}
+
+const TOPE_HISTORIAL = 1000
+
+export async function getHistorialCil(filtro: {
+  dominio?: string | null
+  desde?: string | null
+  hasta?: string | null
+}): Promise<{ data: HistorialCil } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const dominio = filtro.dominio?.trim().toUpperCase() || null
+    const esFecha = (f?: string | null) => (f && /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : null)
+    const desde = esFecha(filtro.desde)
+    const hasta = esFecha(filtro.hasta)
+
+    let q = supabase
+      .from("mantenimiento_cil")
+      .select("id, fecha, dominio, tarea, operario, descripcion, foto_url", {
+        count: "exact",
+      })
+      .order("fecha", { ascending: false })
+      .limit(TOPE_HISTORIAL)
+    if (dominio) q = q.eq("dominio", dominio)
+    if (desde) q = q.gte("fecha", desde)
+    if (hasta) q = q.lte("fecha", hasta)
+
+    const [filasRes, vehRes, primeraRes, historiaRes] = await Promise.all([
+      q,
+      supabase
+        .from("catalogo_vehiculos")
+        .select("dominio, tipo")
+        .eq("active", true)
+        .order("dominio"),
+      supabase
+        .from("mantenimiento_cil")
+        .select("fecha")
+        .order("fecha", { ascending: true })
+        .limit(1),
+      // El histórico completo de la unidad elegida: es otra pregunta que el
+      // rango, y mezclarlas era justo lo que hacía parecer que no había datos.
+      dominio
+        ? supabase
+            .from("mantenimiento_cil")
+            .select("fecha, tarea")
+            .eq("dominio", dominio)
+            .order("fecha", { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+    ])
+
+    if (filasRes.error) return { error: filasRes.error.message }
+    if (vehRes.error) return { error: vehRes.error.message }
+
+    const filas = (filasRes.data || []) as FilaHistorialCil[]
+    const total = filasRes.count ?? filas.length
+
+    const ciclo = CICLO_CIL_MENSUAL as readonly string[]
+    let unidad: HistoriaUnidadCil | null = null
+    if (dominio) {
+      const historia = ((historiaRes.data || []) as Array<{
+        fecha: string
+        tarea: string
+      }>).slice()
+      const porLetra: Record<string, string | null> = {}
+      for (const letra of ciclo) {
+        // Vienen de la más nueva a la más vieja: la primera que coincide es la última hecha.
+        porLetra[letra] =
+          historia.find((h) => tareaDelCiclo(h.tarea) === letra)?.fecha ?? null
+      }
+      unidad = {
+        dominio,
+        total: historia.length,
+        ultima: historia[0]?.fecha ?? null,
+        primera: historia[historia.length - 1]?.fecha ?? null,
+        porLetra,
+      }
+    }
+
+    // Con una unidad elegida la lista no tiene sentido —serían "todas las
+    // demás"—, así que va vacía y la pantalla no la muestra.
+    const obligatorios = TIPOS_CIL_OBLIGATORIOS as readonly string[]
+    const conRegistro = new Set(filas.map((f) => f.dominio))
+    const sinRegistro = dominio ? [] : (vehRes.data || [])
+      .filter((v: { tipo: string | null }) => obligatorios.includes(v.tipo ?? ""))
+      .map((v: { dominio: string }) => v.dominio)
+      .filter((d: string) => !conRegistro.has(d) && !(d in DOMINIOS_CIL_EXCLUIDOS))
+
+    return {
+      data: {
+        filas,
+        total,
+        recortada: total > filas.length,
+        unidad,
+        sinRegistro,
+        registroDesde: primeraRes.data?.[0]?.fecha ?? null,
+      },
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
