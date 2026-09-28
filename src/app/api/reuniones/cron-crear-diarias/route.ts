@@ -16,9 +16,25 @@ interface ReunionTipoConfigRow {
 
 /**
  * Fecha objetivo de la reunión de Mantenimiento para el mes de `iso`
- * (regla_especial = 'segundo_lunes'): el 2º lunes del mes.
- * El 2º lunes es el lunes cuyo día del mes cae entre 8 y 14 inclusive.
+ * (regla_especial = 'dia_15_habil'): el 15, y si cae sábado o domingo, el
+ * lunes siguiente. A mitad de mes la recorrida edilicia ya está hecha y la
+ * reunión la revisa; un lunes fijo caía a veces el 8, con la recorrida sin
+ * empezar. No contempla feriados, igual que el resto de las reglas.
  * Devuelve "YYYY-MM-DD".
+ */
+function dia15HabilTarget(iso: string): string {
+  const [y, m] = iso.split("-").map(Number)
+  let dia = 15
+  const dow = new Date(Date.UTC(y, m - 1, dia)).getUTCDay() // 0 = dom, 6 = sáb
+  if (dow === 6) dia = 17
+  else if (dow === 0) dia = 16
+  return `${y}-${String(m).padStart(2, "0")}-${String(dia).padStart(2, "0")}`
+}
+
+/**
+ * Regla anterior de Mantenimiento (regla_especial = 'segundo_lunes'): el 2º
+ * lunes del mes, el lunes cuyo día cae entre 8 y 14. Se conserva por si algún
+ * tipo la vuelve a usar. Devuelve "YYYY-MM-DD".
  */
 function segundoLunesTarget(iso: string): string {
   const [y, m] = iso.split("-").map(Number)
@@ -101,6 +117,11 @@ export async function GET(req: Request) {
     // semana: se crean solo en sus fechas objetivo del mes.
     if (t.regla_especial === "quincena_2") {
       if (!presupuestoTargets(hoyIso).includes(hoyIso)) {
+        skipped.push({ tipo: t.tipo, motivo: "fuera_de_fecha_objetivo" })
+        continue
+      }
+    } else if (t.regla_especial === "dia_15_habil") {
+      if (dia15HabilTarget(hoyIso) !== hoyIso) {
         skipped.push({ tipo: t.tipo, motivo: "fuera_de_fecha_objetivo" })
         continue
       }
