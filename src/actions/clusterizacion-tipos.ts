@@ -38,7 +38,7 @@ export const MOTIVO_BAJA_LABELS: Record<MotivoBaja, string> = {
 /**
  * Proporción de la cartera que puede ser Ganador. Antes era un tope fijo de 200
  * PDV (devolución de la auditoría DPO H1 2026); desde el 14/09/2026 es el 5 % de
- * la cartera analizada (los que compraron en los últimos 45 días), así el corte
+ * la cartera analizada (los que compraron en el semestre), así el corte
  * acompaña el tamaño real de la cartera de cada tenant y de cada semestre.
  */
 export const PCT_GANADORES = 0.05
@@ -205,15 +205,19 @@ export interface ClienteClusterizado {
   nps_categoria: NpsCategoria | null
   /** Encuestas en las que respondió como Detractor dentro de la ventana. */
   nps_detractores: number
-  /** Entregas rechazadas por CAUSA DEL CLIENTE (sin dinero/cerrado/sin envases), últimos 45 días. */
+  /**
+   * Entregas rechazadas por CAUSA DEL CLIENTE (sin dinero/cerrado/sin envases) en
+   * el semestre. Desde el 28/09/2026 es el mismo número que `rechazos_culpa_periodo`
+   * (antes miraba los últimos 45 días); se mantiene por compatibilidad de la UI.
+   */
   rechazos_culpa: number
   /**
    * Entregas rechazadas por CAUSA DEL CLIENTE en TODO el período analizado (el
-   * semestre, no los 45 días). Es el número que decide la baja de clúster: en una
-   * ventana de 6 meses un rechazo aislado le pasa a cualquiera, dos ya es patrón.
+   * semestre). Es el número que decide la baja de clúster: en una ventana de 6
+   * meses un rechazo aislado le pasa a cualquiera, tres ya es patrón.
    */
   rechazos_culpa_periodo: number
-  /** Entregas rechazadas por cualquier motivo, últimos 45 días. */
+  /** Entregas rechazadas por cualquier motivo en el semestre (= `rechazos_total_periodo`). */
   rechazos_total: number
   /** Entregas rechazadas por cualquier motivo en TODO el período analizado. */
   rechazos_total_periodo: number
@@ -230,13 +234,7 @@ export interface ClienteClusterizado {
    * Los rechazos por error interno (preventa, distribución, etc.) NO cuentan.
    */
   estado: "pasa" | "no_pasa"
-  /**
-   * Señal operativa, independiente del estado: rechazó al menos una vez por su
-   * culpa en los últimos 45 días. Sirve para el día a día (¿viene rebotando?), no
-   * decide el clúster: para eso hace falta el patrón del período completo.
-   */
-  rechazo_reciente: boolean
-  /** Señal de salud: drop size (45 días) por debajo del piso (caro de servir). */
+  /** Señal de salud: drop size (semestre) por debajo del piso (caro de servir). */
   drop_bajo: boolean
   /** Señal de salud: RMD promedio por debajo del piso (mal servicio percibido). */
   rmd_bajo: boolean

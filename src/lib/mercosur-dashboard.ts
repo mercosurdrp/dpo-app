@@ -365,8 +365,10 @@ export async function consultarVentasPorCliente(
 // anterior— para que cada corrida DPO (2 veces al año, R4.2.2) quede congelada
 // y no cambie con cada día nuevo de ventas. El semestre EN CURSO se puede espiar
 // (corta en el último día con datos y compara contra el mismo tramo del año
-// anterior). El DROP SIZE mira los últimos 45 días del semestre y el rechazo
-// (estado) también, pero eso lo resuelve la capa de Supabase.
+// anterior). El DROP SIZE y la cartera analizada miran el MISMO semestre: todo
+// el análisis 4.2 se lee sobre una sola ventana (decisión del 28/09/2026; antes
+// el drop y la cartera usaban los últimos 45 días, que dejaba afuera a ~300 PDV
+// con facturación en el semestre y hacía depender la corrida de una sub-ventana).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface ClusterClienteRow {
@@ -379,10 +381,10 @@ export interface ClusterClienteRow {
   facturacion_sem: number
   /** Facturación neta del mismo semestre (o mismo tramo) del año anterior. */
   facturacion_sem_prev: number
-  /** Bultos de los últimos 45 días del semestre (para el drop size). */
-  bultos_45d: number
-  /** Días con visita en los últimos 45 días del semestre. */
-  dias_45d: number
+  /** Bultos del semestre elegido (para el drop size). */
+  bultos_sem: number
+  /** Días con visita en el semestre elegido. */
+  dias_sem: number
 }
 
 export interface SemestreOpcion {
@@ -399,7 +401,6 @@ export interface ClusterPeriodo {
   sem_hasta: string
   sem_prev_desde: string
   sem_prev_hasta: string
-  drop_desde: string
   semestre_id: string
   en_curso: boolean
   /** Semestres seleccionables (del más nuevo al más viejo). */
@@ -410,8 +411,6 @@ export interface ClusterVentasResultado {
   periodo: ClusterPeriodo
   clientes: ClusterClienteRow[]
 }
-
-const DROP_DIAS = 45
 
 function rangoSemestre(anio: number, mitad: 1 | 2): { desde: string; hasta: string } {
   return mitad === 1
@@ -439,7 +438,7 @@ export async function consultarClusterClientes(
       return {
         periodo: {
           sem_desde: "", sem_hasta: "", sem_prev_desde: "", sem_prev_hasta: "",
-          drop_desde: "", semestre_id: "", en_curso: false, semestres: [],
+          semestre_id: "", en_curso: false, semestres: [],
         },
         clientes: [],
       }
@@ -481,11 +480,6 @@ export async function consultarClusterClientes(
     const semPrevHasta = elegido.en_curso
       ? ymd(new Date(Date.UTC(anioSel - 1, maxM - 1, parseInt(maxF.slice(8, 10), 10))))
       : `${anioSel - 1}${rango.hasta.slice(4)}`
-    const [hy, hm, hd] = semHasta.split("-").map((s) => parseInt(s, 10))
-    const dropDesdeD = new Date(Date.UTC(hy, hm - 1, hd))
-    dropDesdeD.setUTCDate(dropDesdeD.getUTCDate() - (DROP_DIAS - 1))
-    const dropDesde = ymd(dropDesdeD)
-
     const res = await client.query<{
       id_cliente: number
       nombre: string | null
@@ -494,8 +488,8 @@ export async function consultarClusterClientes(
       segmento: string | null
       facturacion_sem: string
       facturacion_sem_prev: string
-      bultos_45d: string
-      dias_45d: string
+      bultos_sem: string
+      dias_sem: string
     }>(
       `SELECT
          id_cliente,
@@ -505,13 +499,13 @@ export async function consultarClusterClientes(
          max(ds_segmento_mkt)  AS segmento,
          sum(CASE WHEN fecha >= $1 AND fecha <= $2 THEN subtotal_neto ELSE 0 END)  AS facturacion_sem,
          sum(CASE WHEN fecha >= $3 AND fecha <= $4 THEN subtotal_neto ELSE 0 END)  AS facturacion_sem_prev,
-         sum(CASE WHEN fecha >= $5 AND fecha <= $2 THEN cantidades_total ELSE 0 END) AS bultos_45d,
-         count(DISTINCT CASE WHEN fecha >= $5 AND fecha <= $2 THEN fecha::date END) AS dias_45d
+         sum(CASE WHEN fecha >= $1 AND fecha <= $2 THEN cantidades_total ELSE 0 END) AS bultos_sem,
+         count(DISTINCT CASE WHEN fecha >= $1 AND fecha <= $2 THEN fecha::date END) AS dias_sem
        FROM comprobantes
        WHERE fecha >= $3 AND fecha <= $2 AND anulado = 'NO' AND id_cliente IS NOT NULL
        GROUP BY id_cliente
        HAVING sum(CASE WHEN fecha >= $1 AND fecha <= $2 THEN subtotal_neto ELSE 0 END) > 0`,
-      [semDesde, semHasta, semPrevDesde, semPrevHasta, dropDesde],
+      [semDesde, semHasta, semPrevDesde, semPrevHasta],
     )
 
     const clientes: ClusterClienteRow[] = res.rows.map((r) => ({
@@ -522,8 +516,8 @@ export async function consultarClusterClientes(
       segmento: r.segmento,
       facturacion_sem: Number(r.facturacion_sem) || 0,
       facturacion_sem_prev: Number(r.facturacion_sem_prev) || 0,
-      bultos_45d: Number(r.bultos_45d) || 0,
-      dias_45d: Number(r.dias_45d) || 0,
+      bultos_sem: Number(r.bultos_sem) || 0,
+      dias_sem: Number(r.dias_sem) || 0,
     }))
 
     return {
@@ -532,7 +526,6 @@ export async function consultarClusterClientes(
         sem_hasta: semHasta,
         sem_prev_desde: semPrevDesde,
         sem_prev_hasta: semPrevHasta,
-        drop_desde: dropDesde,
         semestre_id: elegido.id,
         en_curso: elegido.en_curso,
         semestres,

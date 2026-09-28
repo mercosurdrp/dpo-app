@@ -507,12 +507,13 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                   <strong className="text-emerald-600">Pasa</strong> = cumplió el criterio de servicio.{" "}
                   <strong className="text-red-600">No pasa</strong> = no lo cumplió y por eso perdió un
                   escalón de clúster; es el mismo criterio de la baja, así que todo “No pasa” tiene su
-                  motivo y, si venía de la fila de arriba, dice desde dónde bajó. Un rechazo suelto
-                  reciente se marca aparte como <em>rechazo reciente</em>: avisa, pero no mueve el clúster.{" "}
+                  motivo y, si venía de la fila de arriba, dice desde dónde bajó. Todas las
+                  ventanas son el semestre elegido: facturación, drop size, rechazos, RMD y NPS. La
+                  señal “rechazó hace poco” (45 días) vive en Priorización de entrega.{" "}
                   <strong>Salud</strong> (costo de servir):{" "}
-                  <strong className="text-amber-600">Atención</strong> = drop bajo (&lt; 3 b/vis, 45 días)
-                  o RMD bajo (&lt; 4,5, 6 meses); si no, <strong className="text-emerald-600">Sano</strong>.
-                  Se ocultan los clientes sin compras en 45 días (drop 0).
+                  <strong className="text-amber-600">Atención</strong> = drop bajo (&lt; 3 b/vis)
+                  o RMD bajo (&lt; 4,5); si no, <strong className="text-emerald-600">Sano</strong>.
+                  La cartera analizada son los PDV que compraron en el semestre (drop &gt; 0).
                 </p>
               </div>
             </CardContent>
@@ -734,15 +735,6 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                               <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
                                 <CheckCircle2 className="h-3.5 w-3.5" />
                                 Pasa
-                                {/* Rechazó hace poco pero no llega al patrón que baja de clúster. */}
-                                {c.rechazo_reciente ? (
-                                  <span
-                                    className="text-[10px] text-amber-600"
-                                    title={`Rechazó ${fmtNum(c.rechazos_culpa)} vez/veces en los últimos 45 días, pero no alcanza el criterio de baja (${data.min_rechazos_baja} en el semestre)`}
-                                  >
-                                    · rechazo reciente
-                                  </span>
-                                ) : null}
                               </span>
                             )}
                           </TableCell>
@@ -1739,7 +1731,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
                             />
                             <TooltipContent className="w-60 items-stretch">
                               <div className="flex w-full flex-col text-left">
-                                <p className="mb-1 font-semibold">Rechazos del cliente (últimos 45 días)</p>
+                                <p className="mb-1 font-semibold">Rechazos del cliente (semestre)</p>
                                 {c.rechazos_detalle.slice(0, 12).map((d, i) => (
                                   <div key={i} className="flex justify-between gap-3 py-0.5">
                                     <span className="opacity-80">{fmtFechaCorta(d.fecha)} · {d.motivo}</span>

@@ -55,17 +55,6 @@ interface PerfilCliente {
   entregas: number
 }
 
-/**
- * Resta meses a un YYYY-MM-DD. Igual que en `clusterizacion.ts`: la ventana de
- * RMD/NPS tiene que ser la misma en las dos pantallas o un cliente puede bajar
- * de clúster en una y no en la otra.
- */
-function restarMeses(fechaYmd: string, meses: number): string {
-  const [y, m, d] = fechaYmd.split("-").map((s) => parseInt(s, 10))
-  const dt = new Date(Date.UTC(y, m - 1 - meses, d))
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`
-}
-
 /** Resta días a un YYYY-MM-DD. */
 function restarDias(fecha: string, dias: number): string {
   const [y, m, d] = fecha.split("-").map((s) => parseInt(s, 10))
@@ -105,8 +94,8 @@ async function getPerfilClientes(
   // Señales de servicio del MISMO período que usa la clusterización para la baja.
   const [rechazosPeriodo, rmdPeriodo, detractores] = await Promise.all([
     getRechazosPorCliente(periodo.sem_desde, periodo.sem_hasta),
-    getRmdPromedio(restarMeses(periodo.sem_hasta, 6)),
-    getDetractoresNps(restarMeses(periodo.sem_hasta, 6), periodo.sem_hasta),
+    getRmdPromedio(periodo.sem_desde),
+    getDetractoresNps(periodo.sem_desde, periodo.sem_hasta),
   ])
 
   const crece = (r: { facturacion_sem: number; facturacion_sem_prev: number }) =>
@@ -115,9 +104,9 @@ async function getPerfilClientes(
       : true // cliente nuevo cuenta como "crece"
 
   // El umbral se calcula sobre la misma población que la pantalla (los que
-  // compraron en los últimos 45 días), para que el corte dé idéntico; pero se
-  // clasifica a TODOS los que facturaron, así ningún pedido del día queda sin clúster.
-  const conDrop = clientes.filter((r) => r.dias_45d > 0 && r.bultos_45d > 0)
+  // compraron en el semestre), para que el corte dé idéntico; pero se clasifica
+  // a TODOS los que facturaron, así ningún pedido del día queda sin clúster.
+  const conDrop = clientes.filter((r) => r.dias_sem > 0 && r.bultos_sem > 0)
   const umbral = umbralFacturacionAlta(
     conDrop.filter(crece).map((r) => r.facturacion_sem),
     topeGanadores(conDrop.length),

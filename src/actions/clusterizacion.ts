@@ -302,9 +302,10 @@ export async function getClusterizacion(
   }
 
   const { periodo, clientes: rows } = ventas
-  // Ocultamos a los que no compraron en los últimos 45 días (drop size 0): no
-  // son representativos para el análisis de servicio reciente.
-  const conDrop = rows.filter((r) => r.dias_45d > 0 && r.bultos_45d > 0)
+  // Cartera analizada = los que compraron en el semestre (drop size > 0). La
+  // facturación del semestre ya es > 0 por el HAVING de la consulta; el filtro
+  // deja afuera solo devoluciones/ajustes sin entrega real.
+  const conDrop = rows.filter((r) => r.dias_sem > 0 && r.bultos_sem > 0)
   if (conDrop.length === 0) {
     return {
       data: {
@@ -324,8 +325,8 @@ export async function getClusterizacion(
     }
   }
 
-  // RMD de los últimos 6 meses (muestra suficiente por cliente).
-  const rmdDesde = periodo.sem_hasta ? restarMeses(periodo.sem_hasta, 6) : ""
+  // RMD del semestre elegido (misma ventana que todo el análisis).
+  const rmdDesde = periodo.sem_desde
   const rmdMap = rmdDesde ? await getRmdPorCliente(rmdDesde) : new Map()
 
   // NPS de la misma ventana que el RMD, para que las dos señales de voz del
@@ -335,10 +336,10 @@ export async function getClusterizacion(
       ? await getNpsPorCliente(rmdDesde, periodo.sem_hasta)
       : new Map<number, NpsAcum>()
 
-  // Rechazos de TODO el período analizado. De acá salen dos lecturas distintas:
-  // el estado pasa/no-pasa mira solo los últimos 45 días (foto reciente del
-  // servicio) y la baja de clúster mira el período completo, donde un rechazo
-  // suelto no alcanza pero dos marcan un patrón.
+  // Rechazos de TODO el período analizado: la baja de clúster mira el semestre
+  // completo, donde un rechazo suelto no alcanza pero tres marcan un patrón.
+  // La señal "rechazó hace poco" (45 días) vive en Priorización de entrega,
+  // que es la herramienta diaria; acá no se muestra.
   const rechazoMap =
     periodo.sem_desde && periodo.sem_hasta
       ? await getRechazoPorCliente(periodo.sem_desde, periodo.sem_hasta)
@@ -420,7 +421,7 @@ export async function getClusterizacion(
         : null // sin venta el año anterior → cliente nuevo
     const crecePositivo = crecePositivoDe(r)
     const ingresoAlto = r.facturacion_sem >= umbral
-    const drop_size = r.dias_45d > 0 ? r.bultos_45d / r.dias_45d : 0
+    const drop_size = r.dias_sem > 0 ? r.bultos_sem / r.dias_sem : 0
     // Costo $/HL del año y cuadrante Valor×Costo (sin dato de costo → null).
     const costo_x_hl_ytd = costoHlMap.get(r.id_cliente) ?? null
     const costo_alto = costo_x_hl_ytd == null ? null : costo_x_hl_ytd >= umbralCosto
@@ -480,28 +481,18 @@ export async function getClusterizacion(
     const rmd_prom = rmd ? rmd.suma / rmd.n : null
     const nps = npsMap.get(r.id_cliente)
     const rech = rechazoMap.get(r.id_cliente)
-    // El detalle y el conteo del período cubren todo el semestre; el estado
-    // pasa/no-pasa se queda con la ventana corta de los últimos 45 días.
+    // El detalle, el conteo y el estado pasa/no-pasa cubren todo el semestre.
     const rechazos_detalle = rech
       ? [...rech.eventos].sort((a, b) => b.fecha.localeCompare(a.fecha))
       : []
     const rechazos_culpa_periodo = rechazos_detalle.length
-    const desde45 = periodo.drop_desde
-    const rechazos_culpa = desde45
-      ? rechazos_detalle.filter((e) => e.fecha >= desde45).length
-      : rechazos_culpa_periodo
+    const rechazos_culpa = rechazos_culpa_periodo
     const rechazos_total_periodo = rech ? rech.fechas_total.length : 0
-    const rechazos_total = rech
-      ? desde45
-        ? rech.fechas_total.filter((f) => f >= desde45).length
-        : rechazos_total_periodo
-      : 0
+    const rechazos_total = rechazos_total_periodo
     // SALUD: drop bajo o RMD bajo.
     const drop_bajo = drop_size < DROP_BAJO
     const rmd_bajo = rmd_prom != null && rmd_prom < RMD_BAJO
     const salud: "sano" | "atencion" = drop_bajo || rmd_bajo ? "atencion" : "sano"
-    // Señal operativa aparte del estado: ¿rechazó hace poco? (últimos 45 días).
-    const rechazo_reciente = rechazos_culpa >= 1
     // BAJA DE CLÚSTER: el cliente que falla en servicio pierde el escalón de
     // facturación alta. Cada motivo queda registrado para poder justificarlo.
     const cluster_base = clasificarCluster(ingresoAlto, crecePositivo)
@@ -530,8 +521,8 @@ export async function getClusterizacion(
       ingresos_actual: r.facturacion_sem,
       ingresos_anterior: r.facturacion_sem_prev,
       crecimiento_pct,
-      bultos_actual: r.bultos_45d,
-      dias_actual: r.dias_45d,
+      bultos_actual: r.bultos_sem,
+      dias_actual: r.dias_sem,
       drop_size,
       costo_x_hl_ytd,
       costo_alto,
@@ -551,7 +542,6 @@ export async function getClusterizacion(
       rechazos_total_periodo,
       rechazos_detalle,
       estado,
-      rechazo_reciente,
       drop_bajo,
       rmd_bajo,
       salud,

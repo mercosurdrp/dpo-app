@@ -15,24 +15,28 @@ import { dirname, resolve } from "node:path"
 import { pathToFileURL, fileURLToPath } from "node:url"
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
 
-const REVISION = "04"
-const FECHA = "15/09/26"
+const REVISION = "05"
+const FECHA = "28/09/26"
 const TITULO = "SOP USO DE LOS CLÚSTERES DE CLIENTES"
 const SECTOR = "CD RAMALLO"
 
-// Corrida de referencia (1º semestre 2026) con el tope del 5 %.
+// Corrida de referencia (1º semestre 2026) con el tope del 5 % y todas las
+// ventanas sobre el semestre (Rev 05). Con la ventana de 45 días de la Rev 04
+// la cartera era 1.811, el tope 91 y el Ganador quedaba en 76.
 const REF = {
-  cartera: "1.811",
-  tope: "91",
-  umbral: "$20.626.727",
-  umbralAnterior: "$10.048.012",
+  cartera: "2.105",
+  tope: "105",
+  umbral: "$19.041.976",
+  umbralAnterior: "$20.626.727",
+  carteraAnterior: "1.811",
+  topeAnterior: "91",
   filas: [
-    ["Ganador", "76", "4,2%", "34,3%", "15", "0"],
-    ["Básico", "14", "0,8%", "6,3%", "1", "0"],
-    ["En Crecimiento (Productor)", "1.168", "64,5%", "46,0%", "142", "15"],
-    ["Ventas Bajas", "553", "30,5%", "13,4%", "0", "143"],
+    ["Ganador", "90", "4,3%", "36,2%", "15", "0"],
+    ["Básico", "15", "0,7%", "6,3%", "1", "0"],
+    ["En Crecimiento (Productor)", "1.309", "62,2%", "43,9%", "147", "15"],
+    ["Ventas Bajas", "691", "32,8%", "13,6%", "0", "148"],
   ],
-  bajas: "158", bajasPct: "8,7%", bajasRechazos: "118", bajasRmd: "35", bajasNps: "12", bajasSinRechazo: "40",
+  bajas: "163", bajasPct: "7,7%", bajasRechazos: "120", bajasRmd: "37", bajasNps: "13", bajasSinRechazo: "43",
 }
 
 const aqui = dirname(fileURLToPath(import.meta.url))
@@ -61,17 +65,17 @@ const encabezado = `
 
 const definiciones = [
   ["CLUSTERIZACIÓN", `Agrupación de los PDV (clientes) en 4 clústeres según dos variables: ingresos del período y crecimiento vs el período anterior. El umbral que separa facturación alta de baja NO ES LA MEDIANA: es la facturación del cliente Nº N en el ranking de los que crecen, donde N es el <b>5 % de la cartera analizada</b> (${REF.tope} PDV en el 1º semestre 2026), de modo que el clúster Ganador nunca supere ese 5 % y lo integren los que más facturan.`],
-  ["CARTERA ANALIZADA", `PDV que compraron en los últimos 45 días del período (drop size mayor a cero). Es la población que muestra la pantalla y sobre la que se calcula el 5 % de Ganadores; los que no compraron en esa ventana no son representativos del servicio reciente y quedan fuera del análisis.`],
+  ["CARTERA ANALIZADA", `PDV que compraron en el semestre analizado (facturación y drop size mayores a cero). Es la población que muestra la pantalla y sobre la que se calcula el 5 % de Ganadores. Desde la Rev 05 coincide con el período del análisis: todo PDV con ingresos en el semestre tiene clúster, como pide el requisito R4.2.1.`],
   ["GANADOR", `Ingresos altos y crecimiento positivo. Como máximo el 5 % de la cartera analizada. Es el cliente a proteger: máxima prioridad de servicio en ruteo, entrega e inventario.`],
   ["EN CRECIMIENTO (“Productor” en la app)", `No alcanza el umbral de facturación alta, pero crece. Cliente con potencial: prioridad alta, no deteriorar su experiencia de entrega.`],
   ["BÁSICO", `Supera el umbral de facturación alta pero sin crecer (estancado o en caída). Mantener el servicio estándar y cuidar la relación.`],
   ["VENTAS BAJAS", `No alcanza el umbral de facturación alta y no crece. Es el clúster más caro de servir en proporción a lo que aporta: candidato a menor frecuencia, rutas consolidadas y ventanas amplias. Ante capacidad limitada, el ajuste comienza aquí.`],
   ["BAJA DE CLÚSTER", `Descenso de un escalón por falla de servicio del cliente (rechazos, RMD o NPS). El cliente pierde uno de los atributos que lo separan de Ventas Bajas. No modifica su facturación ni su crecimiento reales: es una penalización de servicio, y la app la muestra marcada con el motivo.`],
-  ["DROP SIZE", `Bultos promedio por entrega. Se usa como aproximación (proxy) del costo de servir: a menor drop size, más caro resulta atender el PDV.`],
+  ["DROP SIZE", `Bultos promedio por entrega, calculado sobre el semestre analizado. Se usa como aproximación (proxy) del costo de servir: a menor drop size, más caro resulta atender el PDV.`],
   ["OTIF", `On Time In Full: entregas a tiempo y completas. En esta operación el OTIF se mide a través del RECHAZO: una entrega cumple si no fue rechazada por causa del cliente. Es el estado pasa / no-pasa que muestra la pantalla de clusterización, y se compara por clúster en cada análisis.`],
   ["RECHAZO POR CULPA DEL CLIENTE", `Entrega rechazada por SIN DINERO, CERRADO o SIN ENVASES. Los rechazos por error interno (preventa, distribución, falta de stock) NO cuentan: no son responsabilidad del PDV y no hacen bajar de clúster.`],
-  ["RMD", `Rate My Delivery: calificación de la entrega por el cliente (1 a 5). Se compara por clúster en cada análisis y, por debajo de 4,99 de promedio, hace bajar de clúster.`],
-  ["NPS", `Net Promoter Score: encuesta de recomendación (0 a 10) que clasifica al cliente como Promotor, Pasivo o Detractor. Haber respondido como Detractor en la ventana hace bajar de clúster.`],
+  ["RMD", `Rate My Delivery: calificación de la entrega por el cliente (1 a 5). Se compara por clúster en cada análisis y, por debajo de 4,99 de promedio en el semestre, hace bajar de clúster.`],
+  ["NPS", `Net Promoter Score: encuesta de recomendación (0 a 10) que clasifica al cliente como Promotor, Pasivo o Detractor. Haber respondido como Detractor en el semestre hace bajar de clúster.`],
   ["SGL ROUTING", `Software de ruteo. Recibe clientes y pedidos exportados desde CHESS (interfaces .txt), arma las rutas de reparto y devuelve el resultado a CHESS.`],
   ["DPO-APP — CLUSTERIZACIÓN 4.2", `Sección Indicadores > Planeamiento > Clusterización de Clientes (4.2) de la dpo-app. Calcula los 4 clústeres a partir de la facturación real (comprobantes CHESS), aplica el tope de Ganadores (5 % de la cartera) y la baja por servicio, y muestra la matriz 2×2 con PDV, % de ingresos, drop size, RMD, NPS y No pasa/Atención por clúster, con tabla filtrable por clúster, por cliente y por baja de clúster.`],
   ["DPO-APP — PRIORIZACIÓN DE ENTREGA", `Sección Planeamiento > Priorización de entrega de la dpo-app. Clasifica los pedidos del día con las MISMAS reglas y el MISMO tope de Ganadores que la clusterización (código compartido), así el corte de pedidos y la pantalla 4.2 dicen lo mismo del cliente.`],
@@ -93,7 +97,8 @@ const historial = [
   ["01", "Emisión inicial", "06/07/26"],
   ["02", "Devolución de la auditoría DPO H1 2026 sobre el punto 4.2 (“foco en variables definidas; tener en cuenta variables pasa/no pasa”). El umbral de facturación alta deja de ser la mediana y pasa a ser el que acota el clúster Ganador a 200 PDV. Se incorpora la baja de clúster por rechazos, RMD y NPS (nuevo punto 2), con la aclaración de cómo tratar a los clientes degradados. Se actualizan las definiciones, el cuadro de referencia con la corrida del 1º semestre 2026 y el RACI. Se agrega el punto 8 con los parámetros del modelo.", "05/08/26"],
   ["03", "Ajuste del umbral de rechazos que dispara la baja de clúster: pasa de 2 a 3 entregas rechazadas por culpa del cliente en el semestre. Con 2 bajaban 285 PDV y entraba demasiado ruido; con 3 son 142 y el patrón es real. Se descartó exigir uno por mes (6 en el semestre) porque solo 27 PDV lo alcanzan y la baja quedaría decidida por RMD y NPS. Se actualiza el cuadro de referencia del punto 1 con la corrida recalculada del 1º semestre 2026 y el flujograma del punto 9. En la app, al abrir un clúster se indica cuántos PDV llegaron bajando y desde dónde.", "06/08/26"],
-  ["04", `El clúster Ganador deja de tener un tope fijo de 200 PDV y pasa a ser el 5 % de la cartera analizada (los PDV que compraron en los últimos 45 días del período): ${REF.tope} PDV en el 1º semestre 2026. Se mantiene el criterio (los que más facturan entre los que crecen) y las tres condiciones de baja de clúster. El corte de facturación alta sube de ${REF.umbralAnterior} a ${REF.umbral} por semestre y el Ganador queda en ${REF.filas[0][1]} PDV con el ${REF.filas[0][3]} de la facturación. Un tope proporcional acompaña el tamaño real de la cartera de cada semestre y de cada centro, cosa que el número fijo no hacía. Se actualizan las definiciones (nueva entrada Cartera analizada y Priorización de entrega), el cuadro de referencia del punto 1, los parámetros del punto 8 (PCT_GANADORES) y el flujograma. La priorización diaria de entrega usa el mismo tope.`, FECHA],
+  ["04", `El clúster Ganador deja de tener un tope fijo de 200 PDV y pasa a ser el 5 % de la cartera analizada (los PDV que compraron en los últimos 45 días del período): ${REF.tope} PDV en el 1º semestre 2026. Se mantiene el criterio (los que más facturan entre los que crecen) y las tres condiciones de baja de clúster. El corte de facturación alta sube de ${REF.umbralAnterior} a ${REF.umbral} por semestre y el Ganador queda en ${REF.filas[0][1]} PDV con el ${REF.filas[0][3]} de la facturación. Un tope proporcional acompaña el tamaño real de la cartera de cada semestre y de cada centro, cosa que el número fijo no hacía. Se actualizan las definiciones (nueva entrada Cartera analizada y Priorización de entrega), el cuadro de referencia del punto 1, los parámetros del punto 8 (PCT_GANADORES) y el flujograma. La priorización diaria de entrega usa el mismo tope.`, "15/09/26"],
+  ["05", `Todas las ventanas del análisis pasan a ser el semestre elegido. Hasta la Rev 04 la cartera analizada y el drop size miraban los últimos 45 días del semestre, y RMD y NPS los últimos 6 meses: eso dejaba fuera del análisis a ${Number(REF.cartera.replace(".", "")) - Number(REF.carteraAnterior.replace(".", ""))} PDV con facturación en el semestre (sin clúster, contra el requisito R4.2.1) y hacía depender la corrida oficial de una sub-ventana. Ahora la cartera analizada son los PDV que compraron en el semestre (${REF.cartera} en el 1º semestre 2026, antes ${REF.carteraAnterior}), el tope de Ganadores pasa de ${REF.topeAnterior} a ${REF.tope} y el corte de facturación alta de ${REF.umbralAnterior} a ${REF.umbral}. Las bajas de clúster no cambian de criterio. La señal operativa “rechazó hace poco” (45 días) sale de la pantalla 4.2 y queda solo en la priorización diaria de entrega. Se actualizan las definiciones, el cuadro de referencia del punto 1 y la tabla de ventanas del punto 2.`, FECHA],
 ]
 
 const tabla = (clase, cab, filas) => `
@@ -109,7 +114,7 @@ const cuerpo = `
 <h1>OBJETIVO</h1>
 <p>Establecer cómo se utiliza la clusterización de clientes (agrupación en 4 clústeres por ingresos y crecimiento, punto 4.2 del manual DPO) para diferenciar el servicio logístico: qué prioridad recibe cada clúster en el ruteo (SGL Routing), en la entrega en calle y en la asignación de inventario en el almacén. El SOP define, además, cómo el resultado de cada análisis semestral se cascadea a los equipos de Ventas y Operaciones y cómo se actualiza la información dentro del sistema/ruteador (requisitos R4.2.3 y R4.2.4).</p>
 <p>El principio rector: no todos los clientes se atienden igual. Ante capacidad limitada, quiebre de stock o contingencias en calle, el clúster define a quién se protege primero y dónde se ajusta el servicio.</p>
-<div class="nota">Novedad de esta revisión: el clúster Ganador deja de tener un tope fijo de 200 PDV y pasa a ser el <b>5 % de la cartera analizada</b> (${REF.tope} PDV en el 1º semestre 2026). Se mantienen el criterio —los que más facturan entre los que crecen— y los disparadores de baja por rechazos, RMD y NPS. La priorización diaria de entrega usa el mismo tope. Ver los puntos 1 y 8 del Desarrollo.</div>
+<div class="nota">Novedad de esta revisión: <b>todo el análisis se lee sobre el semestre elegido</b>. La cartera analizada, el drop size, los rechazos, el RMD y el NPS usan la misma ventana (antes la cartera y el drop miraban los últimos 45 días y RMD/NPS los últimos 6 meses). Así todo PDV con ingresos en el semestre tiene clúster (R4.2.1) y la corrida oficial no depende de una sub-ventana. Se mantienen el 5 % de Ganadores, el criterio —los que más facturan entre los que crecen— y los disparadores de baja. Ver los puntos 1 y 2 del Desarrollo.</div>
 
 <h1>ALCANCE</h1>
 <p>Involucra al Jefe de Logística, el Ruteador, el Supervisor de Distribución, el Supervisor / Encargado de Almacén y, como informados, a los Supervisores de Venta. Aplica a la operación de la Región Pampeana (CD Ramallo; zonas de reparto Pergamino, Ramallo, Colón, Arrecifes y San Nicolás).</p>
@@ -131,8 +136,8 @@ ${tabla("raci", ["ACTIVIDADES", "JEFE DE LOGÍSTICA", "RUTEADOR", "SUP. DISTRIBU
 <h2>1. El análisis de clusterización en dpo-app</h2>
 <p>El Jefe de Logística ejecuta el análisis en dpo-app > Indicadores > Planeamiento > Clusterización de Clientes (4.2), como mínimo 2 veces al año (enero y julio) y, además, cada vez que la operación entra en problemas de capacidad sostenidos. La pantalla trabaja por semestre calendario fijo: en el selector se elige el semestre cerrado (ej. “1º semestre 2026”), que compara contra el mismo semestre del año anterior y queda congelado como corrida oficial. Como evidencia de cada corrida se guarda una captura o export de la matriz junto con la minuta del cascadeo.</p>
 <ul>
-<li>La pantalla clasifica automáticamente la cartera analizada —los PDV con facturación en el período que además compraron en los últimos 45 días— en los 4 clústeres (Ganador / En Crecimiento / Básico / Ventas Bajas), cruzando ingresos contra crecimiento.</li>
-<li>El umbral de facturación alta es el que deja el clúster Ganador en su tope del <b>5 % de la cartera analizada</b>: la facturación del cliente Nº N entre los que crecen, con N = 5 % de los PDV analizados (redondeado). Así el Ganador son siempre los que más facturan, y el tamaño del grupo acompaña el tamaño real de la cartera de cada semestre. En la corrida del 1º semestre 2026 la cartera analizada fue de ${REF.cartera} PDV, el tope ${REF.tope} y el umbral ${REF.umbral} de facturación en el semestre (con el tope fijo anterior de 200 era ${REF.umbralAnterior}).</li>
+<li>La pantalla clasifica automáticamente la cartera analizada —los PDV que compraron en el semestre— en los 4 clústeres (Ganador / En Crecimiento / Básico / Ventas Bajas), cruzando ingresos contra crecimiento.</li>
+<li>El umbral de facturación alta es el que deja el clúster Ganador en su tope del <b>5 % de la cartera analizada</b>: la facturación del cliente Nº N entre los que crecen, con N = 5 % de los PDV analizados (redondeado). Así el Ganador son siempre los que más facturan, y el tamaño del grupo acompaña el tamaño real de la cartera de cada semestre. En la corrida del 1º semestre 2026 la cartera analizada fue de ${REF.cartera} PDV, el tope ${REF.tope} y el umbral ${REF.umbral} de facturación en el semestre (con la ventana de 45 días de la Rev 04 la cartera era ${REF.carteraAnterior}, el tope ${REF.topeAnterior} y el umbral ${REF.umbralAnterior}).</li>
 <li>La matriz 2×2 muestra por clúster: cantidad de PDV, % de los ingresos totales, drop size promedio, RMD promedio, No pasa / Atención y cuántos clientes salieron o entraron por la baja de servicio. La tabla inferior permite filtrar por clúster, por baja de clúster y buscar un cliente puntual: es la fuente para bajar el listado a ruteo, distribución y almacén.</li>
 <li>Al abrir un clúster, la app avisa arriba de la tabla cuántos de esos PDV llegaron bajando y desde qué clúster vienen, y pinta esas filas de rojo suave. Es la lectura obligada al entrar a Productor o a Ventas Bajas: distingue al cliente que de verdad es chico del que está ahí penalizado por servicio, que puede facturar alto o venir creciendo. Para aislarlos, el filtro “Baja de clúster” tiene la opción “Solo los que bajaron”.</li>
 </ul>
@@ -146,10 +151,10 @@ ${tabla("ref", ["Clúster", "PDV", "% cartera", "% facturación", "Bajaron", "Re
 <p><b>Qué dispara la baja.</b> Alcanza con cumplir UNA de estas tres condiciones:</p>
 ${tabla("cond", ["Condición", "Criterio", "Ventana"], [
   ["Rechazos", "3 o más entregas rechazadas por culpa del cliente (SIN DINERO, CERRADO o SIN ENVASES)", "El semestre completo"],
-  ["RMD", "Promedio de calificación menor a 4,99", "Últimos 6 meses"],
-  ["NPS", "Haber respondido como Detractor al menos una vez", "Últimos 6 meses"],
+  ["RMD", "Promedio de calificación menor a 4,99", "El semestre completo"],
+  ["NPS", "Haber respondido como Detractor al menos una vez", "El semestre completo"],
 ])}
-<p>El corte está en 3 porque la ventana es de seis meses: un rechazo aislado le ocurre a cualquier cliente que recibe entregas todas las semanas, y con 2 todavía entra mucho ruido (285 PDV alcanzados contra 142 con 3). Tres rechazos es más de uno cada dos meses: ahí ya hay un patrón. Se evaluó exigir uno por mes (6 en el semestre) y vacía la regla —solo 27 PDV llegan— dejando la baja en manos de RMD y NPS, que son las señales más flojas. Los rechazos por error interno no cuentan.</p>
+<p>Las tres condiciones se leen sobre el mismo semestre que la facturación y el crecimiento: una sola ventana para todo el análisis. El corte está en 3 porque la ventana es de seis meses: un rechazo aislado le ocurre a cualquier cliente que recibe entregas todas las semanas, y con 2 todavía entra mucho ruido (285 PDV alcanzados contra 142 con 3). Tres rechazos es más de uno cada dos meses: ahí ya hay un patrón. Se evaluó exigir uno por mes (6 en el semestre) y vacía la regla —solo 27 PDV llegan— dejando la baja en manos de RMD y NPS, que son las señales más flojas. Los rechazos por error interno no cuentan.</p>
 <p><b>A dónde baja cada clúster.</b> La regla es que el cliente pierde uno de los atributos que lo separan de Ventas Bajas. Ganador tiene dos (factura alto y crece), Básico y En Crecimiento tienen uno cada uno, y Ventas Bajas no tiene ninguno:</p>
 ${tabla("cond", ["Clúster de origen", "Atributo que pierde", "Clúster de destino"], [
   ["GANADOR (factura alto y crece)", "La facturación alta; conserva el crecimiento", "EN CRECIMIENTO (Productor)"],
