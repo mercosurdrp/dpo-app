@@ -6,6 +6,8 @@ import { toast } from "sonner"
 import { AlertTriangle, GraduationCap, ShieldCheck, Users, Wand2, BookOpen, ListChecks, UserPlus, Settings2, Trash2, ArrowUp, ArrowDown, Plus, X, Award } from "lucide-react"
 import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { PlanPacTab } from "./plan-pac-tab"
+import { AvanceTab } from "./avance-tab"
+import type { AvanceRol } from "@/actions/skap-avance"
 import type { PacPlanRol } from "@/actions/skap-pac"
 import { COLOR_GAP, COLOR_NIVEL_4, ESCALA_SKAP, LABEL_GAP, colorCelda } from "@/lib/skap/gap"
 import { Card, CardContent } from "@/components/ui/card"
@@ -93,13 +95,14 @@ interface Props {
   canEdit: boolean
   roles: { rol: SkapRol; label: string; sector: string }[]
   planPac: PacPlanRol | null
+  avance: AvanceRol | null
 }
 
-export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles, planPac }: Props) {
+export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles, planPac, avance }: Props) {
   const router = useRouter()
   const refrescarConScroll = useRefrescarConScroll()
   const [pending, startTransition] = useTransition()
-  const [vista, setVista] = useState<"matriz" | "pac" | "acciones">("matriz")
+  const [vista, setVista] = useState<"matriz" | "pac" | "acciones" | "avance">("matriz")
   const [evaluando, setEvaluando] = useState<SkapPersonaRow | null>(null)
   const [celdaEdit, setCeldaEdit] = useState<{ persona: SkapPersonaRow; habilidad: SkapHabilidad; celda: SkapCelda } | null>(null)
   const [editor, setEditor] = useState<"personas" | "habilidades" | null>(null)
@@ -241,7 +244,7 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles, plan
       </div>
 
       <div className="flex gap-2 border-b">
-        {(["matriz", "pac", "acciones"] as const).map((v) => (
+        {(["matriz", "pac", "acciones", "avance"] as const).map((v) => (
           <button
             key={v}
             onClick={() => setVista(v)}
@@ -253,7 +256,9 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles, plan
               ? "Matriz"
               : v === "pac"
                 ? "Plan de acción · PAC"
-                : `Plan de formación (${acciones.filter((a) => a.estado === "pendiente" || a.estado === "programada").length})`}
+                : v === "avance"
+                  ? "Avance por persona"
+                  : `Plan de formación (${acciones.filter((a) => a.estado === "pendiente" || a.estado === "programada").length})`}
           </button>
         ))}
       </div>
@@ -427,6 +432,8 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles, plan
         </>
       ) : vista === "pac" ? (
         <PlanPacTab rol={matriz.rol} plan={planPac} canEdit={canEdit} />
+      ) : vista === "avance" ? (
+        <AvanceTab avance={avance} />
       ) : (
         <AccionesTab acciones={acciones} rol={matriz.rol} canEdit={canEdit} />
       )}

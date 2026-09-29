@@ -1,5 +1,6 @@
 import { getMatrizRol, getAcciones, puedeEditarRol } from "@/actions/skap-habilidades"
 import { getPlanPac, sincronizarConPac } from "@/actions/skap-pac"
+import { getAvancePersonas } from "@/actions/skap-avance"
 import { ROLES_SKAP } from "@/lib/skap/roles"
 import type { SkapRol } from "@/types/database"
 import { MatrizHabilidadesClient } from "./matriz-habilidades-client"
@@ -17,11 +18,12 @@ export default async function MatrizSkapHabilidadesPage({
   // Primero se trae del PAC lo que ya se dictó/aprobó: las acciones quedan cumplidas solas.
   await sincronizarConPac(rol).catch(() => 0)
 
-  const [matriz, acciones, canEdit, planPac] = await Promise.all([
+  const [matriz, acciones, canEdit, planPac, avance] = await Promise.all([
     getMatrizRol(rol),
     getAcciones(rol),
     puedeEditarRol(rol),
     getPlanPac(rol),
+    getAvancePersonas(rol),
   ])
 
   if ("error" in matriz) {
@@ -40,6 +42,7 @@ export default async function MatrizSkapHabilidadesPage({
       canEdit={canEdit}
       roles={ROLES_SKAP}
       planPac={"error" in planPac ? null : planPac.data}
+      avance={"error" in avance ? null : avance.data}
     />
   )
 }
