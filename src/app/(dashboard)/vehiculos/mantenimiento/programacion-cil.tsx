@@ -502,9 +502,11 @@ function CalendarioMes({
                         }`}
                         className={`block truncate rounded border px-1 py-0.5 text-[11px] leading-tight font-medium ${TONO_ESTADO[c.estado]}`}
                       >
-                        {/* El número de flota primero: es como se lo nombra en el
-                            galpón. La patente queda para el título. */}
-                        {c.numero ?? c.dominio}
+                        {/* La PATENTE en el casillero: es con lo que se identifica
+                            la unidad en toda la app —checklists, OT, combustible— y
+                            el número de flota no se cruza con nada. El N° queda en
+                            el título, al pasar el mouse. */}
+                        {c.dominio}
                       </span>
                     ))}
                   </div>
