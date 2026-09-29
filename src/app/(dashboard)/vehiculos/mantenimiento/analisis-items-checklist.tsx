@@ -29,7 +29,10 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  ComposedChart,
+  LabelList,
   Legend,
+  Line,
   ResponsiveContainer,
   Tooltip as RTooltip,
   XAxis,
@@ -149,8 +152,34 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
     set.add(hoyISO().slice(0, 4))
     return Array.from(set).sort((a, b) => b.localeCompare(a))
   }, [analisis.porMes])
-  const { items, cronicos, porMes, totales } = datos
+  const { items, cronicos, porMes, porCategoria, totales } = datos
   const router = useRouter()
+
+  /**
+   * Pareto de partes del vehículo.
+   *
+   * 🚨 Antes eran dos barras por categoría (NO OK y observación). Con 3 a 6
+   * hallazgos por mes eso no separaba nada y encima obligaba a sumar de cabeza
+   * para saber qué parte pesa más. Ordenado de mayor a menor con el acumulado,
+   * la lectura es directa: dónde está el 80%.
+   *
+   * 🚨 El acumulado va en HALLAZGOS, no en %: comparte el eje con las barras.
+   * Un segundo eje para el porcentaje dibuja una correlación que no existe.
+   */
+  const pareto = useMemo(() => {
+    const orden = [...porCategoria].sort((a, b) => b.veces - a.veces)
+    const total = orden.reduce((a, c) => a + c.veces, 0)
+    let acum = 0
+    return orden.map((c) => {
+      acum += c.veces
+      return {
+        categoria: c.categoria,
+        veces: c.veces,
+        acumulado: acum,
+        pct: total > 0 ? Math.round((acum / total) * 100) : 0,
+      }
+    })
+  }, [porCategoria])
 
   const [, startTransition] = useTransition()
   const [verSinDeteccion, setVerSinDeteccion] = useState(false)
@@ -596,6 +625,77 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      {pareto.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              Dónde se concentran los hallazgos (Pareto)
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Partes ordenadas de mayor a menor y la línea de acumulado: se lee de una
+              en qué dos o tres está el grueso · {etiquetaPeriodo}
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={pareto}
+                  margin={{ top: 18, right: 12, bottom: 4, left: 0 }}
+                >
+                  <CartesianGrid
+                    vertical={false}
+                    className="stroke-border"
+                    strokeOpacity={0.5}
+                  />
+                  <XAxis
+                    dataKey="categoria"
+                    tick={{ fontSize: 11 }}
+                    className="fill-muted-foreground"
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fontSize: 11 }}
+                    className="fill-muted-foreground"
+                  />
+                  <RTooltip
+                    cursor={{ className: "fill-muted", opacity: 0.4 }}
+                    content={<TooltipBarras />}
+                  />
+                  <Bar
+                    dataKey="veces"
+                    name="Hallazgos"
+                    fill={paleta.serie(0)}
+                    radius={[4, 4, 0, 0]}
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    type="linear"
+                    dataKey="acumulado"
+                    name="Acumulado"
+                    stroke={paleta.otras}
+                    strokeWidth={2}
+                    dot={{ r: 3.5, fill: paleta.otras, strokeWidth: 0 }}
+                    isAnimationActive={false}
+                  >
+                    {/* El % va como etiqueta sobre el punto: es la lectura del
+                        Pareto, pero sin meter un segundo eje. */}
+                    <LabelList
+                      dataKey="pct"
+                      position="top"
+                      offset={8}
+                      className="fill-muted-foreground"
+                      fontSize={11}
+                      formatter={(v) => `${v ?? ""}%`}
+                    />
+                  </Line>
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {porMes.length > 0 && (
         <Card id="defectos-por-mes" className="scroll-mt-4">
