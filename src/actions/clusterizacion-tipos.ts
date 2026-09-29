@@ -112,8 +112,8 @@ export const NPS_CATEGORIA_LABELS: Record<NpsCategoria, string> = {
   Detractor: "Detractor",
 }
 
-// Matriz Valor × Costo: cruce de facturación (alta/baja, mediana) con el costo
-// logístico $/HL del año (alto/bajo, mediana). Cada cuadrante tiene una jugada.
+// Matriz Valor × Costo: cruce de facturación (alta/baja, corte del Ganador) con el
+// costo logístico $/HL del semestre (alto/bajo, mediana). Cada cuadrante tiene una jugada.
 export type CuadranteId = "proteger" | "optimizar" | "mantener" | "revisar"
 
 export const CUADRANTE_LABELS: Record<CuadranteId, string> = {
@@ -180,11 +180,13 @@ export interface ClienteClusterizado {
   /** Proxy de costo de servir: bultos por visita (menor = más caro de servir). */
   drop_size: number
   /**
-   * Costo logístico $/HL acumulado del año (YTD), traído del indicador Costo/PDV
-   * (misma fuente que su solapa "Acumulado"). null = el PDV no tiene costo cargado.
+   * Costo logístico $/HL acumulado del SEMESTRE elegido (meses cargados del
+   * semestre), con la misma acumulación que la solapa "Acumulado" de Costo/PDV.
+   * El nombre conserva el sufijo "ytd" por compatibilidad: hasta el 29/09/2026 era
+   * el acumulado del año. null = el PDV no tiene costo cargado.
    */
   costo_x_hl_ytd: number | null
-  /** Costo $/HL por encima de la mediana del año (caro de servir). null = sin dato de costo. */
+  /** Costo $/HL por encima de la mediana del semestre (caro de servir). null = sin dato de costo. */
   costo_alto: boolean | null
   /** Cuadrante Valor×Costo (facturación alta/baja × $/HL alto/bajo). null = sin dato de costo. */
   cuadrante: CuadranteId | null
@@ -292,7 +294,7 @@ export interface ClusterizacionData {
   min_rechazos_baja: number
   /** RMD promedio por debajo del cual el cliente baja de clúster. */
   rmd_minimo_baja: number
-  /** Umbral de costo $/HL (mediana del año) que separa "caro" de "barato". 0 si no hay datos. */
+  /** Umbral de costo $/HL (mediana del semestre) que separa "caro" de "barato". 0 si no hay datos. */
   umbral_costo: number
   resumen: ClusterResumen[]
   clientes: ClienteClusterizado[]

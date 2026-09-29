@@ -190,6 +190,32 @@ export interface CostoYtdMes {
 export async function getCostoPorPdvYtd(
   anio: number,
 ): Promise<{ data: CostoPorPdvRow[]; meses: CostoYtdMes[] } | { error: string }> {
+  return consultarCostoAcumulado("get_costo_por_pdv_ytd_json", { p_anio: anio })
+}
+
+/**
+ * ACUMULADO de un RANGO de meses de un año (mesDesde..mesHasta, inclusive). Lo usa
+ * la clusterización 4.2, que lee todo sobre el semestre elegido: el $/HL de la
+ * matriz Valor × Costo tiene que ser el del semestre, no el del año (si no, la
+ * corrida oficial de un semestre cerrado cambia cada vez que se carga un mes nuevo
+ * de costo). Misma acumulación que la YTD (migración 20260929120000).
+ */
+export async function getCostoPorPdvRango(
+  anio: number,
+  mesDesde: number,
+  mesHasta: number,
+): Promise<{ data: CostoPorPdvRow[]; meses: CostoYtdMes[] } | { error: string }> {
+  return consultarCostoAcumulado("get_costo_por_pdv_rango_json", {
+    p_anio: anio,
+    p_mes_desde: mesDesde,
+    p_mes_hasta: mesHasta,
+  })
+}
+
+async function consultarCostoAcumulado(
+  rpc: "get_costo_por_pdv_ytd_json" | "get_costo_por_pdv_rango_json",
+  args: Record<string, number>,
+): Promise<{ data: CostoPorPdvRow[]; meses: CostoYtdMes[] } | { error: string }> {
   const supabase = await createClient()
   // Una sola RPC que acumula del lado del servidor.
   //
@@ -199,9 +225,7 @@ export async function getCostoPorPdvYtd(
   // silencio, así que el acumulado mostraba "5 meses cargados" y le faltaba un mes
   // entero de costo sin avisar. Ahora es un solo statement (con su propio timeout de
   // 60s, ver migración 20260721140000) y cualquier fallo se devuelve como error.
-  const { data, error } = await supabase.rpc("get_costo_por_pdv_ytd_json", {
-    p_anio: anio,
-  })
+  const { data, error } = await supabase.rpc(rpc, args)
   if (error) return { error: error.message }
 
   const payload = (data ?? {}) as { data?: unknown; meses?: unknown }

@@ -646,7 +646,7 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                       <TableHead className="text-right">Drop size</TableHead>
                       <TableHead className="text-right">RMD</TableHead>
                       <TableHead className="text-right">NPS</TableHead>
-                      <TableHead className="text-right">Costo/PDV<br />($/HL año)</TableHead>
+                      <TableHead className="text-right">Costo/PDV<br />($/HL semestre)</TableHead>
                       <TableHead className="text-right">Acción</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -845,7 +845,7 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
 
 /**
  * Solapa "Análisis Valor × Costo": cruza la facturación (alta/baja) con el costo
- * logístico $/HL del año (alto/bajo) en una matriz 2×2, asigna a cada PDV una
+ * logístico $/HL del semestre (alto/bajo) en una matriz 2×2, asigna a cada PDV una
  * acción recomendada según su cuadrante y permite bajar los reportes por supervisor.
  */
 const CUBOS_ORDEN: CuboId[] = [
@@ -1313,7 +1313,7 @@ function SolapaDiagrama({
                   <TableHead>Localidad</TableHead>
                   <TableHead>Supervisor</TableHead>
                   <TableHead className="text-right">Facturación semestre</TableHead>
-                  <TableHead className="text-right">$/HL año</TableHead>
+                  <TableHead className="text-right">$/HL semestre</TableHead>
                   <TableHead className="text-right">Crec.</TableHead>
                   <TableHead>Rechazo (45 d)</TableHead>
                   <TableHead>Equipo frío</TableHead>
@@ -1566,7 +1566,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
               Matriz <strong>Valor × Costo</strong>: cruza la <strong>facturación del semestre</strong>{" "}
               (alta/baja, corte <strong>{fmtMoneda(umbral_ingresos)}</strong>: el que deja el clúster
               Ganador en su tope de {data.max_ganadores} PDV, el {Math.round(data.pct_ganadores * 100)} % de la cartera) con el{" "}
-              <strong>costo logístico $/HL del año</strong> (alto/bajo, corte = mediana{" "}
+              <strong>costo logístico $/HL del semestre</strong> (alto/bajo, corte = mediana{" "}
               <strong>{fmtMoneda(umbral_costo)}</strong>). Cada cuadrante tiene una acción recomendada.
             </p>
             <p className="text-xs text-muted-foreground">
@@ -1677,7 +1677,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
                   <TableHead>Localidad</TableHead>
                   <TableHead>Cluster</TableHead>
                   <TableHead className="text-right">Facturación semestre</TableHead>
-                  <TableHead className="text-right">$/HL año</TableHead>
+                  <TableHead className="text-right">$/HL semestre</TableHead>
                   <TableHead>Rechazo (45 d)</TableHead>
                   <TableHead>Equipo frío</TableHead>
                   <TableHead>Acción recomendada</TableHead>

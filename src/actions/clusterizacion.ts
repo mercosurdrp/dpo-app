@@ -8,7 +8,7 @@ import {
   type EquipoFrioCliente,
   type CensoThomasResultado,
 } from "@/lib/mercosur-dashboard"
-import { getCostoPorPdvYtd } from "./costo-pdv"
+import { getCostoPorPdvRango, getCostoPorPdvYtd } from "./costo-pdv"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -350,16 +350,26 @@ export async function getClusterizacion(
     ? await getSupervisorPorPromotor(restarMeses(periodo.sem_hasta, 6))
     : new Map<string, string>()
 
-  // Costo logístico $/HL del año (YTD) por PDV, reusando el indicador Costo/PDV
-  // (misma función que alimenta su solapa "Acumulado", para que los números
-  // coincidan). Es opcional: si no hay meses cargados o la RPC falla, queda vacío
-  // y la columna muestra "—".
-  const anioYtd = periodo.sem_hasta ? parseInt(periodo.sem_hasta.slice(0, 4), 10) : 0
+  // Costo logístico $/HL del SEMESTRE elegido por PDV (meses del semestre que
+  // estén cargados en el costo mensual), reusando la acumulación del indicador
+  // Costo/PDV. Hasta el 29/09/2026 era el acumulado del año: la única variable de
+  // la 4.2 que no miraba el semestre, y hacía que la corrida oficial de un semestre
+  // cerrado cambiara con cada mes nuevo de costo. Es opcional: si no hay meses
+  // cargados o la RPC falla, queda vacío y la columna muestra "—". Si la función
+  // por rango todavía no existe en la base (migración 20260929120000 sin aplicar),
+  // cae al acumulado del año para no dejar la matriz sin costo.
+  const anioSem = periodo.sem_hasta ? parseInt(periodo.sem_hasta.slice(0, 4), 10) : 0
   const costoHlMap = new Map<number, number>()
-  if (anioYtd) {
-    const costoYtd = await getCostoPorPdvYtd(anioYtd)
-    if (!("error" in costoYtd)) {
-      for (const f of costoYtd.data) {
+  if (anioSem) {
+    const mesDesde = parseInt(periodo.sem_desde.slice(5, 7), 10)
+    const mesHasta = parseInt(periodo.sem_hasta.slice(5, 7), 10)
+    let costo = await getCostoPorPdvRango(anioSem, mesDesde, mesHasta)
+    if ("error" in costo) {
+      console.warn(`[clusterizacion] costo por rango no disponible (${costo.error}); se usa el acumulado del año`)
+      costo = await getCostoPorPdvYtd(anioSem)
+    }
+    if (!("error" in costo)) {
+      for (const f of costo.data) {
         if (f.hl > 0) costoHlMap.set(f.id_cliente, f.costo_x_hl)
       }
     }
@@ -401,7 +411,7 @@ export async function getClusterizacion(
     }
   }
 
-  // Umbral de costo = mediana del $/HL del año (separa "caro" de "barato").
+  // Umbral de costo = mediana del $/HL del semestre (separa "caro" de "barato").
   const umbralCosto = mediana([...costoHlMap.values()])
 
   // Umbral de facturación alta = la facturación del cliente Nº `maxGanadores` en

@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
   // Hoja 2: clientes.
   const HEADER = [
     "Cliente", "ID", "Localidad", "Supervisor", "Promotor", "Cluster",
-    "Facturación YTD", "$/HL año", "Crecimiento %", "Rechazo (semestre)", "Equipos frío", "Modelos frío",
+    "Facturación semestre", "$/HL semestre", "Crecimiento %", "Rechazo (semestre)", "Equipos frío", "Modelos frío",
     "Cubo", "SOM censo %", "HL mercado", "HL competencia", "Dominio", "Frente", "Batalla", "Score ataque",
   ]
   const rows = filas.map((c: ClienteClusterizado) => ({
@@ -100,8 +100,8 @@ export async function GET(req: NextRequest) {
     Supervisor: c.supervisor ?? "",
     Promotor: c.promotor ?? "",
     Cluster: CLUSTER_LABELS[c.cluster],
-    "Facturación YTD": Math.round(c.ingresos_actual),
-    "$/HL año": c.costo_x_hl_ytd == null ? "" : Math.round(c.costo_x_hl_ytd),
+    "Facturación semestre": Math.round(c.ingresos_actual),
+    "$/HL semestre": c.costo_x_hl_ytd == null ? "" : Math.round(c.costo_x_hl_ytd),
     "Crecimiento %": c.crecimiento_pct == null ? "nuevo" : Math.round(c.crecimiento_pct * 100),
     "Rechazo (semestre)": c.estado === "no_pasa" ? `No pasa (${c.rechazos_culpa})` : "Pasa",
     "Equipos frío": c.equipos_frio_n,
