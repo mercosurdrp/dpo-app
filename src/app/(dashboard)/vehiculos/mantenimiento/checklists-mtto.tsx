@@ -43,6 +43,9 @@ import {
   Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from "recharts"
+import type { VehiculoTipo } from "@/types/database"
+import { usePaletaViz, type PaletaViz } from "./_components/paleta-viz"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import {
   FiltroPeriodo,
@@ -506,24 +509,115 @@ function TablaArrastre({
   )
 }
 
-/** Días entre dos fechas `YYYY-MM-DD` (b − a), sin zona horaria de por medio. */
-function diasEntreISO(a: string, b: string): number {
-  const ms = (f: string) => {
-    const [y, m, d] = f.split("-").map(Number)
-    return Date.UTC(y, m - 1, d)
-  }
-  return Math.round((ms(b) - ms(a)) / 86_400_000)
+interface TajadaFoco {
+  dominio: string
+  focos: number
+  abiertos: number
+}
+
+/**
+ * Torta de focos de un tipo de unidad.
+ *
+ * 🚨 Camiones y autoelevadores van en tortas SEPARADAS a propósito: son dos
+ * flotas con distinta cantidad de unidades y de checklists, y mezclarlas hacía
+ * que dos autoelevadores se comieran la mitad del círculo frente a ocho
+ * camiones. Cada torta responde "dentro de SU flota, quién concentra".
+ */
+function TortaFocos({
+  titulo,
+  datos,
+  paleta,
+}: {
+  titulo: string
+  datos: TajadaFoco[]
+  paleta: PaletaViz
+}) {
+  const total = datos.reduce((a, d) => a + d.focos, 0)
+  return (
+    <div className="rounded-lg border p-3">
+      <p className="mb-1 flex items-baseline gap-2 text-sm font-medium">
+        {titulo}
+        <span className="text-xs font-normal text-muted-foreground">
+          {total} {total === 1 ? "foco" : "focos"}
+        </span>
+      </p>
+      {total === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          Sin focos en el período
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="h-52 min-w-[13rem] flex-1">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={datos}
+                  dataKey="focos"
+                  nameKey="dominio"
+                  innerRadius="45%"
+                  outerRadius="80%"
+                  paddingAngle={2}
+                  isAnimationActive={false}
+                  stroke="var(--color-card)"
+                  strokeWidth={2}
+                >
+                  {datos.map((d, i) => (
+                    <Cell key={d.dominio} fill={paleta.serie(i)} />
+                  ))}
+                </Pie>
+                <RTooltip
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null
+                    const d = payload[0].payload as TajadaFoco
+                    return (
+                      <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-sm">
+                        <p className="font-medium">{d.dominio}</p>
+                        <p className="text-muted-foreground">
+                          {d.focos} {d.focos === 1 ? "foco" : "focos"} ·{" "}
+                          {Math.round((d.focos / total) * 100)}% ·{" "}
+                          {d.abiertos} sin resolver
+                        </p>
+                      </div>
+                    )
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          {/* La referencia con el número al lado: la identidad nunca queda sólo
+              en el color, y así se lee sin tener que apuntar con el mouse. */}
+          <ul className="min-w-40 space-y-1 text-xs">
+            {datos.map((d, i) => (
+              <li key={d.dominio} className="flex items-center gap-2">
+                <span
+                  className="size-2.5 shrink-0 rounded-sm"
+                  style={{ backgroundColor: paleta.serie(i) }}
+                />
+                <span className="font-medium">{d.dominio}</span>
+                <span className="ml-auto tabular-nums text-muted-foreground">
+                  {d.focos} · {Math.round((d.focos / total) * 100)}%
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface Props {
   itemsNoOk: ChecklistItemNoOk[]
   comentarios: ChecklistComentario[]
+  /** Flota con su tipo: separa la torta de camiones de la de autoelevadores. */
+  unidades: Array<{ dominio: string; tipo: VehiculoTipo | null }>
   puedeEditar: boolean
 }
 
 export function ChecklistsMtto({
   itemsNoOk,
   comentarios,
+  unidades,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -641,34 +735,34 @@ export function ChecklistsMtto({
   // de gestión de esta pantalla —quién arrastra deuda— y no repite el corte
   // leve/crítico que ya muestra la pirámide.
   const porUnidad = useMemo(() => {
-    const hoy = hoyISO()
-    const m = new Map<
-      string,
-      { abiertos: number; resueltos: number; masViejo: string | null }
-    >()
+    const m = new Map<string, { abiertos: number; resueltos: number }>()
     for (const i of visibles) {
-      const u = m.get(i.dominio) ?? { abiertos: 0, resueltos: 0, masViejo: null }
-      if (i.plan?.estado === "resuelto") {
-        u.resueltos++
-      } else {
-        u.abiertos++
-        const f = i.fecha.slice(0, 10)
-        if (!u.masViejo || f < u.masViejo) u.masViejo = f
-      }
+      const u = m.get(i.dominio) ?? { abiertos: 0, resueltos: 0 }
+      if (i.plan?.estado === "resuelto") u.resueltos++
+      else u.abiertos++
       m.set(i.dominio, u)
     }
     return Array.from(m.entries())
-      .map(([dominio, v]) => ({
-        dominio,
-        abiertos: v.abiertos,
-        resueltos: v.resueltos,
-        total: v.abiertos + v.resueltos,
-        // Días del foco abierto más viejo: lo que separa "de ayer" de "arrastra".
-        dias: v.masViejo ? diasEntreISO(v.masViejo, hoy) : null,
-      }))
+      .map(([dominio, v]) => ({ dominio, ...v, total: v.abiertos + v.resueltos }))
       .sort((a, b) => b.abiertos - a.abiertos || b.total - a.total)
   }, [visibles])
-  const maxFocos = Math.max(1, ...porUnidad.map((u) => u.total))
+  const paleta = usePaletaViz()
+  const tipoPorDominio = useMemo(
+    () => new Map(unidades.map((u) => [u.dominio, u.tipo])),
+    [unidades]
+  )
+  const tortas = useMemo(() => {
+    const armar = (ok: (t: VehiculoTipo | null) => boolean) =>
+      porUnidad
+        .filter((u) => ok(tipoPorDominio.get(u.dominio) ?? null))
+        .map((u) => ({ dominio: u.dominio, focos: u.total, abiertos: u.abiertos }))
+        .sort((a, b) => b.focos - a.focos)
+    return {
+      camiones: armar((t) => t === "camion"),
+      autoelevadores: armar((t) => t === "autoelevador"),
+      otras: armar((t) => t !== "camion" && t !== "autoelevador"),
+    }
+  }, [porUnidad, tipoPorDominio])
 
   const criticos = visibles.filter((i) => i.critico).length
   const conPlan = visibles.filter((i) => i.plan).length
@@ -832,75 +926,24 @@ export function ChecklistsMtto({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Medidor por unidad: el largo de la barra es el total de focos de
-                la unidad, lo pleno lo que sigue abierto y lo tenue lo cerrado.
-                🚨 Reemplaza a una barra apilada de dos colores: con estos
-                volúmenes (0 a 3 abiertos sobre totales de 1 a 26) casi todo lo
-                que pintaba eran focos YA resueltos, y el número que importa
-                —cuántos quedan— era el pedacito más chico. */}
-            <div className="space-y-1">
-              {porUnidad.map((u) => (
-                <div
-                  key={u.dominio}
-                  className="grid grid-cols-[5.5rem_2rem_1fr_auto] items-center gap-3"
-                >
-                  <span className="text-sm font-medium">{u.dominio}</span>
-                  <span
-                    className={cn(
-                      "text-right text-base tabular-nums",
-                      u.abiertos > 0
-                        ? "font-semibold text-foreground"
-                        : "text-muted-foreground"
-                    )}
-                    title={`${u.abiertos} sin resolver de ${u.total}`}
-                  >
-                    {u.abiertos}
-                  </span>
-                  <div
-                    className="relative h-4 overflow-hidden rounded bg-muted/50"
-                    title={`${u.total} focos: ${u.abiertos} sin resolver, ${u.resueltos} resueltos`}
-                  >
-                    <div
-                      className="absolute inset-y-0 left-0 bg-muted-foreground/25"
-                      style={{ width: `${(u.total / maxFocos) * 100}%` }}
-                    />
-                    <div
-                      className="absolute inset-y-0 left-0 rounded-r bg-sky-700 dark:bg-sky-400"
-                      style={{ width: `${(u.abiertos / maxFocos) * 100}%` }}
-                    />
-                  </div>
-                  <span className="w-28 text-right text-xs">
-                    {u.dias === null ? (
-                      <span className="text-muted-foreground/60">al día</span>
-                    ) : (
-                      <span
-                        className={cn(
-                          "rounded px-1.5 py-0.5 tabular-nums",
-                          u.dias >= 30
-                            ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
-                            : u.dias >= 8
-                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                              : "bg-muted text-muted-foreground"
-                        )}
-                      >
-                        {u.dias === 0 ? "de hoy" : `${u.dias} d`}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              ))}
+            {/* Dos tortas, una por flota: cuánto de los focos del período se lo
+                lleva cada unidad. Antes era una barra apilada roja/azul donde el
+                grueso de lo pintado eran focos YA resueltos. */}
+            <div className="grid gap-3 lg:grid-cols-2">
+              <TortaFocos titulo="Camiones" datos={tortas.camiones} paleta={paleta} />
+              <TortaFocos
+                titulo="Autoelevadores"
+                datos={tortas.autoelevadores}
+                paleta={paleta}
+              />
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block h-2.5 w-5 rounded-sm bg-sky-700 dark:bg-sky-400" />
-                Sin resolver
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block h-2.5 w-5 rounded-sm bg-muted-foreground/25" />
-                Resueltos
-              </span>
-              <span>· a la derecha, hace cuánto está el más viejo sin resolver</span>
-            </div>
+            {tortas.otras.length > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Fuera de las dos tortas:{" "}
+                {tortas.otras.map((u) => `${u.dominio} (${u.focos})`).join(", ")} — no
+                son camiones ni autoelevadores.
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

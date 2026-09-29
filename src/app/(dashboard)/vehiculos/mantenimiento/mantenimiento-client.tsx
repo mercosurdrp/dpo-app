@@ -809,6 +809,7 @@ export function MantenimientoClient({
           <ChecklistsMtto
             itemsNoOk={checklists.itemsNoOk}
             comentarios={checklists.comentarios}
+            unidades={unidades}
             puedeEditar={puedeEditar}
           />
         </TabsContent>
