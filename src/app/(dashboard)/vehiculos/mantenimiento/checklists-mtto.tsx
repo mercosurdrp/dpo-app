@@ -538,12 +538,12 @@ function TortaFocos({
       <p className="mb-1 flex items-baseline gap-2 text-sm font-medium">
         {titulo}
         <span className="text-xs font-normal text-muted-foreground">
-          {total} {total === 1 ? "foco" : "focos"}
+          {total} {total === 1 ? "defecto" : "defectos"}
         </span>
       </p>
       {total === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">
-          Sin focos en el período
+          Sin defectos en el período
         </p>
       ) : (
         <div className="flex flex-wrap items-center gap-3">
@@ -573,7 +573,7 @@ function TortaFocos({
                       <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-sm">
                         <p className="font-medium">{d.dominio}</p>
                         <p className="text-muted-foreground">
-                          {d.focos} {d.focos === 1 ? "foco" : "focos"} ·{" "}
+                          {d.focos} {d.focos === 1 ? "defecto" : "defectos"} ·{" "}
                           {Math.round((d.focos / total) * 100)}% ·{" "}
                           {d.abiertos} sin resolver
                         </p>
@@ -939,14 +939,15 @@ export function ChecklistsMtto({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-              Focos por unidad
+              Defectos detectados por unidad
               <span className="text-sm font-normal text-muted-foreground">
                 · {etiquetaPeriodo}
               </span>
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Un foco es un problema por unidad: si el mismo ítem se vuelve a marcar
-              todos los días hasta que se arregla, sigue siendo uno.
+              Cada defecto que el checklist marcó NO OK o regular, contado una sola vez
+              por unidad: si el mismo ítem se vuelve a marcar todos los días hasta que
+              se arregla, sigue siendo uno.
             </p>
           </CardHeader>
           <CardContent>
