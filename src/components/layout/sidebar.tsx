@@ -54,6 +54,7 @@ import {
   Shirt,
   Thermometer,
   Leaf,
+  PackageOpen,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -387,6 +388,14 @@ const navItemsFlat: NavItem[] = [
     pampeanaOnly: true,
     hideForEmpleado: true,
   },
+  {
+    label: "Mudanza",
+    href: "/mudanza",
+    icon: <PackageOpen className="size-5" />,
+    roles: ["admin", "supervisor", "admin_rrhh"],
+    hideForEmpleado: true,
+    pampeanaOnly: true,
+  },
 ]
 
 // ===== Menú agrupado por dominio (rediseño 2026-08) =====
@@ -454,6 +463,7 @@ export const navSections: NavGroup[] = [
     "/sugerencias",
   ]),
   grupo("Gestión", ["/herramientas-gestion", "/presupuesto", "/sla", "/huella-carbono"]),
+  grupo("Mudanza", ["/mudanza"]),
 ]
 
 // Red de seguridad: un item nuevo agregado a navItemsFlat pero olvidado en los
