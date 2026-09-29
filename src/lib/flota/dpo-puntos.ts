@@ -67,6 +67,17 @@ export interface SeccionFlota {
 }
 
 export const SECCIONES_FLOTA: SeccionFlota[] = [
+  // 🚨 El orden de este array ES el orden de las solapas. Los checklists van
+  // primeros dentro de Operación: es lo que se mira todos los días.
+  {
+    id: "checklists",
+    label: "Check lists",
+    grupo: "operacion",
+    puntos: ["1.3"],
+    requisitos: ["R1.3.2", "R1.3.3", "R1.3.6", "R1.3.7"],
+    aporta:
+      "Checklist digital con estratificación por vehículo, incidencia y conductor, y seguimiento de defectos críticos.",
+  },
   {
     id: "tablero",
     label: "Tablero operativo",
@@ -93,15 +104,6 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     requisitos: ["R2.4.1", "R2.4.2"],
     aporta:
       "Registro digital de todas las órdenes de servicio correctivo, estratificable por unidad, tipo y estado.",
-  },
-  {
-    id: "checklists",
-    label: "Check lists",
-    grupo: "operacion",
-    puntos: ["1.3"],
-    requisitos: ["R1.3.2", "R1.3.3", "R1.3.6", "R1.3.7"],
-    aporta:
-      "Checklist digital con estratificación por vehículo, incidencia y conductor, y seguimiento de defectos críticos.",
   },
   {
     // 🚨 El id es el estado de la solapa en la URL: no renombrarlo.
