@@ -734,13 +734,33 @@ export function ChecklistsMtto({
   // Por unidad: lo que sigue abierto contra lo que ya se cerró. Es la lectura
   // de gestión de esta pantalla —quién arrastra deuda— y no repite el corte
   // leve/crítico que ya muestra la pirámide.
+  /**
+   * Focos por unidad, contando PROBLEMAS y no marcas.
+   *
+   * 🚨 Un defecto que dura tres semanas lo vuelve a marcar el chofer en cada
+   * checklist: la pérdida de fluidos del HELI1 dejó 23 filas. Contando fila por
+   * fila, el HELI1 daba 26 focos contra 3 del HELI2 y se comía la torta entera
+   * con UN problema. Se agrupa por unidad + categoría + ítem, la misma clave
+   * que usa el arrastre (`agruparArrastre`) y el tiempo de respuesta.
+   *
+   * Un problema cuenta como abierto mientras alguna de sus marcas siga sin
+   * plan resuelto: que se haya cerrado la del martes no lo cierra si el jueves
+   * volvió a aparecer.
+   */
   const porUnidad = useMemo(() => {
-    const m = new Map<string, { abiertos: number; resueltos: number }>()
+    const focos = new Map<string, { dominio: string; abierto: boolean }>()
     for (const i of visibles) {
-      const u = m.get(i.dominio) ?? { abiertos: 0, resueltos: 0 }
-      if (i.plan?.estado === "resuelto") u.resueltos++
-      else u.abiertos++
-      m.set(i.dominio, u)
+      const clave = `${i.dominio}|${i.categoria}|${i.item}`
+      const f = focos.get(clave) ?? { dominio: i.dominio, abierto: false }
+      if (i.plan?.estado !== "resuelto") f.abierto = true
+      focos.set(clave, f)
+    }
+    const m = new Map<string, { abiertos: number; resueltos: number }>()
+    for (const f of focos.values()) {
+      const u = m.get(f.dominio) ?? { abiertos: 0, resueltos: 0 }
+      if (f.abierto) u.abiertos++
+      else u.resueltos++
+      m.set(f.dominio, u)
     }
     return Array.from(m.entries())
       .map(([dominio, v]) => ({ dominio, ...v, total: v.abiertos + v.resueltos }))
@@ -924,6 +944,10 @@ export function ChecklistsMtto({
                 · {etiquetaPeriodo}
               </span>
             </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Un foco es un problema por unidad: si el mismo ítem se vuelve a marcar
+              todos los días hasta que se arregla, sigue siendo uno.
+            </p>
           </CardHeader>
           <CardContent>
             {/* Dos tortas, una por flota: cuánto de los focos del período se lo
