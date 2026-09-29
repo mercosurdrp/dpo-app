@@ -111,6 +111,23 @@ function urlExportChecklist(r: {
   return `/api/vehiculos/checklist/export${qs ? `?${qs}` : ""}`
 }
 
+/**
+ * Intensidad de la celda del mapa: un solo tono, cinco escalones.
+ *
+ * 🚨 El color mide CANTIDAD, no estado: por eso un único tono y no el
+ * verde/amarillo/rojo. Corta en 60% para que el número siga legible en claro y
+ * en oscuro, y arranca en 10% para que un hallazgo suelto igual se vea.
+ */
+function tonoCelda(n: number, max: number): string {
+  if (n === 0) return ""
+  const r = n / max
+  if (r <= 0.2) return "bg-sky-500/10"
+  if (r <= 0.4) return "bg-sky-500/20"
+  if (r <= 0.6) return "bg-sky-500/30"
+  if (r <= 0.8) return "bg-sky-500/45"
+  return "bg-sky-500/60"
+}
+
 const mesCorto = (ym: string) => {
   const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
   const [y, m] = ym.split("-")
@@ -149,8 +166,43 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
     set.add(hoyISO().slice(0, 4))
     return Array.from(set).sort((a, b) => b.localeCompare(a))
   }, [analisis.porMes])
-  const { items, cronicos, porMes, porCategoria, totales } = datos
+  const { items, cronicos, porMes, totales } = datos
   const router = useRouter()
+
+  /**
+   * Mapa parte × unidad: dónde se concentra cada hallazgo.
+   *
+   * 🚨 Acá había una barra acostada de NO OK / observación por categoría. Con 3
+   * a 6 hallazgos por mes esa barra no separaba nada —cuatro rectángulos de dos
+   * colores— y sobre todo no contestaba la pregunta que sigue: si la categoría
+   * es un problema de la flota o de UNA unidad. Se arma con `items[].unidades`,
+   * que ya viene del server: no hay consulta nueva.
+   */
+  const mapa = useMemo(() => {
+    const porCat = new Map<string, Map<string, number>>()
+    const totalUnidad = new Map<string, number>()
+    for (const i of items) {
+      if (i.hallazgos === 0) continue
+      const fila = porCat.get(i.categoria) ?? new Map<string, number>()
+      for (const u of i.unidades) {
+        fila.set(u.dominio, (fila.get(u.dominio) ?? 0) + u.veces)
+        totalUnidad.set(u.dominio, (totalUnidad.get(u.dominio) ?? 0) + u.veces)
+      }
+      porCat.set(i.categoria, fila)
+    }
+    const dominios = Array.from(totalUnidad.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([d]) => d)
+    const filas = Array.from(porCat.entries())
+      .map(([categoria, m]) => ({
+        categoria,
+        celdas: dominios.map((d) => m.get(d) ?? 0),
+        total: Array.from(m.values()).reduce((a, b) => a + b, 0),
+      }))
+      .sort((a, b) => b.total - a.total)
+    const max = Math.max(1, ...filas.flatMap((f) => f.celdas))
+    return { dominios, filas, max, totalUnidad }
+  }, [items])
   const [, startTransition] = useTransition()
   const [verSinDeteccion, setVerSinDeteccion] = useState(false)
   const [dialogo, setDialogo] = useState<DialogoObs | null>(null)
@@ -596,74 +648,90 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
         </CardContent>
       </Card>
 
-      {(porCategoria.length > 0 || porMes.length > 0) && (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {porCategoria.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">
-                  Hallazgos por parte del vehículo
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  NO OK y observaciones nunca se suman: van una barra al lado de
-                  la otra · {etiquetaPeriodo}
-                </p>
-              </CardHeader>
-              <CardContent>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={porCategoria}
-                      layout="vertical"
-                      margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
-                      barGap={2}
-                    >
-                      <CartesianGrid
-                        horizontal={false}
-                        className="stroke-border"
-                        strokeOpacity={0.5}
-                      />
-                      <XAxis
-                        type="number"
-                        allowDecimals={false}
-                        tick={{ fontSize: 11 }}
-                        className="fill-muted-foreground"
-                      />
-                      <YAxis
-                        type="category"
-                        dataKey="categoria"
-                        width={104}
-                        tick={{ fontSize: 11 }}
-                        className="fill-muted-foreground"
-                      />
-                      <RTooltip
-                        cursor={{ className: "fill-muted", opacity: 0.4 }}
-                        content={<TooltipBarras />}
-                      />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Bar
-                        dataKey="noOk"
-                        name="NO OK"
-                        fill={paleta.critico}
-                        radius={[0, 4, 4, 0]}
-                        isAnimationActive={false}
-                      />
-                      <Bar
-                        dataKey="regular"
-                        name="Observación"
-                        fill={paleta.leve}
-                        radius={[0, 4, 4, 0]}
-                        isAnimationActive={false}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+      {mapa.filas.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              Dónde se concentra: parte del vehículo × unidad
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Una fila cargada pareja es un problema de toda la flota; una sola celda
+              oscura es una unidad · {etiquetaPeriodo}
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th className="pb-2 pr-3 text-left text-xs font-medium text-muted-foreground">
+                      Parte
+                    </th>
+                    {mapa.dominios.map((d) => (
+                      <th
+                        key={d}
+                        className="px-1 pb-2 text-center text-xs font-medium text-muted-foreground"
+                      >
+                        {d}
+                      </th>
+                    ))}
+                    <th className="pb-2 pl-3 text-right text-xs font-medium text-muted-foreground">
+                      Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mapa.filas.map((f) => (
+                    <tr key={f.categoria}>
+                      <td className="py-1 pr-3 font-medium whitespace-nowrap">
+                        {f.categoria}
+                      </td>
+                      {f.celdas.map((n, i) => (
+                        <td key={mapa.dominios[i]} className="p-0.5">
+                          <div
+                            title={`${f.categoria} · ${mapa.dominios[i]}: ${n} ${
+                              n === 1 ? "hallazgo" : "hallazgos"
+                            }`}
+                            className={cn(
+                              "flex h-8 items-center justify-center rounded-md text-xs tabular-nums",
+                              n === 0
+                                ? "text-muted-foreground/40"
+                                : "font-medium text-foreground",
+                              tonoCelda(n, mapa.max)
+                            )}
+                          >
+                            {n === 0 ? "·" : n}
+                          </div>
+                        </td>
+                      ))}
+                      <td className="py-1 pl-3 text-right font-semibold tabular-nums">
+                        {f.total}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td className="pt-2 pr-3 text-xs text-muted-foreground">Total</td>
+                    {mapa.dominios.map((d) => (
+                      <td
+                        key={d}
+                        className="px-1 pt-2 text-center text-xs tabular-nums text-muted-foreground"
+                      >
+                        {mapa.totalUnidad.get(d) ?? 0}
+                      </td>
+                    ))}
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-          {porMes.length > 0 && (
-            <Card id="defectos-por-mes" className="scroll-mt-4">
+      {porMes.length > 0 && (
+        <Card id="defectos-por-mes" className="scroll-mt-4">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Hallazgos por mes</CardTitle>
                 <p className="text-xs text-muted-foreground">
@@ -716,10 +784,8 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+          </CardContent>
+        </Card>
       )}
 
       <Card id="items-sin-deteccion" className="scroll-mt-4">
