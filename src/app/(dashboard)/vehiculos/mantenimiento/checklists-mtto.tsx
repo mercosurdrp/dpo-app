@@ -43,6 +43,16 @@ import {
   Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip as RTooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import {
   FiltroPeriodo,
@@ -53,6 +63,8 @@ import {
   rangoDe,
   type PeriodoState,
 } from "./_components/filtro-periodo"
+import { usePaletaViz } from "./_components/paleta-viz"
+import { TooltipBarras } from "./_components/tooltip-barras"
 import { ScrollX } from "./_components/scroll-x"
 import { AdherenciaChecklistCard } from "./adherencia-checklist"
 import { KpiCard } from "./_components/kpi-card"
@@ -506,15 +518,6 @@ function TablaArrastre({
   )
 }
 
-/** Días entre dos fechas `YYYY-MM-DD` (b − a), sin zona horaria de por medio. */
-function diasEntreISO(a: string, b: string): number {
-  const ms = (f: string) => {
-    const [y, m, d] = f.split("-").map(Number)
-    return Date.UTC(y, m - 1, d)
-  }
-  return Math.round((ms(b) - ms(a)) / 86_400_000)
-}
-
 interface Props {
   itemsNoOk: ChecklistItemNoOk[]
   comentarios: ChecklistComentario[]
@@ -544,6 +547,7 @@ export function ChecklistsMtto({
     periodoInicial("mes")
   )
   const rango = useMemo(() => rangoDe(periodo), [periodo])
+  const paleta = usePaletaViz()
   // El plan se edita sobre un ítem, pero puede cerrar toda una serie: `ids`
   // lleva las respuestas del grupo cuando viene del arrastre agrupado.
   const [planTarget, setPlanTarget] = useState<{
@@ -637,62 +641,20 @@ export function ChecklistsMtto({
     [comentarios, fDominio, fTipo, rango]
   )
 
-  // Por unidad: quién arrastra deuda, desde cuándo y con qué.
-  //
-  // 🚨 Acá había una barra apilada abiertos/resueltos. Decía CUÁNTOS y nada
-  // más: dos camiones con 4 focos abiertos daban la misma barra aunque uno los
-  // tuviera de ayer y el otro de hace dos meses, y no se veía si lo abierto era
-  // crítico ni qué ítem se repite. La tabla contesta eso, que es con lo que se
-  // sale a hacer algo.
+  // Por unidad: lo que sigue abierto contra lo que ya se cerró. Es la lectura
+  // de gestión de esta pantalla —quién arrastra deuda— y no repite el corte
+  // leve/crítico que ya muestra la pirámide.
   const porUnidad = useMemo(() => {
-    const hoy = hoyISO()
-    const m = new Map<
-      string,
-      {
-        abiertos: number
-        resueltos: number
-        criticos: number
-        masViejo: string | null
-        items: Map<string, number>
-      }
-    >()
+    const m = new Map<string, { abiertos: number; resueltos: number }>()
     for (const i of visibles) {
-      const u =
-        m.get(i.dominio) ??
-        { abiertos: 0, resueltos: 0, criticos: 0, masViejo: null, items: new Map() }
-      if (i.plan?.estado === "resuelto") {
-        u.resueltos++
-      } else {
-        u.abiertos++
-        if (i.critico) u.criticos++
-        const f = i.fecha.slice(0, 10)
-        if (!u.masViejo || f < u.masViejo) u.masViejo = f
-        u.items.set(i.item, (u.items.get(i.item) ?? 0) + 1)
-      }
+      const u = m.get(i.dominio) ?? { abiertos: 0, resueltos: 0 }
+      if (i.plan?.estado === "resuelto") u.resueltos++
+      else u.abiertos++
       m.set(i.dominio, u)
     }
     return Array.from(m.entries())
-      .map(([dominio, v]) => {
-        const total = v.abiertos + v.resueltos
-        const top = Array.from(v.items.entries()).sort((a, b) => b[1] - a[1])[0]
-        return {
-          dominio,
-          abiertos: v.abiertos,
-          resueltos: v.resueltos,
-          criticos: v.criticos,
-          total,
-          dias: v.masViejo ? diasEntreISO(v.masViejo, hoy) : null,
-          repetido: top ? { item: top[0], veces: top[1] } : null,
-          cerrado: total > 0 ? Math.round((v.resueltos / total) * 100) : 0,
-        }
-      })
-      .sort(
-        (a, b) =>
-          b.criticos - a.criticos ||
-          (b.dias ?? -1) - (a.dias ?? -1) ||
-          b.abiertos - a.abiertos ||
-          b.total - a.total
-      )
+      .map(([dominio, v]) => ({ dominio, ...v, total: v.abiertos + v.resueltos }))
+      .sort((a, b) => b.abiertos - a.abiertos || b.total - a.total)
   }, [visibles])
 
   const criticos = visibles.filter((i) => i.critico).length
@@ -845,7 +807,7 @@ export function ChecklistsMtto({
         </div>
       </div>
 
-      {/* Foco por unidad: a qué camión hay que ir a ver, y por qué */}
+      {/* Foco por unidad: qué camión arrastra y cuál está al día */}
       {porUnidad.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
@@ -855,92 +817,57 @@ export function ChecklistsMtto({
                 · {etiquetaPeriodo}
               </span>
             </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Ordenado por lo que hay que atender primero: críticos abiertos, después lo
-              más viejo sin resolver.
-            </p>
           </CardHeader>
           <CardContent>
-            <ScrollX>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Unidad</TableHead>
-                    <TableHead className="text-right">Abiertos</TableHead>
-                    <TableHead className="text-right">Críticos</TableHead>
-                    <TableHead className="text-right">Más viejo</TableHead>
-                    <TableHead>Lo que más se repite</TableHead>
-                    <TableHead className="w-44">Cerrado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {porUnidad.map((u) => (
-                    <TableRow key={u.dominio}>
-                      <TableCell className="font-medium">{u.dominio}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {u.abiertos > 0 ? (
-                          <span className="font-semibold">{u.abiertos}</span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {u.criticos > 0 ? (
-                          <span className="rounded px-1.5 py-0.5 font-semibold bg-rose-500/15 text-rose-700 dark:text-rose-400">
-                            {u.criticos}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      {/* La antigüedad del más viejo abierto: es el dato que la barra
-                          apilada no mostraba y el que separa "de ayer" de "arrastra". */}
-                      <TableCell className="text-right">
-                        {u.dias === null ? (
-                          <span className="text-muted-foreground">—</span>
-                        ) : (
-                          <span
-                            className={cn(
-                              "rounded px-1.5 py-0.5 text-xs tabular-nums",
-                              u.dias >= 30
-                                ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
-                                : u.dias >= 8
-                                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                                  : "bg-muted text-muted-foreground"
-                            )}
-                          >
-                            {u.dias === 0 ? "hoy" : `${u.dias} d`}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="max-w-[22rem] text-sm">
-                        {u.repetido ? (
-                          <span className="text-muted-foreground">
-                            <span className="text-foreground">{u.repetido.item}</span>
-                            {u.repetido.veces > 1 && ` · ${u.repetido.veces} veces`}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">todo cerrado</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-                            <div
-                              className="h-full rounded-full bg-emerald-500/70"
-                              style={{ width: `${u.cerrado}%` }}
-                            />
-                          </div>
-                          <span className="w-16 text-xs tabular-nums text-muted-foreground">
-                            {u.cerrado}% · {u.resueltos}/{u.total}
-                          </span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollX>
+            <div style={{ height: Math.max(180, porUnidad.length * 34 + 60) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={porUnidad}
+                  layout="vertical"
+                  margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
+                  barCategoryGap="28%"
+                >
+                  <CartesianGrid
+                    horizontal={false}
+                    className="stroke-border"
+                    strokeOpacity={0.5}
+                  />
+                  <XAxis
+                    type="number"
+                    allowDecimals={false}
+                    tick={{ fontSize: 11 }}
+                    className="fill-muted-foreground"
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="dominio"
+                    width={84}
+                    tick={{ fontSize: 11 }}
+                    className="fill-muted-foreground"
+                  />
+                  <RTooltip
+                    cursor={{ className: "fill-muted", opacity: 0.4 }}
+                    content={<TooltipBarras totalLabel="Focos" />}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar
+                    dataKey="abiertos"
+                    stackId="focos"
+                    name="Sin resolver"
+                    fill={paleta.critico}
+                    isAnimationActive={false}
+                  />
+                  <Bar
+                    dataKey="resueltos"
+                    stackId="focos"
+                    name="Resueltos"
+                    fill={paleta.leve}
+                    radius={[0, 4, 4, 0]}
+                    isAnimationActive={false}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
       )}
