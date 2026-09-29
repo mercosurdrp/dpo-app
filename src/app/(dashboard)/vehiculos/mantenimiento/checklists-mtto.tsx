@@ -509,51 +509,63 @@ function TablaArrastre({
   )
 }
 
-interface TajadaFoco {
-  dominio: string
+/** Cuántos motivos se dibujan antes de agrupar en "Otros". */
+const MOTIVOS_EN_TORTA = 6
+
+interface TajadaMotivo {
+  /** El ítem del checklist que se marcó: el motivo del NO OK. */
+  motivo: string
+  categoria: string
+  critico: boolean
   focos: number
-  abiertos: number
+  /** En qué unidades apareció ese motivo, de la que más lo repite a la que menos. */
+  unidades: Array<{ dominio: string; veces: number }>
+  otros?: boolean
 }
 
 /**
- * Torta de focos de un tipo de unidad.
+ * Torta de motivos de una flota.
  *
  * 🚨 Camiones y autoelevadores van en tortas SEPARADAS a propósito: son dos
  * flotas con distinta cantidad de unidades y de checklists, y mezclarlas hacía
- * que dos autoelevadores se comieran la mitad del círculo frente a ocho
- * camiones. Cada torta responde "dentro de SU flota, quién concentra".
+ * que los dos autoelevadores se comieran medio círculo frente a ocho camiones.
+ *
+ * 🚨 La tajada es el MOTIVO, no la unidad: lo que se quiere saber es qué es lo
+ * que más veces hace que un check dé NO OK. La unidad va en la referencia, que
+ * es donde se necesita ("cierre de lonas, 8 veces, casi todas del NY").
  */
-function TortaFocos({
+function TortaMotivos({
   titulo,
   datos,
   paleta,
 }: {
   titulo: string
-  datos: TajadaFoco[]
+  datos: TajadaMotivo[]
   paleta: PaletaViz
 }) {
   const total = datos.reduce((a, d) => a + d.focos, 0)
+  const color = (d: TajadaMotivo, i: number) => (d.otros ? paleta.otras : paleta.serie(i))
   return (
     <div className="rounded-lg border p-3">
       <p className="mb-1 flex items-baseline gap-2 text-sm font-medium">
         {titulo}
         <span className="text-xs font-normal text-muted-foreground">
-          {total} {total === 1 ? "foco" : "focos"}
+          {total} {total === 1 ? "hallazgo" : "hallazgos"}
         </span>
       </p>
       {total === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">
-          Sin focos en el período
+          Sin hallazgos en el período
         </p>
       ) : (
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="h-52 min-w-[13rem] flex-1">
+        <div className="flex flex-wrap items-start gap-3">
+          <div className="h-48 min-w-[11rem] flex-1">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={datos}
                   dataKey="focos"
-                  nameKey="dominio"
+                  nameKey="motivo"
                   innerRadius="45%"
                   outerRadius="80%"
                   paddingAngle={2}
@@ -562,21 +574,26 @@ function TortaFocos({
                   strokeWidth={2}
                 >
                   {datos.map((d, i) => (
-                    <Cell key={d.dominio} fill={paleta.serie(i)} />
+                    <Cell key={d.motivo} fill={color(d, i)} />
                   ))}
                 </Pie>
                 <RTooltip
                   content={({ active, payload }) => {
                     if (!active || !payload?.length) return null
-                    const d = payload[0].payload as TajadaFoco
+                    const d = payload[0].payload as TajadaMotivo
                     return (
-                      <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-sm">
-                        <p className="font-medium">{d.dominio}</p>
+                      <div className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-sm">
+                        <p className="font-medium">{d.motivo}</p>
                         <p className="text-muted-foreground">
-                          {d.focos} {d.focos === 1 ? "foco" : "focos"} ·{" "}
-                          {Math.round((d.focos / total) * 100)}% ·{" "}
-                          {d.abiertos} sin resolver
+                          {d.categoria && `${d.categoria} · `}
+                          {d.focos} {d.focos === 1 ? "vez" : "veces"} ·{" "}
+                          {Math.round((d.focos / total) * 100)}%
                         </p>
+                        {d.unidades.length > 0 && (
+                          <p className="mt-0.5 text-muted-foreground">
+                            {d.unidades.map((u) => `${u.dominio} ×${u.veces}`).join(" · ")}
+                          </p>
+                        )}
                       </div>
                     )
                   }}
@@ -584,18 +601,31 @@ function TortaFocos({
               </PieChart>
             </ResponsiveContainer>
           </div>
-          {/* La referencia con el número al lado: la identidad nunca queda sólo
-              en el color, y así se lee sin tener que apuntar con el mouse. */}
-          <ul className="min-w-40 space-y-1 text-xs">
+          {/* La referencia lleva el motivo, el número y EN QUÉ UNIDAD: la
+              identidad nunca queda sólo en el color, y se lee sin el mouse. */}
+          <ul className="min-w-56 flex-1 space-y-1.5 text-xs">
             {datos.map((d, i) => (
-              <li key={d.dominio} className="flex items-center gap-2">
+              <li key={d.motivo} className="flex items-start gap-2">
                 <span
-                  className="size-2.5 shrink-0 rounded-sm"
-                  style={{ backgroundColor: paleta.serie(i) }}
+                  className="mt-1 size-2.5 shrink-0 rounded-sm"
+                  style={{ backgroundColor: color(d, i) }}
                 />
-                <span className="font-medium">{d.dominio}</span>
-                <span className="ml-auto tabular-nums text-muted-foreground">
-                  {d.focos} · {Math.round((d.focos / total) * 100)}%
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline gap-2">
+                    <span className="min-w-0 flex-1 font-medium">{d.motivo}</span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {d.focos} · {Math.round((d.focos / total) * 100)}%
+                    </span>
+                  </span>
+                  {d.unidades.length > 0 && (
+                    <span className="block text-muted-foreground">
+                      {d.unidades
+                        .slice(0, 3)
+                        .map((u) => `${u.dominio} ×${u.veces}`)
+                        .join(" · ")}
+                      {d.unidades.length > 3 && ` +${d.unidades.length - 3}`}
+                    </span>
+                  )}
                 </span>
               </li>
             ))}
@@ -751,18 +781,67 @@ export function ChecklistsMtto({
     () => new Map(unidades.map((u) => [u.dominio, u.tipo])),
     [unidades]
   )
+  /**
+   * Las tortas se cortan por MOTIVO —el ítem del checklist que se marcó— y no
+   * por unidad: la pregunta es qué es lo que más veces hace que un check dé NO
+   * OK. En qué unidad pasa va en la referencia de cada tajada, que es donde se
+   * necesita: "cierre de lonas, 8 veces, casi todas del NY".
+   *
+   * 🚨 Más de seis motivos se agrupan en "Otros": la paleta tiene siete tonos
+   * verificados y un círculo con quince tajadas no se lee.
+   */
   const tortas = useMemo(() => {
-    const armar = (ok: (t: VehiculoTipo | null) => boolean) =>
-      porUnidad
-        .filter((u) => ok(tipoPorDominio.get(u.dominio) ?? null))
-        .map((u) => ({ dominio: u.dominio, focos: u.total, abiertos: u.abiertos }))
+    const armar = (ok: (t: VehiculoTipo | null) => boolean): TajadaMotivo[] => {
+      const m = new Map<
+        string,
+        { categoria: string; focos: number; critico: boolean; u: Map<string, number> }
+      >()
+      for (const i of visibles) {
+        if (!ok(tipoPorDominio.get(i.dominio) ?? null)) continue
+        const e =
+          m.get(i.item) ??
+          { categoria: i.categoria, focos: 0, critico: i.critico, u: new Map() }
+        e.focos++
+        e.critico = e.critico || i.critico
+        e.u.set(i.dominio, (e.u.get(i.dominio) ?? 0) + 1)
+        m.set(i.item, e)
+      }
+      const arr = Array.from(m.entries())
+        .map(([motivo, v]) => ({
+          motivo,
+          categoria: v.categoria,
+          critico: v.critico,
+          focos: v.focos,
+          unidades: Array.from(v.u.entries())
+            .map(([dominio, veces]) => ({ dominio, veces }))
+            .sort((a, b) => b.veces - a.veces),
+        }))
         .sort((a, b) => b.focos - a.focos)
+      if (arr.length <= MOTIVOS_EN_TORTA) return arr
+      const resto = arr.slice(MOTIVOS_EN_TORTA)
+      const u = new Map<string, number>()
+      for (const r of resto)
+        for (const x of r.unidades) u.set(x.dominio, (u.get(x.dominio) ?? 0) + x.veces)
+      return [
+        ...arr.slice(0, MOTIVOS_EN_TORTA),
+        {
+          motivo: `Otros ${resto.length} motivos`,
+          categoria: "",
+          critico: false,
+          focos: resto.reduce((a, r) => a + r.focos, 0),
+          unidades: Array.from(u.entries())
+            .map(([dominio, veces]) => ({ dominio, veces }))
+            .sort((a, b) => b.veces - a.veces),
+          otros: true,
+        },
+      ]
+    }
     return {
       camiones: armar((t) => t === "camion"),
       autoelevadores: armar((t) => t === "autoelevador"),
       otras: armar((t) => t !== "camion" && t !== "autoelevador"),
     }
-  }, [porUnidad, tipoPorDominio])
+  }, [visibles, tipoPorDominio])
 
   const criticos = visibles.filter((i) => i.critico).length
   const conPlan = visibles.filter((i) => i.plan).length
@@ -914,24 +993,25 @@ export function ChecklistsMtto({
         </div>
       </div>
 
-      {/* Foco por unidad: qué camión arrastra y cuál está al día */}
+      {/* Qué motivo hace que un check dé NO OK, y en qué unidad pasa */}
       {porUnidad.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-              Focos por unidad
+              Motivos del NO OK
               <span className="text-sm font-normal text-muted-foreground">
                 · {etiquetaPeriodo}
               </span>
             </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Qué es lo que más veces hace que un checklist dé NO OK. Cada tajada es un
+              motivo y debajo se lee en qué unidad aparece.
+            </p>
           </CardHeader>
           <CardContent>
-            {/* Dos tortas, una por flota: cuánto de los focos del período se lo
-                lleva cada unidad. Antes era una barra apilada roja/azul donde el
-                grueso de lo pintado eran focos YA resueltos. */}
             <div className="grid gap-3 lg:grid-cols-2">
-              <TortaFocos titulo="Camiones" datos={tortas.camiones} paleta={paleta} />
-              <TortaFocos
+              <TortaMotivos titulo="Camiones" datos={tortas.camiones} paleta={paleta} />
+              <TortaMotivos
                 titulo="Autoelevadores"
                 datos={tortas.autoelevadores}
                 paleta={paleta}
@@ -940,8 +1020,10 @@ export function ChecklistsMtto({
             {tortas.otras.length > 0 && (
               <p className="mt-2 text-xs text-muted-foreground">
                 Fuera de las dos tortas:{" "}
-                {tortas.otras.map((u) => `${u.dominio} (${u.focos})`).join(", ")} — no
-                son camiones ni autoelevadores.
+                {tortas.otras
+                  .map((d) => `${d.motivo} (${d.focos})`)
+                  .join(", ")}{" "}
+                — de unidades que no son camiones ni autoelevadores.
               </p>
             )}
           </CardContent>
