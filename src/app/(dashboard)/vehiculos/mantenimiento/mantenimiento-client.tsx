@@ -1,13 +1,18 @@
 "use client"
 
-import { Fragment, useMemo, useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { GRUPOS_ORDEN, seccionesDeGrupo } from "@/lib/flota/dpo-puntos"
+import {
+  GRUPOS_ORDEN,
+  GRUPO_LABELS,
+  seccionesDeGrupo,
+  type GrupoFlota,
+} from "@/lib/flota/dpo-puntos"
 import { KpiCard } from "./_components/kpi-card"
 import { HistorialLecturasMes } from "./_components/historial-lecturas-mes"
 import { DetalleOrdenDialog } from "./_components/detalle-orden-dialog"
@@ -294,6 +299,52 @@ async function subirFacturas(dominio: string, files: File[]): Promise<string[] |
 }
 
 const ACCEPT_FACTURA = "image/*,application/pdf,.pdf,.doc,.docx"
+
+/**
+ * Color y tamaño de las solapas, por grupo.
+ *
+ * 🚨 Operación es la barra del día —tablero, OT, checklists, CIL— y va más
+ * grande que el resto: en gris y todas iguales había que leer las 14 etiquetas
+ * para encontrar la de siempre. El color pinta la solapa ACTIVA (dónde estoy) y
+ * tiñe apenas el hover; el resto queda sobrio, como el criterio de la app.
+ */
+const ESTILO_GRUPO: Record<
+  GrupoFlota,
+  { titulo: string; trigger: string; grande: boolean }
+> = {
+  operacion: {
+    titulo: "text-sky-700 dark:text-sky-300",
+    trigger:
+      "border-sky-500/25 bg-sky-500/5 text-sky-900 hover:bg-sky-500/15 dark:text-sky-200 " +
+      "data-active:border-sky-600 data-active:bg-sky-600 data-active:text-white data-active:shadow-sm " +
+      "dark:data-active:border-sky-500 dark:data-active:bg-sky-600 dark:data-active:text-white",
+    grande: true,
+  },
+  analisis: {
+    titulo: "text-violet-700 dark:text-violet-300",
+    trigger:
+      "border-violet-500/25 bg-violet-500/5 text-violet-900 hover:bg-violet-500/15 dark:text-violet-200 " +
+      "data-active:border-violet-600 data-active:bg-violet-600 data-active:text-white data-active:shadow-sm " +
+      "dark:data-active:border-violet-500 dark:data-active:bg-violet-600 dark:data-active:text-white",
+    grande: false,
+  },
+  activos: {
+    titulo: "text-emerald-700 dark:text-emerald-300",
+    trigger:
+      "border-emerald-500/25 bg-emerald-500/5 text-emerald-900 hover:bg-emerald-500/15 dark:text-emerald-200 " +
+      "data-active:border-emerald-600 data-active:bg-emerald-600 data-active:text-white data-active:shadow-sm " +
+      "dark:data-active:border-emerald-500 dark:data-active:bg-emerald-600 dark:data-active:text-white",
+    grande: false,
+  },
+  gestion: {
+    titulo: "text-slate-600 dark:text-slate-300",
+    trigger:
+      "border-slate-400/30 bg-muted/40 text-foreground/80 hover:bg-muted " +
+      "data-active:border-slate-700 data-active:bg-slate-700 data-active:text-white data-active:shadow-sm " +
+      "dark:data-active:border-slate-400 dark:data-active:bg-slate-600 dark:data-active:text-white",
+    grande: false,
+  },
+}
 
 function nombreArchivoDeUrl(url: string): string {
   try {
@@ -664,29 +715,42 @@ export function MantenimientoClient({
 
       <Tabs value={tab} onValueChange={setTab}>
         {/* Las 12 solapas estaban planas y sin jerarquía: los tableros del día
-            convivían con el back-office. Se agrupan según SECCIONES_FLOTA y la
-            lista pasa a altura automática, porque a 12 no entraban en una fila. */}
-        <TabsList className="h-auto flex-wrap justify-start gap-y-1">
-          {GRUPOS_ORDEN.map((g, gi) => {
+            convivían con el back-office. Se agrupan según SECCIONES_FLOTA, cada
+            grupo en su fila rotulada y con su color (ver ESTILO_GRUPO), y la
+            lista pasa a altura automática porque en una fila no entran. */}
+        <TabsList className="h-auto w-full flex-col items-stretch justify-start gap-2 rounded-xl border bg-card p-2.5 shadow-sm group-data-horizontal/tabs:h-auto">
+          {GRUPOS_ORDEN.map((g) => {
             const secciones = seccionesDeGrupo(g).filter(
               (s) => s.id !== "plantillas" || puedeEditar
             )
             if (!secciones.length) return null
+            const est = ESTILO_GRUPO[g]
             return (
-              <Fragment key={g}>
-                {gi > 0 && (
-                  <span
-                    role="presentation"
-                    aria-hidden
-                    className="mx-1 h-4 w-px shrink-0 self-center bg-border"
-                  />
-                )}
+              <div key={g} className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                <span
+                  className={cn(
+                    "w-[4.5rem] shrink-0 text-[0.7rem] font-semibold tracking-wide uppercase",
+                    est.titulo
+                  )}
+                >
+                  {GRUPO_LABELS[g]}
+                </span>
                 {secciones.map((s) => (
-                  <TabsTrigger key={s.id} value={s.id} className="flex-none">
+                  <TabsTrigger
+                    key={s.id}
+                    value={s.id}
+                    className={cn(
+                      "flex-none rounded-lg border transition-colors",
+                      est.grande
+                        ? "h-10 px-4 text-[0.95rem] font-semibold"
+                        : "h-8 px-3 text-sm font-medium",
+                      est.trigger
+                    )}
+                  >
                     {s.label}
                   </TabsTrigger>
                 ))}
-              </Fragment>
+              </div>
             )
           })}
         </TabsList>
