@@ -55,7 +55,12 @@ function mesesVisibles(mesActual: string): string[] {
 }
 
 export function ProgramacionCil({ mesActual }: { mesActual: string }) {
-  const [ym, setYm] = useState(mesActual)
+  // Antes de que arranque la programación el mes en curso no tiene días y el
+  // cuadro abre vacío: se lee como "no está hecho". Se abre en el primer mes
+  // que sí tiene sorteo.
+  const [ym, setYm] = useState(
+    mesActual < PROGRAMACION_DESDE ? PROGRAMACION_DESDE : mesActual,
+  )
   // El calendario primero: la pregunta con la que se entra es "qué día le toca a
   // cada uno", y eso en una tabla de dos columnas hay que reconstruirlo leyendo.
   const [vista, setVista] = useState<"calendario" | "unidades">("calendario")
