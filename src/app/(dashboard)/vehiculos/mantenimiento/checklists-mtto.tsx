@@ -312,7 +312,7 @@ const DETALLE_KPI: Record<
   resueltos: {
     titulo: "Observaciones ya resueltas",
     ayuda:
-      "Las que cerraron el plan, de la que más tardó a la que menos. El promedio de la tarjeta se mide por foco, así que una serie repetida cuenta una sola vez acá.",
+      "Las que cerraron el plan, de la que más tardó a la que menos. El promedio de la tarjeta se mide por defecto, así que una serie repetida cuenta una sola vez acá.",
   },
 }
 
@@ -882,7 +882,7 @@ export function ChecklistsMtto({
             horasProm == null ? "neutro" : horasProm <= 72 ? "ok" : "alerta"
           }
           dpo="1.3"
-          sub={`Promedio de ${duraciones.length} foco${duraciones.length === 1 ? "" : "s"} resuelto${duraciones.length === 1 ? "" : "s"} (primera detección → cierre del plan) · click para verlos`}
+          sub={`Promedio de ${duraciones.length} defecto${duraciones.length === 1 ? "" : "s"} resuelto${duraciones.length === 1 ? "" : "s"} (primera detección → cierre del plan) · click para verlos`}
         />
         <KpiCard
           onClick={() =>
@@ -1021,7 +1021,7 @@ export function ChecklistsMtto({
               </Badge>
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Focos anteriores al período elegido que todavía no tienen el plan de acción cerrado.
+              Defectos anteriores al período elegido que todavía no tienen el plan de acción cerrado.
               Siguen acá hasta que se resuelvan. Un mismo defecto se cuenta{" "}
               <strong>una vez</strong>: la columna «Se repitió» dice en cuántos checklists volvió
               a aparecer{arrastre.length !== grupos.length && <> ({arrastre.length} en total)</>}, y
@@ -1366,7 +1366,7 @@ function PlanDialog({
             {item.dominio} · {item.item} · {fmtFecha(item.fecha)}
             {ids.length > 1 && (
               <span className="mt-1 block text-amber-600 dark:text-amber-400">
-                Este plan se aplica a los {ids.length} checklists en los que se repitió el foco.
+                Este plan se aplica a los {ids.length} checklists en los que se repitió el defecto.
               </span>
             )}
           </DialogDescription>
