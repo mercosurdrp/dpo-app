@@ -157,6 +157,7 @@ export async function listTareas(): Promise<Result<MudanzaTarea[]>> {
       data: rows.map(({ responsable, ...t }) => ({
         ...t,
         avance: Number(t.avance ?? 0),
+        presupuesto: t.presupuesto == null ? null : Number(t.presupuesto),
         responsable_nombre: responsable?.nombre ?? null,
       })),
     }
@@ -347,6 +348,7 @@ export async function guardarTarea(formData: FormData): Promise<Result<MudanzaTa
       avance: estado === "hecha" ? 100 : Math.max(0, Math.min(100, entero(formData, "avance"))),
       hito,
       notas: str(formData, "notas"),
+      presupuesto: str(formData, "presupuesto") ? monto(formData, "presupuesto") : null,
     }
     let q
     if (id) {
@@ -410,6 +412,21 @@ export async function setAvanceTarea(tareaId: string, avance: number): Promise<R
     return { data: true }
   } catch (err) {
     return { error: msg(err, "Error al cambiar el avance") }
+  }
+}
+
+/** Presupuesto de una tarea, editado en la fila. Sólo editores. */
+export async function setPresupuestoTarea(tareaId: string, monto: number | null): Promise<Result<true>> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+    const valor = monto == null ? null : Math.max(0, Math.round(monto * 100) / 100)
+    const { error } = await supabase.from("mudanza_tareas").update({ presupuesto: valor }).eq("id", tareaId)
+    if (error) return { error: error.message }
+    revalidatePath(REVALIDATE_PATH)
+    return { data: true }
+  } catch (err) {
+    return { error: msg(err, "Error al guardar el presupuesto") }
   }
 }
 

@@ -52,6 +52,7 @@ export interface MudanzaTarea {
   avance: number
   hito: boolean
   notas: string | null
+  presupuesto: number | null
   orden: number
   created_by: string | null
   created_at: string

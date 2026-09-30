@@ -255,6 +255,17 @@ function TareaForm({
           </div>
 
           <div className="space-y-1.5">
+            <Label htmlFor="mt-presupuesto">Presupuesto ($)</Label>
+            <Input
+              id="mt-presupuesto"
+              name="presupuesto"
+              inputMode="numeric"
+              defaultValue={tarea?.presupuesto != null ? String(tarea.presupuesto) : ""}
+              placeholder="Ej.: 2.000.000"
+            />
+          </div>
+
+          <div className="space-y-1.5">
             <Label htmlFor="mt-notas">Notas</Label>
             <Textarea
               id="mt-notas"
