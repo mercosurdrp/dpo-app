@@ -35,6 +35,7 @@ import {
   type MudanzaTarea,
 } from "@/types/mudanza"
 import { MudanzaGantt } from "@/components/mudanza/gantt"
+import { AvanceSelect } from "@/components/mudanza/avance-select"
 import { TareaFormDialog } from "@/components/mudanza/tarea-form-dialog"
 import { AvanceFormDialog } from "@/components/mudanza/avance-form-dialog"
 import { GastoFormDialog } from "@/components/mudanza/gasto-form-dialog"
@@ -316,6 +317,8 @@ export function MudanzaClient({
             ordenResponsables={ordenResp}
             modo={modoGantt}
             onSelect={abrirTarea}
+            puedeAvanzar={puedeAvanzar}
+            onAvance={refrescar}
           />
           {pisadas.length > 0 && (
             <Card>
@@ -451,12 +454,14 @@ export function MudanzaClient({
                                     <span className="ml-1 text-xs font-semibold text-red-600">atrasada</span>
                                   )}
                                 </td>
-                                <td className="w-28 py-1.5 pr-2">
+                                <td className="w-24 py-1.5 pr-2 text-right">
                                   {!t.hito && (
-                                    <div className="flex items-center gap-2">
-                                      <Progress value={t.avance} className="h-1.5" />
-                                      <span className="w-9 text-right text-xs tabular-nums">{t.avance} %</span>
-                                    </div>
+                                    <AvanceSelect
+                                      tareaId={t.id}
+                                      avance={t.avance}
+                                      disabled={!puedeAvanzar(t)}
+                                      onSaved={refrescar}
+                                    />
                                   )}
                                 </td>
                                 <td className="py-1.5 text-right">

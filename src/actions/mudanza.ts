@@ -373,6 +373,46 @@ export async function guardarTarea(formData: FormData): Promise<Result<MudanzaTa
   }
 }
 
+/**
+ * Cambia el avance desde el desplegable de la lista (de 10 en 10). Ajusta el
+ * estado y las fechas reales: el primer avance fija inicio_real, 100 % marca
+ * la tarea hecha y fija fin_real. Lo puede hacer un editor o el responsable.
+ */
+export async function setAvanceTarea(tareaId: string, avance: number): Promise<Result<true>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+    const av = Math.max(0, Math.min(100, Math.round(avance / 10) * 10))
+    const { data: tarea, error: tErr } = await supabase
+      .from("mudanza_tareas")
+      .select("id, responsable_id, estado, inicio_real, fin_real")
+      .eq("id", tareaId)
+      .single()
+    if (tErr || !tarea) return { error: tErr?.message ?? "Tarea no encontrada" }
+    if (!EDITORES.includes(profile.role) && tarea.responsable_id !== profile.id) {
+      return { error: "Sólo el responsable de la tarea o un editor pueden cambiar el avance." }
+    }
+    const hoy = new Date().toISOString().slice(0, 10)
+    const patch: Record<string, unknown> = { avance: av }
+    if (av === 100) {
+      patch.estado = "hecha"
+      patch.fin_real = tarea.fin_real ?? hoy
+      if (!tarea.inicio_real) patch.inicio_real = hoy
+    } else {
+      if (tarea.estado === "hecha") patch.estado = av === 0 ? "pendiente" : "en_curso"
+      else if (tarea.estado === "pendiente" && av > 0) patch.estado = "en_curso"
+      if (av > 0 && !tarea.inicio_real) patch.inicio_real = hoy
+      if (tarea.fin_real) patch.fin_real = null
+    }
+    const { error } = await supabase.from("mudanza_tareas").update(patch).eq("id", tareaId)
+    if (error) return { error: error.message }
+    revalidatePath(REVALIDATE_PATH)
+    return { data: true }
+  } catch (err) {
+    return { error: msg(err, "Error al cambiar el avance") }
+  }
+}
+
 export async function borrarTarea(id: string): Promise<Result<true>> {
   try {
     await requireEditor()

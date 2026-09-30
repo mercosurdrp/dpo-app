@@ -3,6 +3,7 @@
 import { useMemo } from "react"
 import type { MudanzaConfig, MudanzaTarea } from "@/types/mudanza"
 import { MUDANZA_RUBROS } from "@/types/mudanza"
+import { AvanceSelect } from "./avance-select"
 import {
   colorResponsable,
   diasEntre,
@@ -25,6 +26,8 @@ interface Props {
   ordenResponsables: string[]
   modo: "rubro" | "responsable"
   onSelect: (t: MudanzaTarea) => void
+  puedeAvanzar?: (t: MudanzaTarea) => boolean
+  onAvance?: () => void
 }
 
 function addDays(d: Date, n: number) {
@@ -38,7 +41,7 @@ function lunes(d: Date) {
   return x
 }
 
-export function MudanzaGantt({ tareas, config, ordenResponsables, modo, onSelect }: Props) {
+export function MudanzaGantt({ tareas, config, ordenResponsables, modo, onSelect, puedeAvanzar, onAvance }: Props) {
   const hoy = isoHoy()
   const datadas = useMemo(() => tareas.filter(tieneFechas), [tareas])
   const pisadas = useMemo(
@@ -172,7 +175,7 @@ export function MudanzaGantt({ tareas, config, ordenResponsables, modo, onSelect
             <tr>
               <th
                 rowSpan={2}
-                className="sticky left-0 z-[5] min-w-[240px] max-w-[300px] border-b border-r border-slate-200 bg-white px-3 py-1 text-left font-semibold text-slate-700"
+                className="sticky left-0 z-[5] min-w-[300px] max-w-[360px] border-b border-r border-slate-200 bg-white px-3 py-1 text-left font-semibold text-slate-700"
               >
                 Tarea
               </th>
@@ -219,6 +222,8 @@ export function MudanzaGantt({ tareas, config, ordenResponsables, modo, onSelect
                 lineas={lineas}
                 onSelect={onSelect}
                 nSemanas={semanas.length}
+                puedeAvanzar={puedeAvanzar}
+                onAvance={onAvance}
               />
             ))}
           </tbody>
@@ -268,6 +273,8 @@ function GrupoFilas({
   lineas,
   onSelect,
   nSemanas,
+  puedeAvanzar,
+  onAvance,
 }: {
   titulo: string
   tareas: MudanzaTarea[]
@@ -281,6 +288,8 @@ function GrupoFilas({
   lineas: React.ReactNode
   onSelect: (t: MudanzaTarea) => void
   nSemanas: number
+  puedeAvanzar?: (t: MudanzaTarea) => boolean
+  onAvance?: () => void
 }) {
   return (
     <>
@@ -317,15 +326,25 @@ function GrupoFilas({
         return (
           <tr key={t.id} className="group">
             <td className="sticky left-0 z-[2] border-b border-r border-slate-100 bg-white px-3 py-1 group-hover:bg-slate-50">
-              <button
-                type="button"
-                onClick={() => onSelect(t)}
-                className="block w-full truncate text-left text-[13px] font-medium text-slate-800 hover:underline"
-                title={t.nombre}
-              >
-                {t.hito ? "◆ " : ""}
-                {t.nombre}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onSelect(t)}
+                  className="min-w-0 flex-1 truncate text-left text-[13px] font-medium text-slate-800 hover:underline"
+                  title={t.nombre}
+                >
+                  {t.hito ? "◆ " : ""}
+                  {t.nombre}
+                </button>
+                {!t.hito && onAvance && (
+                  <AvanceSelect
+                    tareaId={t.id}
+                    avance={t.avance}
+                    disabled={puedeAvanzar ? !puedeAvanzar(t) : true}
+                    onSaved={onAvance}
+                  />
+                )}
+              </div>
               <div className="flex items-center gap-1.5 truncate text-[11px] text-slate-500">
                 {modo === "rubro" ? (
                   <>
