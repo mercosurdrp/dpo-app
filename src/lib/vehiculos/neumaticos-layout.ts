@@ -103,3 +103,85 @@ export function ejeDePosicion(
 ): EjeNeumatico | null {
   return layoutDeTipo(tipo).find((p) => p.code === code)?.eje ?? null
 }
+
+/** Nº de eje de una posición: "2IE" → 2, "AUX" → null. */
+export function ejeNumero(code: string): number | null {
+  const n = Number(code[0])
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+/** Filas (ejes) del layout, de adelante hacia atrás. */
+export function filasDelLayout(layout: PosicionNeumatico[]) {
+  return [...new Set(layout.map((p) => p.y))]
+    .sort((a, b) => a - b)
+    .map((y) => {
+      const enFila = layout.filter((p) => p.y === y).sort((a, b) => a.x - b.x)
+      return {
+        y,
+        posiciones: enFila,
+        eje: enFila[0]?.eje ?? null,
+        numero: ejeNumero(enFila[0]?.code ?? ""),
+        x1: Math.min(...enFila.map((p) => p.x)),
+        x2: Math.max(...enFila.map((p) => p.x)),
+      }
+    })
+}
+
+export interface PosicionEnPalabras {
+  /** "Izquierda" / "Derecha", o null en la de auxilio. */
+  lado: "Izquierda" | "Derecha" | null
+  /** "Eje delantero", "Eje trasero", "2º eje"… */
+  eje: string | null
+  /** "rueda de afuera" / "rueda de adentro" en los ejes de rueda dual. */
+  rueda: string | null
+  /** Todo junto, para mostrar debajo del código: "Eje trasero · derecha · rueda de afuera". */
+  texto: string
+}
+
+const ORDINAL_EJE = ["1º", "2º", "3º", "4º"]
+
+/**
+ * La posición dicha en palabras.
+ *
+ * 🚨 Los códigos ("1I", "2DE") los entiende quien armó la convención, no el que
+ * está parado al lado de la rueda: los choferes cargan la medición mensual y
+ * montan cubiertas sin saber cuál es la izquierda y cuál la derecha, y una
+ * medición cargada en la rueda equivocada arruina el desgaste de las dos gomas.
+ * Izquierda y derecha son SIEMPRE mirando hacia adelante, sentado en la cabina
+ * — el mismo criterio con el que está armado el diagrama (frente arriba).
+ */
+export function posicionEnPalabras(
+  tipo: VehiculoTipo | null,
+  code: string | null
+): PosicionEnPalabras {
+  const vacio: PosicionEnPalabras = { lado: null, eje: null, rueda: null, texto: "" }
+  if (!code) return vacio
+  if (code === POSICION_AUXILIO) return { ...vacio, texto: "Rueda de auxilio" }
+
+  const layout = layoutDeTipo(tipo)
+  const nro = ejeNumero(code)
+  const ejes = [
+    ...new Set(
+      layout
+        .filter((p) => p.code !== POSICION_AUXILIO)
+        .map((p) => ejeNumero(p.code))
+        .filter((n): n is number => n != null)
+    ),
+  ].sort((a, b) => a - b)
+
+  let eje: string | null = null
+  if (nro != null) {
+    if (ejes.length <= 2) {
+      eje = nro === ejes[0] ? "Eje delantero" : "Eje trasero"
+    } else {
+      eje = `${ORDINAL_EJE[ejes.indexOf(nro)] ?? `${nro}º`} eje`
+    }
+  }
+
+  const lado = code[1] === "I" ? "Izquierda" : code[1] === "D" ? "Derecha" : null
+  const rueda =
+    code[2] === "E" ? "rueda de afuera" : code[2] === "I" ? "rueda de adentro" : null
+
+  const partes = [eje, lado?.toLowerCase(), rueda].filter(Boolean)
+  return { lado, eje, rueda, texto: partes.join(" · ") }
+}

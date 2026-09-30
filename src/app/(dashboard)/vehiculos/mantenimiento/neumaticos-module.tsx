@@ -98,10 +98,16 @@ import {
 import { PlanesNeumaticos } from "./_components/planes-neumaticos"
 import type { FlotaPlanConItems } from "@/actions/flota-indicadores"
 import {
+  filasDelLayout,
   layoutDeTipo,
   POSICION_AUXILIO,
   type PosicionNeumatico,
 } from "@/lib/vehiculos/neumaticos-layout"
+import {
+  EJE_BARRA,
+  EJE_NOMBRE,
+  SiluetaUnidad,
+} from "@/components/flota/silueta-unidad"
 import {
   vidaNeumatico,
   rotacionEstado,
@@ -2168,113 +2174,6 @@ function DatoVehiculo({
       <p className={cn("text-sm text-foreground", destacado ? "font-bold" : "font-medium")}>
         {valor}
       </p>
-    </div>
-  )
-}
-
-// Color de la línea de eje según su función: amarillo = direccional,
-// verde = tracción, gris = eje libre.
-const EJE_LINEA: Record<string, string> = {
-  direccional: "border-amber-400",
-  traccion: "border-emerald-500",
-  libre: "border-border",
-}
-
-// La misma convención, pero como barra sólida (vista por eje).
-const EJE_BARRA: Record<string, string> = {
-  direccional: "bg-amber-400",
-  traccion: "bg-emerald-500",
-  libre: "bg-border",
-}
-
-const EJE_NOMBRE: Record<string, string> = {
-  direccional: "Direccional",
-  traccion: "Tracción",
-  libre: "Libre",
-}
-
-/** Nº de eje de una posición: "2IE" → 2, "AUX" → null. */
-function ejeNumero(code: string): number | null {
-  const n = Number(code[0])
-  return Number.isFinite(n) && n > 0 ? n : null
-}
-
-/** Filas (ejes) del layout, de adelante hacia atrás. */
-function filasDelLayout(layout: PosicionNeumatico[]) {
-  return [...new Set(layout.map((p) => p.y))]
-    .sort((a, b) => a - b)
-    .map((y) => {
-      const enFila = layout.filter((p) => p.y === y).sort((a, b) => a.x - b.x)
-      return {
-        y,
-        posiciones: enFila,
-        eje: enFila[0]?.eje ?? null,
-        numero: ejeNumero(enFila[0]?.code ?? ""),
-        x1: Math.min(...enFila.map((p) => p.x)),
-        x2: Math.max(...enFila.map((p) => p.x)),
-      }
-    })
-}
-
-/**
- * Bastidor esquemático: dos largueros, tres travesaños y una línea por eje.
- *
- * Antes se dibujaba la unidad entera (cabina con parabrisas, caja, lanza). Nunca
- * terminaba de parecerse a los Atego de la flota —salía un camioncito de
- * juguete— y para reconocer la unidad ya está su foto en la ficha. Acá lo único
- * que importa es ubicar la posición: frente arriba, lados a los costados.
- */
-function SiluetaUnidad({
-  layout,
-  tipo,
-}: {
-  layout: PosicionNeumatico[]
-  tipo: VehiculoTipo | null
-}) {
-  const filas = filasDelLayout(layout)
-  const conCabina = tipo !== "acoplado"
-  const top = 6
-  const bottom = Math.min((filas[filas.length - 1]?.y ?? 84) + 12, 97)
-  const travesanos = [0, 0.5, 1]
-  return (
-    <div className="pointer-events-none absolute inset-0">
-      {/* Frente de la unidad */}
-      <div className="absolute inset-x-0 top-0 flex flex-col items-center gap-0.5">
-        <span className="text-[9px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-          {conCabina ? "Frente" : "Lanza"}
-        </span>
-        <span className="h-[3px] w-10 rounded-full bg-muted-foreground/60" />
-      </div>
-      {/* Largueros del chasis */}
-      <div
-        className="absolute w-[3px] rounded-full bg-border"
-        style={{ left: "43%", top: `${top}%`, height: `${bottom - top}%` }}
-      />
-      <div
-        className="absolute w-[3px] rounded-full bg-border"
-        style={{ right: "43%", top: `${top}%`, height: `${bottom - top}%` }}
-      />
-      {/* Travesaños */}
-      {travesanos.map((f) => (
-        <div
-          key={f}
-          className="absolute h-[2px] bg-border"
-          style={{ left: "43%", right: "43%", top: `${top + (bottom - top) * f}%` }}
-        />
-      ))}
-      {/* Línea de eje por fila de ruedas, coloreada por función */}
-      {filas
-        .filter((f) => f.posiciones.some((p) => p.code !== POSICION_AUXILIO))
-        .map((f) => (
-          <div
-            key={f.y}
-            className={cn(
-              "absolute -translate-y-1/2 border-t-[3px] border-dashed",
-              EJE_LINEA[f.eje ?? "libre"]
-            )}
-            style={{ top: `${f.y}%`, left: `${f.x1}%`, width: `${f.x2 - f.x1}%` }}
-          />
-        ))}
     </div>
   )
 }

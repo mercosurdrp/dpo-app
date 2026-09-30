@@ -7,9 +7,16 @@ import {
   guardarMedicionesNeumaticos,
   type MisNeumaticosData,
 } from "@/actions/mis-neumaticos"
-import { motivoDesvio, validarProfundidad } from "@/lib/flota/neumaticos-control"
+import {
+  motivoDesvio,
+  validarProfundidad,
+  TOLERANCIA_SUBIDA_MM,
+} from "@/lib/flota/neumaticos-control"
 import { cn } from "@/lib/utils"
 import { etiquetaCubierta } from "@/lib/vehiculos/numeracion-fuego"
+import { layoutDeTipo, posicionEnPalabras } from "@/lib/vehiculos/neumaticos-layout"
+import { SiluetaUnidad } from "@/components/flota/silueta-unidad"
+import type { VehiculoTipo } from "@/types/database"
 
 const TIPO_LABEL: Record<string, string> = {
   camion: "Camión",
@@ -111,7 +118,39 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
         .filter((e) => e.error)
     : []
 
-  const listo = cargadas.length > 0 && erroresProf.length === 0 && !pendiente
+  /**
+   * La goma no crece: una medición más alta que la anterior es tipeo o rueda
+   * equivocada. La regla ya vivía en el servidor, pero recién saltaba al apretar
+   * Guardar y con toda la ronda cargada; acá se marca la cubierta en rojo en el
+   * momento y no se deja guardar. Se compara contra la medición anterior, que no
+   * cruza el último montaje (una cubierta recapada sí vuelve con más dibujo).
+   */
+  const subeDe = (c: MisNeumaticosData["unidades"][number]["cubiertas"][number]) => {
+    const ref = c.referencia
+    const mm = aNumero(valores[c.id]?.mm ?? "")
+    if (!ref || mm == null || validarProfundidad(valores[c.id]?.mm ?? "")) return null
+    if (mm <= ref.profundidad_mm + TOLERANCIA_SUBIDA_MM) return null
+    return ref
+  }
+
+  const queSuben = unidad ? unidad.cubiertas.filter((c) => subeDe(c) != null) : []
+
+  const listo =
+    cargadas.length > 0 && erroresProf.length === 0 && queSuben.length === 0 && !pendiente
+
+  // Esquema de la unidad: tocar una posición lleva al campo de esa cubierta. Es
+  // el mismo dibujo del módulo del supervisor, con los costados rotulados.
+  const layout = unidad ? layoutDeTipo((unidad.tipo as VehiculoTipo | null) ?? null) : []
+  const cubiertaDePos = new Map(
+    (unidad?.cubiertas ?? []).map((c) => [c.posicion ?? "", c])
+  )
+
+  function irACubierta(id: string) {
+    const el = document.getElementById(`mm-${id}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: "smooth", block: "center" })
+    el.focus({ preventScroll: true })
+  }
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5 pb-24">
@@ -244,6 +283,56 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
               Cargá lo que midas. Lo que dejes vacío no se guarda.
             </p>
 
+            {/* Qué cubierta es cuál: el código (1I, 2DE) no se deduce parado al
+                lado de la rueda. Frente arriba, izquierda y derecha como se ven
+                desde la cabina mirando para adelante. */}
+            {unidad.cubiertas.length > 0 && (
+              <div className="mt-3 rounded-lg border border-border p-3">
+                <p className="text-xs font-medium text-foreground">
+                  ¿Cuál es cuál? Tocá la rueda para ir a su casillero
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  El frente del camión va arriba. <strong>Izquierda y derecha son mirando
+                  hacia adelante, sentado en la cabina.</strong>
+                </p>
+                <div className="relative mx-auto mt-2 aspect-[3/4] w-full max-w-[17rem]">
+                  <SiluetaUnidad layout={layout} tipo={(unidad.tipo as VehiculoTipo | null) ?? null} conLados />
+                  {layout.map((p) => {
+                    const c = cubiertaDePos.get(p.code)
+                    const v = c ? (valores[c.id] ?? { mm: "", psi: "" }) : null
+                    const mal = c ? validarProfundidad(v?.mm ?? "") || subeDe(c) != null : false
+                    const cargada = !!v?.mm.trim() && !mal
+                    return (
+                      <button
+                        key={p.code}
+                        type="button"
+                        disabled={!c}
+                        onClick={() => c && irACubierta(c.id)}
+                        style={{ left: `${p.x}%`, top: `${p.y}%` }}
+                        className={cn(
+                          "absolute flex size-10 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border text-[11px] font-semibold",
+                          mal
+                            ? "border-red-400 bg-red-500/15 text-red-700 dark:text-red-400"
+                            : cargada
+                              ? "border-emerald-400 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                              : c
+                                ? "border-border bg-background text-foreground"
+                                : "border-dashed border-border bg-muted/40 text-muted-foreground/60"
+                        )}
+                        title={
+                          c
+                            ? `${p.label} · ${posicionEnPalabras((unidad.tipo as VehiculoTipo | null) ?? null, p.code).texto}`
+                            : `${p.label} · sin cubierta cargada`
+                        }
+                      >
+                        {p.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {unidad.cubiertas.length === 0 ? (
               <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                 Esta unidad no tiene cubiertas cargadas en el maestro. Avisale al
@@ -254,15 +343,20 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
                 {unidad.cubiertas.map((c) => {
                   const v = valores[c.id] ?? { mm: "", psi: "" }
                   const errorMm = validarProfundidad(v.mm)
+                  const sube = subeDe(c)
                   const desvio = errorMm
                     ? null
                     : motivoDesvio(aNumero(v.mm), aNumero(v.psi))
+                  const palabras = posicionEnPalabras(
+                    (unidad.tipo as VehiculoTipo | null) ?? null,
+                    c.posicion,
+                  )
                   return (
                     <div
                       key={c.id}
                       className={cn(
                         "rounded-lg border p-3",
-                        desvio
+                        sube || desvio
                           ? "border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/30"
                           : "",
                       )}
@@ -270,17 +364,19 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
                         <span className="text-sm font-semibold text-foreground">
                           {c.posicion ?? "—"}
-                          {c.eje ? (
+                          {palabras.texto ? (
                             <span className="ml-2 text-xs font-normal text-muted-foreground">
-                              {c.eje}
+                              {palabras.texto}
                             </span>
                           ) : null}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {c.numero ? `N° ${etiquetaCubierta(c)}` : ""}
-                          {c.profundidadActual != null
-                            ? ` · último ${c.profundidadActual} mm`
-                            : ""}
+                          {c.referencia
+                            ? ` · medía ${c.referencia.profundidad_mm} mm el ${c.referencia.fecha.slice(8, 10)}/${c.referencia.fecha.slice(5, 7)}`
+                            : c.profundidadActual != null
+                              ? ` · último ${c.profundidadActual} mm`
+                              : ""}
                         </span>
                       </div>
 
@@ -294,6 +390,7 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
                               input `number` se come la coma y deja pasar "115"
                               como si fuera un valor válido. */}
                           <input
+                            id={`mm-${c.id}`}
                             type="text"
                             inputMode="decimal"
                             placeholder="11.5"
@@ -301,7 +398,7 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
                             onChange={(e) => setValor(c.id, "mm", e.target.value)}
                             className={cn(
                               "mt-1 w-full rounded-lg border bg-background p-3 text-sm",
-                              errorMm ? "border-red-400 ring-1 ring-red-300" : "",
+                              errorMm || sube ? "border-red-400 ring-1 ring-red-300" : "",
                             )}
                           />
                         </label>
@@ -325,6 +422,20 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
                         <p className="mt-2 flex items-start gap-1.5 text-xs font-medium text-red-700 dark:text-red-300">
                           <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
                           {errorMm}
+                        </p>
+                      )}
+
+                      {sube && (
+                        <p className="mt-2 flex items-start gap-1.5 text-xs font-medium text-red-700 dark:text-red-300">
+                          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+                          <span>
+                            Esta cubierta medía <strong>{sube.profundidad_mm} mm</strong> el{" "}
+                            {sube.fecha.slice(8, 10)}/{sube.fecha.slice(5, 7)}/
+                            {sube.fecha.slice(0, 4)} y estás cargando{" "}
+                            <strong>{v.mm} mm</strong>: la goma no puede tener más dibujo que
+                            antes. Fijate si te sobró un dígito o si es otra rueda. Si volvió
+                            del recapador, avisale al Supervisor de Flota.
+                          </span>
                         </p>
                       )}
 
@@ -354,6 +465,15 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
         {error && (
           <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
             {error}
+          </p>
+        )}
+
+        {queSuben.length > 0 && (
+          <p className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+            {queSuben.length === 1 ? "La cubierta " : "Las cubiertas "}
+            {queSuben.map((c) => c.posicion ?? "—").join(", ")}{" "}
+            {queSuben.length === 1 ? "quedó" : "quedaron"} con más dibujo que la medición
+            anterior. Corregí ese número: hasta que no esté bien no se guarda ninguna.
           </p>
         )}
 

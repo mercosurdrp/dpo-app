@@ -52,6 +52,16 @@ export interface CubiertaMedir {
     profundidad_mm: number | null
     presion_psi: number | null
   } | null
+  /**
+   * Medición ANTERIOR contra la que se compara lo que se carga hoy: la más
+   * reciente de días pasados y posterior al último montaje de la cubierta (misma
+   * referencia que usa la regla del servidor, `errorProfundidadQueSube`).
+   *
+   * Va a la pantalla para que el chofer vea cuánto midió la vez pasada y el
+   * campo se le ponga en rojo ANTES de guardar: hasta ahora el "la goma no
+   * crece" recién aparecía al apretar Guardar, con toda la ronda cargada.
+   */
+  referencia: { fecha: string; profundidad_mm: number } | null
 }
 
 export interface UnidadNeumaticos {
@@ -163,6 +173,45 @@ export async function getMisNeumaticos(): Promise<
       }
     }
 
+    // Referencia de cada cubierta: su medición anterior (de días pasados y
+    // posterior al último montaje). Es lo que la pantalla muestra y con lo que
+    // marca en rojo una medición que sube.
+    const hoy = hoyArgentina()
+    const [prevRes, montRes] = ids.length
+      ? await Promise.all([
+          supabase
+            .from("mantenimiento_neumatico_mediciones")
+            .select("neumatico_id, fecha, profundidad_mm")
+            .in("neumatico_id", ids)
+            .not("profundidad_mm", "is", null)
+            .lt("fecha", hoy)
+            .order("fecha", { ascending: false }),
+          supabase
+            .from("mantenimiento_neumatico_movimientos")
+            .select("neumatico_id, fecha")
+            .in("neumatico_id", ids)
+            .eq("tipo", "montaje"),
+        ])
+      : [{ data: [] }, { data: [] }]
+
+    const ultimoMontaje = new Map<string, string>()
+    for (const m of montRes.data ?? []) {
+      const prev = ultimoMontaje.get(m.neumatico_id)
+      if (!prev || m.fecha > prev) ultimoMontaje.set(m.neumatico_id, m.fecha)
+    }
+    const referencias = new Map<string, { fecha: string; profundidad_mm: number }>()
+    for (const m of prevRes.data ?? []) {
+      if (referencias.has(m.neumatico_id)) continue // vienen de la más nueva a la más vieja
+      const montaje = ultimoMontaje.get(m.neumatico_id)
+      // Una cubierta que volvió del recapador sí tiene más dibujo que antes: la
+      // comparación no cruza su último montaje.
+      if (montaje && m.fecha < montaje) continue
+      referencias.set(m.neumatico_id, {
+        fecha: m.fecha,
+        profundidad_mm: m.profundidad_mm as number,
+      })
+    }
+
     const { data: fichas } = await supabase
       .from("vehiculos_ficha")
       .select("dominio, numero_asignado")
@@ -188,6 +237,7 @@ export async function getMisNeumaticos(): Promise<
           medida: c.medida,
           profundidadActual: c.profundidad_actual_mm,
           medidaEsteMes: porCubierta.get(c.id) ?? null,
+          referencia: referencias.get(c.id) ?? null,
         }))
       const medidas = propias.filter((c) => c.medidaEsteMes).length
       return {
