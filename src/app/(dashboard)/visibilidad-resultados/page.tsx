@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
+import { requireModuloPortal } from "@/lib/portal-empleado-server"
 import { requireAuth } from "@/lib/session"
-import { IS_MISIONES } from "@/lib/empresa"
 import {
   getVisibilidadEmpleado,
   getVisibilidadEquipo,
@@ -20,7 +20,7 @@ export default async function VisibilidadResultadosPage({
 }: {
   searchParams: Promise<{ mes?: string }>
 }) {
-  if (IS_MISIONES) notFound()
+  await requireModuloPortal("mis-resultados")
   const profile = await requireAuth()
   const { mes } = await searchParams
 

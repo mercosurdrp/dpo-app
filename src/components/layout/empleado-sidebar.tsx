@@ -4,149 +4,19 @@ import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import {
-  BookOpen,
-  GraduationCap,
-  BookOpenCheck,
-  ClipboardList,
-  ShieldAlert,
-  Truck,
-  Fuel,
-  LogOut,
-  CalendarRange,
-  CalendarCheck,
-  Boxes,
-  PackageCheck,
-  Megaphone,
-  MessageSquare,
-  Wrench,
-  PackageX,
-  Refrigerator,
-  Sparkles,
-  Brain,
-  ChevronLeft,
-  ChevronRight,
-  Menu,
-  X,
-  TrendingUp,
-  Shirt,
-  Gauge,
-} from "lucide-react"
+import { LogOut, ChevronLeft, ChevronRight, Menu, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
-import { IS_MISIONES } from "@/lib/empresa"
+import { EMPRESA_NOMBRE } from "@/lib/empresa"
 import { NotificacionesBell } from "@/components/layout/notificaciones-bell"
+import { itemActivo, menuPortal, type ContextoPortal, type ModuloPortal } from "@/lib/portal-empleado"
 
 /**
  * Menú lateral del EMPLEADO. Reutiliza el chrome del Sidebar de admin
  * (columna oscura izquierda, logo, colapsable, notificaciones, logout) pero
- * con los ítems curados del empleado — sin las secciones de admin/pilares.
+ * con los ítems del portal, agrupados. Qué ítems hay y en qué empresa sale de
+ * `@/lib/portal-empleado` — no agregar ítems acá.
  */
-
-interface EmpItem {
-  label: string
-  href: string
-  icon: React.ReactNode
-}
-
-function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpItem[] {
-  const items: EmpItem[] = [
-    // Orden de salida del día (solo Misiones).
-    ...(IS_MISIONES
-      ? [{ label: "Orden de salida", href: "/mi-orden-del-dia", icon: <CalendarCheck className="size-5" /> }]
-      : []),
-    { label: "Inicio", href: "/mis-capacitaciones", icon: <GraduationCap className="size-5" /> },
-    // Mis Resultados (DPO Entrega 2.1): HHEE + bultos propios, solo Pampeana.
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Mis Resultados", href: "/visibilidad-resultados", icon: <TrendingUp className="size-5" /> }]),
-    // ── Lo que el chofer hace sobre SU unidad, los tres juntos y ARRIBA ──
-    // 🚨 Estaban repartidos: Mi CIL sexto y Vehículos/Combustible al fondo, detrás
-    // de Comunicaciones, Servicios, Reportar, Buenas Prácticas y Mis vacaciones.
-    // Juntarlos abajo no alcanzaba: en el celular hay que scrollear y el maquinista
-    // no los encontraba (Francisco, 07/08/2026). Si se agregan ítems nuevos al
-    // menú, van DESPUÉS de este bloque.
-    { label: "Vehículos", href: "/vehiculos/checklist", icon: <Truck className="size-5" /> },
-    // Combustible: los choferes de distribución entran por las tarjetas del
-    // Inicio (piden legajo vinculado); los maquinistas cargan los autoelevadores
-    // y no tienen ese vínculo, así que este ítem es su única puerta de entrada.
-    ...(puedeCombustible
-      ? [{ label: "Combustible", href: "/vehiculos/combustible", icon: <Fuel className="size-5" /> }]
-      : []),
-    // 🚨 Acá estaba "Mi CIL". Sale del menú por pedido de Francisco (07/08/2026):
-    // la puerta de entrada al CIL es la tarjeta "Registrar CIL" del panel de
-    // Inicio, al lado de Checklist y Carga Combustible. Tenerlo en los dos
-    // lugares confundía sobre cuál era el camino bueno. La pantalla /mi-cil sigue
-    // existiendo y sigue habilitada en EmpleadoGuard.
-    // Mi productividad: lo que hizo en el depósito (picking, camiones, envases),
-    // un bloque por cada cosa donde tenga datos. Solo Pampeana — las fuentes son
-    // el WMS de Ramallo y la clasificación de envases.
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Mi productividad", href: "/mi-productividad", icon: <Gauge className="size-5" /> }]),
-    // Cómo se hace: los instructivos del depósito (descarga y carga del camión,
-    // recepción en dársena, picking tipeado, vencimientos). Solo Pampeana: las
-    // canchas, las metas y la ventana de recepción son las de Ramallo.
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Cómo se hace", href: "/instructivos", icon: <BookOpenCheck className="size-5" /> }]),
-    // Campus de Capacitaciones: biblioteca de material por pilar (videos, PPT,
-    // SOPs, flyers) para consultar cuando quiera. Distinto de "Inicio"
-    // (/mis-capacitaciones), que son los cursos asignados con examen.
-    { label: "Campus", href: "/campus", icon: <BookOpen className="size-5" /> },
-    // Trivia MERCOSUR: desafío de conocimiento diario (ambos tenants).
-    { label: "Trivia", href: "/trivia", icon: <Brain className="size-5" /> },
-    // Mi sector 5S: el responsable sorteado del mes carga sus tareas con foto.
-    // Solo Pampeana, que es donde corre el sorteo mensual de sectores.
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Mi sector 5S", href: "/mi-5s", icon: <Sparkles className="size-5" /> }]),
-    // Rechazos: solo Pampeana (fuente de datos).
-    ...(IS_MISIONES ? [] : [{ label: "Rechazos", href: "/rechazos", icon: <PackageX className="size-5" /> }]),
-    // Mis Rechazos: los del empleado (chofer o ayudante), con detalle por
-    // cliente y por camión. Solo Pampeana.
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Mis Rechazos", href: "/mis-rechazos", icon: <PackageX className="size-5" /> }]),
-    // Roturas en la calle: solo Pampeana (fuente de datos / DQI).
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Roturas en calle", href: "/mis-roturas", icon: <PackageX className="size-5" /> }]),
-    // Feedback: canal ascendente que se trata en la matinal siguiente
-    // (punto DPO Entrega 2.2). Solo Pampeana, que es donde corre la matinal.
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Feedback", href: "/mi-feedback", icon: <MessageSquare className="size-5" /> }]),
-    // Heladeras: el chofer registra la que dejó en el cliente o levantó al
-    // camión, con foto. Solo Pampeana.
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Heladeras", href: "/mis-heladeras", icon: <Refrigerator className="size-5" /> }]),
-    { label: "Comunicaciones", href: "/portal/comunicaciones", icon: <Megaphone className="size-5" /> },
-    { label: "Servicios", href: "/portal/servicios", icon: <Wrench className="size-5" /> },
-    { label: "Reportar", href: "/reportar-seguridad", icon: <ShieldAlert className="size-5" /> },
-    // Buenas Prácticas: enviar ideas de mejora (solo Pampeana — punto 4.4 Gestión).
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Buenas Prácticas", href: "/mis-buenas-practicas", icon: <Sparkles className="size-5" /> }]),
-    // Clasificar envases: solo Pampeana.
-    ...(IS_MISIONES
-      ? []
-      : [{ label: "Clasificar envases", href: "/clasificacion-envases", icon: <Boxes className="size-5" /> }]),
-    { label: "Mis vacaciones", href: "/rrhh/mis-solicitudes", icon: <CalendarRange className="size-5" /> },
-    // Ropa y EPP: talles propios + confirmación de entregas (ambos tenants).
-    { label: "Mi ropa", href: "/mi-ropa", icon: <Shirt className="size-5" /> },
-    { label: "Mis tareas", href: "/mis-tareas", icon: <ClipboardList className="size-5" /> },
-  ]
-  if (puedeRecepcion) {
-    items.push({ label: "Recepción", href: "/recepcion", icon: <PackageCheck className="size-5" /> })
-  }
-  return items
-}
-
-function isActive(pathname: string, href: string): boolean {
-  return pathname === href || pathname.startsWith(href)
-}
 
 async function logout() {
   const supabase = createClient()
@@ -154,12 +24,62 @@ async function logout() {
   window.location.href = "/login"
 }
 
+function ItemsAgrupados({
+  ctx,
+  collapsed = false,
+  onNavigate,
+}: {
+  ctx: ContextoPortal
+  collapsed?: boolean
+  onNavigate?: () => void
+}) {
+  const pathname = usePathname()
+  const grupos = menuPortal(ctx)
+  const activo = itemActivo(
+    pathname,
+    grupos.flatMap((g) => g.items),
+  )
+
+  return (
+    <div className="space-y-4">
+      {grupos.map(({ grupo, items }) => (
+        <div key={grupo.id}>
+          {collapsed ? (
+            <div className="mx-3 mb-1 border-t border-white/10" />
+          ) : (
+            <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{grupo.label}</p>
+          )}
+          <div className="space-y-0.5">
+            {items.map((item: ModuloPortal) => {
+              const Icon = item.icon
+              return (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  prefetch={false}
+                  onClick={onNavigate}
+                  title={collapsed ? item.label : undefined}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                    activo === item.id ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/5 hover:text-white",
+                  )}
+                >
+                  <Icon className="size-5 shrink-0" />
+                  {!collapsed && <span>{item.label}</span>}
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ───────────────────────── Desktop ─────────────────────────
 
-export function EmpleadoSidebar({ puedeRecepcion = false, puedeCombustible = false }: { puedeRecepcion?: boolean; puedeCombustible?: boolean }) {
-  const pathname = usePathname()
+export function EmpleadoSidebar({ ctx }: { ctx: ContextoPortal }) {
   const [collapsed, setCollapsed] = useState(false)
-  const items = empleadoItems(puedeRecepcion, puedeCombustible)
 
   return (
     <aside
@@ -179,7 +99,7 @@ export function EmpleadoSidebar({ puedeRecepcion = false, puedeCombustible = fal
           <div className="overflow-hidden">
             <Image
               src="/logo-mercosur-blanco.png"
-              alt="Mercosur Region Pampeana"
+              alt={EMPRESA_NOMBRE}
               width={140}
               height={24}
               className="h-6 w-auto"
@@ -192,26 +112,7 @@ export function EmpleadoSidebar({ puedeRecepcion = false, puedeCombustible = fal
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2 py-4">
-        <div className="space-y-1">
-          {items.map((item) => {
-            const active = isActive(pathname, item.href)
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch={false}
-                title={collapsed ? item.label : undefined}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  active ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/5 hover:text-white",
-                )}
-              >
-                <span className="shrink-0">{item.icon}</span>
-                {!collapsed && <span>{item.label}</span>}
-              </Link>
-            )
-          })}
-        </div>
+        <ItemsAgrupados ctx={ctx} collapsed={collapsed} />
       </nav>
 
       {/* Notificaciones + Logout + Collapse */}
@@ -237,10 +138,8 @@ export function EmpleadoSidebar({ puedeRecepcion = false, puedeCombustible = fal
 
 // ───────────────────────── Mobile ─────────────────────────
 
-export function EmpleadoMobileNav({ puedeRecepcion = false, puedeCombustible = false }: { puedeRecepcion?: boolean; puedeCombustible?: boolean }) {
-  const pathname = usePathname()
+export function EmpleadoMobileNav({ ctx }: { ctx: ContextoPortal }) {
   const [open, setOpen] = useState(false)
-  const items = empleadoItems(puedeRecepcion, puedeCombustible)
 
   return (
     <>
@@ -254,7 +153,7 @@ export function EmpleadoMobileNav({ puedeRecepcion = false, puedeCombustible = f
         </button>
         <Image
           src="/logo-mercosur-blanco.png"
-          alt="Mercosur Region Pampeana"
+          alt={EMPRESA_NOMBRE}
           width={100}
           height={17}
           className="h-4 w-auto"
@@ -275,13 +174,7 @@ export function EmpleadoMobileNav({ puedeRecepcion = false, puedeCombustible = f
       >
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
           <div>
-            <Image
-              src="/logo-mercosur-blanco.png"
-              alt="Mercosur Region Pampeana"
-              width={120}
-              height={20}
-              className="h-5 w-auto"
-            />
+            <Image src="/logo-mercosur-blanco.png" alt={EMPRESA_NOMBRE} width={120} height={20} className="h-5 w-auto" />
             <p className="mt-1 text-[10px] text-slate-400">Portal del Empleado</p>
           </div>
           <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-white" aria-label="Cerrar menú">
@@ -290,26 +183,7 @@ export function EmpleadoMobileNav({ puedeRecepcion = false, puedeCombustible = f
         </div>
 
         <nav className="px-2 py-4">
-          <div className="space-y-1">
-            {items.map((item) => {
-              const active = isActive(pathname, item.href)
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  prefetch={false}
-                  onClick={() => setOpen(false)}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                    active ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/5 hover:text-white",
-                  )}
-                >
-                  <span className="shrink-0">{item.icon}</span>
-                  <span>{item.label}</span>
-                </Link>
-              )
-            })}
-          </div>
+          <ItemsAgrupados ctx={ctx} onNavigate={() => setOpen(false)} />
 
           <div className="mt-5 border-t border-white/10 pt-3">
             <NotificacionesBell />

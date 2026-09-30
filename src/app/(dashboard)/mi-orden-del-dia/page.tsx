@@ -2,6 +2,7 @@
 // Antes de las 19hs (hora ARG) muestra HOY; desde las 19hs muestra MAÑANA.
 
 import { requireAuth } from "@/lib/session"
+import { requireModuloPortal } from "@/lib/portal-empleado-server"
 import { obtenerMiOrdenSalida } from "@/actions/orden-salida"
 import { getMisSobrecargas } from "@/actions/sobrecargas"
 import { fechaQueVeElEmpleado } from "@/lib/orden-salida-fechas"
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic"
 
 export default async function MiOrdenDelDiaPage() {
   await requireAuth()
+  await requireModuloPortal("orden-salida")
   const fecha = fechaQueVeElEmpleado()
   const [res, sobreRes] = await Promise.all([
     obtenerMiOrdenSalida(),

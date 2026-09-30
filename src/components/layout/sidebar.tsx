@@ -494,7 +494,7 @@ export const adminItems: NavItem[] = [
 
 // ===== Portal del Empleado (Buzón de Comunicaciones + Servicios Generales) =====
 // Visible para todos los roles que usan el sidebar. El "Dashboard" sólo lo ve
-// admin; el empleado accede al portal desde su nav horizontal (empleado-nav).
+// admin; el empleado accede al portal desde su menú (empleado-sidebar).
 export const portalSections: NavSection[] = [
   {
     title: "Portal del Empleado",

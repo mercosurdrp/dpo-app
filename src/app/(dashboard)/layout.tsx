@@ -24,11 +24,12 @@ export default async function DashboardLayout({
   // Empleados: mismo menú lateral que el resto (columna izquierda), con sus
   // ítems curados. Reemplaza la vieja nav superior de tabs.
   if (role === "empleado") {
+    const ctxPortal = { puedeRecepcion, puedeVehiculos }
     return (
-      <EmpleadoGuard>
+      <EmpleadoGuard ctx={ctxPortal}>
         <div className="flex min-h-screen">
-          <EmpleadoSidebar puedeRecepcion={puedeRecepcion} puedeCombustible={puedeVehiculos} />
-          <EmpleadoMobileNav puedeRecepcion={puedeRecepcion} puedeCombustible={puedeVehiculos} />
+          <EmpleadoSidebar ctx={ctxPortal} />
+          <EmpleadoMobileNav ctx={ctxPortal} />
           <main className="flex-1 overflow-auto bg-slate-50 p-4 pt-16 md:p-6 md:pt-6">
             {children}
           </main>

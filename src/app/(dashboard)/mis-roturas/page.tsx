@@ -1,15 +1,13 @@
-import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { requireModuloPortal } from "@/lib/portal-empleado-server"
 import { requireAuth } from "@/lib/session"
-import { IS_MISIONES } from "@/lib/empresa"
 import { getMisRoturas } from "@/actions/roturas-calle"
 import { MisRoturasClient } from "./mis-roturas-client"
 
 export const dynamic = "force-dynamic"
 
 export default async function MisRoturasPage() {
-  // Módulo exclusivo de Pampeana (igual que el DQI).
-  if (IS_MISIONES) redirect("/")
+  await requireModuloPortal("roturas")
 
   await requireAuth()
   const supabase = await createClient()

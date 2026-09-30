@@ -1,3 +1,4 @@
+import { requireModuloPortal } from "@/lib/portal-empleado-server"
 import { getRechazosRankingEmpleado } from "@/actions/rechazos-empleado"
 import type { PeriodoKey } from "@/actions/rechazos-empleado-tipos"
 import { RechazosEmpleadoClient } from "./_components/rechazos-empleado-client"
@@ -11,6 +12,7 @@ export default async function RechazosEmpleadoPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
+  await requireModuloPortal("rechazos")
   const sp = await searchParams
   const raw = typeof sp.periodo === "string" ? sp.periodo : "mes"
   const periodo: PeriodoKey = PERIODOS_VALIDOS.includes(raw as PeriodoKey)

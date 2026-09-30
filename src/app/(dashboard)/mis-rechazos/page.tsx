@@ -1,13 +1,11 @@
-import { redirect } from "next/navigation"
-import { IS_MISIONES } from "@/lib/empresa"
 import { getMisRechazos } from "@/actions/mis-rechazos"
+import { requireModuloPortal } from "@/lib/portal-empleado-server"
 import { MisRechazosClient } from "./mis-rechazos-client"
 
 export const dynamic = "force-dynamic"
 
 export default async function MisRechazosPage() {
-  // Rechazos: fuente de datos solo en Pampeana (Chess + Gestión).
-  if (IS_MISIONES) redirect("/")
+  await requireModuloPortal("mis-rechazos")
 
   const res = await getMisRechazos()
   if ("error" in res) {

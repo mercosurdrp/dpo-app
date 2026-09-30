@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
+import { requireModuloPortal } from "@/lib/portal-empleado-server"
 import { requireAuth } from "@/lib/session"
-import { IS_MISIONES } from "@/lib/empresa"
 import { puedeOperarAcarreo, puedeDarIngreso } from "@/lib/acarreo-operadores"
 import { getPendientesAcarreo } from "@/actions/acarreo"
 import { RecepcionClient } from "./recepcion-client"
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic"
 
 export default async function RecepcionPage() {
   const profile = await requireAuth()
-  if (IS_MISIONES) redirect("/")
+  await requireModuloPortal("recepcion")
   if (!puedeOperarAcarreo(profile.role, profile.email)) redirect("/")
 
   const r = await getPendientesAcarreo()

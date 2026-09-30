@@ -1,6 +1,5 @@
-import { notFound } from "next/navigation"
 import { requireAuth } from "@/lib/session"
-import { IS_MISIONES } from "@/lib/empresa"
+import { requireModuloPortal } from "@/lib/portal-empleado-server"
 import { getMiProductividad } from "@/actions/mi-productividad"
 import { MiProductividadClient } from "./mi-productividad-client"
 
@@ -15,7 +14,7 @@ export default async function MiProductividadPage({
 }: {
   searchParams: Promise<{ mes?: string }>
 }) {
-  if (IS_MISIONES) notFound()
+  await requireModuloPortal("mi-productividad")
   await requireAuth()
   const { mes } = await searchParams
 

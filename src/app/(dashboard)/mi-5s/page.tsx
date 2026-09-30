@@ -1,8 +1,10 @@
+import { requireModuloPortal } from "@/lib/portal-empleado-server"
 import { getMiSector5S } from "@/actions/s5-mi-sector"
 import { getCheckSector } from "@/actions/s5-check"
 import { Mi5SClient } from "./mi-5s-client"
 
 export default async function Mi5SPage() {
+  await requireModuloPortal("mi-5s")
   const res = await getMiSector5S()
 
   if ("error" in res) {

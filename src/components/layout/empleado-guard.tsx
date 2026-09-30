@@ -2,52 +2,25 @@
 
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect } from "react"
+import { rutaPermitida, type ContextoPortal } from "@/lib/portal-empleado"
 
-const ALLOWED_PATHS = [
-  "/mis-capacitaciones",
-  "/instructivos",
-  "/campus",
-  "/visibilidad-resultados",
-  "/mi-productividad",
-  "/trivia",
-  "/mis-tareas",
-  "/planes",
-  "/vehiculos/checklist",
-  "/vehiculos/combustible",
-  "/reportar-seguridad",
-  "/clasificacion-envases",
-  "/mi-orden-del-dia",
-  "/rrhh/mis-solicitudes",
-  "/recepcion",
-  "/portal",
-  "/rechazos",
-  "/mis-rechazos",
-  "/mis-buenas-practicas",
-  "/mis-roturas",
-  "/mi-feedback",
-  "/mis-heladeras",
-  "/mi-5s",
-  "/mi-cil",
-  "/mi-ropa",
-  "/mis-neumaticos",
-  "/mi-urea",
-]
-
-function isAllowed(pathname: string) {
-  return ALLOWED_PATHS.some((p) => pathname.startsWith(p))
-}
-
-export function EmpleadoGuard({ children }: { children: React.ReactNode }) {
+/**
+ * Deja al empleado sólo en las rutas del portal (`@/lib/portal-empleado`),
+ * con el mismo criterio de empresa y permisos que el menú. Cualquier otra lo
+ * devuelve al Inicio.
+ */
+export function EmpleadoGuard({ ctx, children }: { ctx: ContextoPortal; children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
+  const permitida = rutaPermitida(pathname, ctx)
 
   useEffect(() => {
-    if (!isAllowed(pathname)) {
+    if (!permitida) {
       router.replace("/mis-capacitaciones")
     }
-  }, [pathname, router])
+  }, [permitida, router])
 
-  if (!isAllowed(pathname)) {
+  if (!permitida) {
     return null
   }
 
