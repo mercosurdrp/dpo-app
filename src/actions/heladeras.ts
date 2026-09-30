@@ -1,5 +1,6 @@
 "use server"
 
+import { getMiNombreChofer } from "@/lib/entrega/chofer-nombre"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
@@ -30,23 +31,6 @@ const ROLES_REVISION = ["admin", "supervisor", "admin_rrhh"]
 function adjuntoConUrl(supabase: any, a: HeladeraAdjunto) {
   const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(a.storage_path)
   return { ...a, url: pub.publicUrl as string }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function resolverChoferNombre(supabase: any, profileId: string): Promise<string | null> {
-  const { data: empleado } = await supabase
-    .from("empleados")
-    .select("id")
-    .eq("profile_id", profileId)
-    .maybeSingle()
-  if (!empleado?.id) return null
-  const { data: chofer } = await supabase
-    .from("mapeo_empleado_chofer")
-    .select("nombre_chofer")
-    .eq("empleado_id", empleado.id)
-    .limit(1)
-    .maybeSingle()
-  return (chofer?.nombre_chofer as string) ?? null
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -155,7 +139,7 @@ export async function createMovimientoHeladera(
     }
 
     // Autollenar nombre de chofer si el empleado tiene mapeo (informativo).
-    const choferNombre = await resolverChoferNombre(supabase, profile.id)
+    const choferNombre = await getMiNombreChofer(supabase)
 
     const { data: inserted, error } = await supabase
       .from("heladeras_movimientos")

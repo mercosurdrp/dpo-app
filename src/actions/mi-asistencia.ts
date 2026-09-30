@@ -1,7 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { requireAuth } from "@/lib/session"
+import { requireAuth, getMiEmpleado } from "@/lib/session"
 import type { MarcaAsistencia } from "./asistencia"
 import { esTardanzaDeposito } from "@/lib/asistencia-turnos"
 
@@ -59,15 +59,11 @@ export async function getMiDashboard(): Promise<
   { data: MiDashboardData } | { error: string }
 > {
   try {
-    const profile = await requireAuth()
+    await requireAuth()
     const supabase = await createClient()
 
     // Get empleado
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("legajo, nombre, sector")
-      .eq("profile_id", profile.id)
-      .single()
+    const empleado = await getMiEmpleado()
 
     if (!empleado) return { error: "No se encontró tu legajo" }
 

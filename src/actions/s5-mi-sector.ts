@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireAuth } from "@/lib/session"
+import { requireAuth, getMiEmpleado } from "@/lib/session"
 import { archivosDeFila, columnasArchivos, type ArchivoAvance } from "@/lib/adjuntos-avance"
 import { calcularBonus, type ResumenDocumentacion } from "@/lib/s5-bonus"
 import { getAdherenciaCheck } from "@/actions/s5-check"
@@ -180,19 +180,13 @@ function resumirDocumentacion(
 }
 
 /**
- * Legajo del usuario logueado. Va por el cliente admin a propósito: la RLS de
- * `empleados` restringe al rol 'empleado' a "verse a sí mismo" vía
- * `profiles.empleado_id`, que en esta base está vacío — con el cliente normal
- * la consulta volvería sin filas y el operario nunca vería su sector. La
- * lectura está acotada al propio usuario autenticado.
+ * Legajo del usuario logueado. `getMiEmpleado` va por el cliente admin a
+ * propósito: la RLS de `empleados` depende de `profiles.empleado_id`, que no
+ * siempre está cargado. La lectura está acotada al propio usuario.
  */
-async function empleadoDelUsuario(profileId: string): Promise<{ id: string } | null> {
-  const { data } = await createAdminClient()
-    .from("empleados")
-    .select("id")
-    .eq("profile_id", profileId)
-    .maybeSingle()
-  return data ?? null
+async function empleadoDelUsuario(): Promise<{ id: string } | null> {
+  const e = await getMiEmpleado()
+  return e ? { id: e.id } : null
 }
 
 /** Sector que le tocó por sorteo al empleado en ese mes, o null. */
@@ -251,7 +245,7 @@ export async function getMiSector5S(): Promise<
       dias_restantes: diasRestantesDelMes(),
     }
 
-    const empleado = await empleadoDelUsuario(profile.id)
+    const empleado = await empleadoDelUsuario()
     if (!empleado) return { data: vacio }
 
     const sector = await sectorDelEmpleado(empleado.id, periodo)
@@ -387,7 +381,7 @@ export async function prepararCarga5S(
     const supabase = await createClient()
     const periodo = periodoActual()
 
-    const empleado = await empleadoDelUsuario(profile.id)
+    const empleado = await empleadoDelUsuario()
     if (!empleado) return { error: "Tu usuario no está vinculado a un legajo" }
 
     const sector = await sectorDelEmpleado(empleado.id, periodo)
@@ -457,9 +451,9 @@ export async function firmarSubida5S(
   nombreArchivo: string,
 ): Promise<{ data: { path: string; token: string } } | { error: string }> {
   try {
-    const profile = await requireAuth()
+    await requireAuth()
 
-    const mio = await miSectorDelMes(profile.id)
+    const mio = await miSectorDelMes()
     if ("error" in mio) return mio
 
     const admin = createAdminClient()
@@ -502,11 +496,9 @@ export async function firmarSubida5S(
  * `s5_acciones_insert` solo deja crear a admin/auditor. La autorización la hace
  * esta función — solo toca el sector que le tocó por sorteo a quien la llama.
  */
-async function miSectorDelMes(
-  profileId: string,
-): Promise<{ sector: number; periodo: string } | { error: string }> {
+async function miSectorDelMes(): Promise<{ sector: number; periodo: string } | { error: string }> {
   const periodo = periodoActual()
-  const empleado = await empleadoDelUsuario(profileId)
+  const empleado = await empleadoDelUsuario()
   if (!empleado) return { error: "Tu usuario no está vinculado a un legajo" }
   const sector = await sectorDelEmpleado(empleado.id, periodo)
   if (sector === null) return { error: "Este mes no sos responsable de ningún sector" }
@@ -550,7 +542,7 @@ export async function crearMiTarea(
     if (!desc) return { error: "Escribí qué tarea hacés" }
     if (desc.length > 200) return { error: "La tarea es muy larga (máximo 200 caracteres)" }
 
-    const mio = await miSectorDelMes(profile.id)
+    const mio = await miSectorDelMes()
     if ("error" in mio) return mio
 
     const { data, error } = await createAdminClient()
@@ -587,7 +579,7 @@ export async function editarMiTarea(
     if (!desc) return { error: "Escribí qué tarea hacés" }
     if (desc.length > 200) return { error: "La tarea es muy larga (máximo 200 caracteres)" }
 
-    const mio = await miSectorDelMes(profile.id)
+    const mio = await miSectorDelMes()
     if ("error" in mio) return mio
 
     const permiso = await miTareaEditable(id, profile.id, mio.sector, mio.periodo)
@@ -611,7 +603,7 @@ export async function borrarMiTarea(id: string): Promise<{ ok: true } | { error:
   try {
     const profile = await requireAuth()
 
-    const mio = await miSectorDelMes(profile.id)
+    const mio = await miSectorDelMes()
     if ("error" in mio) return mio
 
     const permiso = await miTareaEditable(id, profile.id, mio.sector, mio.periodo)
@@ -659,7 +651,7 @@ export async function cargarEvidencia5S(input: {
 
     const periodo = periodoActual()
 
-    const empleado = await empleadoDelUsuario(profile.id)
+    const empleado = await empleadoDelUsuario()
     if (!empleado) return { error: "Tu usuario no está vinculado a un legajo" }
 
     const sector = await sectorDelEmpleado(empleado.id, periodo)

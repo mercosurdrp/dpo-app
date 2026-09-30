@@ -1,5 +1,6 @@
 "use server"
 
+import { getMiNombreChofer } from "@/lib/entrega/chofer-nombre"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
@@ -58,7 +59,7 @@ export async function createRotura(
     }
 
     // Autollenar nombre de chofer si el empleado tiene mapeo (informativo).
-    const choferNombre = await resolverChoferNombre(supabase, profile.id)
+    const choferNombre = await getMiNombreChofer(supabase)
 
     const { data: inserted, error: errIns } = await supabase
       .from("roturas_calle")
@@ -118,23 +119,6 @@ export async function createRotura(
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error creando la rotura." }
   }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function resolverChoferNombre(supabase: any, profileId: string): Promise<string | null> {
-  const { data: empleado } = await supabase
-    .from("empleados")
-    .select("id")
-    .eq("profile_id", profileId)
-    .maybeSingle()
-  if (!empleado?.id) return null
-  const { data: chofer } = await supabase
-    .from("mapeo_empleado_chofer")
-    .select("nombre_chofer")
-    .eq("empleado_id", empleado.id)
-    .limit(1)
-    .maybeSingle()
-  return (chofer?.nombre_chofer as string) ?? null
 }
 
 // ===================================================

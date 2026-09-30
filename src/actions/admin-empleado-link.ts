@@ -1,5 +1,6 @@
 "use server"
 
+import { EMPLEADO_SECTORES, type EmpleadoSector } from "@/types/empleado-sectores"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireRole } from "@/lib/session"
@@ -159,8 +160,6 @@ export async function unlinkUserFromEmpleado(
   }
 }
 
-export const EMPLEADO_SECTORES = ["Distribución", "Depósito", "Sin asignar"] as const
-export type EmpleadoSector = (typeof EMPLEADO_SECTORES)[number]
 
 export async function updateEmpleadoSector(
   empleadoId: string,

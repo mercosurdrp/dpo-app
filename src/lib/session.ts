@@ -1,7 +1,8 @@
 import { cache } from "react"
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
-import type { Profile, UserRole } from "@/types/database"
+import { createAdminClient } from "@/lib/supabase/admin"
+import type { Empleado, Profile, UserRole } from "@/types/database"
 
 /**
  * Get the current user's profile. Returns null if not authenticated.
@@ -109,8 +110,52 @@ export async function getEmpleadoIdFromAuth(): Promise<string | null> {
 
   // `getProfile()` ya hizo `select("*")`: `empleado_id` viene en esa fila y el
   // segundo SELECT a profiles era un round-trip de más por cada llamada.
-  return profile.empleado_id ?? null
+  // Si el vínculo se cargó sólo del lado de `empleados.profile_id` (sync de
+  // RRHH), se resuelve por ahí: ver `getMiEmpleado`.
+  return profile.empleado_id ?? (await getMiEmpleado())?.id ?? null
 }
+
+/**
+ * La ficha de `empleados` del usuario autenticado, o null si no está vinculado.
+ *
+ * El vínculo profile↔empleado vive en DOS columnas que se cargan por caminos
+ * distintos: `/admin/usuarios` escribe `profiles.empleado_id` y la
+ * sincronización de RRHH escribe `empleados.profile_id`. Cada action del
+ * portal miraba sólo una (casi todas `empleados.profile_id`), así que un alta
+ * hecha por un lado dejaba al empleado "sin legajo" en la mitad de las
+ * pantallas. Acá se prueban las dos, en ese orden (mismo criterio que
+ * «Cómo venimos» de Distribuciones).
+ *
+ * Va con el cliente admin porque la RLS de `empleados` depende justamente de
+ * `profiles.empleado_id` (el caso que falla); el filtro es siempre el propio
+ * usuario, así que no expone filas ajenas. Memoizado por request: el Inicio
+ * pedía la ficha 6 veces por carga.
+ */
+export const getMiEmpleado = cache(async function getMiEmpleado(): Promise<Empleado | null> {
+  const profile = await getProfile()
+  if (!profile) return null
+
+  const admin = createAdminClient()
+
+  if (profile.empleado_id) {
+    const { data } = await admin
+      .from("empleados")
+      .select("*")
+      .eq("id", profile.empleado_id)
+      .maybeSingle()
+    if (data) return data as Empleado
+  }
+
+  // Puede haber más de una ficha con el mismo profile_id (reingresos): manda la activa.
+  const { data } = await admin
+    .from("empleados")
+    .select("*")
+    .eq("profile_id", profile.id)
+    .order("activo", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return (data as Empleado | null) ?? null
+})
 
 /**
  * Asegura que el usuario es supervisor directo del empleado dado, o admin/admin_rrhh.

@@ -1,7 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { requireAuth } from "@/lib/session"
+import { requireAuth, getMiEmpleado } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 
 // ---------- Types ----------
@@ -42,15 +42,11 @@ export async function checkInReunion(): Promise<
   { data: { hora_checkin: string; minutos_fichaje_reunion: number | null } } | { error: string }
 > {
   try {
-    const profile = await requireAuth()
+    await requireAuth()
     const supabase = await createClient()
 
     // Get empleado by profile_id
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("legajo")
-      .eq("profile_id", profile.id)
-      .single()
+    const empleado = await getMiEmpleado()
 
     if (!empleado) return { error: "No se encontró tu legajo" }
 
@@ -121,14 +117,10 @@ export async function getEstadoReunionHoy(): Promise<
   { data: { marcado: boolean; hora_checkin: string | null; minutos: number | null } } | { error: string }
 > {
   try {
-    const profile = await requireAuth()
+    await requireAuth()
     const supabase = await createClient()
 
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("legajo")
-      .eq("profile_id", profile.id)
-      .single()
+    const empleado = await getMiEmpleado()
 
     if (!empleado) return { data: { marcado: false, hora_checkin: null, minutos: null } }
 

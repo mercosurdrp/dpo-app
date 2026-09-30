@@ -11,9 +11,8 @@
  * Las filas de Gestión (`GESTION-<código>`) se traducen a la patente del día
  * con la misma lib que el resto de los indicadores.
  */
-import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireAuth } from "@/lib/session"
+import { requireAuth, getMiEmpleado } from "@/lib/session"
 import { hoyAR } from "@/lib/herramientas-gestion"
 import {
   loadResolucionGescom,
@@ -111,14 +110,9 @@ export async function getMisRechazos(): Promise<
   { data: MisRechazosData } | { error: string }
 > {
   try {
-    const profile = await requireAuth()
-    const supabase = await createClient()
+    await requireAuth()
 
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("id, nombre")
-      .eq("profile_id", profile.id)
-      .single()
+    const empleado = await getMiEmpleado()
     if (!empleado) return { error: "No se encontró tu legajo" }
 
     const admin = createAdminClient()

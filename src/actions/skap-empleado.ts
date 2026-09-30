@@ -5,7 +5,7 @@
 // la identidad desde la sesión, igual que `visibilidad-resultados.ts`.
 
 import { createClient } from "@/lib/supabase/server"
-import { requireAuth } from "@/lib/session"
+import { requireAuth, getMiEmpleado } from "@/lib/session"
 import { calcularCelda } from "@/lib/skap/gap"
 import { ROLES_SKAP } from "@/lib/skap/roles"
 import type {
@@ -26,14 +26,10 @@ import type {
  */
 export async function getMisHabilidades(): Promise<SkapEmpleadoData | null> {
   try {
-    const profile = await requireAuth()
+    await requireAuth()
     const supabase = await createClient()
 
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("id")
-      .eq("profile_id", profile.id)
-      .maybeSingle()
+    const empleado = await getMiEmpleado()
     if (!empleado) return null
 
     // Una persona puede tener más de un rol y se la evalúa en todos.

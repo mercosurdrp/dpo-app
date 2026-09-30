@@ -10,7 +10,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireAuth } from "@/lib/session"
+import { requireAuth, getMiEmpleado } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import {
   hheePorLegajo,
@@ -117,18 +117,13 @@ export async function getVisibilidadEmpleado(
   mesParam?: string,
 ): Promise<Result<VisibilidadEmpleadoData>> {
   try {
-    const profile = await requireAuth()
+    await requireAuth()
     if (IS_MISIONES) return { error: "Disponible solo en Pampeana." }
 
     const mes = validarMes(mesParam)
     if (!mes) return { error: "Mes inválido." }
 
-    const supabase = await createClient()
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("id, legajo, nombre, sector")
-      .eq("profile_id", profile.id)
-      .maybeSingle()
+    const empleado = await getMiEmpleado()
     if (!empleado) {
       return { error: "Tu usuario no está vinculado a un legajo. Pedile a tu supervisor que lo configure." }
     }

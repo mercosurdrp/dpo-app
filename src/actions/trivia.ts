@@ -1,7 +1,8 @@
 "use server"
 
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireAuth, requireRole } from "@/lib/session"
+import { requireRole } from "@/lib/session"
+import { getMiEmpleado as getMiEmpleadoSesion } from "@/lib/session"
 import type {
   JuegoConfig,
   EstadoTrivia,
@@ -68,17 +69,12 @@ async function getConfig(admin: Admin): Promise<JuegoConfig> {
   return data as JuegoConfig
 }
 
-/** Resuelve el empleado del usuario logueado (o null si no está vinculado). */
+/** Resuelve el empleado del usuario logueado (o null si no está vinculado). Delega en `getMiEmpleado` de session. */
 async function getMiEmpleado(
   admin: Admin
 ): Promise<{ id: string; nombre: string; sector: string | null } | null> {
-  const profile = await requireAuth()
-  const { data } = await admin
-    .from("empleados")
-    .select("id, nombre, sector")
-    .eq("profile_id", profile.id)
-    .maybeSingle()
-  return (data as { id: string; nombre: string; sector: string | null } | null) ?? null
+  void admin
+  return getMiEmpleadoSesion()
 }
 
 /**

@@ -1,7 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { requireAuth, requireRole } from "@/lib/session"
+import { requireAuth, requireRole, getMiEmpleado } from "@/lib/session"
 import { CLAVE_ESTADO_MANUAL, parseEstadosManuales } from "@/lib/capacitacion-estado"
 import type { EmpleadoRef, FilaAsistenciaEmpleado } from "@/lib/capacitacion-asistencia"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -590,15 +590,11 @@ export async function getMisCapacitaciones(): Promise<
   { data: (Capacitacion & { asistencia: Asistencia | null })[] } | { error: string }
 > {
   try {
-    const profile = await requireAuth()
+    await requireAuth()
     const supabase = await createClient()
 
     // Find the empleado linked to this profile
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("id")
-      .eq("profile_id", profile.id)
-      .single()
+    const empleado = await getMiEmpleado()
 
     if (!empleado) return { data: [] }
 
@@ -633,17 +629,9 @@ export async function getMyEmpleado(): Promise<
   { data: Empleado | null } | { error: string }
 > {
   try {
-    const profile = await requireAuth()
-    const supabase = await createClient()
+    await requireAuth()
 
-    const { data, error } = await supabase
-      .from("empleados")
-      .select("*")
-      .eq("profile_id", profile.id)
-      .single()
-
-    if (error && error.code !== "PGRST116") return { error: error.message }
-    return { data: (data as Empleado) ?? null }
+    return { data: await getMiEmpleado() }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error loading empleado" }
   }
@@ -655,15 +643,11 @@ export async function submitExamen(
   respuestas: { pregunta_id: string; respuesta_elegida: number }[]
 ): Promise<{ data: { nota: number; correctas: number; total: number; intento_n: number } } | { error: string }> {
   try {
-    const profile = await requireAuth()
+    await requireAuth()
     const supabase = await createClient()
 
     // Find empleado
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("id")
-      .eq("profile_id", profile.id)
-      .single()
+    const empleado = await getMiEmpleado()
 
     if (!empleado) return { error: "No se encontro tu registro de empleado" }
 
@@ -765,14 +749,10 @@ export async function getMisIntentos(
   capacitacionId: string
 ): Promise<{ data: { intento_n: number; nota: number; correctas: number | null; total: number | null; created_at: string }[] } | { error: string }> {
   try {
-    const profile = await requireAuth()
+    await requireAuth()
     const supabase = await createClient()
 
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("id")
-      .eq("profile_id", profile.id)
-      .single()
+    const empleado = await getMiEmpleado()
 
     if (!empleado) return { data: [] }
 
@@ -1064,14 +1044,10 @@ export async function getMisRespuestas(
   capacitacionId: string
 ): Promise<{ data: CapacitacionRespuesta[] } | { error: string }> {
   try {
-    const profile = await requireAuth()
+    await requireAuth()
     const supabase = await createClient()
 
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("id")
-      .eq("profile_id", profile.id)
-      .single()
+    const empleado = await getMiEmpleado()
 
     if (!empleado) return { data: [] }
 

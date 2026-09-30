@@ -12,10 +12,9 @@ import {
   unlinkUserFromEmpleado,
   getUserEmpleado,
   updateEmpleadoSector,
-  EMPLEADO_SECTORES,
   type EmpleadoOption,
-  type EmpleadoSector,
 } from "@/actions/admin-empleado-link"
+import { EMPLEADO_SECTORES, type EmpleadoSector } from "@/types/empleado-sectores"
 import {
   Select,
   SelectContent,

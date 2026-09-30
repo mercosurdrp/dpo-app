@@ -1,8 +1,7 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireAuth } from "@/lib/session"
+import { requireAuth, getMiEmpleado } from "@/lib/session"
 import { hoyAR } from "@/lib/herramientas-gestion"
 import {
   loadResolucionGescom,
@@ -72,15 +71,10 @@ export async function getMiEntrega(): Promise<
   { data: MiEntregaData } | { error: string }
 > {
   try {
-    const profile = await requireAuth()
-    const supabase = await createClient()
+    await requireAuth()
 
     // 1. Get empleado
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("id, legajo, nombre")
-      .eq("profile_id", profile.id)
-      .single()
+    const empleado = await getMiEmpleado()
 
     if (!empleado) return { error: "No se encontró tu legajo" }
 
