@@ -1543,8 +1543,24 @@ export interface MantenimientoRealizadoFactura {
   numero: string | null
   monto_total: number | null
   adjunto_url: string | null
+  /** Qué cubre el comprobante. null = OT cargada antes de que existiera el campo. */
+  concepto: FacturaConcepto | null
   orden: number
   created_at: string
+}
+
+/**
+ * Qué cubre una factura de la OT. El taller factura su mano de obra y el
+ * proveedor de repuestos la suya: son plata distinta y hasta el 30/09/2026 caían
+ * las dos en la misma bolsa, con lo que el costo de la OT no se podía abrir por
+ * concepto aunque los comprobantes vinieran separados.
+ */
+export type FacturaConcepto = "mano_obra" | "repuestos" | "mixta"
+
+export const FACTURA_CONCEPTO_LABEL: Record<FacturaConcepto, string> = {
+  mano_obra: "Mano de obra",
+  repuestos: "Repuestos",
+  mixta: "Mano de obra + repuestos",
 }
 
 /**

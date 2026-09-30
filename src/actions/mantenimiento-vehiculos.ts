@@ -692,7 +692,11 @@ interface MantenimientoFacturaInput {
   numero?: string | null
   montoTotal?: number | null
   adjuntoUrl?: string | null
+  /** mano_obra | repuestos | mixta. Ver `FacturaConcepto`. */
+  concepto?: string | null
 }
+
+const CONCEPTOS_FACTURA = new Set(["mano_obra", "repuestos", "mixta"])
 
 /** Descarta las filas vacías del editor y las numera para conservar el orden. */
 function facturasParaGuardar(
@@ -713,8 +717,33 @@ function facturasParaGuardar(
       numero: f.numero?.trim() || null,
       monto_total: f.montoTotal ?? null,
       adjunto_url: f.adjuntoUrl?.trim() || null,
+      concepto: f.concepto && CONCEPTOS_FACTURA.has(f.concepto) ? f.concepto : null,
       orden: i,
     }))
+}
+
+/**
+ * Inserta los comprobantes de la OT.
+ *
+ * 🚨 El código se deploya por push y el SQL lo corre otra persona después, así
+ * que entre un momento y el otro la base todavía no tiene la columna `concepto`
+ * (42703). En ese hueco se guarda la factura igual, sin el concepto: nunca se
+ * pierde una carga por una migración que falta.
+ */
+async function insertarFacturas(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  filas: ReturnType<typeof facturasParaGuardar>
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("mantenimiento_realizado_facturas").insert(filas)
+  if (!error) return { error: null }
+  if (error.code !== "42703") return { error: error.message }
+  const sinConcepto = filas.map((f) => {
+    const fila = { ...f } as Partial<typeof f>
+    delete fila.concepto
+    return fila
+  })
+  const retry = await supabase.from("mantenimiento_realizado_facturas").insert(sinConcepto)
+  return { error: retry.error ? retry.error.message : null }
 }
 
 /** Tarea del plan que quedó sin hacer en esta OT y se reprograma. */
@@ -1125,12 +1154,10 @@ export async function createMantenimiento(
 
     const facturas = facturasParaGuardar(input.facturas ?? [], mantenimiento.id)
     if (facturas.length > 0) {
-      const { error: facError } = await supabase
-        .from("mantenimiento_realizado_facturas")
-        .insert(facturas)
+      const { error: facError } = await insertarFacturas(supabase, facturas)
       if (facError) {
         await supabase.from("mantenimiento_realizados").delete().eq("id", mantenimiento.id)
-        return { error: facError.message }
+        return { error: facError }
       }
     }
 
@@ -1365,10 +1392,8 @@ export async function updateMantenimiento(
       if (delFacError) return { error: delFacError.message }
       const facturas = facturasParaGuardar(input.facturas, input.id)
       if (facturas.length > 0) {
-        const { error: insFacError } = await supabase
-          .from("mantenimiento_realizado_facturas")
-          .insert(facturas)
-        if (insFacError) return { error: insFacError.message }
+        const { error: insFacError } = await insertarFacturas(supabase, facturas)
+        if (insFacError) return { error: insFacError }
       }
     }
 

@@ -74,6 +74,7 @@ import type {
   CostosMantenimiento,
   DiaRuteo,
   EstadoPlanVehiculo,
+  FacturaConcepto,
   FlotaIndisponibilidad,
   MantenimientoCategoria,
   MantenimientoEstado,
@@ -1993,7 +1994,13 @@ function NuevoMantenimientoDialog({
             <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} facturas={facturas} />
           </div>
 
-          <FacturasEditor facturas={facturas} setFacturas={setFacturas} proveedorSugerido={taller} />
+          <FacturasEditor
+            facturas={facturas}
+            setFacturas={setFacturas}
+            proveedorSugerido={taller}
+            proveedores={proveedores}
+            onProveedorCreado={onProveedorCreado}
+          />
 
           <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3">
             <p className="text-sm font-medium text-amber-800">Entrada y salida del taller</p>
@@ -2558,14 +2565,23 @@ interface FacturaForm {
   proveedor: string
   numero: string
   monto: string
+  /** Qué cubre: la mano de obra del taller, los repuestos, o las dos cosas. */
+  concepto: FacturaConcepto
   /** Adjunto ya subido (OT que se está editando). */
   adjuntoUrl: string | null
   /** Adjunto nuevo, se sube al guardar. */
   archivo: File | null
 }
 
-function nuevaFactura(proveedor = ""): FacturaForm {
-  return { proveedor, numero: "", monto: "", adjuntoUrl: null, archivo: null }
+function nuevaFactura(proveedor = "", concepto: FacturaConcepto = "mano_obra"): FacturaForm {
+  return { proveedor, numero: "", monto: "", concepto, adjuntoUrl: null, archivo: null }
+}
+
+/** Suma de los comprobantes de un concepto (la mano de obra de un lado, los repuestos del otro). */
+function totalPorConcepto(facturas: FacturaForm[], concepto: FacturaConcepto): number {
+  return facturas
+    .filter((f) => f.concepto === concepto)
+    .reduce((a, f) => a + (parseFloat(f.monto) || 0), 0)
 }
 
 /**
@@ -2581,6 +2597,9 @@ function facturasDesde(m: MantenimientoRealizado): FacturaForm[] {
         proveedor: f.proveedor ?? "",
         numero: f.numero ?? "",
         monto: f.monto_total != null ? String(f.monto_total) : "",
+        // Sin concepto = comprobante cargado antes de que el campo existiera:
+        // se muestra como mixto y se corrige al editar, no se inventa.
+        concepto: f.concepto ?? "mixta",
         adjuntoUrl: f.adjunto_url,
         archivo: null,
       }))
@@ -2588,12 +2607,19 @@ function facturasDesde(m: MantenimientoRealizado): FacturaForm[] {
   const urls = m.evidencia_urls ?? []
   if (urls.length === 0 && !m.numero_factura) return []
   if (urls.length === 0) {
-    return [{ ...nuevaFactura(), proveedor: m.taller ?? "", numero: m.numero_factura ?? "" }]
+    return [
+      {
+        ...nuevaFactura("", "mixta"),
+        proveedor: m.taller ?? "",
+        numero: m.numero_factura ?? "",
+      },
+    ]
   }
   return urls.map((url, i) => ({
     proveedor: i === 0 ? (m.taller ?? "") : "",
     numero: i === 0 ? (m.numero_factura ?? "") : "",
     monto: "",
+    concepto: "mixta" as FacturaConcepto,
     adjuntoUrl: url,
     archivo: null,
   }))
@@ -2612,7 +2638,16 @@ async function resolverFacturas(
   dominio: string,
   filas: FacturaForm[]
 ): Promise<
-  | { facturas: Array<{ proveedor: string | null; numero: string | null; montoTotal: number | null; adjuntoUrl: string | null }>; urls: string[] }
+  | {
+      facturas: Array<{
+        proveedor: string | null
+        numero: string | null
+        montoTotal: number | null
+        adjuntoUrl: string | null
+        concepto: FacturaConcepto
+      }>
+      urls: string[]
+    }
   | null
 > {
   const archivos = filas.map((f) => f.archivo).filter((a): a is File => a != null)
@@ -2625,6 +2660,7 @@ async function resolverFacturas(
     numero: f.numero.trim() || null,
     montoTotal: f.monto.trim() ? parseFloat(f.monto) : null,
     adjuntoUrl: f.archivo ? (subidas[i++] ?? null) : f.adjuntoUrl,
+    concepto: f.concepto,
   }))
   // Las URLs también van a evidencia_urls: es lo que siguen leyendo la grilla y
   // las OT viejas, así el adjunto se ve igual en todos lados.
@@ -2636,14 +2672,32 @@ function FacturasEditor({
   facturas,
   setFacturas,
   proveedorSugerido = "",
+  proveedores,
+  onProveedorCreado,
 }: {
   facturas: FacturaForm[]
   setFacturas: (f: FacturaForm[]) => void
   /** Taller de la OT: viene puesto en la fila nueva, que casi siempre es su factura. */
   proveedorSugerido?: string
+  /** Maestro de proveedores, para elegirlo de la lista en vez de tipearlo. */
+  proveedores: MantenimientoProveedor[]
+  onProveedorCreado: (p: MantenimientoProveedor) => void
 }) {
   const set = (i: number, patch: Partial<FacturaForm>) =>
     setFacturas(facturas.map((f, j) => (j === i ? { ...f, ...patch } : f)))
+
+  // La primera factura es casi siempre la del taller (mano de obra) y las que
+  // siguen las de los repuestos: se prellena así y se corrige con un click.
+  const agregar = () =>
+    setFacturas([
+      ...facturas,
+      facturas.length === 0
+        ? nuevaFactura(proveedorSugerido, "mano_obra")
+        : nuevaFactura("", "repuestos"),
+    ])
+
+  const mo = totalPorConcepto(facturas, "mano_obra")
+  const rep = totalPorConcepto(facturas, "repuestos")
 
   return (
     <div className="rounded-md border border-slate-200 p-3">
@@ -2651,15 +2705,11 @@ function FacturasEditor({
         <div>
           <Label>Facturas y comprobantes</Label>
           <p className="text-xs text-muted-foreground">
-            Una por proveedor: los repuestos y la mano de obra suelen venir separados.
+            Una por proveedor, y cada una con lo que cubre: la mano de obra del taller y los
+            repuestos casi nunca los factura el mismo.
           </p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setFacturas([...facturas, nuevaFactura(proveedorSugerido)])}
-        >
+        <Button type="button" variant="outline" size="sm" onClick={agregar}>
           <Plus className="mr-1 size-3.5" /> Agregar
         </Button>
       </div>
@@ -2671,82 +2721,114 @@ function FacturasEditor({
       ) : (
         <div className="space-y-2">
           {facturas.map((f, i) => (
-            <div key={i} className="grid grid-cols-12 items-end gap-2">
-              <div className="col-span-4">
-                <Label className="text-xs text-muted-foreground">Proveedor</Label>
-                <Input
-                  value={f.proveedor}
-                  onChange={(e) => set(i, { proveedor: e.target.value })}
-                  placeholder="Don Gregorio"
-                />
-              </div>
-              <div className="col-span-2">
-                <Label className="text-xs text-muted-foreground">N°</Label>
-                <Input
-                  value={f.numero}
-                  onChange={(e) => set(i, { numero: e.target.value })}
-                  placeholder="12353"
-                />
-              </div>
-              <div className="col-span-2">
-                <Label className="text-xs text-muted-foreground">Monto</Label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={f.monto}
-                  onChange={(e) => set(i, { monto: e.target.value })}
-                />
-              </div>
-              <div className="col-span-3">
-                <Label className="text-xs text-muted-foreground">Adjunto</Label>
-                {f.archivo || f.adjuntoUrl ? (
-                  <div className="flex h-9 items-center gap-1 rounded-md border px-2 text-xs">
-                    <Paperclip className="size-3 shrink-0" />
-                    <span className="truncate">
-                      {f.archivo ? f.archivo.name : nombreArchivoDeUrl(f.adjuntoUrl!)}
-                    </span>
-                    <button
-                      type="button"
-                      className="ml-auto shrink-0 text-slate-400 hover:text-slate-700"
-                      onClick={() => set(i, { archivo: null, adjuntoUrl: null })}
-                      title="Quitar el adjunto"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </div>
-                ) : (
-                  <Input
-                    type="file"
-                    accept={ACCEPT_FACTURA}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) set(i, { archivo: file })
-                      e.target.value = ""
-                    }}
+            <div key={i} className="space-y-2 rounded-md border border-border p-2">
+              <div className="grid grid-cols-12 items-end gap-2">
+                <div className="col-span-6">
+                  <Label className="text-xs text-muted-foreground">Proveedor</Label>
+                  <ProveedorPicker
+                    proveedores={proveedores}
+                    value={f.proveedor}
+                    onChange={(nombre) => set(i, { proveedor: nombre })}
+                    onCreado={onProveedorCreado}
+                    placeholder="Buscá o elegí el proveedor"
                   />
-                )}
+                </div>
+                <div className="col-span-2">
+                  <Label className="text-xs text-muted-foreground">N°</Label>
+                  <Input
+                    value={f.numero}
+                    onChange={(e) => set(i, { numero: e.target.value })}
+                    placeholder="12353"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <Label className="text-xs text-muted-foreground">Monto</Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    value={f.monto}
+                    onChange={(e) => set(i, { monto: e.target.value })}
+                  />
+                </div>
+                <div className="col-span-1 flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 w-9 p-0 text-red-500 hover:text-red-700"
+                    onClick={() => setFacturas(facturas.filter((_, j) => j !== i))}
+                    title="Quitar la factura"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
               </div>
-              <div className="col-span-1 flex justify-end">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-9 w-9 p-0 text-red-500 hover:text-red-700"
-                  onClick={() => setFacturas(facturas.filter((_, j) => j !== i))}
-                  title="Quitar la factura"
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
+              <div className="grid grid-cols-12 items-end gap-2">
+                <div className="col-span-5">
+                  <Label className="text-xs text-muted-foreground">Qué cubre</Label>
+                  <Select
+                    value={f.concepto}
+                    onValueChange={(v) => set(i, { concepto: v as FacturaConcepto })}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mano_obra">Mano de obra</SelectItem>
+                      <SelectItem value="repuestos">Repuestos</SelectItem>
+                      <SelectItem value="mixta">Mano de obra + repuestos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="col-span-7">
+                  <Label className="text-xs text-muted-foreground">Adjunto</Label>
+                  {f.archivo || f.adjuntoUrl ? (
+                    <div className="flex h-9 items-center gap-1 rounded-md border px-2 text-xs">
+                      <Paperclip className="size-3 shrink-0" />
+                      <span className="truncate">
+                        {f.archivo ? f.archivo.name : nombreArchivoDeUrl(f.adjuntoUrl!)}
+                      </span>
+                      <button
+                        type="button"
+                        className="ml-auto shrink-0 text-slate-400 hover:text-slate-700"
+                        onClick={() => set(i, { archivo: null, adjuntoUrl: null })}
+                        title="Quitar el adjunto"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <Input
+                      type="file"
+                      accept={ACCEPT_FACTURA}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) set(i, { archivo: file })
+                        e.target.value = ""
+                      }}
+                    />
+                  )}
+                </div>
               </div>
             </div>
           ))}
           {totalFacturas(facturas) > 0 && (
-            <p className="pt-1 text-right text-xs text-muted-foreground">
-              Suma de comprobantes:{" "}
-              <span className="font-mono font-medium text-slate-700">
-                {fmtMoney(totalFacturas(facturas))}
-              </span>
-            </p>
+            <div className="space-y-0.5 pt-1 text-right text-xs text-muted-foreground">
+              {(mo > 0 || rep > 0) && (
+                <p>
+                  Mano de obra{" "}
+                  <span className="font-mono font-medium text-slate-700">{fmtMoney(mo)}</span> ·
+                  Repuestos{" "}
+                  <span className="font-mono font-medium text-slate-700">{fmtMoney(rep)}</span>
+                </p>
+              )}
+              <p>
+                Suma de comprobantes:{" "}
+                <span className="font-mono font-medium text-slate-700">
+                  {fmtMoney(totalFacturas(facturas))}
+                </span>
+              </p>
+            </div>
           )}
         </div>
       )}
@@ -2950,6 +3032,10 @@ function CampoManoObra({
   const fac = totalFacturas(facturas)
   const mo = parseFloat(costoManoObra) || 0
   const sinDesglosar = Math.round((fac - mo - subtotalRepuestos(repuestos)) * 100) / 100
+  // Si ya hay comprobantes marcados como mano de obra, este número está cargado
+  // dos veces: se copia con un click en vez de volver a tipearlo.
+  const moFacturado = totalPorConcepto(facturas, "mano_obra")
+  const difiere = moFacturado > 0 && Math.abs(moFacturado - mo) > 0.5
   return (
     <div>
       <Label>{fac > 0 ? "Mano de obra ($) — desglose" : "Mano de obra ($)"}</Label>
@@ -2958,6 +3044,15 @@ function CampoManoObra({
         value={costoManoObra}
         onChange={(e) => setCostoManoObra(e.target.value)}
       />
+      {difiere && (
+        <button
+          type="button"
+          className="mt-1 text-[11px] font-medium text-sky-600 hover:underline"
+          onClick={() => setCostoManoObra(String(moFacturado))}
+        >
+          Usar los {fmtMoney(moFacturado)} de los comprobantes de mano de obra
+        </button>
+      )}
       {fac > 0 ? (
         <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground/80">
           <p>
@@ -3299,7 +3394,13 @@ function EditarMantenimientoDialog({
           </label>
 
           <div className="col-span-2">
-            <FacturasEditor facturas={facturas} setFacturas={setFacturas} proveedorSugerido={taller} />
+            <FacturasEditor
+              facturas={facturas}
+              setFacturas={setFacturas}
+              proveedorSugerido={taller}
+              proveedores={proveedores}
+              onProveedorCreado={onProveedorCreado}
+            />
           </div>
         </div>
         <DialogFooter>
