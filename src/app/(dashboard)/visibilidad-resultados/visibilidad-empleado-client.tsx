@@ -43,16 +43,19 @@ function Delta({ actual, anterior, unidad }: { actual: number; anterior: number;
 export function VisibilidadEmpleadoClient({
   data,
   skap,
+  basePath = "/visibilidad-resultados",
 }: {
   data: VisibilidadEmpleadoData
   skap?: SkapEmpleadoData | null
+  /** Ruta a la que agrega `mes=` (también se muestra como solapa de «Cómo venimos»). */
+  basePath?: string
 }) {
   const router = useRouter()
   const { mes, meses_disponibles, hhee, bultos, dias } = data
   const idx = meses_disponibles.indexOf(mes)
   const objetivo = OBJETIVO_VISIBILIDAD
 
-  const irA = (m: string) => router.push(`/visibilidad-resultados?mes=${m}`)
+  const irA = (m: string) => router.push(`${basePath}${basePath.includes("?") ? "&" : "?"}mes=${m}`)
 
   return (
     <div className="mx-auto max-w-lg space-y-4 pb-8">

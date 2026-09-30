@@ -1,12 +1,7 @@
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import { requireModuloPortal } from "@/lib/portal-empleado-server"
 import { requireAuth } from "@/lib/session"
-import {
-  getVisibilidadEmpleado,
-  getVisibilidadEquipo,
-} from "@/actions/visibilidad-resultados"
-import { getMisHabilidades } from "@/actions/skap-empleado"
-import { VisibilidadEmpleadoClient } from "./visibilidad-empleado-client"
+import { getVisibilidadEquipo } from "@/actions/visibilidad-resultados"
 import { VisibilidadEquipoClient } from "./visibilidad-equipo-client"
 
 // Visibilidad de Resultados (DPO Entrega 2.1) — solo Pampeana.
@@ -24,12 +19,9 @@ export default async function VisibilidadResultadosPage({
   const profile = await requireAuth()
   const { mes } = await searchParams
 
+  // El empleado lo ve como solapa de «Cómo venimos»; esta ruta queda por los links viejos.
   if (profile.role === "empleado") {
-    const [res, skap] = await Promise.all([getVisibilidadEmpleado(mes), getMisHabilidades()])
-    if ("error" in res) {
-      return <MensajeError mensaje={res.error} />
-    }
-    return <VisibilidadEmpleadoClient data={res.data} skap={skap} />
+    redirect(mes ? `/como-venimos?tab=horas&mes=${encodeURIComponent(mes)}` : "/como-venimos?tab=horas")
   }
 
   if (["admin", "supervisor", "admin_rrhh", "auditor"].includes(profile.role)) {

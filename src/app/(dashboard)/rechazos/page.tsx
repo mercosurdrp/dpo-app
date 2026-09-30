@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation"
 import { requireModuloPortal } from "@/lib/portal-empleado-server"
+import { getProfile } from "@/lib/session"
 import { getRechazosRankingEmpleado } from "@/actions/rechazos-empleado"
 import type { PeriodoKey } from "@/actions/rechazos-empleado-tipos"
 import { RechazosEmpleadoClient } from "./_components/rechazos-empleado-client"
@@ -14,6 +16,14 @@ export default async function RechazosEmpleadoPage({
 }) {
   await requireModuloPortal("rechazos")
   const sp = await searchParams
+  // El empleado lo ve como solapa de «Cómo venimos»; esta ruta queda por los links viejos.
+  if ((await getProfile())?.role === "empleado") {
+    redirect(
+      typeof sp.periodo === "string"
+        ? `/como-venimos?tab=ranking&periodo=${encodeURIComponent(sp.periodo)}`
+        : "/como-venimos?tab=ranking",
+    )
+  }
   const raw = typeof sp.periodo === "string" ? sp.periodo : "mes"
   const periodo: PeriodoKey = PERIODOS_VALIDOS.includes(raw as PeriodoKey)
     ? (raw as PeriodoKey)

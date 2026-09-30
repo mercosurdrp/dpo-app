@@ -45,12 +45,19 @@ function fechaCorta(iso: string): string {
   }).format(d)
 }
 
-export function RechazosEmpleadoClient({ data }: { data: RechazosEmpleadoData }) {
+export function RechazosEmpleadoClient({
+  data,
+  basePath = "/rechazos",
+}: {
+  data: RechazosEmpleadoData
+  /** Ruta a la que agrega `periodo=` (también se muestra como solapa de «Cómo venimos»). */
+  basePath?: string
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
   const cambiarPeriodo = (p: PeriodoKey) => {
-    startTransition(() => router.push(`/rechazos?periodo=${p}`))
+    startTransition(() => router.push(`${basePath}${basePath.includes("?") ? "&" : "?"}periodo=${p}`))
   }
 
   // Escala de las barras de tasa: que la línea de meta quede visible (~mitad).

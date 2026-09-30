@@ -37,7 +37,14 @@ const fmtInt = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits:
 
 type OrdenCol = "nombre" | "hhee_total" | "bultos_mes" | "dias_trabajados"
 
-export function VisibilidadEquipoClient({ data }: { data: VisibilidadEquipoData }) {
+export function VisibilidadEquipoClient({
+  data,
+  basePath = "/visibilidad-resultados",
+}: {
+  data: VisibilidadEquipoData
+  /** Ruta a la que agrega `mes=` (también se muestra como solapa de «Cómo venimos»). */
+  basePath?: string
+}) {
   const router = useRouter()
   const { mes, meses_disponibles, filas, sectores, sin_mapeo } = data
   const idx = meses_disponibles.indexOf(mes)
@@ -45,7 +52,7 @@ export function VisibilidadEquipoClient({ data }: { data: VisibilidadEquipoData 
   const [orden, setOrden] = useState<OrdenCol>("hhee_total")
   const [asc, setAsc] = useState(false)
 
-  const irA = (m: string) => router.push(`/visibilidad-resultados?mes=${m}`)
+  const irA = (m: string) => router.push(`${basePath}${basePath.includes("?") ? "&" : "?"}mes=${m}`)
 
   const visibles = useMemo(() => {
     const filtradas = sector === "todos" ? filas : filas.filter((f) => f.sector === sector)
