@@ -2108,6 +2108,7 @@ function NuevoMantenimientoDialog({
                       setPendientes={setReprogramadas}
                       abiertasPrevias={abiertasUnidad}
                       tareasById={tareasById}
+                      odometroOt={parseNum(odometro)}
                     />
                   </div>
                 </div>
@@ -2241,6 +2242,7 @@ function TareasPlanEditor({
   setPendientes,
   abiertasPrevias,
   tareasById,
+  odometroOt,
 }: {
   tareas: MantenimientoPlanTarea[]
   hechas: Set<string>
@@ -2250,6 +2252,8 @@ function TareasPlanEditor({
   /** Reprogramadas abiertas de esta unidad, de OTs anteriores. */
   abiertasPrevias: MantenimientoTareaReprogramada[]
   tareasById: Map<string, MantenimientoPlanTarea>
+  /** Odómetro cargado en la OT: base para sugerir a qué km reprogramar. */
+  odometroOt: number | null
 }) {
   const { service, hermanas } = useMemo(() => paqueteDelService(tareas), [tareas])
   const hermanasIds = useMemo(() => hermanas.map((h) => h.id), [hermanas])
@@ -2274,10 +2278,26 @@ function TareasPlanEditor({
     setPendientes(nextPend)
   }
 
+  /**
+   * "Reprogramar a (km)" es el ODÓMETRO al que hay que hacerla, no el intervalo
+   * de la tarea. El 30/09/2026 la OT 1786 del AF664NY quedó con dos tareas
+   * reprogramadas "para los 20.000 km" —la frecuencia, no el odómetro— y como la
+   * unidad va por 61.800 las dos salieron en rojo "ya corresponde" el mismo día
+   * que se cargó la OT. Ahora el campo viene prellenado con el km de la OT más
+   * la frecuencia de la tarea.
+   */
+  const kmSugerido = (t: MantenimientoPlanTarea): string => {
+    if (odometroOt == null || !t.frecuencia_km) return ""
+    return String(odometroOt + t.frecuencia_km)
+  }
+
   const marcarPendiente = (id: string) => {
     const nextPend = new Map(pendientes)
     if (nextPend.has(id)) nextPend.delete(id)
-    else nextPend.set(id, { motivo: "", km: "", fecha: "" })
+    else {
+      const tarea = tareas.find((t) => t.id === id)
+      nextPend.set(id, { motivo: "", km: tarea ? kmSugerido(tarea) : "", fecha: "" })
+    }
     setPendientes(nextPend)
     const next = new Set(hechas)
     next.delete(id)
@@ -2395,13 +2415,28 @@ function TareasPlanEditor({
                     />
                   </div>
                   <div>
-                    <Label className="text-xs text-amber-900">Reprogramar a (km)</Label>
+                    <Label className="text-xs text-amber-900">Reprogramar al km</Label>
                     <Input
                       className="h-8 text-sm"
                       type="number"
                       value={pend.km}
                       onChange={(e) => editarPendiente(t.id, { km: e.target.value })}
+                      placeholder={kmSugerido(t) || "Odómetro"}
                     />
+                    {odometroOt != null &&
+                    pend.km.trim() !== "" &&
+                    Number(pend.km) <= odometroOt ? (
+                      <p className="mt-0.5 text-[11px] text-red-600">
+                        Es el odómetro al que toca, no el intervalo: la unidad ya está en{" "}
+                        {fmtNum(odometroOt)} km y así queda vencida de entrada.
+                      </p>
+                    ) : (
+                      odometroOt != null && (
+                        <p className="mt-0.5 text-[11px] text-amber-700/80">
+                          Odómetro al que toca hacerla (hoy: {fmtNum(odometroOt)} km).
+                        </p>
+                      )
+                    )}
                   </div>
                   <div>
                     <Label className="text-xs text-amber-900">o para la fecha</Label>
