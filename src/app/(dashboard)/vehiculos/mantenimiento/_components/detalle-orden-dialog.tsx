@@ -22,7 +22,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PlanHerramientasInline } from "@/components/herramientas-gestion/plan-herramientas-inline"
-import { MANTENIMIENTO_ESTADO_LABELS } from "@/types/database"
+import { FACTURA_CONCEPTO_LABEL, MANTENIMIENTO_ESTADO_LABELS } from "@/types/database"
 import type {
   MantenimientoPlanTarea,
   MantenimientoRealizado,
@@ -327,6 +327,11 @@ export function DetalleOrdenDialog({
                     <span className="font-medium text-foreground">
                       {f.proveedor || "Sin proveedor"}
                     </span>
+                    {f.concepto && (
+                      <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                        {FACTURA_CONCEPTO_LABEL[f.concepto]}
+                      </span>
+                    )}
                     {f.numero && (
                       <span className="text-muted-foreground">Fc {f.numero}</span>
                     )}

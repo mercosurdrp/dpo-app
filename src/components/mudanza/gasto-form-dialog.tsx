@@ -33,6 +33,7 @@ interface Props {
   partidas: MudanzaPartida[]
   tareas: MudanzaTarea[]
   partidaInicial?: string
+  tareaInicial?: string
 }
 
 const SIN = "__sin__"
@@ -54,11 +55,12 @@ function GastoForm({
   partidas,
   tareas,
   partidaInicial,
+  tareaInicial,
 }: Omit<Props, "open">) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [partidaId, setPartidaId] = useState<string>(gasto?.partida_id ?? partidaInicial ?? SIN)
-  const [tareaId, setTareaId] = useState<string>(gasto?.tarea_id ?? SIN)
+  const [tareaId, setTareaId] = useState<string>(gasto?.tarea_id ?? tareaInicial ?? SIN)
   const [estado, setEstado] = useState<string>(gasto?.estado ?? "pagado")
   const [archivos, setArchivos] = useState<File[]>([])
   const [confirmarBorrar, setConfirmarBorrar] = useState(false)
@@ -76,8 +78,11 @@ function GastoForm({
     } else {
       fd.delete("partida_id")
     }
-    if (tareaId !== SIN) fd.set("tarea_id", tareaId)
-    else fd.delete("tarea_id")
+    if (tareaId !== SIN) {
+      fd.set("tarea_id", tareaId)
+      const t = tareas.find((x) => x.id === tareaId)
+      if (partidaId === SIN && t && !String(fd.get("rubro") ?? "").trim()) fd.set("rubro", t.rubro)
+    } else fd.delete("tarea_id")
     fd.set("estado", estado)
     for (const f of archivos) fd.append("archivo", f)
     startTransition(async () => {

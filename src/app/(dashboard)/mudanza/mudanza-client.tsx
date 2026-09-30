@@ -35,6 +35,8 @@ import {
   type MudanzaTarea,
 } from "@/types/mudanza"
 import { MudanzaGantt } from "@/components/mudanza/gantt"
+import { AvanceSelect } from "@/components/mudanza/avance-select"
+import { MontoInput } from "@/components/mudanza/monto-input"
 import { TareaFormDialog } from "@/components/mudanza/tarea-form-dialog"
 import { AvanceFormDialog } from "@/components/mudanza/avance-form-dialog"
 import { GastoFormDialog } from "@/components/mudanza/gasto-form-dialog"
@@ -99,7 +101,7 @@ export function MudanzaClient({
     open: false,
     tarea: null,
   })
-  const [gastoDlg, setGastoDlg] = useState<{ open: boolean; gasto: MudanzaGasto | null; partida?: string }>({
+  const [gastoDlg, setGastoDlg] = useState<{ open: boolean; gasto: MudanzaGasto | null; partida?: string; tarea?: string }>({
     open: false,
     gasto: null,
   })
@@ -237,6 +239,27 @@ export function MudanzaClient({
     else if (puedeAvanzar(t)) setAvanceDlg({ open: true, tarea: t })
   }
 
+  const gastoPorTarea = useMemo(() => {
+    const m: Record<string, { pagado: number; comprometido: number }> = {}
+    for (const g of gastos) {
+      if (!g.tarea_id) continue
+      const x = (m[g.tarea_id] ??= { pagado: 0, comprometido: 0 })
+      if (g.estado === "pagado") x.pagado += g.monto
+      else x.comprometido += g.monto
+    }
+    return m
+  }, [gastos])
+  const pptoTareas = useMemo(() => {
+    const ppto = tareas.reduce((a, t) => a + (t.presupuesto ?? 0), 0)
+    let pagado = 0
+    let comprometido = 0
+    for (const g of gastos) {
+      if (g.estado === "pagado") pagado += g.monto
+      else comprometido += g.monto
+    }
+    return { ppto, pagado, comprometido }
+  }, [tareas, gastos])
+
   const ultimosAvancesPorTarea = useMemo(() => {
     const m: Record<string, MudanzaAvance> = {}
     for (const a of avances) if (!m[a.tarea_id]) m[a.tarea_id] = a
@@ -316,6 +339,8 @@ export function MudanzaClient({
             ordenResponsables={ordenResp}
             modo={modoGantt}
             onSelect={abrirTarea}
+            puedeAvanzar={puedeAvanzar}
+            onAvance={refrescar}
           />
           {pisadas.length > 0 && (
             <Card>
@@ -375,6 +400,8 @@ export function MudanzaClient({
                             <th className="py-1 pr-2">Desvío</th>
                             <th className="py-1 pr-2">Estado</th>
                             <th className="py-1 pr-2 text-right">Avance</th>
+                            <th className="py-1 pr-2 text-right">Presupuesto</th>
+                            <th className="py-1 pr-2 text-right">Gastado</th>
                             <th className="py-1"></th>
                           </tr>
                         </thead>
@@ -451,15 +478,58 @@ export function MudanzaClient({
                                     <span className="ml-1 text-xs font-semibold text-red-600">atrasada</span>
                                   )}
                                 </td>
-                                <td className="w-28 py-1.5 pr-2">
+                                <td className="w-24 py-1.5 pr-2 text-right">
                                   {!t.hito && (
-                                    <div className="flex items-center gap-2">
-                                      <Progress value={t.avance} className="h-1.5" />
-                                      <span className="w-9 text-right text-xs tabular-nums">{t.avance} %</span>
-                                    </div>
+                                    <AvanceSelect
+                                      tareaId={t.id}
+                                      avance={t.avance}
+                                      disabled={!puedeAvanzar(t)}
+                                      onSaved={refrescar}
+                                    />
                                   )}
                                 </td>
-                                <td className="py-1.5 text-right">
+                                <td className="py-1.5 pr-2 text-right">
+                                  {!t.hito && (
+                                    <MontoInput
+                                      tareaId={t.id}
+                                      monto={t.presupuesto}
+                                      disabled={!puedeEditar}
+                                      onSaved={refrescar}
+                                    />
+                                  )}
+                                </td>
+                                <td className="whitespace-nowrap py-1.5 pr-2 text-right text-xs tabular-nums">
+                                  {!t.hito && (() => {
+                                    const g = gastoPorTarea[t.id] ?? { pagado: 0, comprometido: 0 }
+                                    const usado = g.pagado + g.comprometido
+                                    const dif = t.presupuesto != null ? usado - t.presupuesto : null
+                                    return (
+                                      <div>
+                                        <div>{usado ? formatMoney(usado) : <span className="text-slate-400">—</span>}</div>
+                                        {g.comprometido > 0 && (
+                                          <div className="text-[10px] text-amber-600">{formatMoney(g.comprometido)} comprom.</div>
+                                        )}
+                                        {dif != null && Math.abs(dif) >= 1 && (
+                                          <div className={dif > 0 ? "text-[10px] font-semibold text-red-600" : "text-[10px] text-emerald-600"}>
+                                            {dif > 0 ? "+" : ""}
+                                            {formatMoney(dif)}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })()}
+                                </td>
+                                <td className="whitespace-nowrap py-1.5 text-right">
+                                  {puedeEditar && !t.hito && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => setGastoDlg({ open: true, gasto: null, tarea: t.id })}
+                                      title="Cargar gasto de esta tarea"
+                                    >
+                                      + gasto
+                                    </Button>
+                                  )}
                                   {puedeAvanzar(t) && t.estado !== "hecha" && (
                                     <Button
                                       size="sm"
@@ -545,24 +615,84 @@ export function MudanzaClient({
         {/* ---------------- PRESUPUESTO ---------------- */}
         <TabsContent value="presupuesto" className="space-y-4 pt-3">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Kpi label="Presupuesto" value={formatMoney(presupuesto.tot.ppto)} />
-            <Kpi label="Pagado" value={formatMoney(presupuesto.tot.pagado)} tone="emerald" />
-            <Kpi label="Comprometido" value={formatMoney(presupuesto.tot.comprometido)} tone="amber" />
+            <Kpi label="Presupuesto (tareas)" value={formatMoney(pptoTareas.ppto)} />
+            <Kpi label="Pagado" value={formatMoney(pptoTareas.pagado)} tone="emerald" />
+            <Kpi label="Comprometido" value={formatMoney(pptoTareas.comprometido)} tone="amber" />
             <Kpi
               label="Disponible"
-              value={formatMoney(presupuesto.tot.ppto - presupuesto.tot.pagado - presupuesto.tot.comprometido)}
-              tone={presupuesto.tot.ppto - presupuesto.tot.pagado - presupuesto.tot.comprometido < 0 ? "red" : undefined}
+              value={formatMoney(pptoTareas.ppto - pptoTareas.pagado - pptoTareas.comprometido)}
+              tone={pptoTareas.ppto - pptoTareas.pagado - pptoTareas.comprometido < 0 ? "red" : undefined}
             />
           </div>
+
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="font-semibold text-slate-800">Por rubro</h3>
+            <h3 className="font-semibold text-slate-800">Por tarea</h3>
+            {puedeEditar && (
+              <Button onClick={() => setGastoDlg({ open: true, gasto: null })}>
+                <Plus className="mr-1 size-4" /> Cargar gasto
+              </Button>
+            )}
+          </div>
+          <div className="overflow-x-auto rounded-md border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Rubro / tarea</th>
+                  <th className="px-3 py-2 text-right">Presupuesto</th>
+                  <th className="px-3 py-2 text-right">Pagado</th>
+                  <th className="px-3 py-2 text-right">Comprometido</th>
+                  <th className="px-3 py-2 text-right">Desvío</th>
+                  <th className="px-3 py-2">Ejecución</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rubros
+                  .filter((r) => r !== "Hitos" && tareas.some((t) => t.rubro === r && !t.hito))
+                  .map((r) => {
+                    const lista = tareas.filter((t) => t.rubro === r && !t.hito)
+                    const ppto = lista.reduce((a, t) => a + (t.presupuesto ?? 0), 0)
+                    const pag = lista.reduce((a, t) => a + (gastoPorTarea[t.id]?.pagado ?? 0), 0)
+                    const com = lista.reduce((a, t) => a + (gastoPorTarea[t.id]?.comprometido ?? 0), 0)
+                    return (
+                      <RubroTareas
+                        key={r}
+                        rubro={r}
+                        ppto={ppto}
+                        pagado={pag}
+                        comprometido={com}
+                        tareas={lista}
+                        gastoPorTarea={gastoPorTarea}
+                        puedeEditar={puedeEditar}
+                        onSaved={refrescar}
+                        onGasto={(tid) => setGastoDlg({ open: true, gasto: null, tarea: tid })}
+                      />
+                    )
+                  })}
+                <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
+                  <td className="px-3 py-2">Total</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(pptoTareas.ppto)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(pptoTareas.pagado)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(pptoTareas.comprometido)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    <Desvio v={pptoTareas.pagado + pptoTareas.comprometido - pptoTareas.ppto} />
+                  </td>
+                  <td className="px-3 py-2">
+                    <Ejecucion ppto={pptoTareas.ppto} usado={pptoTareas.pagado + pptoTareas.comprometido} />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-slate-500">
+            Los gastos sin tarea asignada suman al total pero no a ninguna fila. El presupuesto se edita haciendo clic en el monto.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+            <h3 className="font-semibold text-slate-800">Partidas del Excel de inversión (referencia)</h3>
             {puedeEditar && (
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setPartidaDlg({ open: true, partida: null })}>
                   <Plus className="mr-1 size-4" /> Partida
-                </Button>
-                <Button onClick={() => setGastoDlg({ open: true, gasto: null })}>
-                  <Plus className="mr-1 size-4" /> Cargar gasto
                 </Button>
               </div>
             )}
@@ -799,6 +929,7 @@ export function MudanzaClient({
         partidas={partidas}
         tareas={tareas}
         partidaInicial={gastoDlg.partida}
+        tareaInicial={gastoDlg.tarea}
       />
       <PartidaFormDialog
         open={partidaDlg.open}
@@ -908,6 +1039,71 @@ function Ejecucion({ ppto, usado }: { ppto: number; usado: number }) {
       <Progress value={Math.min(100, pct)} className={`h-1.5 ${pct > 100 ? "[&>div]:bg-red-500" : ""}`} />
       <span className="w-10 text-right text-xs tabular-nums">{pct} %</span>
     </div>
+  )
+}
+
+function RubroTareas({
+  rubro,
+  ppto,
+  pagado,
+  comprometido,
+  tareas,
+  gastoPorTarea,
+  puedeEditar,
+  onSaved,
+  onGasto,
+}: {
+  rubro: string
+  ppto: number
+  pagado: number
+  comprometido: number
+  tareas: MudanzaTarea[]
+  gastoPorTarea: Record<string, { pagado: number; comprometido: number }>
+  puedeEditar: boolean
+  onSaved: () => void
+  onGasto: (tareaId: string) => void
+}) {
+  return (
+    <>
+      <tr className="border-t border-slate-200 bg-slate-50/60 font-semibold">
+        <td className="px-3 py-2">{rubro}</td>
+        <td className="px-3 py-2 text-right tabular-nums">{formatMoney(ppto)}</td>
+        <td className="px-3 py-2 text-right tabular-nums">{formatMoney(pagado)}</td>
+        <td className="px-3 py-2 text-right tabular-nums">{formatMoney(comprometido)}</td>
+        <td className="px-3 py-2 text-right tabular-nums">
+          <Desvio v={pagado + comprometido - ppto} />
+        </td>
+        <td className="px-3 py-2">
+          <Ejecucion ppto={ppto} usado={pagado + comprometido} />
+        </td>
+      </tr>
+      {tareas.map((t) => {
+        const g = gastoPorTarea[t.id] ?? { pagado: 0, comprometido: 0 }
+        return (
+          <tr key={t.id} className="border-t border-slate-100 text-slate-700">
+            <td className="px-3 py-1 pl-7">
+              {t.nombre}
+              {puedeEditar && (
+                <button type="button" className="ml-2 text-xs text-sky-700 hover:underline" onClick={() => onGasto(t.id)}>
+                  + gasto
+                </button>
+              )}
+            </td>
+            <td className="px-3 py-1 text-right">
+              <MontoInput tareaId={t.id} monto={t.presupuesto} disabled={!puedeEditar} onSaved={onSaved} />
+            </td>
+            <td className="px-3 py-1 text-right tabular-nums">{g.pagado ? formatMoney(g.pagado) : "—"}</td>
+            <td className="px-3 py-1 text-right tabular-nums">{g.comprometido ? formatMoney(g.comprometido) : "—"}</td>
+            <td className="px-3 py-1 text-right tabular-nums">
+              {t.presupuesto == null ? <span className="text-slate-400">—</span> : <Desvio v={g.pagado + g.comprometido - t.presupuesto} />}
+            </td>
+            <td className="px-3 py-1">
+              {t.presupuesto != null && <Ejecucion ppto={t.presupuesto} usado={g.pagado + g.comprometido} />}
+            </td>
+          </tr>
+        )
+      })}
+    </>
   )
 }
 

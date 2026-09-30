@@ -157,6 +157,7 @@ export async function listTareas(): Promise<Result<MudanzaTarea[]>> {
       data: rows.map(({ responsable, ...t }) => ({
         ...t,
         avance: Number(t.avance ?? 0),
+        presupuesto: t.presupuesto == null ? null : Number(t.presupuesto),
         responsable_nombre: responsable?.nombre ?? null,
       })),
     }
@@ -260,7 +261,7 @@ export async function guardarConfig(formData: FormData): Promise<Result<MudanzaC
     const supabase = await createClient()
     const body = {
       id: "default",
-      nombre: str(formData, "nombre") ?? "Mudanza Presidente Perón",
+      nombre: str(formData, "nombre") ?? 'Mudanza "Express a San Nicolás"',
       fecha_llaves: fecha(formData, "fecha_llaves"),
       fecha_mudanza: fecha(formData, "fecha_mudanza"),
     }
@@ -347,6 +348,7 @@ export async function guardarTarea(formData: FormData): Promise<Result<MudanzaTa
       avance: estado === "hecha" ? 100 : Math.max(0, Math.min(100, entero(formData, "avance"))),
       hito,
       notas: str(formData, "notas"),
+      presupuesto: str(formData, "presupuesto") ? monto(formData, "presupuesto") : null,
     }
     let q
     if (id) {
@@ -370,6 +372,61 @@ export async function guardarTarea(formData: FormData): Promise<Result<MudanzaTa
     return { data: { ...(data as MudanzaTarea), responsable_nombre: null } }
   } catch (err) {
     return { error: msg(err, "Error al guardar la tarea") }
+  }
+}
+
+/**
+ * Cambia el avance desde el desplegable de la lista (de 10 en 10). Ajusta el
+ * estado y las fechas reales: el primer avance fija inicio_real, 100 % marca
+ * la tarea hecha y fija fin_real. Lo puede hacer un editor o el responsable.
+ */
+export async function setAvanceTarea(tareaId: string, avance: number): Promise<Result<true>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+    const av = Math.max(0, Math.min(100, Math.round(avance / 10) * 10))
+    const { data: tarea, error: tErr } = await supabase
+      .from("mudanza_tareas")
+      .select("id, responsable_id, estado, inicio_real, fin_real")
+      .eq("id", tareaId)
+      .single()
+    if (tErr || !tarea) return { error: tErr?.message ?? "Tarea no encontrada" }
+    if (!EDITORES.includes(profile.role) && tarea.responsable_id !== profile.id) {
+      return { error: "Sólo el responsable de la tarea o un editor pueden cambiar el avance." }
+    }
+    const hoy = new Date().toISOString().slice(0, 10)
+    const patch: Record<string, unknown> = { avance: av }
+    if (av === 100) {
+      patch.estado = "hecha"
+      patch.fin_real = tarea.fin_real ?? hoy
+      if (!tarea.inicio_real) patch.inicio_real = hoy
+    } else {
+      if (tarea.estado === "hecha") patch.estado = av === 0 ? "pendiente" : "en_curso"
+      else if (tarea.estado === "pendiente" && av > 0) patch.estado = "en_curso"
+      if (av > 0 && !tarea.inicio_real) patch.inicio_real = hoy
+      if (tarea.fin_real) patch.fin_real = null
+    }
+    const { error } = await supabase.from("mudanza_tareas").update(patch).eq("id", tareaId)
+    if (error) return { error: error.message }
+    revalidatePath(REVALIDATE_PATH)
+    return { data: true }
+  } catch (err) {
+    return { error: msg(err, "Error al cambiar el avance") }
+  }
+}
+
+/** Presupuesto de una tarea, editado en la fila. Sólo editores. */
+export async function setPresupuestoTarea(tareaId: string, monto: number | null): Promise<Result<true>> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+    const valor = monto == null ? null : Math.max(0, Math.round(monto * 100) / 100)
+    const { error } = await supabase.from("mudanza_tareas").update({ presupuesto: valor }).eq("id", tareaId)
+    if (error) return { error: error.message }
+    revalidatePath(REVALIDATE_PATH)
+    return { data: true }
+  } catch (err) {
+    return { error: msg(err, "Error al guardar el presupuesto") }
   }
 }
 
