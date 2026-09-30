@@ -7,12 +7,12 @@ BEGIN;
 -- 1. Configuración (una sola fila)
 CREATE TABLE IF NOT EXISTS mudanza_config (
   id            text PRIMARY KEY DEFAULT 'default',
-  nombre        text NOT NULL DEFAULT 'Mudanza Presidente Perón',
+  nombre        text NOT NULL DEFAULT 'Mudanza "Express a San Nicolás"',
   fecha_llaves  date,
   fecha_mudanza date,
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
-INSERT INTO mudanza_config (id, nombre, fecha_llaves) VALUES ('default', 'Mudanza Presidente Perón', '2026-11-01')
+INSERT INTO mudanza_config (id, nombre, fecha_llaves) VALUES ('default', 'Mudanza "Express a San Nicolás"', '2026-11-01')
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. Tareas

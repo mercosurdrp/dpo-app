@@ -260,7 +260,7 @@ export async function guardarConfig(formData: FormData): Promise<Result<MudanzaC
     const supabase = await createClient()
     const body = {
       id: "default",
-      nombre: str(formData, "nombre") ?? "Mudanza Presidente Perón",
+      nombre: str(formData, "nombre") ?? 'Mudanza "Express a San Nicolás"',
       fecha_llaves: fecha(formData, "fecha_llaves"),
       fecha_mudanza: fecha(formData, "fecha_mudanza"),
     }
