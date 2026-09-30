@@ -99,6 +99,7 @@ import { PlanesNeumaticos } from "./_components/planes-neumaticos"
 import type { FlotaPlanConItems } from "@/actions/flota-indicadores"
 import {
   filasDelLayout,
+  posicionEnPalabras,
   layoutDeTipo,
   POSICION_AUXILIO,
   type PosicionNeumatico,
@@ -4014,6 +4015,15 @@ function PosicionDialog({
               {pos.eje ?? "libre"}
             </Badge>
           </DialogTitle>
+          {/* El código no alcanza para ir a montar la cubierta: al lado de la
+              rueda hay que saber qué lado es. Izquierda y derecha, mirando
+              hacia adelante desde la cabina. */}
+          <p className="text-xs font-medium text-foreground">
+            {posicionEnPalabras(unidad.tipo ?? null, pos.code).texto}
+            <span className="ml-1 font-normal text-muted-foreground">
+              (mirando hacia adelante desde la cabina)
+            </span>
+          </p>
           <DialogDescription>
             {actual
               ? `Cubierta ${etiquetaCubierta(actual)} (${TIPO_LABEL[actual.tipo]})`
