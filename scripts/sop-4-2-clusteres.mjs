@@ -15,13 +15,13 @@ import { dirname, resolve } from "node:path"
 import { pathToFileURL, fileURLToPath } from "node:url"
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
 
-const REVISION = "06"
-const FECHA = "29/09/26"
+const REVISION = "02"
+const FECHA = "30/09/26"
 const TITULO = "SOP USO DE LOS CLÚSTERES DE CLIENTES"
 const SECTOR = "CD RAMALLO"
 
 // Corrida de referencia (1º semestre 2026) con el tope del 5 % y todas las
-// ventanas sobre el semestre (Rev 05). Con la ventana de 45 días de la Rev 04
+// ventanas sobre el semestre (Rev 02 del 30/09/26). Con la ventana anterior de 45 días
 // la cartera era 1.811, el tope 91 y el Ganador quedaba en 76.
 const REF = {
   cartera: "2.105",
@@ -65,19 +65,19 @@ const encabezado = `
 
 const definiciones = [
   ["CLUSTERIZACIÓN", `Agrupación de los PDV (clientes) en 4 clústeres según dos variables: ingresos del período y crecimiento vs el período anterior. El umbral que separa facturación alta de baja NO ES LA MEDIANA: es la facturación del cliente Nº N en el ranking de los que crecen, donde N es el <b>5 % de la cartera analizada</b> (${REF.tope} PDV en el 1º semestre 2026), de modo que el clúster Ganador nunca supere ese 5 % y lo integren los que más facturan.`],
-  ["CARTERA ANALIZADA", `PDV que compraron en el semestre analizado (facturación y drop size mayores a cero). Es la población que muestra la pantalla y sobre la que se calcula el 5 % de Ganadores. Desde la Rev 05 coincide con el período del análisis: todo PDV con ingresos en el semestre tiene clúster, como pide el requisito R4.2.1.`],
+  ["CARTERA ANALIZADA", `PDV que compraron en el semestre analizado (facturación y drop size mayores a cero). Es la población que muestra la pantalla y sobre la que se calcula el 5 % de Ganadores. Desde esta revisión coincide con el período del análisis: todo PDV con ingresos en el semestre tiene clúster, como pide el requisito R4.2.1.`],
   ["GANADOR", `Ingresos altos y crecimiento positivo. Como máximo el 5 % de la cartera analizada. Es el cliente a proteger: máxima prioridad de servicio en ruteo, entrega e inventario.`],
   ["EN CRECIMIENTO (“Productor” en la app)", `No alcanza el umbral de facturación alta, pero crece. Cliente con potencial: prioridad alta, no deteriorar su experiencia de entrega.`],
   ["BÁSICO", `Supera el umbral de facturación alta pero sin crecer (estancado o en caída). Mantener el servicio estándar y cuidar la relación.`],
   ["VENTAS BAJAS", `No alcanza el umbral de facturación alta y no crece. Es el clúster más caro de servir en proporción a lo que aporta: candidato a menor frecuencia, rutas consolidadas y ventanas amplias. Ante capacidad limitada, el ajuste comienza aquí.`],
   ["BAJA DE CLÚSTER", `Descenso de un escalón por falla de servicio del cliente (rechazos, RMD o NPS). El cliente pierde uno de los atributos que lo separan de Ventas Bajas. No modifica su facturación ni su crecimiento reales: es una penalización de servicio, y la app la muestra marcada con el motivo.`],
   ["DROP SIZE", `Bultos promedio por entrega, calculado sobre el semestre analizado. Se usa como aproximación (proxy) del costo de servir: a menor drop size, más caro resulta atender el PDV.`],
-  ["COSTO LOGÍSTICO $/HL", `Costo logístico por hectolitro de cada PDV (almacén + distribución + distancia), tomado del indicador Costo por PDV y acumulado sobre los meses del semestre analizado. Es el eje "costo" de la matriz Valor × Costo de la app: por encima de la mediana del semestre el PDV es caro de servir. Hasta la Rev 05 se tomaba el acumulado del año, que cambiaba con cada mes nuevo de costo cargado.`],
+  ["COSTO LOGÍSTICO $/HL", `Costo logístico por hectolitro de cada PDV (almacén + distribución + distancia), tomado del indicador Costo por PDV y acumulado sobre los meses del semestre analizado. Es el eje "costo" de la matriz Valor × Costo de la app: por encima de la mediana del semestre el PDV es caro de servir. Antes se tomaba el acumulado del año, que cambiaba con cada mes nuevo de costo cargado.`],
   ["OTIF", `On Time In Full: entregas a tiempo y completas. En esta operación el OTIF se mide a través del RECHAZO: una entrega cumple si no fue rechazada por causa del cliente. Es el estado pasa / no-pasa que muestra la pantalla de clusterización, y se compara por clúster en cada análisis.`],
   ["RECHAZO POR CULPA DEL CLIENTE", `Entrega rechazada por SIN DINERO, CERRADO o SIN ENVASES. Los rechazos por error interno (preventa, distribución, falta de stock) NO cuentan: no son responsabilidad del PDV y no hacen bajar de clúster.`],
   ["RMD", `Rate My Delivery: calificación de la entrega por el cliente (1 a 5). Se compara por clúster en cada análisis y, por debajo de 4,99 de promedio en el semestre, hace bajar de clúster.`],
   ["NPS", `Net Promoter Score: encuesta de recomendación (0 a 10) que clasifica al cliente como Promotor, Pasivo o Detractor. Haber respondido como Detractor en el semestre hace bajar de clúster.`],
-  ["SGL ROUTING", `Software de ruteo. Recibe clientes y pedidos exportados desde CHESS (interfaces .txt), arma las rutas de reparto y devuelve el resultado a CHESS.`],
+  ["SGL ROUTING", `Software de ruteo. Recibe clientes y pedidos exportados desde CHESS (interfaces .txt), arma las rutas de reparto y devuelve el resultado a CHESS. El Ruteador mantiene en SGL sólo los datos maestros del PDV: coordenadas y ventana horaria. La prioridad por clúster NO vive en SGL: entra al armado diario por la Priorización de entrega de la dpo-app.`],
   ["DPO-APP — CLUSTERIZACIÓN 4.2", `Sección Indicadores > Planeamiento > Clusterización de Clientes (4.2) de la dpo-app. Calcula los 4 clústeres a partir de la facturación real (comprobantes CHESS), aplica el tope de Ganadores (5 % de la cartera) y la baja por servicio, y muestra la matriz 2×2 con PDV, % de ingresos, drop size, RMD, NPS y No pasa/Atención por clúster, con tabla filtrable por clúster, por cliente y por baja de clúster.`],
   ["DPO-APP — PRIORIZACIÓN DE ENTREGA", `Sección Planeamiento > Priorización de entrega de la dpo-app. Clasifica los pedidos del día con las MISMAS reglas y el MISMO tope de Ganadores que la clusterización (código compartido), así el corte de pedidos y la pantalla 4.2 dicen lo mismo del cliente.`],
 ]
@@ -86,8 +86,8 @@ const raci = [
   ["Corrida semestral del análisis de clusterización (dpo-app)", "A/R", "C", "I", "I", "I"],
   ["Revisión de los clientes que bajaron de clúster por servicio", "A/R", "I", "C", "I", "C"],
   ["Comparación de OTIF, RMD y NPS por clúster", "A/R", "I", "C", "-", "I"],
-  ["Cascadeo del resultado a Ventas y Operaciones", "A/R", "I", "I", "I", "I"],
-  ["Actualización de prioridades, ventanas y frecuencias en SGL Routing", "A", "R", "I", "-", "C"],
+  ["Cascadeo del resultado: capacitación del SOP a Ventas y Operaciones", "A/R", "I", "I", "I", "I"],
+  ["Mantenimiento de coordenadas y ventanas horarias de los PDV en SGL Routing", "A", "R", "I", "-", "C"],
   ["Armado de rutas diarias aplicando prioridades por clúster", "A", "R", "C", "-", "-"],
   ["Priorización de entregas en calle y reintentos por clúster", "A", "C", "R", "-", "I"],
   ["Asignación de inventario y corte de pedidos ante quiebre", "A", "I", "I", "R", "C"],
@@ -96,11 +96,7 @@ const raci = [
 
 const historial = [
   ["01", "Emisión inicial", "06/07/26"],
-  ["02", "Devolución de la auditoría DPO H1 2026 sobre el punto 4.2 (“foco en variables definidas; tener en cuenta variables pasa/no pasa”). El umbral de facturación alta deja de ser la mediana y pasa a ser el que acota el clúster Ganador a 200 PDV. Se incorpora la baja de clúster por rechazos, RMD y NPS (nuevo punto 2), con la aclaración de cómo tratar a los clientes degradados. Se actualizan las definiciones, el cuadro de referencia con la corrida del 1º semestre 2026 y el RACI. Se agrega el punto 8 con los parámetros del modelo.", "05/08/26"],
-  ["03", "Ajuste del umbral de rechazos que dispara la baja de clúster: pasa de 2 a 3 entregas rechazadas por culpa del cliente en el semestre. Con 2 bajaban 285 PDV y entraba demasiado ruido; con 3 son 142 y el patrón es real. Se descartó exigir uno por mes (6 en el semestre) porque solo 27 PDV lo alcanzan y la baja quedaría decidida por RMD y NPS. Se actualiza el cuadro de referencia del punto 1 con la corrida recalculada del 1º semestre 2026 y el flujograma del punto 9. En la app, al abrir un clúster se indica cuántos PDV llegaron bajando y desde dónde.", "06/08/26"],
-  ["04", `El clúster Ganador deja de tener un tope fijo de 200 PDV y pasa a ser el 5 % de la cartera analizada (los PDV que compraron en los últimos 45 días del período): ${REF.tope} PDV en el 1º semestre 2026. Se mantiene el criterio (los que más facturan entre los que crecen) y las tres condiciones de baja de clúster. El corte de facturación alta sube de ${REF.umbralAnterior} a ${REF.umbral} por semestre y el Ganador queda en ${REF.filas[0][1]} PDV con el ${REF.filas[0][3]} de la facturación. Un tope proporcional acompaña el tamaño real de la cartera de cada semestre y de cada centro, cosa que el número fijo no hacía. Se actualizan las definiciones (nueva entrada Cartera analizada y Priorización de entrega), el cuadro de referencia del punto 1, los parámetros del punto 8 (PCT_GANADORES) y el flujograma. La priorización diaria de entrega usa el mismo tope.`, "15/09/26"],
-  ["05", `Todas las ventanas del análisis pasan a ser el semestre elegido. Hasta la Rev 04 la cartera analizada y el drop size miraban los últimos 45 días del semestre, y RMD y NPS los últimos 6 meses: eso dejaba fuera del análisis a ${Number(REF.cartera.replace(".", "")) - Number(REF.carteraAnterior.replace(".", ""))} PDV con facturación en el semestre (sin clúster, contra el requisito R4.2.1) y hacía depender la corrida oficial de una sub-ventana. Ahora la cartera analizada son los PDV que compraron en el semestre (${REF.cartera} en el 1º semestre 2026, antes ${REF.carteraAnterior}), el tope de Ganadores pasa de ${REF.topeAnterior} a ${REF.tope} y el corte de facturación alta de ${REF.umbralAnterior} a ${REF.umbral}. Las bajas de clúster no cambian de criterio. La señal operativa “rechazó hace poco” (45 días) sale de la pantalla 4.2 y queda solo en la priorización diaria de entrega. Se actualizan las definiciones, el cuadro de referencia del punto 1 y la tabla de ventanas del punto 2.`, "28/09/26"],
-  ["06", `El costo logístico $/HL de la matriz Valor × Costo pasa a acumularse sobre los meses del semestre analizado, en vez del acumulado del año. Era la única variable de la clusterización que no miraba el semestre, y hacía que la corrida oficial de un semestre cerrado cambiara cada vez que se cargaba un mes nuevo de costo. Con esto todas las variables (facturación, crecimiento, cartera, drop size, rechazos, RMD, NPS y costo) se leen sobre una sola ventana. Nueva definición Costo logístico $/HL; función de base get_costo_por_pdv_rango_json.`, FECHA],
+  ["02", `Revisión posterior a la auditoría DPO H1 2026 (devolución: “foco en variables definidas; tener en cuenta variables pasa/no pasa”). (1) El umbral de facturación alta deja de ser la mediana: el clúster Ganador queda acotado al 5 % de la cartera analizada (${REF.tope} PDV en el 1º semestre 2026) y lo integran los que más facturan entre los que crecen. (2) Baja de clúster por servicio: 3 o más rechazos por culpa del cliente en el semestre, RMD promedio menor a 4,99 o detractor de NPS (nuevo punto 2). (3) Todas las variables del análisis se leen sobre el semestre elegido: cartera analizada, drop size, rechazos, RMD, NPS y costo logístico $/HL (antes la cartera y el drop miraban los últimos 45 días, RMD/NPS los últimos 6 meses y el costo el acumulado del año). (4) El cascadeo del punto 7 se formaliza como capacitación del SOP registrada con asistencia, y la actualización del sistema/ruteador es automática vía Priorización de entrega; en SGL Routing el Ruteador sólo mantiene coordenadas y ventanas horarias. Se actualizan definiciones, RACI, cuadro de referencia del punto 1 (corrida del 1º semestre 2026), parámetros del punto 8 y flujograma.`, FECHA],
 ]
 
 const tabla = (clase, cab, filas) => `
@@ -116,7 +112,7 @@ const cuerpo = `
 <h1>OBJETIVO</h1>
 <p>Establecer cómo se utiliza la clusterización de clientes (agrupación en 4 clústeres por ingresos y crecimiento, punto 4.2 del manual DPO) para diferenciar el servicio logístico: qué prioridad recibe cada clúster en el ruteo (SGL Routing), en la entrega en calle y en la asignación de inventario en el almacén. El SOP define, además, cómo el resultado de cada análisis semestral se cascadea a los equipos de Ventas y Operaciones y cómo se actualiza la información dentro del sistema/ruteador (requisitos R4.2.3 y R4.2.4).</p>
 <p>El principio rector: no todos los clientes se atienden igual. Ante capacidad limitada, quiebre de stock o contingencias en calle, el clúster define a quién se protege primero y dónde se ajusta el servicio.</p>
-<div class="nota">Novedad de las revisiones 05 y 06: <b>todo el análisis se lee sobre el semestre elegido</b>. La cartera analizada, el drop size, los rechazos, el RMD, el NPS y el costo logístico $/HL usan la misma ventana (antes la cartera y el drop miraban los últimos 45 días, RMD/NPS los últimos 6 meses y el costo el acumulado del año). Así todo PDV con ingresos en el semestre tiene clúster (R4.2.1) y la corrida oficial no depende de una sub-ventana. Se mantienen el 5 % de Ganadores, el criterio —los que más facturan entre los que crecen— y los disparadores de baja. Ver los puntos 1 y 2 del Desarrollo.</div>
+<div class="nota">Novedad de esta revisión: el clúster Ganador queda acotado al <b>5 % de la cartera analizada</b> (${REF.tope} PDV en el 1º semestre 2026) y lo integran los que más facturan entre los que crecen; se incorpora la <b>baja de clúster por servicio</b> (rechazos, RMD, NPS); <b>todo el análisis se lee sobre el semestre elegido</b> (cartera, drop size, rechazos, RMD, NPS y costo $/HL); y el <b>cascadeo</b> se formaliza como capacitación del SOP registrada con asistencia, con actualización automática del ruteador vía Priorización de entrega. Ver los puntos 1, 2, 7 y 8 del Desarrollo.</div>
 
 <h1>ALCANCE</h1>
 <p>Involucra al Jefe de Logística, el Ruteador, el Supervisor de Distribución, el Supervisor / Encargado de Almacén y, como informados, a los Supervisores de Venta. Aplica a la operación de la Región Pampeana (CD Ramallo; zonas de reparto Pergamino, Ramallo, Colón, Arrecifes y San Nicolás).</p>
@@ -136,10 +132,10 @@ ${tabla("raci", ["ACTIVIDADES", "JEFE DE LOGÍSTICA", "RUTEADOR", "SUP. DISTRIBU
 
 <h1>DESARROLLO</h1>
 <h2>1. El análisis de clusterización en dpo-app</h2>
-<p>El Jefe de Logística ejecuta el análisis en dpo-app > Indicadores > Planeamiento > Clusterización de Clientes (4.2), como mínimo 2 veces al año (enero y julio) y, además, cada vez que la operación entra en problemas de capacidad sostenidos. La pantalla trabaja por semestre calendario fijo: en el selector se elige el semestre cerrado (ej. “1º semestre 2026”), que compara contra el mismo semestre del año anterior y queda congelado como corrida oficial. Como evidencia de cada corrida se guarda una captura o export de la matriz junto con la minuta del cascadeo.</p>
+<p>El Jefe de Logística ejecuta el análisis en dpo-app > Indicadores > Planeamiento > Clusterización de Clientes (4.2), como mínimo 2 veces al año (enero y julio) y, además, cada vez que la operación entra en problemas de capacidad sostenidos. La pantalla trabaja por semestre calendario fijo: en el selector se elige el semestre cerrado (ej. “1º semestre 2026”), que compara contra el mismo semestre del año anterior y queda congelado como corrida oficial. Como evidencia de cada corrida se guarda una captura o export de la matriz junto con el registro de la capacitación del cascadeo (punto 7).</p>
 <ul>
 <li>La pantalla clasifica automáticamente la cartera analizada —los PDV que compraron en el semestre— en los 4 clústeres (Ganador / En Crecimiento / Básico / Ventas Bajas), cruzando ingresos contra crecimiento.</li>
-<li>El umbral de facturación alta es el que deja el clúster Ganador en su tope del <b>5 % de la cartera analizada</b>: la facturación del cliente Nº N entre los que crecen, con N = 5 % de los PDV analizados (redondeado). Así el Ganador son siempre los que más facturan, y el tamaño del grupo acompaña el tamaño real de la cartera de cada semestre. En la corrida del 1º semestre 2026 la cartera analizada fue de ${REF.cartera} PDV, el tope ${REF.tope} y el umbral ${REF.umbral} de facturación en el semestre (con la ventana de 45 días de la Rev 04 la cartera era ${REF.carteraAnterior}, el tope ${REF.topeAnterior} y el umbral ${REF.umbralAnterior}).</li>
+<li>El umbral de facturación alta es el que deja el clúster Ganador en su tope del <b>5 % de la cartera analizada</b>: la facturación del cliente Nº N entre los que crecen, con N = 5 % de los PDV analizados (redondeado). Así el Ganador son siempre los que más facturan, y el tamaño del grupo acompaña el tamaño real de la cartera de cada semestre. En la corrida del 1º semestre 2026 la cartera analizada fue de ${REF.cartera} PDV, el tope ${REF.tope} y el umbral ${REF.umbral} de facturación en el semestre (con la ventana anterior de 45 días la cartera era ${REF.carteraAnterior}, el tope ${REF.topeAnterior} y el umbral ${REF.umbralAnterior}).</li>
 <li>La matriz 2×2 muestra por clúster: cantidad de PDV, % de los ingresos totales, drop size promedio, RMD promedio, No pasa / Atención y cuántos clientes salieron o entraron por la baja de servicio. La tabla inferior permite filtrar por clúster, por baja de clúster y buscar un cliente puntual: es la fuente para bajar el listado a ruteo, distribución y almacén.</li>
 <li>Al abrir un clúster, la app avisa arriba de la tabla cuántos de esos PDV llegaron bajando y desde qué clúster vienen, y pinta esas filas de rojo suave. Es la lectura obligada al entrar a Productor o a Ventas Bajas: distingue al cliente que de verdad es chico del que está ahí penalizado por servicio, que puede facturar alto o venir creciendo. Para aislarlos, el filtro “Baja de clúster” tiene la opción “Solo los que bajaron”.</li>
 </ul>
@@ -180,9 +176,9 @@ ${tabla("serv", ["CLÚSTER", "PRIORIDAD", "RUTEO / FRECUENCIA", "REINTENTO DE EN
 <h2>4. Aplicación al ruteo (Ruteador — SGL Routing)</h2>
 <p>El Ruteador es quien traduce la clusterización al armado de rutas. Después de cada corrida semestral (o cuando el Jefe de Logística comunica movimientos de clúster):</p>
 <ul>
-<li>Actualiza en SGL Routing los atributos de los clientes que cambiaron de clúster: prioridad, ventana horaria, frecuencia de atención y posición preferida en la secuencia. La base de clientes de SGL se alimenta de la exportación de CHESS (clientes.txt > carpeta destinos); los atributos de servicio se ajustan sobre el destino en SGL.</li>
+<li>Mantiene en SGL Routing los datos maestros del PDV: coordenadas y ventana horaria. La base de clientes de SGL se alimenta de la exportación de CHESS (clientes.txt > carpeta destinos). La prioridad por clúster no se carga en SGL: entra al armado diario por la Priorización de entrega de la dpo-app, que lee el clúster de la corrida vigente.</li>
 <li>En el armado diario: verifica que los PDV Ganador y En Crecimiento queden dentro de su ventana. Si la capacidad del día no alcanza para todos los pedidos, el recorte o la reprogramación comienza por Ventas Bajas, sigue por Básico y nunca alcanza a Ganador sin aprobación del Jefe de Logística. La pantalla Priorización de entrega de dpo-app ordena los pedidos del día con el mismo clúster que la corrida 4.2 y propone el corte.</li>
-<li>Propone al Jefe de Logística y a Ventas los cambios estructurales que surgen del análisis: bajar frecuencia de PDV Ventas Bajas, consolidarlos en rutas densas, ampliar ventanas. Estos cambios se implementan en SGL Routing una vez acordados.</li>
+<li>Propone al Jefe de Logística y a Ventas los cambios estructurales que surgen del análisis: bajar frecuencia de PDV Ventas Bajas, consolidarlos en rutas densas, ampliar ventanas. Las ventanas horarias acordadas se cargan en SGL Routing; los cambios de frecuencia se acuerdan con Ventas.</li>
 </ul>
 
 <h2>5. Aplicación en distribución (Supervisor de Distribución)</h2>
@@ -201,18 +197,17 @@ ${tabla("serv", ["CLÚSTER", "PRIORIDAD", "RUTEO / FRECUENCIA", "REINTENTO DE EN
 </ul>
 
 <h2>7. Cascadeo y actualización del sistema (R4.2.4)</h2>
-<p>Después de cada corrida semestral, el Jefe de Logística ejecuta el cascadeo dentro de los 15 días corridos:</p>
+<p>El cascadeo es la <b>capacitación de este SOP</b> a todos los equipos (Ventas, Ruteador, Distribución y Almacén), dictada por el Jefe de Logística y registrada en el módulo de Capacitaciones de la dpo-app con la asistencia de cada participante. Se dicta al emitir el SOP y se repite cada vez que cambia el criterio de clasificación (nueva revisión de este documento) o después de una corrida semestral, dentro de los 15 días corridos, presentando la matriz 2×2, los movimientos de clúster relevantes, el listado de clientes que bajaron por servicio con su motivo y la lista vigente de Ganadores. El registro de la capacitación con su asistencia es la evidencia DPO del cascadeo.</p>
 <ul>
-<li>Reunión de cascadeo con Ventas y Operaciones: se presentan la matriz 2×2, los movimientos de clúster relevantes, el listado de clientes que bajaron por servicio con su motivo y los cambios de servicio propuestos. La minuta de la reunión es la evidencia DPO del cascadeo.</li>
-<li>Actualización del sistema/ruteador: el Ruteador aplica en SGL Routing los cambios de prioridad, ventana y frecuencia acordados (punto 4). Sin este paso el análisis no llega a la operación.</li>
-<li>Distribución de los listados por clúster al Supervisor de Distribución y al Supervisor de Almacén.</li>
+<li>Actualización del sistema/ruteador: es <b>automática</b>. La Priorización de entrega de la dpo-app lee el clúster de la corrida vigente con el mismo código que la pantalla 4.2, así que cada corrida llega al armado diario del Ruteador sin ninguna carga manual; los cortes propuestos y aplicados quedan registrados en la app y son la evidencia de que el clúster opera en el sistema. En SGL Routing el Ruteador sólo mantiene coordenadas y ventanas horarias de los PDV (punto 4).</li>
+<li>Listados por clúster: el Supervisor de Distribución y el Supervisor de Almacén los toman de la tabla y del export de la pantalla 4.2 (el mismo export que se carga como evidencia de la corrida).</li>
 <li>Seguimiento: en la reunión mensual de Logística se revisan OTIF, RMD y NPS por clúster y la adherencia a la matriz de servicio (cortes aplicados, reintentos, ventanas cumplidas). Los desvíos alimentan la próxima corrida.</li>
 </ul>
 
 <h2>8. Parámetros del modelo</h2>
 <p>Los tres parámetros de la clusterización están definidos en el código de la dpo-app (src/actions/clusterizacion-tipos.ts, reglas compartidas con la priorización de entrega) y solo se modifican con aprobación del Jefe de Logística, dejando constancia en el historial de revisiones de este SOP:</p>
 ${tabla("param", ["Parámetro", "Valor vigente", "Qué controla"], [
-  ["PCT_GANADORES", "5 %", `Proporción de la cartera analizada que puede ser Ganador (${REF.tope} PDV en el 1º semestre 2026) y, por lo tanto, el umbral de facturación alta. Reemplaza al tope fijo MAX_GANADORES = 200 de las revisiones 02 y 03.`],
+  ["PCT_GANADORES", "5 %", `Proporción de la cartera analizada que puede ser Ganador (${REF.tope} PDV en el 1º semestre 2026) y, por lo tanto, el umbral de facturación alta. Reemplaza al tope fijo MAX_GANADORES = 200 de la revisión anterior.`],
   ["MIN_RECHAZOS_BAJA", "3", "Rechazos por culpa del cliente en el semestre que hacen bajar de clúster"],
   ["RMD_MINIMO_BAJA", "4,99", "Promedio de RMD por debajo del cual el cliente baja de clúster"],
 ])}
@@ -232,10 +227,10 @@ ${tabla("param", ["Parámetro", "Valor vigente", "Qué controla"], [
   </div>
   <div class="fase">FASE 2 — CASCADEO (dentro de los 15 días corridos desde la corrida)</div>
   <div class="dos">
-    <div class="col">${caja("azul", "Reunión de cascadeo con Ventas y Operaciones:<br>matriz, movimientos de clúster y listado de bajas por servicio<br>(la minuta es la evidencia DPO)")}${flecha}</div>
-    <div class="col">${caja("azul", "El Ruteador actualiza SGL Routing:<br>prioridad, secuencia, ventanas y frecuencia según clúster")}${flecha}</div>
+    <div class="col">${caja("azul", "Capacitación del SOP a Ventas y Operaciones:<br>matriz, movimientos de clúster, bajas por servicio y lista de Ganadores<br>(el registro con asistencia es la evidencia DPO)")}${flecha}</div>
+    <div class="col">${caja("azul", "La Priorización de entrega toma el clúster de la corrida vigente<br>(automático, sin carga manual); el Ruteador mantiene en SGL<br>sólo coordenadas y ventanas horarias")}${flecha}</div>
   </div>
-  <div class="col ancho">${caja("azul", "Distribución y Almacén reciben el listado de PDV por clúster<br>y las reglas de servicio diferenciado")}</div>
+  <div class="col ancho">${caja("azul", "Distribución y Almacén toman el listado de PDV por clúster<br>del export de la pantalla 4.2 y aplican las reglas de servicio diferenciado")}</div>
   <div class="fase">FASE 3 — OPERACIÓN DIARIA</div>
   <div class="decision">
     <span class="si">SÍ</span>
