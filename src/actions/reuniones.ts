@@ -24,6 +24,8 @@ import {
   buildMinutosCamionSerie,
   buildReabastecimientoSerie,
   buildWarehouseSerieDiaria,
+  diaCerrado,
+  hoyArgentina,
   refreshSerieDiariaDeposito,
   OPERADORES_APERTURA,
   type AperturaPickingDelDia,
@@ -2870,6 +2872,15 @@ async function getIndicadoresMesCore(
     }
 
     const fechas = diasDelMes(anio, mes)
+    // Máscara común de las filas auto: el día de la reunión se oculta mientras
+    // la reunión sea de HOY o futura (al matinal el día no cerró) y se revela
+    // cuando esa fecha quedó atrás. Misma regla que la serie de warehouse
+    // (`diaCerrado`). Lo pidió el usuario el 2026-10-01: la reunión del último
+    // día hábil del mes tiene que mostrar el mes COMPLETO una vez cerrado, para
+    // hacer ahí el análisis mensual (antes el último día no se veía en ninguna
+    // reunión: la del 30 lo ocultaba y la del 1 ya armaba el mes siguiente).
+    const hoy = hoyArgentina()
+    const cerrado = (f: string) => diaCerrado(f, fecha, hoy)
     const fechaDesde = fechas[0]
     const fechaHasta = fechas[fechas.length - 1]
 
@@ -4172,11 +4183,11 @@ async function getIndicadoresMesCore(
       const dqiValores: ReunionIndicadoresMes["indicadores"][number]["valores"] = {}
       let dqiMtd: number | null = null
       for (const f of fechas) {
-        const v = f < fecha ? (dqiSerie.dia[f] ?? null) : null
+        const v = cerrado(f) ? (dqiSerie.dia[f] ?? null) : null
         dqiValores[f] =
           v == null ? null : { reunion_id: "auto", valor: v, observacion: null }
         // MTD = el acumulado del último día CERRADO, mismo corte que las celdas.
-        if (f < fecha && dqiSerie.mtd[f] != null) dqiMtd = dqiSerie.mtd[f]
+        if (cerrado(f) && dqiSerie.mtd[f] != null) dqiMtd = dqiSerie.mtd[f]
       }
       const dqiPpm = dqiMtd ?? dqiPpmMensual
       indicadoresAuto.push({
@@ -4639,10 +4650,10 @@ async function getIndicadoresMesCore(
           : {}
         // Ocultar el día de la reunión (y futuros): a la hora del matinal el
         // ausentismo de hoy todavía no está confirmado, igual que precisión y
-        // productividad. Solo se muestran días < fecha de la reunión.
+        // productividad. Misma máscara `cerrado(f)` que el resto.
         const ausentismoPorFecha: Record<string, number | null> = {}
         for (const [f, v] of Object.entries(ausentismoPorFechaRaw)) {
-          ausentismoPorFecha[f] = f < fecha ? v : null
+          ausentismoPorFecha[f] = cerrado(f) ? v : null
         }
 
         // WQI: el MISMO número que la reunión de warehouse — se toma tal cual de
@@ -4674,8 +4685,8 @@ async function getIndicadoresMesCore(
           : await cargarSerieWnp(supabase, fechaDesde, fechaHasta)
         // WNP día = HL vendidos del día / horas-hombre del día.
         // WNP MTD = Σ HL / Σ horas (solo días cerrados con venta Y horas). Se
-        // enmascara el día de la reunión y futuros (f < fecha), igual que el
-        // resto de los indicadores auto: al matinal el día de hoy no está cerrado.
+        // enmascara con `cerrado(f)`, igual que el resto de los indicadores auto:
+        // al matinal el día de hoy no cerró; en una reunión pasada ya se ve.
         const wnpDiaTablero: Record<string, number | null> = {}
         const wnpMtdTablero: Record<string, number | null> = {}
         const wnpObsDia: Record<string, string | null> = {}
@@ -4685,7 +4696,7 @@ async function getIndicadoresMesCore(
           const dia = serieWnp.porFecha[f]
           const hlDia = dia?.hl ?? 0
           const horasDia = dia?.horas ?? 0
-          const okDia = f < fecha && hlDia > 0 && horasDia > 0
+          const okDia = cerrado(f) && hlDia > 0 && horasDia > 0
           wnpDiaTablero[f] = okDia
             ? Math.round((hlDia / horasDia) * 100) / 100
             : null
@@ -4786,7 +4797,7 @@ async function getIndicadoresMesCore(
         const productividadHastaAyer: Record<string, number | null> = {}
         for (const f of fechas) {
           productividadHastaAyer[f] =
-            f < fecha ? (serie.productividad[f] ?? null) : null
+            cerrado(f) ? (serie.productividad[f] ?? null) : null
         }
 
         // Maquinistas, las dos mitades del muelle en MINUTOS POR CAMIÓN (la
@@ -4807,12 +4818,12 @@ async function getIndicadoresMesCore(
           porFecha: Record<string, number | null>,
         ): Record<string, number | null> => {
           const out: Record<string, number | null> = {}
-          for (const f of fechas) out[f] = f < fecha ? (porFecha[f] ?? null) : null
+          for (const f of fechas) out[f] = cerrado(f) ? (porFecha[f] ?? null) : null
           return out
         }
         const reabastObsHastaAyer: Record<string, string | null> = {}
         for (const f of fechas) {
-          reabastObsHastaAyer[f] = f < fecha ? (reabast.obs[f] ?? null) : null
+          reabastObsHastaAyer[f] = cerrado(f) ? (reabast.obs[f] ?? null) : null
         }
 
         indicadoresAuto.push(

@@ -363,7 +363,7 @@ export async function buildWarehouseSerieDiaria(
 
 /** HOY en zona horaria de Argentina (YYYY-MM-DD). Usar SIEMPRE esto en vez de
  * `toISOString()`, que devuelve UTC y de noche (>21hs ART) adelanta un día. */
-function hoyArgentina(): string {
+export function hoyArgentina(): string {
   return new Date().toLocaleDateString("en-CA", {
     timeZone: "America/Argentina/Buenos_Aires",
   })
@@ -373,7 +373,7 @@ function hoyArgentina(): string {
  * mientras la reunión sea de HOY o futura (en el matinal el cierre del día aún
  * no está confirmado). Una vez que esa fecha quedó en el pasado, el día de la
  * reunión ya cerró y se revela. */
-function diaCerrado(f: string, fechaReunion: string, hoy: string): boolean {
+export function diaCerrado(f: string, fechaReunion: string, hoy: string): boolean {
   return fechaReunion < hoy ? f <= fechaReunion : f < fechaReunion
 }
 
