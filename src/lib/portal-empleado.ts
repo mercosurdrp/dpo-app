@@ -69,8 +69,16 @@ export interface ModuloPortal {
   empresas: Empresa[]
   /** null = no va en el menú (se entra desde el Inicio o desde otra pantalla). */
   grupo: GrupoPortal | null
-  /** Filtro por usuario, además de la empresa. */
+  /** Filtro por usuario, además de la empresa: decide si va en el MENÚ. */
   visible?: (ctx: ContextoPortal) => boolean
+  /**
+   * Decide si el empleado puede ABRIR la ruta (`EmpleadoGuard`). Si falta,
+   * vale `visible`. Combustible los separa: en el menú sólo para maquinistas,
+   * pero la ruta abierta a todos, porque el chofer vinculado a un camión
+   * entra por la tarjeta «Carga Combustible» del Inicio (Cerbin, 02/10/2026:
+   * tocaba el botón y el guard lo devolvía al Inicio).
+   */
+  acceso?: (ctx: ContextoPortal) => boolean
   /**
    * false = sólo la ruta exacta. Combustible lo necesita: bajo
    * /vehiculos/combustible cuelga /analisis, que es de gestión.
@@ -124,6 +132,7 @@ export const MODULOS_PORTAL: ModuloPortal[] = [
     empresas: AMBAS,
     grupo: "trabajo",
     visible: (ctx) => ctx.puedeVehiculos,
+    acceso: () => true,
     subrutas: false,
   },
   {
@@ -365,7 +374,12 @@ function coincide(pathname: string, m: ModuloPortal): boolean {
 /** ¿El empleado puede estar en esta ruta? (lo usa `EmpleadoGuard`). */
 export function rutaPermitida(pathname: string, ctx: ContextoPortal): boolean {
   if (RUTAS_DETALLE.some((p) => pathname.startsWith(p))) return true
-  return MODULOS_PORTAL.some((m) => enEmpresa(m) && (m.visible ? m.visible(ctx) : true) && coincide(pathname, m))
+  return MODULOS_PORTAL.some((m) => enEmpresa(m) && puedeAbrir(m, ctx) && coincide(pathname, m))
+}
+
+function puedeAbrir(m: ModuloPortal, ctx: ContextoPortal): boolean {
+  const regla = m.acceso ?? m.visible
+  return regla ? regla(ctx) : true
 }
 
 /** Ítem del menú activo: el de href más largo que coincide. */
