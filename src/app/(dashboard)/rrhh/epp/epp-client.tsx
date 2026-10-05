@@ -15,6 +15,7 @@ import {
   TALLE_CAMPOS,
   type TalleCampo,
 } from "@/lib/epp"
+import { ImprimirTalles } from "./imprimir-talles"
 import {
   ENTREGA_EPP_ESTADO_COLORS,
   ENTREGA_EPP_ESTADO_LABELS,
@@ -60,6 +61,7 @@ export function EppClient({ entregas, empleados }: Props) {
 
   // ── Talles ──
   const [searchTalles, setSearchTalles] = useState("")
+  const [imprimirTalles, setImprimirTalles] = useState(false)
   const [editTallesId, setEditTallesId] = useState<string | null>(null)
   const [tallesForm, setTallesForm] = useState<Record<TalleCampo, string>>({
     talle_pantalon: "",
@@ -411,6 +413,14 @@ export function EppClient({ entregas, empleados }: Props) {
             <span className="text-xs text-slate-500">
               {empleadosFiltrados.length} de {empleados.length} activos
             </span>
+            <button
+              type="button"
+              onClick={() => setImprimirTalles(true)}
+              className="ml-auto rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              title="Planilla con todos los talles para preparar la ropa"
+            >
+              🖨 Imprimir talles
+            </button>
           </div>
 
           <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -456,6 +466,11 @@ export function EppClient({ entregas, empleados }: Props) {
             </table>
           </div>
         </>
+      )}
+
+      {/* ───── Planilla imprimible de talles ───── */}
+      {imprimirTalles && (
+        <ImprimirTalles empleados={empleados} onClose={() => setImprimirTalles(false)} />
       )}
 
       {/* ───── Dialog nueva entrega ───── */}
