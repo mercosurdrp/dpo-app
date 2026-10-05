@@ -14,6 +14,8 @@
  *   1) Validar apikey
  *   2) Si event != "messages.upsert" o el msg es propio (fromMe) → ignorar
  *   3) Extraer texto + número del remitente
+ *   3b) Si tiene una pregunta de seguimiento de rechazo abierta, el mensaje
+ *       es la respuesta (lib/foxtrot-alertas/seguimiento.ts) y termina ahí
  *   4) Resolver vendedor por phone_number
  *   5) Llamar getTopPedidosForVendedor + formatTopPedidosMessage
  *   6) sendText vía Evolution
@@ -22,7 +24,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { chessLogin } from "@/lib/wa-bot/chess"
-import { extractText, resolvePhoneFromKey, sendText, type EvolutionMessage } from "@/lib/wa-bot/evolution"
+import { procesarRespuesta } from "@/lib/foxtrot-alertas/seguimiento"
+import { esAudio, extractText, resolvePhoneFromKey, sendText, type EvolutionMessage } from "@/lib/wa-bot/evolution"
 import { formatTopPedidosMessage } from "@/lib/wa-bot/format"
 import { getTopPedidosForVendedor } from "@/lib/wa-bot/pedidos"
 
@@ -92,6 +95,33 @@ export async function POST(request: NextRequest) {
     phone_number: phone,
     mensaje_in: text || null,
     source: "webhook" as const,
+  }
+
+  // 3b) Respuesta al seguimiento de un rechazo: tiene prioridad sobre el bot
+  // de pedidos. Si falla, sigue el flujo normal (mejor eso que silencio).
+  const audio = esAudio(payload.data?.message)
+  if (text || audio) {
+    try {
+      const seg = await procesarRespuesta(admin, {
+        phone,
+        texto: text,
+        messageId: key.id ?? null,
+        esAudio: audio,
+      })
+      if (seg) {
+        await admin.from("bot_conversaciones_log").insert({
+          ...baseLog,
+          mensaje_in: `[seguimiento] ${seg.texto || "(audio)"}`,
+          mensaje_out: seg.respuesta,
+          duration_ms: Date.now() - t0,
+        })
+        return NextResponse.json({ ok: true, action: `seguimiento_${seg.accion}` })
+      }
+    } catch (err) {
+      console.error(
+        `[wa-bot:webhook] seguimiento phone=${phone}: ${err instanceof Error ? err.message : err}`,
+      )
+    }
   }
 
   // Si el mensaje no tiene texto, agradecer y salir

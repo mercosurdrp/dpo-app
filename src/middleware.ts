@@ -84,6 +84,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/tv/horas-autoelevador" ||
     pathname === "/api/foxtrot/cron-sync" ||
     pathname === "/api/foxtrot/cron-alertas" ||
+    pathname === "/api/foxtrot/cron-resumen" ||
     pathname === "/api/cloudfleet/cron-sync" ||
     pathname === "/api/vehiculos/flota-kpi-cron" ||
     pathname === "/api/vehiculos/cil-alertas" ||

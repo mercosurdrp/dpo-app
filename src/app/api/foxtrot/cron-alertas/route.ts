@@ -10,6 +10,8 @@
  *      (sendText) a cada vendedor y a sus supervisores, sin repetir números.
  *   4. Re-evalúa el outcome automático de alertas abiertas: recuperado el
  *      mismo día / próxima entrega OK / reincidió / sin nueva entrega.
+ *   5. Seguimiento: a la hora del aviso le pregunta a cada vendedor si se
+ *      pudo evitar y cómo (lib/foxtrot-alertas/seguimiento.ts).
  *
  * Config runtime en `foxtrot_alertas_config` (single-row): dry_run,
  * envios_activos, ventana horaria ART. Deploy seguro: arranca en dry-run
@@ -36,6 +38,7 @@ import {
   type AlertaParaMensaje,
 } from "@/lib/foxtrot-alertas/mensaje"
 import { esPersonalExcluido, promotoresPorCliente } from "@/lib/foxtrot-alertas/destinatarios"
+import { correrSeguimiento, type SeguimientoCronResult } from "@/lib/foxtrot-alertas/seguimiento"
 import type { EnvioDetalle, VendedorWa } from "@/lib/foxtrot-alertas/types"
 
 // 🚨 Bien por debajo del período del cron (10 min): con 300 s y cada 5 min
@@ -442,11 +445,32 @@ async function handle(request: NextRequest) {
       outcomes += vencidas ?? 0
     }
 
+    // ---- 5. Seguimiento: "¿se pudo evitar?" a la hora del aviso ----
+    let seguimiento: SeguimientoCronResult | null = null
+    if (fecha === hoy && enviosActivos && !dryRun && (config?.seguimiento_activo ?? true)) {
+      try {
+        seguimiento = await correrSeguimiento(supabase, {
+          hoy,
+          demoraMin: config?.seguimiento_demora_min ?? 60,
+          dentroVentana,
+          equipoPorPhone: new Map(
+            equipo
+              .filter((v) => v.activo && v.rol === "promotor")
+              .map((v) => [v.phone_number, { id_promotor: v.id_promotor, nombre: v.nombre }]),
+          ),
+        })
+      } catch (err) {
+        // Un error del seguimiento no tiene que frenar los avisos.
+        console.error(`[foxtrot-cron-alertas] seguimiento: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+
     const durationMs = Date.now() - startedAt
     console.log(
       `[foxtrot-cron-alertas] fecha=${fecha} detectados=${rechazos.length} nuevas=${nuevas} ` +
         `enviadas=${enviadas} simuladas=${simuladas} errores=${errores} outcomes=${outcomes} ` +
-        `dry_run=${dryRun} envios_activos=${enviosActivos} ventana=${dentroVentana} duration_ms=${durationMs}`,
+        `dry_run=${dryRun} envios_activos=${enviosActivos} ventana=${dentroVentana} ` +
+        `seguimiento=${seguimiento ? JSON.stringify(seguimiento) : "off"} duration_ms=${durationMs}`,
     )
 
     return NextResponse.json({
@@ -462,6 +486,7 @@ async function handle(request: NextRequest) {
       envios_activos: enviosActivos,
       dentro_ventana: dentroVentana,
       evolution_configurado: evolutionConfigurado,
+      seguimiento,
       ...(dryRun && textosDryRun.length > 0 ? { preview: textosDryRun.slice(0, 5) } : {}),
       duration_ms: durationMs,
     })

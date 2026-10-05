@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowLeft, Users } from "lucide-react"
+import { ArrowLeft, TrendingUp, Users } from "lucide-react"
 import { requireAuth } from "@/lib/session"
 import { getAlertas, getConfigAlertas } from "@/actions/foxtrot-alertas"
 import { AlertasRechazoClient } from "./alertas-client"
@@ -29,6 +29,13 @@ export default async function AlertasRechazoPage() {
         >
           <ArrowLeft className="h-4 w-4" /> Volver al tablero
         </Link>
+        <div className="flex gap-2">
+        <Link
+          href="/indicadores/foxtrot-tracking/alertas/efectividad"
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <TrendingUp className="h-3.5 w-3.5" /> Efectividad
+        </Link>
         {profile.role === "admin" && (
           <Link
             href="/indicadores/foxtrot-tracking/alertas/equipo"
@@ -37,6 +44,7 @@ export default async function AlertasRechazoPage() {
             <Users className="h-3.5 w-3.5" /> Equipo y configuración
           </Link>
         )}
+        </div>
       </div>
       <AlertasRechazoClient
         alertasIniciales={alertas}

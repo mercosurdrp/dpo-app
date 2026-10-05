@@ -27,6 +27,32 @@ export type OutcomeAlerta =
   | "reincidio"
   | "sin_nueva_entrega"
 
+// Lo que respondió el vendedor en el seguimiento (1 / 2 / 3), o nadie.
+export type ResultadoSeguimiento = "evitado" | "reprogramado" | "perdido" | "sin_respuesta"
+
+export type EstadoPregunta =
+  | "en_cola"
+  | "preguntada"
+  | "esperando_como"
+  | "respondida"
+  | "sin_respuesta"
+  | "cerrada_por_otro"
+
+export interface PreguntaSeguimiento {
+  id: string
+  alerta_id: string
+  fecha: string
+  id_promotor: string
+  nombre: string | null
+  phone: string
+  estado: EstadoPregunta
+  preguntada_at: string | null
+  recordada_at: string | null
+  respondida_at: string | null
+  opcion: 1 | 2 | 3 | null
+  como: string | null
+}
+
 export interface EnvioDetalle {
   destinatario: "promotor" | "supervisor"
   phone: string | null
@@ -70,6 +96,13 @@ export interface AlertaRechazo {
   outcome_at: string | null
   outcome_detalle: string | null
   proxima_entrega_fecha: string | null
+  seguimiento_resultado: ResultadoSeguimiento | null
+  seguimiento_como: string | null
+  seguimiento_categoria: string | null
+  seguimiento_resumen: string | null
+  seguimiento_por_id: string | null
+  seguimiento_por_nombre: string | null
+  seguimiento_at: string | null
   created_at: string
   updated_at: string
 }
@@ -82,6 +115,10 @@ export interface AlertasConfig {
   ventana_hasta: string
   max_intentos_envio: number
   dias_seguimiento_outcome: number
+  seguimiento_activo: boolean
+  seguimiento_demora_min: number
+  resumen_diario_activo: boolean
+  resumen_ultima_fecha: string | null
   updated_at: string
 }
 

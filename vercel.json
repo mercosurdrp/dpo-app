@@ -43,6 +43,10 @@
       "schedule": "*/10 10-21 * * *"
     },
     {
+      "path": "/api/foxtrot/cron-resumen",
+      "schedule": "45 21 * * 1-6"
+    },
+    {
       "path": "/api/cerrado-horarios/cron-sync",
       "schedule": "30 7 * * *"
     },

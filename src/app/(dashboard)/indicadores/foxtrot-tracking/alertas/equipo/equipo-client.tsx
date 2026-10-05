@@ -1,32 +1,32 @@
-"use client"
+"use client";
 
 // ABM del equipo WhatsApp (bot_vendedores_wa) + configuración de envíos.
 // Solo admin. Los promotores necesitan teléfono cargado y activo=true para
 // recibir alertas; los supervisores son filas con rol=supervisor.
 
-import { useMemo, useState, useTransition } from "react"
-import { toast } from "sonner"
-import { Pencil, Plus, Trash2 } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
+import { useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -34,15 +34,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@/components/ui/table";
 import {
   deleteVendedorWa,
   getEquipoWa,
   updateConfigAlertas,
   upsertVendedorWa,
   type VendedorWaInput,
-} from "@/actions/foxtrot-alertas"
-import type { AlertasConfig, VendedorWa } from "@/lib/foxtrot-alertas/types"
+} from "@/actions/foxtrot-alertas";
+import type { AlertasConfig, VendedorWa } from "@/lib/foxtrot-alertas/types";
 
 const VACIO: VendedorWaInput = {
   id_promotor: "",
@@ -52,41 +52,41 @@ const VACIO: VendedorWaInput = {
   supervisor_id: null,
   activo: true,
   recibe_alertas_rechazo: true,
-}
+};
 
 function esPendiente(phone: string): boolean {
-  return !/^\d{8,15}$/.test(phone)
+  return !/^\d{8,15}$/.test(phone);
 }
 
 export function EquipoWaClient({
   equipoInicial,
   configInicial,
 }: {
-  equipoInicial: VendedorWa[]
-  configInicial: AlertasConfig | null
+  equipoInicial: VendedorWa[];
+  configInicial: AlertasConfig | null;
 }) {
-  const [equipo, setEquipo] = useState(equipoInicial)
-  const [config, setConfig] = useState(configInicial)
-  const [abierto, setAbierto] = useState(false)
-  const [form, setForm] = useState<VendedorWaInput>(VACIO)
-  const [esEdicion, setEsEdicion] = useState(false)
-  const [isPending, startTransition] = useTransition()
+  const [equipo, setEquipo] = useState(equipoInicial);
+  const [config, setConfig] = useState(configInicial);
+  const [abierto, setAbierto] = useState(false);
+  const [form, setForm] = useState<VendedorWaInput>(VACIO);
+  const [esEdicion, setEsEdicion] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   const supervisores = useMemo(
     () => equipo.filter((v) => v.rol === "supervisor"),
     [equipo],
-  )
+  );
 
   const recargar = async () => {
-    const r = await getEquipoWa()
-    if ("data" in r) setEquipo(r.data)
-  }
+    const r = await getEquipoWa();
+    if ("data" in r) setEquipo(r.data);
+  };
 
   const abrirNuevo = () => {
-    setForm(VACIO)
-    setEsEdicion(false)
-    setAbierto(true)
-  }
+    setForm(VACIO);
+    setEsEdicion(false);
+    setAbierto(true);
+  };
 
   const abrirEdicion = (v: VendedorWa) => {
     setForm({
@@ -97,46 +97,46 @@ export function EquipoWaClient({
       supervisor_id: v.supervisor_id,
       activo: v.activo,
       recibe_alertas_rechazo: v.recibe_alertas_rechazo,
-    })
-    setEsEdicion(true)
-    setAbierto(true)
-  }
+    });
+    setEsEdicion(true);
+    setAbierto(true);
+  };
 
   const guardar = () => {
     startTransition(async () => {
-      const r = await upsertVendedorWa(form)
+      const r = await upsertVendedorWa(form);
       if ("error" in r) {
-        toast.error(r.error)
-        return
+        toast.error(r.error);
+        return;
       }
-      toast.success("Guardado")
-      setAbierto(false)
-      await recargar()
-    })
-  }
+      toast.success("Guardado");
+      setAbierto(false);
+      await recargar();
+    });
+  };
 
   const eliminar = (v: VendedorWa) => {
-    if (!confirm(`¿Eliminar a ${v.nombre} del equipo WhatsApp?`)) return
+    if (!confirm(`¿Eliminar a ${v.nombre} del equipo WhatsApp?`)) return;
     startTransition(async () => {
-      const r = await deleteVendedorWa(v.id_promotor)
-      if ("error" in r) toast.error(r.error)
+      const r = await deleteVendedorWa(v.id_promotor);
+      if ("error" in r) toast.error(r.error);
       else {
-        toast.success("Eliminado")
-        await recargar()
+        toast.success("Eliminado");
+        await recargar();
       }
-    })
-  }
+    });
+  };
 
   const guardarConfig = (patch: Partial<AlertasConfig>) => {
     startTransition(async () => {
-      const r = await updateConfigAlertas(patch)
-      if ("error" in r) toast.error(r.error)
+      const r = await updateConfigAlertas(patch);
+      if ("error" in r) toast.error(r.error);
       else {
-        setConfig(r.data)
-        toast.success("Configuración actualizada")
+        setConfig(r.data);
+        toast.success("Configuración actualizada");
       }
-    })
-  }
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -154,7 +154,9 @@ export function EquipoWaClient({
             <label className="flex items-center gap-2">
               <Checkbox
                 checked={config.envios_activos}
-                onCheckedChange={(c) => guardarConfig({ envios_activos: c === true })}
+                onCheckedChange={(c) =>
+                  guardarConfig({ envios_activos: c === true })
+                }
                 disabled={isPending}
               />
               <span>
@@ -178,13 +180,16 @@ export function EquipoWaClient({
               </span>
             </label>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Ventana de envío (ART)</span>
+              <span className="text-xs text-muted-foreground">
+                Ventana de envío (ART)
+              </span>
               <Input
                 type="time"
                 className="h-8 w-28 text-xs"
                 defaultValue={config.ventana_desde.slice(0, 5)}
                 onBlur={(e) =>
-                  e.target.value && guardarConfig({ ventana_desde: `${e.target.value}:00` })
+                  e.target.value &&
+                  guardarConfig({ ventana_desde: `${e.target.value}:00` })
                 }
               />
               <span className="text-xs">a</span>
@@ -193,10 +198,67 @@ export function EquipoWaClient({
                 className="h-8 w-28 text-xs"
                 defaultValue={config.ventana_hasta.slice(0, 5)}
                 onBlur={(e) =>
-                  e.target.value && guardarConfig({ ventana_hasta: `${e.target.value}:00` })
+                  e.target.value &&
+                  guardarConfig({ ventana_hasta: `${e.target.value}:00` })
                 }
               />
             </div>
+            <label className="flex items-center gap-2">
+              <Checkbox
+                checked={config.seguimiento_activo}
+                onCheckedChange={(c) =>
+                  guardarConfig({ seguimiento_activo: c === true })
+                }
+                disabled={isPending}
+              />
+              <span>
+                Preguntar si se evitó{" "}
+                <span className="text-muted-foreground text-xs">
+                  (a los vendedores, después del aviso)
+                </span>
+              </span>
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                Preguntar a los
+              </span>
+              <Input
+                type="number"
+                min={15}
+                max={240}
+                step={5}
+                className="h-8 w-20 text-xs"
+                defaultValue={config.seguimiento_demora_min}
+                onBlur={(e) => {
+                  const n = Number(e.target.value);
+                  if (
+                    n >= 15 &&
+                    n <= 240 &&
+                    n !== config.seguimiento_demora_min
+                  ) {
+                    guardarConfig({ seguimiento_demora_min: n });
+                  }
+                }}
+              />
+              <span className="text-xs text-muted-foreground">
+                min del aviso
+              </span>
+            </div>
+            <label className="flex items-center gap-2">
+              <Checkbox
+                checked={config.resumen_diario_activo}
+                onCheckedChange={(c) =>
+                  guardarConfig({ resumen_diario_activo: c === true })
+                }
+                disabled={isPending}
+              />
+              <span>
+                Resumen diario a supervisores{" "}
+                <span className="text-muted-foreground text-xs">
+                  (18:45, lunes a sábado)
+                </span>
+              </span>
+            </label>
           </CardContent>
         </Card>
       )}
@@ -228,8 +290,12 @@ export function EquipoWaClient({
             <TableBody>
               {equipo.map((v) => (
                 <TableRow key={v.id_promotor}>
-                  <TableCell className="text-xs font-mono">{v.id_promotor}</TableCell>
-                  <TableCell className="text-xs font-medium">{v.nombre}</TableCell>
+                  <TableCell className="text-xs font-mono">
+                    {v.id_promotor}
+                  </TableCell>
+                  <TableCell className="text-xs font-medium">
+                    {v.nombre}
+                  </TableCell>
                   <TableCell>
                     <Badge
                       className={
@@ -250,8 +316,8 @@ export function EquipoWaClient({
                   </TableCell>
                   <TableCell className="text-xs">
                     {v.supervisor_id
-                      ? (equipo.find((s) => s.id_promotor === v.supervisor_id)?.nombre ??
-                        v.supervisor_id)
+                      ? (equipo.find((s) => s.id_promotor === v.supervisor_id)
+                          ?.nombre ?? v.supervisor_id)
                       : "—"}
                   </TableCell>
                   <TableCell className="text-xs">
@@ -299,7 +365,9 @@ export function EquipoWaClient({
       <Dialog open={abierto} onOpenChange={setAbierto}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{esEdicion ? "Editar integrante" : "Agregar integrante"}</DialogTitle>
+            <DialogTitle>
+              {esEdicion ? "Editar integrante" : "Agregar integrante"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -307,7 +375,9 @@ export function EquipoWaClient({
                 <Label className="text-xs">ID promotor (Chess)</Label>
                 <Input
                   value={form.id_promotor}
-                  onChange={(e) => setForm({ ...form, id_promotor: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, id_promotor: e.target.value })
+                  }
                   disabled={esEdicion}
                   placeholder="ej 107 · sup_caballero"
                 />
@@ -344,7 +414,9 @@ export function EquipoWaClient({
               </Label>
               <Input
                 value={form.phone_number}
-                onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, phone_number: e.target.value })
+                }
                 placeholder="549..."
               />
             </div>
@@ -354,7 +426,10 @@ export function EquipoWaClient({
                 <Select
                   value={form.supervisor_id ?? "ninguno"}
                   onValueChange={(v) =>
-                    setForm({ ...form, supervisor_id: v === "ninguno" ? null : v })
+                    setForm({
+                      ...form,
+                      supervisor_id: v === "ninguno" ? null : v,
+                    })
                   }
                 >
                   <SelectTrigger>
@@ -375,7 +450,9 @@ export function EquipoWaClient({
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox
                   checked={form.activo}
-                  onCheckedChange={(c) => setForm({ ...form, activo: c === true })}
+                  onCheckedChange={(c) =>
+                    setForm({ ...form, activo: c === true })
+                  }
                 />
                 Activo
               </label>
@@ -401,5 +478,5 @@ export function EquipoWaClient({
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }

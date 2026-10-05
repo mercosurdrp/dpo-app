@@ -12,6 +12,7 @@ import { requireAuth, requireRole } from "@/lib/session"
 import type {
   AlertaRechazo,
   AlertasConfig,
+  PreguntaSeguimiento,
   VendedorWa,
   RolVendedorWa,
 } from "@/lib/foxtrot-alertas/types"
@@ -46,6 +47,27 @@ export async function getAlertas(filtro: AlertasFiltro = {}): Promise<Result<Ale
   }
 }
 
+export async function getPreguntasSeguimiento(
+  filtro: AlertasFiltro = {},
+): Promise<Result<PreguntaSeguimiento[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    let query = supabase
+      .from("foxtrot_alertas_preguntas")
+      .select("*")
+      .order("fecha", { ascending: false })
+      .limit(5000)
+    if (filtro.desde) query = query.gte("fecha", filtro.desde)
+    if (filtro.hasta) query = query.lte("fecha", filtro.hasta)
+    const { data, error } = await query
+    if (error) return { error: error.message }
+    return { data: (data ?? []) as PreguntaSeguimiento[] }
+  } catch {
+    return { error: "No autorizado" }
+  }
+}
+
 export async function getConfigAlertas(): Promise<Result<AlertasConfig>> {
   try {
     await requireAuth()
@@ -72,6 +94,9 @@ export async function updateConfigAlertas(
       | "ventana_hasta"
       | "max_intentos_envio"
       | "dias_seguimiento_outcome"
+      | "seguimiento_activo"
+      | "seguimiento_demora_min"
+      | "resumen_diario_activo"
     >
   >,
 ): Promise<Result<AlertasConfig>> {

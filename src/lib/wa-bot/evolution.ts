@@ -4,8 +4,8 @@
  * Evolution API v2 docs: https://doc.evolution-api.com/v2/api-reference
  *
  * Configurado vía env vars:
- *   EVOLUTION_BASE_URL   ej "https://mercosur-evolution-api.bdgnn2.easypanel.host"
- *   EVOLUTION_INSTANCE   ej "mercopedidos"
+ *   EVOLUTION_BASE_URL   ej "https://evo.76-13-225-4.sslip.io" (VPS Hostinger)
+ *   EVOLUTION_INSTANCE   ej "mercosur-pampeana"
  *   EVOLUTION_API_KEY    Global API key (header `apikey`)
  */
 
@@ -72,7 +72,10 @@ export interface EvolutionMessage {
   extendedTextMessage?: { text?: string }
   imageMessage?: { caption?: string }
   videoMessage?: { caption?: string }
+  audioMessage?: { seconds?: number; mimetype?: string }
 }
+
+export const esAudio = (message: EvolutionMessage | undefined | null) => !!message?.audioMessage
 
 export function extractText(message: EvolutionMessage | undefined | null): string | null {
   if (!message) return null
@@ -83,4 +86,29 @@ export function extractText(message: EvolutionMessage | undefined | null): strin
     message.videoMessage?.caption ??
     null
   )
+}
+
+/**
+ * Baja un adjunto (audio, imagen) de un mensaje recibido. Evolution lo
+ * desencripta y lo devuelve en base64. null si falla: el que llama decide
+ * qué responder.
+ */
+export async function getMediaBase64(
+  messageId: string,
+): Promise<{ base64: string; mimetype: string } | null> {
+  if (!BASE || !INSTANCE || !API_KEY) return null
+  const url = `${BASE.replace(/\/$/, "")}/chat/getBase64FromMediaMessage/${INSTANCE}`
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: API_KEY },
+      body: JSON.stringify({ message: { key: { id: messageId } }, convertToMp4: false }),
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (!r.ok) return null
+    const d = (await r.json()) as { base64?: string; mimetype?: string }
+    return d.base64 ? { base64: d.base64, mimetype: d.mimetype ?? "audio/ogg" } : null
+  } catch {
+    return null
+  }
 }
