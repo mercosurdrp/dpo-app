@@ -135,9 +135,19 @@ export function parseOpcion(texto: string): 1 | 2 | 3 | null {
   const t = texto.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const m = t.match(/^\*?([123])\b/);
   if (m) return Number(m[1]) as 1 | 2 | 3;
-  if (/^(si|se entrego|entregado|entregamos|evitado)\b/.test(t)) return 1;
+  // Las frases de las opciones, en cualquier parte del mensaje
+  // ("1562 Ciampichi 3). No, se perdió la venta").
+  if (/se perdio|perdimos la venta|venta perdida/.test(t)) return 3;
   if (/reprogram/.test(t)) return 2;
-  if (/^(no,? se perdio|se perdio|perdid)/.test(t)) return 3;
+  if (
+    /^(si|se entrego|entregado|entregamos|evitado)\b|si,? se entrego|(?<!no )se pudo entregar/.test(
+      t,
+    )
+  )
+    return 1;
+  // Un 1/2/3 suelto con un cierre tipo "3)" o "3 -"; un código como 1562 no matchea.
+  const suelto = t.match(/(?:^|[\s(*])([123])\s*[)\-.:]/);
+  if (suelto) return Number(suelto[1]) as 1 | 2 | 3;
   return null;
 }
 
@@ -225,6 +235,59 @@ export async function clasificarComo(input: {
       `[seguimiento] clasificación falló: ${err instanceof Error ? err.message : err}`,
     );
     return { categoria: "otro", resumen: null };
+  }
+}
+
+/**
+ * Último recurso cuando el parseo no encuentra la opción: que el modelo
+ * entienda la respuesta libre ("lo entregamos a la tarde", "no hubo caso").
+ */
+export async function interpretarOpcion(
+  texto: string,
+): Promise<1 | 2 | 3 | null> {
+  const ai = openai();
+  if (!ai || texto.trim().length < 3) return null;
+  try {
+    const r = await ai.chat.completions.create(
+      {
+        model: "gpt-4o-mini",
+        temperature: 0,
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "opcion",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["opcion"],
+              properties: { opcion: { type: "integer", enum: [0, 1, 2, 3] } },
+            },
+          },
+        },
+        messages: [
+          {
+            role: "system",
+            content:
+              "Un vendedor de una distribuidora responde si se pudo evitar un rechazo de entrega. Opciones: " +
+              "1 = sí, se entregó; 2 = no, se reprograma para otro día u horario; 3 = no, se perdió la venta. " +
+              "Devolvé la opción que expresa el mensaje, o 0 si no responde eso (saludo, pregunta, mensaje automático, " +
+              "algo que no se entiende). Ignorá números que sean códigos de cliente.",
+          },
+          { role: "user", content: texto },
+        ],
+      },
+      { timeout: 10_000 },
+    );
+    const d = JSON.parse(r.choices[0]?.message?.content ?? "{}") as {
+      opcion?: number;
+    };
+    return d.opcion === 1 || d.opcion === 2 || d.opcion === 3 ? d.opcion : null;
+  } catch (err) {
+    console.error(
+      `[seguimiento] interpretarOpcion falló: ${err instanceof Error ? err.message : err}`,
+    );
+    return null;
   }
 }
 
@@ -577,7 +640,7 @@ export async function procesarRespuesta(
   const ahora = new Date().toISOString();
 
   if (p.estado === "preguntada") {
-    const opcion = parseOpcion(texto);
+    const opcion = parseOpcion(texto) ?? (await interpretarOpcion(texto));
     if (!opcion) {
       // Una sola aclaración cada 30 min: con un autorresponder de WhatsApp
       // Business del otro lado, contestar siempre arma un loop de mensajes.
@@ -638,7 +701,7 @@ export async function procesarRespuesta(
     }
     // "2, quiere reprogramar para el miércoles": el cómo vino en el mismo
     // mensaje, no se repregunta.
-    const explicacion = textoDespuesDeLaOpcion(texto);
+    const explicacion = explicacionJuntoConOpcion(texto);
     if (explicacion) {
       return registrarComo(supabase, msg.phone, { ...p, opcion }, explicacion);
     }
@@ -651,11 +714,23 @@ export async function procesarRespuesta(
   return registrarComo(supabase, msg.phone, p, texto);
 }
 
+/**
+ * La explicación que vino junto con la opción: lo que sigue al número
+ * ("2, quiere reprogramar…") o, si la opción estaba en el medio, el mensaje
+ * entero cuando es largo. null = hay que preguntar el cómo.
+ */
+export function explicacionJuntoConOpcion(texto: string): string | null {
+  const despues = textoDespuesDeLaOpcion(texto);
+  if (despues) return despues;
+  const t = texto.trim();
+  return !/^\*?[123]\b/.test(t) && t.length >= 25 ? t : null;
+}
+
 /** Lo que sigue a la opción ("2, quiere reprogramar…"), si dice algo. */
 export function textoDespuesDeLaOpcion(texto: string): string | null {
   const resto = texto
     .trim()
-    .replace(/^\*?[123]\*?\s*[-–.,:;)]*\s*/, "")
+    .replace(/^\*?[123](?!\d)\*?\s*[-–.,:;)]*\s*/, "")
     .trim();
   if (resto === texto.trim()) return null; // no empezaba con el número
   return resto.length >= 8 ? resto : null;
