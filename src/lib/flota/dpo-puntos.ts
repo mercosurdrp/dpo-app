@@ -70,13 +70,30 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
   // 🚨 El orden de este array ES el orden de las solapas. Los checklists van
   // primeros dentro de Operación: es lo que se mira todos los días.
   {
+    // 🚨 El id sigue siendo "checklists" (es el estado de la solapa en la URL),
+    // pero el label dice NO OK: esta sección no muestra los checklists, muestra
+    // los ÍTEMS que dieron NO OK y su plan de acción. El nombre viejo hacía
+    // buscar acá el checklist de salida, que ahora tiene su propia solapa.
     id: "checklists",
-    label: "Check lists",
+    label: "Check list NO OK",
     grupo: "operacion",
     puntos: ["1.3"],
     requisitos: ["R1.3.2", "R1.3.3", "R1.3.6", "R1.3.7"],
     aporta:
       "Checklist digital con estratificación por vehículo, incidencia y conductor, y seguimiento de defectos críticos.",
+  },
+  {
+    // La misma tabla que la solapa "Historial Checklists" de /vehiculos, con el
+    // mismo componente y los mismos datos: se mira todos los días para saber si
+    // el chofer hizo el control y con qué odómetro, y había que salir del módulo
+    // para verlo. Sigue estando también en /vehiculos, que es donde se edita.
+    id: "checklist-flota",
+    label: "Checklist salida / retorno",
+    grupo: "operacion",
+    puntos: ["1.3"],
+    requisitos: ["R1.3.2", "R1.3.3"],
+    aporta:
+      "Checklist de liberación y de retorno por unidad y por día: quién lo hizo, a qué hora, con qué odómetro y con qué resultado. Es la verificación previa a la salida del punto 1.3.",
   },
   {
     id: "tablero",

@@ -33,6 +33,9 @@ import {
 } from "@/actions/flota-indicadores"
 import { getEstandaresFlota } from "@/actions/flota-estandares"
 import { getAnalisisChecklist } from "@/actions/checklist-analisis"
+// Los checklists de salida y retorno: los mismos que muestra /vehiculos. La
+// solapa "Checklist salida / retorno" comparte el componente con esa pantalla.
+import { getChecklists } from "@/actions/checklist-vehiculos"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { MantenimientoClient } from "./mantenimiento-client"
@@ -77,6 +80,7 @@ export default async function MantenimientoPage() {
     analisisChecklistRes,
     herramientasRes,
     reprogramadasRes,
+    checklistsFlotaRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -107,6 +111,7 @@ export default async function MantenimientoPage() {
     getAnalisisChecklist(),
     getHerramientas(),
     getTareasReprogramadas(),
+    getChecklists({ limit: 50 }),
     getProfile(),
   ])
 
@@ -217,6 +222,7 @@ export default async function MantenimientoPage() {
   const herramientas = "data" in herramientasRes ? herramientasRes.data : []
   // Query aparte y tolerante: si falla, el resto del módulo se sigue viendo.
   const reprogramadas = "data" in reprogramadasRes ? reprogramadasRes.data : []
+  const checklistsFlota = "data" in checklistsFlotaRes ? checklistsFlotaRes.data : []
   const role = profile?.role ?? "viewer"
 
   return (
@@ -233,6 +239,7 @@ export default async function MantenimientoPage() {
       costos={costos}
       tablero={tablero}
       checklists={checklists}
+      checklistsFlota={checklistsFlota}
       neumaticos={neumaticos}
       recapados={recapados}
       retirosCubiertas={retirosCubiertas}

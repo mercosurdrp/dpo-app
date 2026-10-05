@@ -14,6 +14,7 @@ import {
   type GrupoFlota,
 } from "@/lib/flota/dpo-puntos"
 import { KpiCard } from "./_components/kpi-card"
+import { HistorialChecklists } from "@/components/flota/historial-checklists"
 import { HistorialLecturasMes } from "./_components/historial-lecturas-mes"
 import { DetalleOrdenDialog } from "./_components/detalle-orden-dialog"
 import {
@@ -44,18 +45,32 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  Activity,
+  AlertTriangle,
   Ban,
   CalendarClock,
+  CircleDot,
+  ClipboardCheck,
+  ClipboardList,
   Cloud,
+  Hammer,
+  LayoutDashboard,
+  ListChecks,
+  Package,
   Paperclip,
   Plus,
   Pencil,
   Search,
+  ShieldCheck,
+  Sparkles,
   Trash2,
+  TrendingUp,
+  Triangle,
   Truck,
   Wrench,
   X,
 } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
 import {
@@ -85,6 +100,7 @@ import type {
   MantenimientoTareaReprogramada,
   MantenimientoTipo,
   VehiculoTipo,
+  ChecklistVehiculo,
 } from "@/types/database"
 import {
   MANTENIMIENTO_CATEGORIA_LABELS,
@@ -309,6 +325,36 @@ const ACCEPT_FACTURA = "image/*,application/pdf,.pdf,.doc,.docx"
  * para encontrar la de siempre. El color pinta la solapa ACTIVA (dónde estoy) y
  * tiñe apenas el hover; el resto queda sobrio, como el criterio de la app.
  */
+/**
+ * Ícono de cada sección. Con 15 botones el label solo obliga a leerlos todos
+ * para encontrar uno; el ícono da el salto visual. Las claves son los ids de
+ * SECCIONES_FLOTA: una sección sin entrada acá cae en el camión genérico.
+ */
+const ICONO_SECCION: Record<string, LucideIcon> = {
+  checklists: AlertTriangle,
+  "checklist-flota": ClipboardCheck,
+  tablero: LayoutDashboard,
+  programacion: CalendarClock,
+  historial: Wrench,
+  cil: Sparkles,
+  "analisis-items": ListChecks,
+  indicadores: TrendingUp,
+  seguimiento: Activity,
+  piramide: Triangle,
+  neumaticos: CircleDot,
+  estandares: ShieldCheck,
+  herramientas: Hammer,
+  repuestos: Package,
+  plantillas: ClipboardList,
+}
+
+/** Tono del contador: rojo es "esto ya venció", ámbar "hay cola", gris informa. */
+const TONO_CONTADOR = {
+  critico: "bg-red-600 text-white",
+  alerta: "bg-amber-500 text-white",
+  neutro: "bg-foreground/15 text-foreground",
+} as const
+
 const ESTILO_GRUPO: Record<
   GrupoFlota,
   { titulo: string; trigger: string; grande: boolean }
@@ -453,6 +499,8 @@ interface MantenimientoClientProps {
     unidadesBaja: UnidadBaja[]
   }
   checklists: { itemsNoOk: ChecklistItemNoOk[]; comentarios: ChecklistComentario[] }
+  /** Checklists de salida y retorno: los mismos que muestra /vehiculos. */
+  checklistsFlota: ChecklistVehiculo[]
   neumaticos: Neumatico[]
   recapados: Recapado[]
   retirosCubiertas: RetiroCubiertas[]
@@ -497,6 +545,7 @@ export function MantenimientoClient({
   costos,
   tablero,
   checklists,
+  checklistsFlota,
   neumaticos,
   recapados,
   retirosCubiertas,
@@ -681,6 +730,37 @@ export function MantenimientoClient({
     [estados]
   )
 
+  /**
+   * Número vivo de cada botón del menú. 🚨 Todo sale de datos que la página ya
+   * trae (`tablero.resumen` y los ítems NO OK): no agrega una query.
+   *
+   * Por qué: el menú no decía nada: eran 15 botones iguales y había que entrar
+   * a cada uno para saber si había algo que atender. El número contesta eso
+   * desde afuera. Sólo lleva contador la sección donde el número significa
+   * "entrá acá": poner uno en todas sería ruido.
+   */
+  const contadores = useMemo(() => {
+    const r = tablero.resumen
+    const noOkAbiertos = checklists.itemsNoOk.filter((i) => i.horasResolucion == null).length
+    const c: Record<string, { valor: number; tono: keyof typeof TONO_CONTADOR }> = {
+      // Defectos NO OK sin plan cerrado: la cola real de la sección.
+      checklists: { valor: noOkAbiertos, tono: "critico" },
+      // Unidades que ya reportaron checklist hoy. Informativo, no una alerta.
+      "checklist-flota": { valor: r.hoy.vehiculosChecklist, tono: "neutro" },
+      tablero: { valor: r.alertas.mantenimiento.vencidas, tono: "critico" },
+      historial: { valor: r.pendientes.otAbiertas, tono: "alerta" },
+      neumaticos: { valor: r.alertas.llantas.profundidadBaja, tono: "critico" },
+      repuestos: { valor: r.alertas.inventario.minimaSuperada, tono: "alerta" },
+    }
+    return c
+  }, [tablero.resumen, checklists.itemsNoOk])
+
+  /** Tipo por dominio para el historial de checklists (horómetro vs odómetro). */
+  const tipoPorDominio = useMemo(
+    () => Object.fromEntries(estados.map((e) => [e.vehiculo.dominio, e.vehiculo.tipo])),
+    [estados]
+  )
+
   const navegar = (destino: string, dominio?: string) => {
     // Sin dominio se va al historial COMPLETO: si quedaba el filtro de la
     // navegación anterior, la solapa se abría mostrando una sola unidad.
@@ -736,21 +816,41 @@ export function MantenimientoClient({
                 >
                   {GRUPO_LABELS[g]}
                 </span>
-                {secciones.map((s) => (
-                  <TabsTrigger
-                    key={s.id}
-                    value={s.id}
-                    className={cn(
-                      "flex-none rounded-lg border transition-colors",
-                      est.grande
-                        ? "h-10 px-4 text-[0.95rem] font-semibold"
-                        : "h-8 px-3 text-sm font-medium",
-                      est.trigger
-                    )}
-                  >
-                    {s.label}
-                  </TabsTrigger>
-                ))}
+                {secciones.map((s) => {
+                  const Icono = ICONO_SECCION[s.id] ?? Truck
+                  const cont = contadores[s.id]
+                  return (
+                    <TabsTrigger
+                      key={s.id}
+                      value={s.id}
+                      // Qué responde la sección ante la auditoría, al pasar el
+                      // mouse: estaba sólo adentro, al entrar.
+                      title={s.aporta}
+                      className={cn(
+                        "inline-flex flex-none items-center gap-1.5 rounded-lg border transition-colors",
+                        est.grande
+                          ? "h-10 px-4 text-[0.95rem] font-semibold"
+                          : "h-8 px-3 text-sm font-medium",
+                        est.trigger
+                      )}
+                    >
+                      <Icono className={cn("shrink-0", est.grande ? "size-4" : "size-3.5")} />
+                      <span>{s.label}</span>
+                      {/* El contador aparece sólo si hay algo: un 0 en rojo al
+                          lado de cada botón sería ruido permanente. */}
+                      {cont && cont.valor > 0 && (
+                        <span
+                          className={cn(
+                            "ml-0.5 rounded-full px-1.5 py-px text-[0.7rem] leading-tight font-bold tabular-nums",
+                            TONO_CONTADOR[cont.tono]
+                          )}
+                        >
+                          {cont.valor}
+                        </span>
+                      )}
+                    </TabsTrigger>
+                  )
+                })}
               </div>
             )
           })}
@@ -805,13 +905,30 @@ export function MantenimientoClient({
           />
         </TabsContent>
 
-        {/* ============ TAB: Check lists ============ */}
+        {/* ============ TAB: Check list NO OK ============ */}
         <TabsContent value="checklists" className="space-y-6">
           <ChecklistsMtto
             itemsNoOk={checklists.itemsNoOk}
             comentarios={checklists.comentarios}
             unidades={unidades}
             puedeEditar={puedeEditar}
+          />
+        </TabsContent>
+
+        {/* ============ TAB: Checklist salida / retorno ============ */}
+        <TabsContent value="checklist-flota" className="space-y-6">
+          {/* 🚨 Mismo componente y mismos datos que la solapa "Historial
+              Checklists" de /vehiculos: no es una copia, así que las dos
+              pantallas no pueden mostrar números distintos.
+
+              Acá entra sin lápiz ni tacho: es la vista de consulta del módulo.
+              Corregir un checklist se sigue haciendo en /vehiculos, donde está
+              el formulario de edición, y borrar no se ofrece en ningún lado —el
+              checklist es la evidencia de que el chofer hizo el control. */}
+          <HistorialChecklists
+            checklists={checklistsFlota}
+            tipoPorDominio={tipoPorDominio}
+            titulo="Checklists de salida y retorno"
           />
         </TabsContent>
 

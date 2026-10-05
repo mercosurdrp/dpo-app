@@ -37,12 +37,16 @@ import type {
 import { MaestroFlotaPanel } from "./maestro-flota-panel"
 import { TarjetaKpi } from "./tarjeta-kpi"
 import {
+  HistorialChecklists,
+  ResultadoBadge,
+  TiempoRutaBadge,
+} from "@/components/flota/historial-checklists"
+import {
   Truck,
   MapPin,
   Home,
   RotateCcw,
   ClipboardCheck,
-  Eye,
   Pencil,
   Trash2,
   Loader2,
@@ -134,36 +138,10 @@ function formatHora(isoStr: string) {
   return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })
 }
 
-function formatTiempoRuta(minutos: number) {
-  const hh = Math.floor(minutos / 60)
-  const mm = minutos % 60
-  return `${hh}h ${mm.toString().padStart(2, "0")}m`
-}
-
-/** Duración de llenado del checklist (segundos) → texto corto legible. */
-function formatDuracion(seg: number | null) {
-  if (seg == null) return "—"
-  if (seg < 60) return `${seg}s`
-  const m = Math.floor(seg / 60)
-  const s = seg % 60
-  if (m < 60) return `${m}m ${s.toString().padStart(2, "0")}s`
-  const h = Math.floor(m / 60)
-  const mm = m % 60
-  return `${h}h ${mm.toString().padStart(2, "0")}m`
-}
-
-function TiempoRutaBadge({ minutos }: { minutos: number }) {
-  const text = formatTiempoRuta(minutos)
-  if (minutos <= 480) return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">{text}</Badge>
-  if (minutos <= 540) return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">{text}</Badge>
-  return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{text}</Badge>
-}
-
-function ResultadoBadge({ resultado }: { resultado: string }) {
-  if (resultado === "aprobado")
-    return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Aprobado</Badge>
-  return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Rechazado</Badge>
-}
+// `TiempoRutaBadge`, `ResultadoBadge` y el formato de duración viven ahora en
+// `@/components/flota/historial-checklists`: la tabla de checklists se comparte
+// con el módulo de Mantenimiento y los badges tienen que ser los mismos en los
+// dos lados, no dos copias que se desincronizan.
 
 export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehiculos, choferes, kmFlotaResumen, alertas, maestro }: Props) {
   const router = useRouter()
@@ -283,19 +261,12 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
     startTransition(() => router.refresh())
   }
 
-  // Filtro del historial de checklists por vehículo.
-  const [histDominio, setHistDominio] = useState("todos")
   // Tipo por dominio para etiquetar el valor cargado: horómetro (hs) en
-  // autoelevadores, odómetro (km) en el resto.
-  const tipoPorDominio = new Map(vehiculos.map((v) => [v.dominio, v.tipo]))
+  // autoelevadores, odómetro (km) en el resto. Viaja también a
+  // <HistorialChecklists>, que lo necesita para la misma distinción.
+  const tipoPorDominio = Object.fromEntries(vehiculos.map((v) => [v.dominio, v.tipo]))
   const esAutoelevadorDominio = (dominio: string) =>
-    tipoPorDominio.get(dominio) === "autoelevador"
-  const checklistsFiltrados =
-    histDominio === "todos"
-      ? checklists
-      : checklists.filter((c) => c.dominio === histDominio)
-  // Dominios presentes en el historial (para poblar el filtro).
-  const dominiosHistorial = Array.from(new Set(checklists.map((c) => c.dominio))).sort()
+    tipoPorDominio[dominio] === "autoelevador"
 
   const personasOpts = choferes.map((c) => c.nombre)
 
@@ -757,134 +728,19 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
 
         {/* Tab: Historial */}
         <TabsContent value="historial">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-3">
-              <CardTitle className="text-base">Últimos Checklists</CardTitle>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs text-muted-foreground whitespace-nowrap">Vehículo</Label>
-                  <Select value={histDominio} onValueChange={(v: string | null) => setHistDominio(v ?? "todos")}>
-                    <SelectTrigger className="h-8 w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos">Todos</SelectItem>
-                      {dominiosHistorial.map((d) => (
-                        <SelectItem key={d} value={d}>
-                          {d}
-                          {esAutoelevadorDominio(d) ? " (autoelev.)" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Link href="/vehiculos/checklist">
-                  <Button variant="outline" size="sm">
-                    <ClipboardCheck className="mr-1 h-4 w-4" /> Nuevo
-                  </Button>
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {checklistsFiltrados.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  {checklists.length === 0
-                    ? "No hay checklists registrados."
-                    : "No hay checklists para el vehículo seleccionado."}
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Fecha</TableHead>
-                        <TableHead>Hora</TableHead>
-                        <TableHead>Tipo</TableHead>
-                        <TableHead>Dominio</TableHead>
-                        <TableHead>Chofer</TableHead>
-                        <TableHead className="text-right">Odóm./Horóm.</TableHead>
-                        <TableHead>Resultado</TableHead>
-                        <TableHead className="text-right">T. Ruta</TableHead>
-                        <TableHead className="text-right">Duración</TableHead>
-                        <TableHead className="text-right w-28">Acciones</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {checklistsFiltrados.map((c) => (
-                        <TableRow key={c.id}>
-                          <TableCell className="text-sm">{c.fecha}</TableCell>
-                          <TableCell className="text-sm font-mono">{formatHora(c.hora)}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={
-                              c.tipo === "liberacion"
-                                ? "border-blue-200 text-blue-700"
-                                : "border-green-200 text-green-700"
-                            }>
-                              {c.tipo === "liberacion" ? "Liberación" : "Retorno"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Link
-                              href={`/vehiculos/${encodeURIComponent(c.dominio)}`}
-                              className="font-mono font-semibold text-blue-600 hover:underline"
-                            >
-                              {c.dominio}
-                            </Link>
-                          </TableCell>
-                          <TableCell className="text-sm">{c.chofer}</TableCell>
-                          <TableCell className="text-right font-mono text-sm tabular-nums">
-                            {c.odometro != null
-                              ? `${c.odometro.toLocaleString("es-AR")} ${
-                                  esAutoelevadorDominio(c.dominio) ? "hs" : "km"
-                                }`
-                              : "—"}
-                          </TableCell>
-                          <TableCell>
-                            <ResultadoBadge resultado={c.resultado} />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {c.tiempo_ruta_minutos != null ? (
-                              <TiempoRutaBadge minutos={c.tiempo_ruta_minutos} />
-                            ) : "—"}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-sm tabular-nums">
-                            {formatDuracion(c.duracion_segundos)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              <Link href={`/vehiculos/checklist/${c.id}`}>
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                                  <Eye className="h-3.5 w-3.5" />
-                                </Button>
-                              </Link>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0"
-                                onClick={() => openEditChk(c)}
-                                disabled={isPending}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
-                                onClick={() => { setDeleteId(c.id); setDeleteType("checklist") }}
-                                disabled={isPending}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* Misma tabla que la solapa "Checklist salida / retorno" del módulo
+              de Mantenimiento: un solo componente, los mismos datos. Acá entra
+              con el lápiz y el tacho porque es donde vive el formulario de
+              edición; allá entra de consulta. */}
+          <HistorialChecklists
+            checklists={checklists}
+            tipoPorDominio={tipoPorDominio}
+            onEditar={openEditChk}
+            onBorrar={(id) => {
+              setDeleteId(id)
+              setDeleteType("checklist")
+            }}
+          />
         </TabsContent>
 
         {/* Tab: Combustible */}
