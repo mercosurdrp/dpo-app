@@ -8,9 +8,10 @@ export const TASA_FOCO = "Tasa de respuesta"
 /**
  * Objetivo del plan de acción: porcentaje de encuestas enviadas que tienen
  * que volver respondidas. Se mide sobre los meses cerrados del año (el mes
- * en curso viene incompleto del Power BI). Definido el 10/09/2026.
+ * en curso viene incompleto del Power BI). Definido el 10/09/2026 en 30 %;
+ * bajado a 25 % el 05/10/2026.
  */
-export const NPS_TASA_OBJETIVO = 30
+export const NPS_TASA_OBJETIVO = 25
 
 /** Cuántos puntos porcentuales faltan para el objetivo (0 si ya se llegó). */
 export function brechaTasaNps(tasa: number | null): number | null {

@@ -290,7 +290,7 @@ export function CoberturaBloque({
           <CardContent>
             <p
               className={`text-3xl font-semibold ${
-                (resumen.tasa_respuesta ?? 0) >= 30
+                (resumen.tasa_respuesta ?? 0) >= NPS_TASA_OBJETIVO
                   ? "text-emerald-600"
                   : (resumen.tasa_respuesta ?? 0) >= 20
                     ? "text-amber-600"
@@ -470,7 +470,7 @@ export function CoberturaBloque({
                   <td className="py-2 pr-3 text-right">{p.respondidas}</td>
                   <td
                     className={`py-2 pr-3 text-right font-medium ${
-                      (p.tasa_respuesta ?? 0) >= 30
+                      (p.tasa_respuesta ?? 0) >= NPS_TASA_OBJETIVO
                         ? "text-emerald-600"
                         : (p.tasa_respuesta ?? 0) >= 20
                           ? "text-amber-600"
