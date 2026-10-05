@@ -1,12 +1,13 @@
 /**
  * Cron de alertas WhatsApp de rechazos en reparto (Foxtrot).
  *
- * Corre cada 5 min en ventana de reparto (vercel.json). Cada corrida:
+ * Corre cada 10 min en ventana de reparto (vercel.json). Cada corrida:
  *   1. Detecta los rechazos del día en Foxtrot (detectDia, fetch liviano).
  *   2. Persiste los nuevos en `foxtrot_alertas_rechazo` (dedup por clave única).
- *   3. Resuelve cliente → promotor (`bot_clientes_cache`) → teléfonos
- *      (`bot_vendedores_wa`) y envía el WhatsApp vía Evolution (sendText)
- *      al promotor y a su supervisor.
+ *   3. Resuelve cliente → TODOS sus vendedores (rutas de venta vigentes de
+ *      Chess: preventista + repositor; fallback `bot_clientes_cache`) →
+ *      teléfonos (`bot_vendedores_wa`) y envía el WhatsApp vía Evolution
+ *      (sendText) a cada vendedor y a sus supervisores, sin repetir números.
  *   4. Re-evalúa el outcome automático de alertas abiertas: recuperado el
  *      mismo día / próxima entrega OK / reincidió / sin nueva entrega.
  *
@@ -34,9 +35,12 @@ import {
   formatAlertaSupervisor,
   type AlertaParaMensaje,
 } from "@/lib/foxtrot-alertas/mensaje"
+import { esPersonalExcluido, promotoresPorCliente } from "@/lib/foxtrot-alertas/destinatarios"
 import type { EnvioDetalle, VendedorWa } from "@/lib/foxtrot-alertas/types"
 
-export const maxDuration = 300
+// 🚨 Bien por debajo del período del cron (10 min): con 300 s y cada 5 min
+// las corridas se solapaban y ahogaban Supabase (incidente 20/07/2026).
+export const maxDuration = 120
 export const dynamic = "force-dynamic"
 
 const CRON_SECRET = process.env.CRON_SECRET
@@ -127,6 +131,20 @@ async function handle(request: NextRequest) {
     const { data: equipoRaw } = await supabase.from("bot_vendedores_wa").select("*")
     const equipo = (equipoRaw ?? []) as VendedorWa[]
     const porPromotor = new Map(equipo.map((v) => [v.id_promotor, v]))
+    const promotoresChess = await promotoresPorCliente(hoy)
+
+    // Todos los vendedores del cliente; el principal es el de bot_clientes_cache
+    // si sigue en la lista (es el que ya usaba el bot), si no el primero con teléfono.
+    const promotoresDe = (idCliente: string | null, idCache: string | null) => {
+      const ids = (idCliente && promotoresChess.get(idCliente)) || (idCache ? [idCache] : [])
+      const validos = ids.filter((id) => !esPersonalExcluido(id))
+      const principal =
+        (idCache && validos.includes(idCache) ? idCache : null) ??
+        validos.find((id) => phoneValido(porPromotor.get(id))) ??
+        validos[0] ??
+        null
+      return { ids: validos, principal }
+    }
 
     const idsClientes = Array.from(
       new Set(
@@ -153,7 +171,8 @@ async function handle(request: NextRequest) {
       // "0" en el cache = promotor sin resolver (cliente sin ruta asignada)
       const idPromotorCache =
         cache?.id_promotor && cache.id_promotor !== "0" ? cache.id_promotor : null
-      const promotor = idPromotorCache ? porPromotor.get(idPromotorCache) : undefined
+      const { principal } = promotoresDe(idCliente, idPromotorCache)
+      const promotor = principal ? porPromotor.get(principal) : undefined
       const supervisor = promotor?.supervisor_id
         ? porPromotor.get(promotor.supervisor_id)
         : undefined
@@ -175,7 +194,7 @@ async function handle(request: NextRequest) {
         parcial: r.parcial,
         items: r.items,
         rechazo_ts: r.rechazo_ts_ms ? new Date(r.rechazo_ts_ms).toISOString() : null,
-        id_promotor: promotor?.id_promotor ?? idPromotorCache,
+        id_promotor: promotor?.id_promotor ?? principal,
         promotor_nombre: promotor?.nombre ?? null,
         promotor_phone: phoneValido(promotor),
         supervisor_id: supervisor?.id_promotor ?? null,
@@ -217,6 +236,14 @@ async function handle(request: NextRequest) {
         .lt("intentos_envio", maxIntentos)
 
       for (const a of pendientes ?? []) {
+        const { ids } = promotoresDe(a.id_cliente, a.id_promotor)
+        const promotores = ids
+          .map((id) => porPromotor.get(id))
+          .filter((v): v is VendedorWa => !!v)
+        const supervisores = promotores
+          .map((v) => (v.supervisor_id ? porPromotor.get(v.supervisor_id) : undefined))
+          .filter((v): v is VendedorWa => !!v)
+        const nombresPromotores = promotores.map((v) => v.nombre)
         const msg: AlertaParaMensaje = {
           cliente_nombre: a.cliente_nombre,
           id_cliente: a.id_cliente,
@@ -229,12 +256,31 @@ async function handle(request: NextRequest) {
           parcial: !!a.parcial,
           items: a.items ?? [],
           rechazo_ts_ms: a.rechazo_ts ? new Date(a.rechazo_ts).getTime() : 0,
-          promotor_nombre: a.promotor_nombre,
+          promotor_nombre: nombresPromotores.length
+            ? nombresPromotores.join(" / ")
+            : a.promotor_nombre,
         }
-        const destinos: { destinatario: "promotor" | "supervisor"; phone: string | null; texto: string }[] = [
-          { destinatario: "promotor", phone: a.promotor_phone, texto: formatAlertaPromotor(msg) },
-          { destinatario: "supervisor", phone: a.supervisor_phone, texto: formatAlertaSupervisor(msg) },
-        ]
+        // Un número recibe un solo mensaje aunque figure dos veces (mismo
+        // supervisor de preventista y repositor, o vendedor en las dos rutas).
+        const destinos: { destinatario: "promotor" | "supervisor"; phone: string | null; texto: string }[] = []
+        const vistos = new Set<string>()
+        const agregar = (destinatario: "promotor" | "supervisor", phone: string | null, texto: string) => {
+          if (phone && vistos.has(phone)) return
+          if (phone) vistos.add(phone)
+          destinos.push({ destinatario, phone, texto })
+        }
+        const textoPromotor = formatAlertaPromotor(msg)
+        const textoSupervisor = formatAlertaSupervisor(msg)
+        agregar("promotor", a.promotor_phone, textoPromotor)
+        for (const v of promotores) {
+          const phone = phoneValido(v)
+          if (phone) agregar("promotor", phone, textoPromotor)
+        }
+        agregar("supervisor", a.supervisor_phone, textoSupervisor)
+        for (const v of supervisores) {
+          const phone = phoneValido(v)
+          if (phone) agregar("supervisor", phone, textoSupervisor)
+        }
         const conPhone = destinos.filter((d) => d.phone)
 
         if (dryRun) {

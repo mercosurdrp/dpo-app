@@ -3,6 +3,9 @@
 export interface RechazoItemAlerta {
   producto: string
   cantidad: number
+  // Bultos pedidos de la línea. En un rechazo parcial Foxtrot no dice cuántos
+  // volvieron (cantidad = 0), así que se muestra el producto con lo pedido.
+  pedido?: number
   motivo: string
   notas: string | null
   ts_ms: number

@@ -4,7 +4,7 @@
 // (attempt final FAILED = rechazo, con SUCCESSFUL previo = parcial) pero
 // trayendo SOLO rutas + waypoints + deliveries: sin analytics, zonas,
 // geocoding ni ubicación de camiones, que hacen pesado a buildSnapshot().
-// La usa el cron /api/foxtrot/cron-alertas cada 5 minutos.
+// La usa el cron /api/foxtrot/cron-alertas cada 10 minutos.
 
 import {
   getDrivers,
@@ -111,6 +111,7 @@ export async function detectDia(
                 items.push({
                   producto: d.name ?? "(sin nombre)",
                   cantidad: esParcial ? 0 : qty,
+                  pedido: qty,
                   motivo,
                   notas: last.driver_notes ?? null,
                   ts_ms: ts,

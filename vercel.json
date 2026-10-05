@@ -39,6 +39,10 @@
       "schedule": "0 4 * * *"
     },
     {
+      "path": "/api/foxtrot/cron-alertas",
+      "schedule": "*/10 10-21 * * *"
+    },
+    {
       "path": "/api/cerrado-horarios/cron-sync",
       "schedule": "30 7 * * *"
     },
