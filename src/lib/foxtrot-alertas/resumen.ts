@@ -1,5 +1,7 @@
-// Resumen diario por WhatsApp para cada supervisor: cómo terminaron los
-// rechazos de su equipo en el día (lo lanza /api/foxtrot/cron-resumen).
+// Resumen diario por WhatsApp (lo lanza /api/foxtrot/cron-resumen):
+//   - a cada supervisor, cómo terminaron los rechazos de SU equipo;
+//   - a los destinatarios de `foxtrot_alertas_config.resumen_general_destinatarios`
+//     (gerencia), el general de Pampeana con el detalle por supervisor y vendedor.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AlertaRechazo, EnvioDetalle, VendedorWa } from "./types";
@@ -19,13 +21,27 @@ function fechaLarga(fecha: string): string {
   return `${DIAS[d.getUTCDay()]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
 }
 
-function apellido(nombre: string): string {
-  const p = nombre.trim().split(/\s+/)[0] ?? nombre;
-  return p.charAt(0) + p.slice(1).toLowerCase();
+// Nombre completo: en Chess el orden no es parejo ("MARTINEZ JOSE" pero
+// "KEVIN BASSAN"), así que quedarse con la primera palabra a veces da el nombre.
+function nombreLindo(nombre: string): string {
+  return nombre
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(" ");
 }
 
-export interface ResumenSupervisor {
-  supervisor: VendedorWa;
+const plural = (n: number, s: string) => `${n} ${s}${n === 1 ? "" : "s"}`;
+
+export interface DestinatarioResumen {
+  nombre: string;
+  phone: string;
+}
+
+export interface ResumenArmado {
+  tipo: "supervisor" | "general";
+  destinatario: DestinatarioResumen;
   texto: string;
   rechazos: number;
 }
@@ -34,7 +50,8 @@ export async function armarResumenes(
   supabase: SupabaseClient,
   fecha: string,
   equipo: VendedorWa[],
-): Promise<ResumenSupervisor[]> {
+  generales: DestinatarioResumen[] = [],
+): Promise<ResumenArmado[]> {
   const { data } = await supabase
     .from("foxtrot_alertas_rechazo")
     .select("*")
@@ -58,52 +75,56 @@ export async function armarResumenes(
     const v = a.id_promotor ? porId.get(a.id_promotor) : undefined;
     return v ? [v] : [];
   };
+  const esDelEquipo = (a: AlertaRechazo, supId: string) =>
+    vendedoresDe(a).some((v) => v.supervisor_id === supId) ||
+    a.supervisor_id === supId;
 
-  return supervisores.map((sup) => {
-    const delEquipo = alertas.filter(
-      (a) =>
-        vendedoresDe(a).some((v) => v.supervisor_id === sup.id_promotor) ||
-        a.supervisor_id === sup.id_promotor,
-    );
-    const n = (f: (a: AlertaRechazo) => boolean) => delEquipo.filter(f).length;
-    const lineas = [
-      `📊 *Resumen de rechazos — ${fechaLarga(fecha)}*`,
-      `Equipo de ${apellido(sup.nombre)}`,
-      "",
+  const contar = (as: AlertaRechazo[]) => {
+    const n = (f: (a: AlertaRechazo) => boolean) => as.filter(f).length;
+    const recuperadas = as.filter((a) => a.outcome === "recuperado_mismo_dia");
+    return {
+      total: as.length,
+      evitados: n((a) => a.seguimiento_resultado === "evitado"),
+      reprogramados: n((a) => a.seguimiento_resultado === "reprogramado"),
+      perdidos: n((a) => a.seguimiento_resultado === "perdido"),
+      sinRespuesta: n((a) => a.seguimiento_resultado === "sin_respuesta"),
+      respondidos: n(
+        (a) =>
+          !!a.seguimiento_resultado &&
+          a.seguimiento_resultado !== "sin_respuesta",
+      ),
+      pendientes: n((a) => !a.seguimiento_resultado),
+      recuperados: recuperadas.length,
+      bultos: recuperadas.reduce((s, a) => s + (Number(a.bultos) || 0), 0),
+    };
+  };
+
+  // Bloques comunes de los dos tipos de resumen.
+  const totales = (as: AlertaRechazo[]) => {
+    const c = contar(as);
+    const l = [
+      `🚨 Rechazos avisados: *${c.total}*`,
+      `✅ Evitados (según el vendedor): ${c.evitados}`,
+      `🚚 Re-entregados (confirmado por Foxtrot): ${c.recuperados}${c.bultos ? ` · ${c.bultos} bultos` : ""}`,
+      `🔁 Reprogramados: ${c.reprogramados}`,
+      `❌ Perdidos: ${c.perdidos}`,
+      `🤐 Sin respuesta: ${c.sinRespuesta}`,
     ];
+    if (c.pendientes)
+      l.push(`⏳ Todavía sin preguntar o esperando respuesta: ${c.pendientes}`);
+    return l;
+  };
 
-    if (delEquipo.length === 0) {
-      lineas.push("Hoy no hubo rechazos avisados en tu equipo 🎉");
-      return { supervisor: sup, texto: lineas.join("\n"), rechazos: 0 };
-    }
-
-    const confirmados = n((a) => a.outcome === "recuperado_mismo_dia");
-    const bultos = delEquipo
-      .filter((a) => a.outcome === "recuperado_mismo_dia")
-      .reduce((s, a) => s + (Number(a.bultos) || 0), 0);
-    lineas.push(
-      `🚨 Rechazos avisados: *${delEquipo.length}*`,
-      `✅ Evitados (según el vendedor): ${n((a) => a.seguimiento_resultado === "evitado")}`,
-      `🚚 Re-entregados (confirmado por Foxtrot): ${confirmados}${bultos ? ` · ${bultos} bultos` : ""}`,
-      `🔁 Reprogramados: ${n((a) => a.seguimiento_resultado === "reprogramado")}`,
-      `❌ Perdidos: ${n((a) => a.seguimiento_resultado === "perdido")}`,
-      `🤐 Sin respuesta: ${n((a) => a.seguimiento_resultado === "sin_respuesta")}`,
-    );
-    const pendientes = n((a) => !a.seguimiento_resultado);
-    if (pendientes)
-      lineas.push(
-        `⏳ Todavía sin preguntar o esperando respuesta: ${pendientes}`,
-      );
-
-    // Por vendedor del equipo.
+  const porVendedor = (
+    as: AlertaRechazo[],
+    incluir: (v: VendedorWa) => boolean,
+  ) => {
     const stats = new Map<
       string,
       { nombre: string; avisos: number; resp: number; evit: number }
     >();
-    for (const a of delEquipo) {
-      for (const v of vendedoresDe(a).filter(
-        (x) => x.supervisor_id === sup.id_promotor,
-      )) {
+    for (const a of as) {
+      for (const v of vendedoresDe(a).filter(incluir)) {
         const s = stats.get(v.id_promotor) ?? {
           nombre: v.nombre,
           avisos: 0,
@@ -118,36 +139,99 @@ export async function armarResumenes(
         stats.set(v.id_promotor, s);
       }
     }
-    if (stats.size) {
-      lineas.push("", "*Por vendedor*");
-      for (const s of [...stats.values()].sort((a, b) => b.avisos - a.avisos)) {
-        lineas.push(
-          `• ${apellido(s.nombre)}: ${s.avisos} aviso${s.avisos === 1 ? "" : "s"} · ${s.resp} respondido${s.resp === 1 ? "" : "s"} · ${s.evit} evitado${s.evit === 1 ? "" : "s"}`,
-        );
-      }
-    }
+    if (!stats.size) return [];
+    return [
+      "",
+      "*Por vendedor*",
+      ...[...stats.values()]
+        .sort((a, b) => b.avisos - a.avisos)
+        .map(
+          (s) =>
+            `• ${nombreLindo(s.nombre)}: ${plural(s.avisos, "aviso")} · ${plural(s.resp, "respondido")} · ${plural(s.evit, "evitado")}`,
+        ),
+    ];
+  };
 
-    const sinResp = delEquipo.filter(
-      (a) => a.seguimiento_resultado === "sin_respuesta",
-    );
-    if (sinResp.length) {
-      lineas.push("", "*Sin respuesta*");
-      for (const a of sinResp.slice(0, 8)) {
-        const quienes = vendedoresDe(a)
-          .map((v) => apellido(v.nombre))
-          .join(" / ");
-        lineas.push(
-          `• ${a.cliente_nombre ?? `cod. ${a.id_cliente}`}${quienes ? ` (${quienes})` : ""}`,
-        );
-      }
-      if (sinResp.length > 8) lineas.push(`• … y ${sinResp.length - 8} más`);
+  const sinRespuesta = (as: AlertaRechazo[]) => {
+    const sr = as.filter((a) => a.seguimiento_resultado === "sin_respuesta");
+    if (!sr.length) return [];
+    const l = ["", "*Sin respuesta*"];
+    for (const a of sr.slice(0, 8)) {
+      const quienes = vendedoresDe(a)
+        .map((v) => nombreLindo(v.nombre))
+        .join(" / ");
+      l.push(
+        `• ${a.cliente_nombre ?? `cod. ${a.id_cliente}`}${quienes ? ` (${quienes})` : ""}`,
+      );
     }
+    if (sr.length > 8) l.push(`• … y ${sr.length - 8} más`);
+    return l;
+  };
 
-    lineas.push("", "📋 Detalle: app DPO → Alertas de rechazo → Efectividad");
+  const encabezado = (subtitulo: string) => [
+    `📊 *Resumen de rechazos — ${fechaLarga(fecha)}*`,
+    subtitulo,
+    "",
+  ];
+  const pie = ["", "📋 Detalle: app DPO → Alertas de rechazo → Efectividad"];
+  // Sin festejo: puede ser que no hubo rechazos o que las rutas no se
+  // registraron en Foxtrot (Pergamino todavía no usa la app).
+  const SIN_REGISTRO = "sin rechazos registrados en Foxtrot";
+
+  const resumenes: ResumenArmado[] = supervisores.map((sup) => {
+    const delEquipo = alertas.filter((a) => esDelEquipo(a, sup.id_promotor));
+    const lineas = encabezado(`Equipo de ${nombreLindo(sup.nombre)}`);
+    if (!delEquipo.length) {
+      lineas.push(
+        `Hoy no hubo rechazos registrados en Foxtrot para tu equipo.`,
+      );
+    } else {
+      lineas.push(
+        ...totales(delEquipo),
+        ...porVendedor(delEquipo, (v) => v.supervisor_id === sup.id_promotor),
+        ...sinRespuesta(delEquipo),
+        ...pie,
+      );
+    }
     return {
-      supervisor: sup,
+      tipo: "supervisor",
+      destinatario: { nombre: sup.nombre, phone: sup.phone_number },
       texto: lineas.join("\n"),
       rechazos: delEquipo.length,
     };
   });
+
+  if (generales.length) {
+    const lineas = encabezado("General Pampeana");
+    if (!alertas.length) {
+      lineas.push("Hoy no hubo rechazos registrados en Foxtrot.");
+    } else {
+      lineas.push(...totales(alertas), "", "*Por supervisor*");
+      for (const sup of supervisores) {
+        const c = contar(
+          alertas.filter((a) => esDelEquipo(a, sup.id_promotor)),
+        );
+        lineas.push(
+          c.total
+            ? `• ${nombreLindo(sup.nombre)}: ${plural(c.total, "rechazo")} · ${c.recuperados} re-entregados · ${c.respondidos} respondidos`
+            : `• ${nombreLindo(sup.nombre)}: ${SIN_REGISTRO}`,
+        );
+      }
+      lineas.push(
+        ...porVendedor(alertas, () => true),
+        ...sinRespuesta(alertas),
+        ...pie,
+      );
+    }
+    const texto = lineas.join("\n");
+    for (const g of generales) {
+      resumenes.push({
+        tipo: "general",
+        destinatario: g,
+        texto,
+        rechazos: alertas.length,
+      });
+    }
+  }
+  return resumenes;
 }

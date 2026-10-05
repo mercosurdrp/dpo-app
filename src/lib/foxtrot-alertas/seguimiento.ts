@@ -145,9 +145,9 @@ export function parseOpcion(texto: string): 1 | 2 | 3 | null {
     )
   )
     return 1;
-  // Un 1/2/3 suelto con un cierre tipo "3)" o "3 -"; un código como 1562 no matchea.
-  const suelto = t.match(/(?:^|[\s(*])([123])\s*[)\-.:]/);
-  if (suelto) return Number(suelto[1]) as 1 | 2 | 3;
+  // Un número suelto en el medio NO cuenta: en "Rechazo parcial\n1 . Quilmes
+  // sin alcohol x24" el 1 es una cantidad (caso real 05/10). Eso lo decide
+  // interpretarOpcion leyendo el mensaje entero.
   return null;
 }
 
@@ -272,7 +272,8 @@ export async function interpretarOpcion(
               "Un vendedor de una distribuidora responde si se pudo evitar un rechazo de entrega. Opciones: " +
               "1 = sí, se entregó; 2 = no, se reprograma para otro día u horario; 3 = no, se perdió la venta. " +
               "Devolvé la opción que expresa el mensaje, o 0 si no responde eso (saludo, pregunta, mensaje automático, " +
-              "algo que no se entiende). Ignorá números que sean códigos de cliente.",
+              "algo que no se entiende) o si solo describe el rechazo sin decir cómo terminó: no adivines. " +
+              "Ignorá números que sean códigos de cliente o cantidades de producto.",
           },
           { role: "user", content: texto },
         ],

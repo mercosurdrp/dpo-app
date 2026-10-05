@@ -119,6 +119,7 @@ export interface AlertasConfig {
   seguimiento_demora_min: number
   resumen_diario_activo: boolean
   resumen_ultima_fecha: string | null
+  resumen_general_destinatarios: { nombre: string; phone: string }[]
   updated_at: string
 }
 

@@ -1,6 +1,7 @@
 /**
- * Resumen diario por WhatsApp a los supervisores: cómo terminaron los
- * rechazos de su equipo (lib/foxtrot-alertas/resumen.ts).
+ * Resumen diario por WhatsApp: a cada supervisor el de su equipo y a los
+ * destinatarios de `resumen_general_destinatarios` (gerencia) el general de
+ * Pampeana (lib/foxtrot-alertas/resumen.ts).
  *
  * Corre 18:45 ART de lunes a sábado (vercel.json). Una vez por día:
  * `foxtrot_alertas_config.resumen_ultima_fecha` evita duplicados si el cron
@@ -15,7 +16,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { IS_MISIONES } from "@/lib/empresa";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendText } from "@/lib/wa-bot/evolution";
-import { armarResumenes } from "@/lib/foxtrot-alertas/resumen";
+import {
+  armarResumenes,
+  type DestinatarioResumen,
+} from "@/lib/foxtrot-alertas/resumen";
 import type { VendedorWa } from "@/lib/foxtrot-alertas/types";
 
 export const maxDuration = 60;
@@ -79,10 +83,15 @@ async function handle(request: NextRequest) {
     const { data: equipoRaw } = await supabase
       .from("bot_vendedores_wa")
       .select("*");
+    // Gerencia: resumen general (todos los equipos), configurable en la base.
+    const generales = (
+      (config?.resumen_general_destinatarios ?? []) as DestinatarioResumen[]
+    ).filter((d) => d?.phone && PHONE_RE.test(String(d.phone)));
     const resumenes = await armarResumenes(
       supabase,
       fecha,
       (equipoRaw ?? []) as VendedorWa[],
+      generales,
     );
 
     if (preview) {
@@ -90,7 +99,8 @@ async function handle(request: NextRequest) {
         success: true,
         fecha,
         resumenes: resumenes.map((r) => ({
-          supervisor: r.supervisor.nombre,
+          tipo: r.tipo,
+          destinatario: r.destinatario.nombre,
           texto: r.texto,
         })),
       });
@@ -104,10 +114,10 @@ async function handle(request: NextRequest) {
 
     const envios = [];
     for (const r of resumenes) {
-      const phone = r.supervisor.phone_number;
+      const phone = r.destinatario.phone;
       if (!PHONE_RE.test(phone)) {
         envios.push({
-          supervisor: r.supervisor.nombre,
+          destinatario: r.destinatario.nombre,
           ok: false,
           error: "sin teléfono",
         });
@@ -116,13 +126,13 @@ async function handle(request: NextRequest) {
       try {
         const res = await sendText(phone, r.texto);
         envios.push({
-          supervisor: r.supervisor.nombre,
+          destinatario: r.destinatario.nombre,
           ok: res.ok,
           status: res.status,
         });
       } catch (err) {
         envios.push({
-          supervisor: r.supervisor.nombre,
+          destinatario: r.destinatario.nombre,
           ok: false,
           error: err instanceof Error ? err.message : "error",
         });
