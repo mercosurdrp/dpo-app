@@ -69,6 +69,7 @@ import type {
   InversionConDetalle,
   PlanAccionPresupuestoConDetalle,
   PresupuestoAnual,
+  PresupuestoCapex,
   PresupuestoEerrAnual,
   PresupuestoTareaConResponsable,
 } from "@/types/database"
@@ -100,6 +101,7 @@ interface Props {
   planesAccion: PlanAccionPresupuestoConDetalle[]
   mostrarInversiones: boolean
   inversiones: InversionConDetalle[]
+  capex: PresupuestoCapex | null
 }
 
 const MESES = [
@@ -188,6 +190,7 @@ export function PresupuestoClient({
   planesAccion,
   mostrarInversiones,
   inversiones,
+  capex,
 }: Props) {
   const router = useRouter()
   const refrescarConScroll = useRefrescarConScroll()
@@ -847,6 +850,7 @@ export function PresupuestoClient({
               inversiones={inversiones}
               responsables={responsables}
               puedeEditar={puedeEditar}
+              capex={capex}
             />
           </TabsContent>
         )}
