@@ -579,6 +579,16 @@ export async function procesarRespuesta(
   if (p.estado === "preguntada") {
     const opcion = parseOpcion(texto);
     if (!opcion) {
+      // Una sola aclaración cada 30 min: con un autorresponder de WhatsApp
+      // Business del otro lado, contestar siempre arma un loop de mensajes.
+      const { count } = await supabase
+        .from("bot_conversaciones_log")
+        .select("id", { count: "exact", head: true })
+        .eq("phone_number", msg.phone)
+        .like("mensaje_out", "No te entendí%")
+        .gte("created_at", new Date(Date.now() - 30 * 60_000).toISOString());
+      if (count)
+        return { accion: "opcion_invalida_silencio", respuesta: null, texto };
       const r = `No te entendí 🤔. Sobre ${cliente(p.alerta)}, respondé *1* (se entregó), *2* (se reprograma) o *3* (se perdió).`;
       await enviar(msg.phone, r);
       return { accion: "opcion_invalida", respuesta: r, texto };
@@ -626,12 +636,37 @@ export async function procesarRespuesta(
       }
       await enviarSiguiente(supabase, o.phone);
     }
+    // "2, quiere reprogramar para el miércoles": el cómo vino en el mismo
+    // mensaje, no se repregunta.
+    const explicacion = textoDespuesDeLaOpcion(texto);
+    if (explicacion) {
+      return registrarComo(supabase, msg.phone, { ...p, opcion }, explicacion);
+    }
     const r = TEXTO_COMO[opcion];
     await enviar(msg.phone, r);
     return { accion: `opcion_${opcion}`, respuesta: r, texto };
   }
 
   // esperando_como: este mensaje es el "cómo".
+  return registrarComo(supabase, msg.phone, p, texto);
+}
+
+/** Lo que sigue a la opción ("2, quiere reprogramar…"), si dice algo. */
+export function textoDespuesDeLaOpcion(texto: string): string | null {
+  const resto = texto
+    .trim()
+    .replace(/^\*?[123]\*?\s*[-–.,:;)]*\s*/, "")
+    .trim();
+  if (resto === texto.trim()) return null; // no empezaba con el número
+  return resto.length >= 8 ? resto : null;
+}
+
+async function registrarComo(
+  supabase: SupabaseClient,
+  phone: string,
+  p: PreguntaRow,
+  texto: string,
+): Promise<{ accion: string; respuesta: string | null; texto: string }> {
   await supabase
     .from("foxtrot_alertas_preguntas")
     .update({ estado: "respondida", como: texto })
@@ -651,7 +686,7 @@ export async function procesarRespuesta(
     })
     .eq("id", p.alerta_id);
   const r = "¡Gracias! Quedó registrado ✅";
-  await enviar(msg.phone, r);
-  await enviarSiguiente(supabase, msg.phone);
+  await enviar(phone, r);
+  await enviarSiguiente(supabase, phone);
   return { accion: "como_registrado", respuesta: r, texto };
 }
