@@ -32,6 +32,7 @@ import { leerObservaciones, MARCA_ORIGEN } from "@/lib/inversiones-origen"
 import type {
   HorizonteInversion,
   InversionConDetalle,
+  PresupuestoCapex,
 } from "@/types/database"
 import {
   CATEGORIA_LABEL,
@@ -42,6 +43,11 @@ import {
   HORIZONTE_OPCIONES,
 } from "./inversiones-constantes"
 import { InversionFormDialog } from "./inversion-form-dialog"
+import { InversionesGantt } from "./inversiones-gantt"
+import { InversionesCapex } from "./inversiones-capex"
+import { desvioTiempo } from "@/lib/inversiones-seguimiento"
+
+type Vista = "tabla" | "gantt" | "seguimiento"
 
 interface ResponsableOpt {
   id: string
@@ -54,6 +60,8 @@ interface Props {
   inversiones: InversionConDetalle[]
   responsables: ResponsableOpt[]
   puedeEditar: boolean
+  /** Presupuesto CAPEX del año (null si no se cargó todavía). */
+  capex: PresupuestoCapex | null
 }
 
 function formatMoney(n: number | null): string {
@@ -73,6 +81,32 @@ function formatDate(iso: string | null): string {
     month: "2-digit",
     year: "numeric",
   })
+}
+
+// Desvío de plazo: fin real vs programado (+ = tarde); si sigue abierta y
+// vencida, cuántos días pasaron de la fecha programada.
+function DesvioPlazo({ inversion }: { inversion: InversionConDetalle }) {
+  const dt = desvioTiempo(inversion)
+  if (!dt) return <span className="text-muted-foreground">—</span>
+  const cls = {
+    ok: "border-emerald-200 bg-emerald-100 text-emerald-700",
+    atencion: "border-amber-200 bg-amber-100 text-amber-800",
+    critico: "border-red-200 bg-red-100 text-red-700",
+  }[dt.semaforo]
+  const texto =
+    dt.dias === 0 ? "en fecha" : `${dt.dias > 0 ? "+" : "−"}${Math.abs(dt.dias)} d`
+  return (
+    <Badge
+      className={`${cls} hover:opacity-100`}
+      title={
+        dt.vencida
+          ? "Sigue abierta y ya pasó la fecha programada"
+          : "Fin real contra fecha programada"
+      }
+    >
+      {dt.vencida ? `vencida ${texto}` : texto}
+    </Badge>
+  )
 }
 
 // Desvío del costo real vs. estimado (+ = se pasó del estimado)
@@ -146,12 +180,14 @@ export function InversionesSection({
   inversiones,
   responsables,
   puedeEditar,
+  capex,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
 
   const [openForm, setOpenForm] = useState(false)
   const [editando, setEditando] = useState<InversionConDetalle | null>(null)
+  const [vista, setVista] = useState<Vista>("tabla")
   // Filtro por horizonte: null = todas
   const [horizonte, setHorizonte] = useState<HorizonteInversion | null>(null)
 
@@ -242,6 +278,14 @@ export function InversionesSection({
               inversión lleva su <strong>horizonte</strong>: del año, o a 2, 3 o
               5 años, para separar lo inmediato de lo que se planifica a largo
               plazo.
+            </p>
+            <p className="mt-1">
+              Este es el <strong>registro de solicitudes de CAPEX</strong> del
+              DPO 5.3 (3YP &amp; CAPEX): el <strong>Gantt</strong> muestra lo
+              planificado contra lo real en tiempo, y el{" "}
+              <strong>Seguimiento</strong> compara mes a mes lo ejecutado contra
+              el presupuesto CAPEX del año. Cada inversión debería tener su
+              cotización adjunta.
             </p>
           </div>
         </div>
@@ -348,15 +392,39 @@ export function InversionesSection({
       </div>
 
       {/* Acción */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-700">
-          Inversiones {anio}
-          {horizonte !== null && (
-            <span className="ml-2 font-normal text-muted-foreground">
-              · {HORIZONTE_LABEL[horizonte].toLowerCase()}
-            </span>
-          )}
-        </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-sm font-semibold text-slate-700">
+            Inversiones {anio}
+            {horizonte !== null && (
+              <span className="ml-2 font-normal text-muted-foreground">
+                · {HORIZONTE_LABEL[horizonte].toLowerCase()}
+              </span>
+            )}
+          </h2>
+          <div className="inline-flex rounded-md border bg-white p-0.5 text-xs">
+            {(
+              [
+                ["tabla", "Tabla"],
+                ["gantt", "Gantt"],
+                ["seguimiento", "Seguimiento CAPEX"],
+              ] as [Vista, string][]
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setVista(v)}
+                className={`rounded px-2.5 py-1 font-medium transition-colors ${
+                  vista === v
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         {puedeEditar && (
           <Button
             type="button"
@@ -372,8 +440,35 @@ export function InversionesSection({
         )}
       </div>
 
+      {/* Seguimiento mensual contra el presupuesto CAPEX */}
+      {vista === "seguimiento" && (
+        <InversionesCapex
+          anio={anio}
+          inversiones={filtradas}
+          capex={capex}
+          puedeEditar={puedeEditar}
+          onSaved={refrescar}
+        />
+      )}
+
+      {/* Gantt plan vs real */}
+      {vista === "gantt" && (
+        <InversionesGantt
+          anio={anio}
+          inversiones={filtradas}
+          onSelect={
+            puedeEditar
+              ? (inv) => {
+                  setEditando(inv)
+                  setOpenForm(true)
+                }
+              : undefined
+          }
+        />
+      )}
+
       {/* Tabla */}
-      {filtradas.length === 0 ? (
+      {vista !== "tabla" ? null : filtradas.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             {horizonte === null
@@ -407,7 +502,8 @@ export function InversionesSection({
                 <TableHead className="text-right">Estimado</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead className="text-right">Real</TableHead>
-                <TableHead>Desvío</TableHead>
+                <TableHead>Desvío $</TableHead>
+                <TableHead>Plazo</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
@@ -440,6 +536,11 @@ export function InversionesSection({
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm">
                     {formatDate(inv.fecha_programada)}
+                    {inv.fecha_inicio_programada && (
+                      <p className="text-xs text-muted-foreground">
+                        desde {formatDate(inv.fecha_inicio_programada)}
+                      </p>
+                    )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-right text-sm">
                     {formatMoney(inv.monto_estimado)}
@@ -465,6 +566,9 @@ export function InversionesSection({
                       estimado={inv.monto_estimado}
                       real={inv.monto_real}
                     />
+                  </TableCell>
+                  <TableCell>
+                    <DesvioPlazo inversion={inv} />
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">

@@ -9,6 +9,7 @@ import type {
   EstadoInversion,
   HorizonteInversion,
   InversionConDetalle,
+  PresupuestoCapex,
 } from "@/types/database"
 import { HORIZONTES_INVERSION } from "@/types/database"
 
@@ -118,10 +119,12 @@ export async function listInversiones(
         kpi_unidad: r.kpi_unidad,
         kpi_objetivo: r.kpi_objetivo !== null ? Number(r.kpi_objetivo) : null,
         proveedor: r.proveedor,
+        fecha_inicio_programada: r.fecha_inicio_programada ?? null,
         fecha_programada: r.fecha_programada,
         monto_estimado:
           r.monto_estimado !== null ? Number(r.monto_estimado) : null,
         estado: r.estado as EstadoInversion,
+        fecha_inicio_real: r.fecha_inicio_real ?? null,
         fecha_realizada: r.fecha_realizada,
         monto_real: r.monto_real !== null ? Number(r.monto_real) : null,
         evidencia_url: r.evidencia_url,
@@ -178,9 +181,11 @@ function camposDesdeForm(formData: FormData): Record<string, any> {
     // El formulario manda responsable_id desde que existe la solapa, pero acá
     // no se leía: el responsable elegido nunca llegaba a la base.
     responsable_id: parseText(formData.get("responsable_id")),
+    fecha_inicio_programada: parseText(formData.get("fecha_inicio_programada")),
     fecha_programada: parseText(formData.get("fecha_programada")),
     monto_estimado: parseNum(formData.get("monto_estimado")),
     estado,
+    fecha_inicio_real: parseText(formData.get("fecha_inicio_real")),
     fecha_realizada: parseText(formData.get("fecha_realizada")),
     monto_real: parseNum(formData.get("monto_real")),
     observaciones: parseText(formData.get("observaciones")),
@@ -335,6 +340,78 @@ export async function eliminarInversion(
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error eliminando inversión",
+    }
+  }
+}
+
+// =============================================
+// Presupuesto de CAPEX del año
+// =============================================
+
+/** Cuánto hay para invertir en el año. null = todavía no se cargó. */
+export async function getPresupuestoCapex(
+  anio: number,
+): Promise<Result<PresupuestoCapex | null>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("presupuestos_capex")
+      .select("id, anio, monto, observaciones, updated_by, updated_at")
+      .eq("anio", anio)
+      .maybeSingle()
+    if (error) return { error: error.message }
+    if (!data) return { data: null }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = data as any
+    return {
+      data: {
+        id: r.id,
+        anio: r.anio,
+        monto: Number(r.monto ?? 0),
+        observaciones: r.observaciones ?? null,
+        updated_by: r.updated_by ?? null,
+        updated_at: r.updated_at,
+      },
+    }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error leyendo presupuesto CAPEX",
+    }
+  }
+}
+
+export async function guardarPresupuestoCapex(
+  anio: number,
+  formData: FormData,
+): Promise<Result<{ anio: number }>> {
+  try {
+    const profile = await requireEditor()
+    const supabase = await createClient()
+
+    const monto = parseNum(formData.get("monto"))
+    if (monto === null || monto < 0) {
+      return { error: "El monto del presupuesto CAPEX es obligatorio" }
+    }
+
+    const { error } = await supabase.from("presupuestos_capex").upsert(
+      {
+        anio,
+        monto,
+        observaciones: parseText(formData.get("observaciones")),
+        updated_by: profile.id,
+      },
+      { onConflict: "anio" },
+    )
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: { anio } }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error guardando presupuesto CAPEX",
     }
   }
 }

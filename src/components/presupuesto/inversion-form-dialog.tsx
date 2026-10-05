@@ -284,9 +284,21 @@ export function InversionFormDialog({
             <p className="mb-2 text-sm font-semibold text-slate-700">
               Inversión programada
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="fecha_programada">Fecha programada</Label>
+                <Label htmlFor="fecha_inicio_programada">Inicio planificado</Label>
+                <Input
+                  id="fecha_inicio_programada"
+                  name="fecha_inicio_programada"
+                  type="date"
+                  defaultValue={inversion?.fecha_inicio_programada ?? ""}
+                />
+                <p className="text-[11px] leading-tight text-muted-foreground">
+                  Opcional: sin inicio, en el Gantt queda como hito.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="fecha_programada">Fecha programada (fin)</Label>
                 <Input
                   id="fecha_programada"
                   name="fecha_programada"
@@ -313,7 +325,7 @@ export function InversionFormDialog({
             <p className="mb-2 text-sm font-semibold text-slate-700">
               Al realizarse
             </p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               <div className="space-y-1.5">
                 <Label>Estado</Label>
                 <Select
@@ -335,7 +347,16 @@ export function InversionFormDialog({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="fecha_realizada">Fecha real</Label>
+                <Label htmlFor="fecha_inicio_real">Inicio real</Label>
+                <Input
+                  id="fecha_inicio_real"
+                  name="fecha_inicio_real"
+                  type="date"
+                  defaultValue={inversion?.fecha_inicio_real ?? ""}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="fecha_realizada">Fecha real (fin)</Label>
                 <Input
                   id="fecha_realizada"
                   name="fecha_realizada"

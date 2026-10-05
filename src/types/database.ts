@@ -3508,9 +3508,13 @@ export interface Inversion {
   kpi_unidad: string | null
   kpi_objetivo: number | null
   proveedor: string | null
+  /** Inicio planificado (opcional). El fin planificado es fecha_programada. */
+  fecha_inicio_programada: string | null
   fecha_programada: string | null
   monto_estimado: number | null
   estado: EstadoInversion
+  /** Inicio real (opcional). El fin real es fecha_realizada. */
+  fecha_inicio_real: string | null
   fecha_realizada: string | null
   monto_real: number | null
   evidencia_url: string | null
@@ -3525,6 +3529,16 @@ export interface Inversion {
 export interface InversionConDetalle extends Inversion {
   responsable_nombre: string | null
   responsable_email: string | null
+}
+
+/** Presupuesto de CAPEX del año: cuánto hay para invertir. */
+export interface PresupuestoCapex {
+  id: string
+  anio: number
+  monto: number
+  observaciones: string | null
+  updated_by: string | null
+  updated_at: string
 }
 
 // =============================================

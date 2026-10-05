@@ -28,13 +28,17 @@ import {
   type SustentabilidadPresupuesto,
 } from "@/actions/presupuesto-sustentabilidad"
 import { listPlanesAccion } from "@/actions/presupuesto-planes-accion"
-import { listInversiones } from "@/actions/presupuesto-inversiones"
+import {
+  getPresupuestoCapex,
+  listInversiones,
+} from "@/actions/presupuesto-inversiones"
 import { getProfile } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import type {
   IniciativaAhorroConDetalle,
   InversionConDetalle,
   PlanAccionPresupuestoConDetalle,
+  PresupuestoCapex,
 } from "@/types/database"
 import { PresupuestoClient } from "./presupuesto-client"
 
@@ -94,6 +98,7 @@ export default async function PresupuestoPage({
     kpiCombustibleRes,
     costoHlRes,
     sustentabilidadRes,
+    capexRes,
   ] = await Promise.all([
     getPresupuestoAnual(anioActivo),
     getEerrAnual(anioActivo),
@@ -133,6 +138,11 @@ export default async function PresupuestoPage({
     // Presupuesto y sustentabilidad: qué compromete el presupuesto sobre el
     // FGLI y cómo viene. Pega al depósito; si falla, la sección lo dice.
     getSustentabilidadPresupuesto(anioActivo),
+    // Presupuesto CAPEX del año: tope contra el que se sigue lo comprometido
+    // y lo ejecutado en inversiones (DPO 5.3).
+    mostrarInversiones
+      ? getPresupuestoCapex(anioActivo)
+      : Promise.resolve<{ data: PresupuestoCapex | null }>({ data: null }),
   ])
 
   if ("error" in tareasRes) {
@@ -171,6 +181,7 @@ export default async function PresupuestoPage({
       planesAccion={"data" in planesAccionRes ? planesAccionRes.data : []}
       mostrarInversiones={mostrarInversiones}
       inversiones={"data" in inversionesRes ? inversionesRes.data : []}
+      capex={"data" in capexRes ? capexRes.data : null}
     />
   )
 }
