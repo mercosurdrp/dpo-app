@@ -313,7 +313,7 @@ export function InversionesCapex({
           </p>
           <p className="text-xs text-muted-foreground">
             Plan = estimado de lo programado para el mes · Real = lo que salió
-            lo realizado en el mes · acumulado contra el presupuesto CAPEX
+            lo realizado en el mes · acumulados y diferencia
           </p>
         </div>
         <Table>
@@ -325,7 +325,6 @@ export function InversionesCapex({
               <TableHead className="text-right">Plan acum.</TableHead>
               <TableHead className="text-right">Real acum.</TableHead>
               <TableHead className="text-right">Real − plan acum.</TableHead>
-              <TableHead className="w-[220px]">% del presupuesto (acum.)</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -335,8 +334,6 @@ export function InversionesCapex({
                 ? Number(hoy.slice(0, 4)) > anio
                 : m.mes < mesActual
               const vacio = m.plan === 0 && m.real === 0
-              const pctPlan = base ? (m.planAcum / base) * 100 : null
-              const pctReal = base ? (m.realAcum / base) * 100 : null
               const dif = m.realAcum - m.planAcum
               return (
                 <TableRow
@@ -386,35 +383,6 @@ export function InversionesCapex({
                     title="Positivo: se ejecutó más de lo planificado hasta ese mes. Negativo: se ejecutó menos (o más tarde)."
                   >
                     {pasado || esActual ? fmtSigned(dif) : "—"}
-                  </TableCell>
-                  <TableCell>
-                    {base === null ? (
-                      <span className="text-xs text-muted-foreground">sin presupuesto</span>
-                    ) : (
-                      <div className="space-y-1">
-                        <div
-                          className="relative h-2 w-full overflow-hidden rounded-full bg-slate-100"
-                          title={`Plan acumulado ${fmtPct(pctPlan)} del presupuesto`}
-                        >
-                          <div
-                            className="h-full rounded-full border border-sky-400 bg-sky-100"
-                            style={{ width: `${Math.min(100, pctPlan ?? 0)}%` }}
-                          />
-                        </div>
-                        <div
-                          className="relative h-2 w-full overflow-hidden rounded-full bg-slate-100"
-                          title={`Real acumulado ${fmtPct(pctReal)} del presupuesto`}
-                        >
-                          <div
-                            className={`h-full rounded-full ${(pctReal ?? 0) > 100 ? "bg-red-500" : "bg-emerald-500"}`}
-                            style={{ width: `${Math.min(100, pctReal ?? 0)}%` }}
-                          />
-                        </div>
-                        <p className="text-[10px] text-muted-foreground">
-                          plan {fmtPct(pctPlan)} · real {fmtPct(pctReal)}
-                        </p>
-                      </div>
-                    )}
                   </TableCell>
                 </TableRow>
               )
