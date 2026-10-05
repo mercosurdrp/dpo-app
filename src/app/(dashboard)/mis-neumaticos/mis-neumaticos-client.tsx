@@ -14,7 +14,11 @@ import {
 } from "@/lib/flota/neumaticos-control"
 import { cn } from "@/lib/utils"
 import { etiquetaCubierta } from "@/lib/vehiculos/numeracion-fuego"
-import { layoutDeTipo, posicionEnPalabras } from "@/lib/vehiculos/neumaticos-layout"
+import {
+  POSICION_AUXILIO,
+  layoutDeTipo,
+  posicionEnPalabras,
+} from "@/lib/vehiculos/neumaticos-layout"
 import { SiluetaUnidad } from "@/components/flota/silueta-unidad"
 import type { VehiculoTipo } from "@/types/database"
 
@@ -134,6 +138,11 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
   }
 
   const queSuben = unidad ? unidad.cubiertas.filter((c) => subeDe(c) != null) : []
+
+  /** Último dibujo conocido de una cubierta: la referencia, o la profundidad de la ficha. */
+  const ultimoDibujo = (
+    c: MisNeumaticosData["unidades"][number]["cubiertas"][number],
+  ): number | null => c.referencia?.profundidad_mm ?? c.profundidadActual
 
   const listo =
     cargadas.length > 0 && erroresProf.length === 0 && queSuben.length === 0 && !pendiente
@@ -379,6 +388,28 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
                               : ""}
                         </span>
                       </div>
+
+                      {/* 🚨 El auxilio viaja EN la unidad pero no apoya: la
+                          mayoría de los meses vuelve con el mismo dibujo con el
+                          que salió. Al chofer eso lo dejaba trabado —no tiene
+                          qué medir, y sin el campo cargado la ronda no cierra—,
+                          así que lo llenaba a ojo o salteaba la cubierta. Con
+                          esto repite el último dibujo conocido de un toque.
+
+                          Va SÓLO en el AUX a propósito: en las que apoyan, un
+                          botón de "repetir" sería una forma de cerrar la ronda
+                          sin bajarse a medir, que es justo lo que el control
+                          mensual tiene que evitar. La presión sigue a mano: el
+                          auxilio se desinfla igual aunque no ruede. */}
+                      {c.posicion === POSICION_AUXILIO && ultimoDibujo(c) != null && (
+                        <button
+                          type="button"
+                          onClick={() => setValor(c.id, "mm", String(ultimoDibujo(c)))}
+                          className="mt-2 rounded-lg border border-dashed px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                        >
+                          No rodó este mes — repetir {ultimoDibujo(c)} mm
+                        </button>
+                      )}
 
                       <div className="mt-2 grid grid-cols-2 gap-2">
                         <label className="block">
