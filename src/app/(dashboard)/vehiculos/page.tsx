@@ -3,6 +3,15 @@ import { getRegistrosCombustible } from "@/actions/combustible"
 import { getVehiculos, getChoferes } from "@/actions/registros-vehiculos"
 import { getKmFlotaResumen, getAlertasVehiculos } from "@/actions/vehiculos-analytics"
 import { getMaestroFlota } from "@/actions/maestro-flota"
+// La disponibilidad de flota se mira también desde acá: es la pantalla de
+// Vehículos, no un detalle del módulo de mantenimiento.
+import {
+  getDiasRuteo,
+  getIndisponibilidades,
+  getMantenimientos,
+} from "@/actions/mantenimiento-vehiculos"
+import { ventanaOtDesde, ventanaRuteoDesde } from "@/lib/vehiculos/ventanas"
+import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { VehiculosClient } from "./vehiculos-client"
 
@@ -17,6 +26,9 @@ export default async function VehiculosPage() {
     alertasRes,
     maestroRes,
     profile,
+    mantenimientosRes,
+    diasRuteoRes,
+    indispRes,
   ] = await Promise.all([
     getEstadoVehiculosHoy(),
     getChecklists({ limit: 50 }),
@@ -27,6 +39,15 @@ export default async function VehiculosPage() {
     getAlertasVehiculos(),
     getMaestroFlota(),
     getProfile(),
+    // Disponibilidad de flota. En Misiones la flota se gestiona en Cloudfleet y
+    // estas tablas están vacías: no se paga la consulta.
+    IS_MISIONES
+      ? Promise.resolve({ data: [] as never[] })
+      : getMantenimientos({ fechaDesde: ventanaOtDesde() }),
+    IS_MISIONES
+      ? Promise.resolve({ data: [] as never[] })
+      : getDiasRuteo(ventanaRuteoDesde()),
+    IS_MISIONES ? Promise.resolve({ data: [] as never[] }) : getIndisponibilidades(),
   ])
 
   if ("error" in estadoRes) {
@@ -48,6 +69,9 @@ export default async function VehiculosPage() {
   // Los mismos roles que acepta `actualizarFichaVehiculo`: si no, el lápiz
   // abriría un formulario que la acción va a rechazar al guardar.
   const canEdit = profile?.role === "admin" || profile?.role === "supervisor"
+  const mantenimientos = "data" in mantenimientosRes ? mantenimientosRes.data : []
+  const diasRuteo = "data" in diasRuteoRes ? diasRuteoRes.data : []
+  const indisponibilidades = "data" in indispRes ? indispRes.data : []
 
   return (
     <VehiculosClient
@@ -60,6 +84,10 @@ export default async function VehiculosPage() {
       alertas={alertas}
       maestro={maestro}
       canEdit={canEdit}
+      mantenimientos={mantenimientos}
+      diasRuteo={diasRuteo}
+      indisponibilidades={indisponibilidades}
+      conDisponibilidad={!IS_MISIONES}
     />
   )
 }

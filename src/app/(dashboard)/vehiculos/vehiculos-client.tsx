@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -29,12 +29,18 @@ import type {
   RegistroCombustible,
   CatalogoChofer,
   CatalogoVehiculo,
+  DiaRuteo,
+  FlotaIndisponibilidad,
   KmFlotaResumen,
   AlertaVehiculo,
   MaestroFlota,
+  MantenimientoRealizado,
   TipoChecklist,
 } from "@/types/database"
 import { MaestroFlotaPanel } from "./maestro-flota-panel"
+// La disponibilidad de flota se ve con el MISMO componente que /vehiculos/mantenimiento:
+// dos pantallas que muestran el mismo porcentaje no pueden calcularlo cada una a su modo.
+import { SeguimientoFlota } from "./mantenimiento/seguimiento-flota"
 import { TarjetaKpi } from "./tarjeta-kpi"
 import {
   HistorialChecklists,
@@ -105,6 +111,12 @@ interface Props {
   maestro: MaestroFlota | null
   /** Admin o supervisor: habilita editar la ficha desde el maestro. */
   canEdit: boolean
+  /** OT de los últimos ~24 meses: la base de la disponibilidad por mes. */
+  mantenimientos: MantenimientoRealizado[]
+  diasRuteo: DiaRuteo[]
+  indisponibilidades: FlotaIndisponibilidad[]
+  /** false en Misiones: esa flota se gestiona en Cloudfleet. */
+  conDisponibilidad: boolean
 }
 
 function formatFechaCorta(fechaIso: string) {
@@ -153,7 +165,7 @@ function formatHora(isoStr: string) {
 // con el módulo de Mantenimiento y los badges tienen que ser los mismos en los
 // dos lados, no dos copias que se desincronizan.
 
-export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehiculos, choferes, kmFlotaResumen, alertas, maestro, canEdit }: Props) {
+export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehiculos, choferes, kmFlotaResumen, alertas, maestro, canEdit, mantenimientos, diasRuteo, indisponibilidades, conDisponibilidad }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -308,6 +320,25 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
   const combustibleTipo = combustible.filter((c) => coincideTipo(c.dominio))
 
   const personasOpts = choferes.map((c) => c.nombre)
+
+  /**
+   * Las unidades como las espera el cálculo de disponibilidad. Sale del catálogo
+   * (que ya viene sólo con las activas) y NO del filtro de tipo de la pantalla:
+   * la disponibilidad de flota se mide sobre los camiones de distribución
+   * —`flotaDeRuta()` decide cuáles— y tocar el selector de arriba no puede
+   * cambiar el porcentaje que se informa en la reunión.
+   */
+  const unidadesFlota = useMemo(
+    () =>
+      vehiculos.map((v) => ({
+        dominio: v.dominio,
+        tipo: v.tipo,
+        sector: v.sector,
+        modelo: v.modelo,
+        anio: v.anio,
+      })),
+    [vehiculos]
+  )
 
   const enBase = flotaTipo.filter((v) => v.estado === "en_base").length
   const enRuta = flotaTipo.filter((v) => v.estado === "en_ruta").length
@@ -564,6 +595,9 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
           {maestro && <TabsTrigger value="maestro">Maestro de flota</TabsTrigger>}
           <TabsTrigger value="flota">Estado Flota Hoy</TabsTrigger>
           <TabsTrigger value="km">Km Recorridos</TabsTrigger>
+          {conDisponibilidad && (
+            <TabsTrigger value="disponibilidad">Disponibilidad</TabsTrigger>
+          )}
           <TabsTrigger value="historial">Historial Checklists</TabsTrigger>
           <TabsTrigger value="combustible">Combustible</TabsTrigger>
         </TabsList>
@@ -794,6 +828,21 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
             </Card>
           </div>
         </TabsContent>
+
+        {/* Tab: Disponibilidad de flota — la misma pantalla que Mantenimiento →
+            Seguimiento de flota. Está acá porque la disponibilidad se mira
+            cuando uno entra a Vehículos, no sólo cuando entra al taller. */}
+        {conDisponibilidad && (
+          <TabsContent value="disponibilidad">
+            <SeguimientoFlota
+              mantenimientos={mantenimientos}
+              unidades={unidadesFlota}
+              diasRuteo={diasRuteo}
+              indisponibilidades={indisponibilidades}
+              puedeEditar={canEdit}
+            />
+          </TabsContent>
+        )}
 
         {/* Tab: Historial */}
         <TabsContent value="historial">

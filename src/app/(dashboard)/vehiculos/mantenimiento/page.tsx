@@ -36,32 +36,14 @@ import { getAnalisisChecklist } from "@/actions/checklist-analisis"
 // Los checklists de salida y retorno: los mismos que muestra /vehiculos. La
 // solapa "Checklist salida / retorno" comparte el componente con esa pantalla.
 import { getChecklists } from "@/actions/checklist-vehiculos"
+import { ventanaOtDesde, ventanaRuteoDesde } from "@/lib/vehiculos/ventanas"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { MantenimientoClient } from "./mantenimiento-client"
 
-// Ventana de días ruteados a traer (~13 meses) para la utilización de flota.
-function ventanaRuteoDesde() {
-  const d = new Date()
-  d.setMonth(d.getMonth() - 13)
-  return d.toISOString().slice(0, 10)
-}
-
-/**
- * Ventana de órdenes de trabajo a traer (~24 meses).
- *
- * 🚨 Antes eran las **200 más recientes** (`limit: 200`) y eso rompía el filtro
- * de mes del seguimiento de flota: el selector se arma con los meses que tienen
- * OT cargada, así que al 06/10/2026 la lista cortaba en septiembre de 2025 —las
- * 58 OT anteriores no llegaban— y los meses de la primera mitad de 2025 no se
- * podían elegir. El que sí se podía elegir (2025-09) mostraba una parada de
- * menos. Un tope por FILAS no sirve para una pantalla que filtra por FECHA.
- */
-function ventanaOtDesde() {
-  const d = new Date()
-  d.setMonth(d.getMonth() - 24)
-  return d.toISOString().slice(0, 10)
-}
+// Las ventanas de la disponibilidad son compartidas con la solapa Disponibilidad
+// de /vehiculos: las dos pantallas muestran el MISMO componente y tienen que
+// traer el mismo período (ver lib/vehiculos/ventanas.ts).
 
 export default async function MantenimientoPage() {
   // Módulo solo Pampeana (la flota de Misiones se gestiona en Cloudfleet).
