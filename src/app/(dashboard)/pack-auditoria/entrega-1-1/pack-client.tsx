@@ -1,6 +1,6 @@
 "use client"
 
-import { abrirArchivo } from "@/lib/abrir-archivo"
+import { descargarArchivo } from "@/lib/abrir-archivo"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -607,7 +607,7 @@ export function PackAuditoria11Client({ pack, archivos }: Props) {
                     onClick={async () => {
                       const res = await getDownloadUrl({ archivo_id: a.id })
                       if ("error" in res) return
-                      abrirArchivo(res.data.url)
+                      descargarArchivo(res.data.urlDescarga)
                     }}
                   >
                     <Download className="h-4 w-4" />

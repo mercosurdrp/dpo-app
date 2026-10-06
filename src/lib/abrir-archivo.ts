@@ -76,6 +76,24 @@ export function abrirArchivo(url: string, nombre?: string): void {
   window.open(url, "_blank", "noopener,noreferrer")
 }
 
+/**
+ * Descarga un archivo (lo guarda en la PC en vez de abrirlo). Usar con la
+ * `urlDescarga` de getDownloadUrl, que ya trae Content-Disposition: attachment.
+ * Se navega con un <a> clickeado en vez de window.open: después de un await,
+ * window.open queda bloqueado por el bloqueador de popups de la mayoría de
+ * los navegadores.
+ */
+export function descargarArchivo(url: string): void {
+  if (typeof document === "undefined" || !url) return
+  const a = document.createElement("a")
+  a.href = url
+  a.target = "_blank"
+  a.rel = "noopener noreferrer"
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
 /** URL del visor web de Microsoft Office para un archivo accesible por URL. */
 export function urlVisorOffice(url: string): string {
   return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`

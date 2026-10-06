@@ -864,10 +864,18 @@ export async function getArchivoById(
   }
 }
 
+/**
+ * Devuelve dos URLs firmadas (10 min) para el mismo archivo:
+ * - `url`: para VER (inline). PDF/imágenes se muestran en el navegador y
+ *   Office se abre en el visor web.
+ * - `urlDescarga`: con `?download=<nombre>`, que hace que Storage responda
+ *   Content-Disposition: attachment → el navegador guarda el archivo con su
+ *   nombre original en vez de abrirlo en una pestaña.
+ */
 export async function getDownloadUrl(args: {
   version_id?: string
   archivo_id?: string
-}): Promise<Result<{ url: string; filename: string }>> {
+}): Promise<Result<{ url: string; urlDescarga: string; filename: string }>> {
   try {
     await requireAuth()
     const supabase = await createClient()
@@ -897,13 +905,25 @@ export async function getDownloadUrl(args: {
       return { error: "version_id o archivo_id requerido" }
     }
 
-    const { data: signed, error: errSign } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(filePath, 60 * 10)
+    const TTL = 60 * 10
+    const [{ data: signed, error: errSign }, { data: signedDl, error: errDl }] =
+      await Promise.all([
+        supabase.storage.from(BUCKET).createSignedUrl(filePath, TTL),
+        supabase.storage
+          .from(BUCKET)
+          .createSignedUrl(filePath, TTL, { download: filename ?? true }),
+      ])
 
     if (errSign || !signed) return { error: errSign?.message || "No se pudo firmar URL" }
+    if (errDl || !signedDl) return { error: errDl?.message || "No se pudo firmar URL" }
 
-    return { data: { url: signed.signedUrl, filename: filename! } }
+    return {
+      data: {
+        url: signed.signedUrl,
+        urlDescarga: signedDl.signedUrl,
+        filename: filename!,
+      },
+    }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

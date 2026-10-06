@@ -1,6 +1,6 @@
 "use client"
 
-import { abrirArchivo } from "@/lib/abrir-archivo"
+import { descargarArchivo } from "@/lib/abrir-archivo"
 import { useMemo, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -191,7 +191,7 @@ export function TimelineClient({ actividad }: Props) {
   const handleDownload = async (archivoId: string) => {
     const res = await getDownloadUrl({ archivo_id: archivoId })
     if ("error" in res) return
-    abrirArchivo(res.data.url)
+    descargarArchivo(res.data.urlDescarga)
   }
 
   return (

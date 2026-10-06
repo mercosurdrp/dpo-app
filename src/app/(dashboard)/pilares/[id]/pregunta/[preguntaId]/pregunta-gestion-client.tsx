@@ -1,6 +1,9 @@
 "use client"
 
-import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
+import {
+  abrirArchivo as abrirArchivoEnVisor,
+  descargarArchivo,
+} from "@/lib/abrir-archivo"
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -26,6 +29,7 @@ import {
   AlertCircle,
   Eye,
   FileDown,
+  Download,
   Loader2,
   Upload,
   X,
@@ -1366,7 +1370,8 @@ export function PreguntaGestionClient({
   const [verificarOpen, setVerificarOpen] = useState(false)
   const [archivoLoadingId, setArchivoLoadingId] = useState<string | null>(null)
 
-  async function abrirArchivo(archivo_id: string) {
+  /** "Ver" abre el archivo en el visor (inline / Office). "Descargar" lo guarda. */
+  async function abrirArchivo(archivo_id: string, modo: "ver" | "descargar" = "ver") {
     setArchivoLoadingId(archivo_id)
     try {
       const result = await getDownloadUrl({ archivo_id })
@@ -1374,7 +1379,8 @@ export function PreguntaGestionClient({
         alert(`Error abriendo archivo: ${result.error}`)
         return
       }
-      abrirArchivoEnVisor(result.data.url)
+      if (modo === "descargar") descargarArchivo(result.data.urlDescarga)
+      else abrirArchivoEnVisor(result.data.url)
     } finally {
       setArchivoLoadingId(null)
     }
@@ -1591,20 +1597,32 @@ export function PreguntaGestionClient({
                       </p>
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => abrirArchivo(a.id)}
-                    disabled={archivoLoadingId === a.id}
-                    title="Ver archivo"
-                  >
-                    {archivoLoadingId === a.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <FileDown className="h-3.5 w-3.5" />
-                    )}
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => abrirArchivo(a.id, "ver")}
+                      disabled={archivoLoadingId === a.id}
+                      title="Ver archivo"
+                    >
+                      {archivoLoadingId === a.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Eye className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => abrirArchivo(a.id, "descargar")}
+                      disabled={archivoLoadingId === a.id}
+                      title="Descargar archivo"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
