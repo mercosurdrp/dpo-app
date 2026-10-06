@@ -106,7 +106,7 @@ export async function armarResumenes(
     const l = [
       `🚨 Rechazos avisados: *${c.total}*`,
       `✅ Evitados (según el vendedor): ${c.evitados}`,
-      `🚚 Re-entregados (confirmado por Foxtrot): ${c.recuperados}${c.bultos ? ` · ${c.bultos} bultos` : ""}`,
+      `🚚 Re-entregados (confirmado por Foxtrot): ${c.recuperados}${c.bultos ? ` · ${c.bultos.toLocaleString("es-AR", { maximumFractionDigits: 1 })} bultos` : ""}`,
       `🔁 Reprogramados: ${c.reprogramados}`,
       `❌ Perdidos: ${c.perdidos}`,
       `🤐 Sin respuesta: ${c.sinRespuesta}`,
@@ -214,7 +214,7 @@ export async function armarResumenes(
         );
         lineas.push(
           c.total
-            ? `• ${nombreLindo(sup.nombre)}: ${plural(c.total, "rechazo")} · ${c.recuperados} re-entregados · ${c.respondidos} respondidos`
+            ? `• ${nombreLindo(sup.nombre)}: ${plural(c.total, "rechazo")} · ${plural(c.recuperados, "re-entregado")} · ${plural(c.respondidos, "respondido")}`
             : `• ${nombreLindo(sup.nombre)}: ${SIN_REGISTRO}`,
         );
       }
