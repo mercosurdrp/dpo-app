@@ -87,15 +87,35 @@ export function SeguimientoFlota({
 
   const flota = useMemo(() => flotaDeRuta(unidades), [unidades])
 
+  /**
+   * Meses que ofrece el filtro: TODOS los del historial, del más viejo con dato
+   * hasta el actual, sin huecos.
+   *
+   * Antes la lista eran los meses que tenían OT o indisponibilidad cargada, y un
+   * mes sin ninguna de las dos quedaba afuera del selector: justamente el mes en
+   * que la flota no paró nunca —el 100 % de disponibilidad— no se podía mirar.
+   */
   const meses = useMemo(() => {
-    const set = new Set<string>()
-    set.add(hoyISO().slice(0, 7))
+    const conDato: string[] = [hoyISO().slice(0, 7)]
     for (const m of mantenimientos) {
-      if (m.fecha) set.add(m.fecha.slice(0, 7))
-      if (m.fuera_servicio_desde) set.add(m.fuera_servicio_desde.slice(0, 7))
+      if (m.fecha) conDato.push(m.fecha.slice(0, 7))
+      if (m.fuera_servicio_desde) conDato.push(m.fuera_servicio_desde.slice(0, 7))
     }
-    for (const i of indisponibilidades) set.add(i.fecha_desde.slice(0, 7))
-    return Array.from(set).sort((a, b) => b.localeCompare(a))
+    for (const i of indisponibilidades) conDato.push(i.fecha_desde.slice(0, 7))
+
+    const desde = conDato.reduce((a, b) => (b < a ? b : a))
+    const hasta = conDato.reduce((a, b) => (b > a ? b : a)) // una OT programada puede caer el mes que viene
+    const out: string[] = []
+    let y = Number(desde.slice(0, 4))
+    let m = Number(desde.slice(5, 7))
+    for (let i = 0; i < 600; i++) {
+      const ym = `${y}-${pad(m)}`
+      out.push(ym)
+      if (ym >= hasta) break
+      m++
+      if (m > 12) { m = 1; y++ }
+    }
+    return out.reverse()
   }, [mantenimientos, indisponibilidades])
 
   const [mesSel, setMesSel] = useState<string>(meses[0] ?? hoyISO().slice(0, 7))

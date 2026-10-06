@@ -47,6 +47,22 @@ function ventanaRuteoDesde() {
   return d.toISOString().slice(0, 10)
 }
 
+/**
+ * Ventana de órdenes de trabajo a traer (~24 meses).
+ *
+ * 🚨 Antes eran las **200 más recientes** (`limit: 200`) y eso rompía el filtro
+ * de mes del seguimiento de flota: el selector se arma con los meses que tienen
+ * OT cargada, así que al 06/10/2026 la lista cortaba en septiembre de 2025 —las
+ * 58 OT anteriores no llegaban— y los meses de la primera mitad de 2025 no se
+ * podían elegir. El que sí se podía elegir (2025-09) mostraba una parada de
+ * menos. Un tope por FILAS no sirve para una pantalla que filtra por FECHA.
+ */
+function ventanaOtDesde() {
+  const d = new Date()
+  d.setMonth(d.getMonth() - 24)
+  return d.toISOString().slice(0, 10)
+}
+
 export default async function MantenimientoPage() {
   // Módulo solo Pampeana (la flota de Misiones se gestiona en Cloudfleet).
   if (IS_MISIONES) redirect("/")
@@ -84,7 +100,7 @@ export default async function MantenimientoPage() {
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
-    getMantenimientos({ limit: 200 }),
+    getMantenimientos({ fechaDesde: ventanaOtDesde() }),
     getCostosMantenimiento(),
     getTableroOperativo(),
     getChecklistsMtto(),
