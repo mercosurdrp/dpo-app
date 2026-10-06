@@ -14,6 +14,8 @@
  *   1) Validar apikey
  *   2) Si event != "messages.upsert" o el msg es propio (fromMe) → ignorar
  *   3) Extraer texto + número del remitente
+ *   3a) Número compartido entre empresas: si el remitente no es del equipo
+ *       de este deploy y hay WA_WEBHOOK_REENVIO_URL, se reenvía ahí
  *   3b) Si tiene una pregunta de seguimiento de rechazo abierta, el mensaje
  *       es la respuesta (lib/foxtrot-alertas/seguimiento.ts) y termina ahí
  *   4) Resolver vendedor por phone_number
@@ -35,6 +37,11 @@ const CHESS_BASE = process.env.CHESS_API_BASE_URL
 const CHESS_USER = process.env.CHESS_API_USER
 const CHESS_PASS = process.env.CHESS_API_PASS
 const EVO_API_KEY = process.env.EVOLUTION_API_KEY
+// Pampeana y Misiones comparten el número del bot (6/10/2026) y Evolution
+// tiene un solo webhook por instancia, que apunta a Pampeana. Lo que no es de
+// su equipo se reenvía al webhook de Misiones. Solo se setea en Pampeana: si
+// estuviera en los dos, un número desconocido rebotaría entre ambos.
+const REENVIO_URL = process.env.WA_WEBHOOK_REENVIO_URL?.trim() || null
 
 // Comandos que disparan el top
 const TRIGGER_REGEX = /\b(pedidos|pedido|top|mañana|manana)\b/i
@@ -95,6 +102,33 @@ export async function POST(request: NextRequest) {
     phone_number: phone,
     mensaje_in: text || null,
     source: "webhook" as const,
+  }
+
+  // 3a) ¿Es de la otra empresa? Se busca sin filtrar por activo: un vendedor
+  // dado de baja acá sigue siendo de acá.
+  if (REENVIO_URL) {
+    const { data: propio } = await admin
+      .from("bot_vendedores_wa")
+      .select("id_promotor")
+      .eq("phone_number", phone)
+      .limit(1)
+      .maybeSingle()
+    if (!propio) {
+      try {
+        const r = await fetch(REENVIO_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: apikeyHeader },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(50_000),
+        })
+        return NextResponse.json({ ok: r.ok, action: "reenviado", status: r.status })
+      } catch (err) {
+        console.error(
+          `[wa-bot:webhook] reenvío phone=${phone}: ${err instanceof Error ? err.message : err}`,
+        )
+        return NextResponse.json({ ok: false, action: "reenvio_fallido" })
+      }
+    }
   }
 
   // 3b) Respuesta al seguimiento de un rechazo: tiene prioridad sobre el bot
