@@ -1,7 +1,7 @@
 /**
  * Resumen diario por WhatsApp: a cada supervisor el de su equipo y a los
  * destinatarios de `resumen_general_destinatarios` (gerencia) el general de
- * Pampeana (lib/foxtrot-alertas/resumen.ts).
+ * la empresa (lib/foxtrot-alertas/resumen.ts).
  *
  * Corre 18:45 ART de lunes a sábado (vercel.json). Una vez por día:
  * `foxtrot_alertas_config.resumen_ultima_fecha` evita duplicados si el cron
@@ -10,10 +10,9 @@
  * Auth: Bearer CRON_SECRET (Vercel cron) o header x-api-key=CRON_SECRET.
  * Query: ?preview=1 devuelve los textos sin mandar ni marcar nada;
  * ?fecha=YYYY-MM-DD arma el de otro día (solo con preview).
- * Solo Pampeana.
+ * Corre en Pampeana y en Misiones.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { IS_MISIONES } from "@/lib/empresa";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendText } from "@/lib/wa-bot/evolution";
 import {
@@ -48,9 +47,6 @@ async function handle(request: NextRequest) {
       { status: 401 },
     );
   }
-  if (IS_MISIONES)
-    return NextResponse.json({ success: true, skipped: "solo Pampeana" });
-
   const url = new URL(request.url);
   const preview = url.searchParams.get("preview") === "1";
   const hoy = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);

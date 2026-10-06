@@ -13,6 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { chessLogin } from "@/lib/wa-bot/chess"
 import { syncClientesCache } from "@/lib/wa-bot/sync-clientes"
+import { IS_MISIONES } from "@/lib/empresa"
 
 export const maxDuration = 300
 
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = (await request.json().catch(() => ({}))) as { empresa?: "pampeana" | "misiones" }
-    const empresa = body.empresa ?? "pampeana"
+    const empresa = body.empresa ?? (IS_MISIONES ? "misiones" : "pampeana")
 
     const sessionId = await chessLogin({
       baseUrl: CHESS_BASE, user: CHESS_USER, pass: CHESS_PASS,

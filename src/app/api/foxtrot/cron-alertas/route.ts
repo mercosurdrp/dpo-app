@@ -20,10 +20,10 @@
  * Auth: Bearer CRON_SECRET (Vercel cron) o header x-api-key=CRON_SECRET
  * (disparo externo, ej. n8n). Query: ?dry_run=1 fuerza simulación,
  * ?fecha=YYYY-MM-DD reprocesa un día puntual.
- * Solo Pampeana (no-op en Misiones).
+ * Corre en los dos tenants: cada deploy mira sus centros de Foxtrot y su
+ * propia base (Pampeana desde 5/10/2026, Misiones desde 6/10/2026).
  */
 import { NextRequest, NextResponse } from "next/server"
-import { IS_MISIONES } from "@/lib/empresa"
 import { foxtrotDcIds } from "@/lib/foxtrot"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { sendText } from "@/lib/wa-bot/evolution"
@@ -90,10 +90,6 @@ async function handle(request: NextRequest) {
     !!CRON_SECRET && (authHeader === `Bearer ${CRON_SECRET}` || apiKey === CRON_SECRET)
   if (!isAuthorized) {
     return NextResponse.json({ error: "CRON_SECRET inválido o faltante" }, { status: 401 })
-  }
-
-  if (IS_MISIONES) {
-    return NextResponse.json({ success: true, skipped: "solo Pampeana" })
   }
 
   const url = new URL(request.url)

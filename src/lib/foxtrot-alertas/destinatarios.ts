@@ -9,10 +9,16 @@
 
 import { unstable_cache } from "next/cache";
 import { chessLogin } from "@/lib/wa-bot/chess";
+import { IS_MISIONES } from "@/lib/empresa";
 
-// Personal de Chess que no es una persona: no recibe alertas.
-//   50 = "VTA. MOSTRADOR" (temporada, 26 centro, 31 periferia, sin ruta).
-const PERSONAL_EXCLUIDO = new Set(["50"]);
+// Personal de Chess que no es una persona: no recibe alertas. Cada empresa
+// tiene su propio Chess y los ids se pisan (en Misiones el 50 es un vendedor).
+//   Pampeana: 50 = "VTA. MOSTRADOR" (temporada, 26 centro, 31 periferia, sin ruta).
+//   Misiones: 104 = "VI ELDO", 105 = "MOSTRADOR IGUAZU", 511 = "VI MD",
+//             9999 = "VI PEOPLE" (Fausto 6/10/2026: esos rechazos no se avisan).
+const PERSONAL_EXCLUIDO = new Set(
+  IS_MISIONES ? ["104", "105", "511", "9999"] : ["50"],
+);
 
 interface RutaVentaConClientes {
   idPersonal: number;

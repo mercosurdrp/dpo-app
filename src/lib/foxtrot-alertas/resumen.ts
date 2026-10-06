@@ -1,9 +1,10 @@
 // Resumen diario por WhatsApp (lo lanza /api/foxtrot/cron-resumen):
 //   - a cada supervisor, cómo terminaron los rechazos de SU equipo;
 //   - a los destinatarios de `foxtrot_alertas_config.resumen_general_destinatarios`
-//     (gerencia), el general de Pampeana con el detalle por supervisor y vendedor.
+//     (gerencia), el general de la empresa con el detalle por supervisor y vendedor.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { IS_MISIONES } from "@/lib/empresa";
 import type { AlertaRechazo, EnvioDetalle, VendedorWa } from "./types";
 
 const DIAS = [
@@ -202,7 +203,7 @@ export async function armarResumenes(
   });
 
   if (generales.length) {
-    const lineas = encabezado("General Pampeana");
+    const lineas = encabezado(IS_MISIONES ? "General Misiones" : "General Pampeana");
     if (!alertas.length) {
       lineas.push("Hoy no hubo rechazos registrados en Foxtrot.");
     } else {
