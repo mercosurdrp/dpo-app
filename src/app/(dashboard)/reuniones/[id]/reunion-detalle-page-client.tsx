@@ -92,6 +92,8 @@ import {
 import { SeccionDesviosPresupuesto } from "@/components/reuniones/seccion-desvios-presupuesto"
 import { SeccionIniciativasAhorro } from "@/components/reuniones/seccion-iniciativas-ahorro"
 import { SeccionCostoLogistico } from "@/components/reuniones/seccion-costo-logistico"
+import { SeccionInversionesCapex } from "@/components/reuniones/seccion-inversiones-capex"
+import type { InversionesCapexReunionData } from "@/lib/reuniones-inversiones-capex"
 import type { CostoLogisticoReunionData } from "@/actions/reuniones-costo-logistico"
 import type { IniciativasAhorroReunionData } from "@/lib/reuniones-iniciativas-ahorro"
 import { SeccionInspeccionEdilicia } from "@/components/reuniones/seccion-inspeccion-edilicia"
@@ -201,6 +203,8 @@ interface Props {
   iniciativasAhorro?: IniciativasAhorroReunionData | null
   /** Sólo en la 1ª Reunión de Presupuesto del mes; null en el resto. */
   costoLogistico?: CostoLogisticoReunionData | null
+  /** Reunión de Presupuesto (ambas del mes): Inversiones / CAPEX del año del cierre. */
+  inversionesCapex?: InversionesCapexReunionData | null
   puedeEditar: boolean
   currentProfileId: string | null
   currentRole: UserRole
@@ -888,6 +892,7 @@ export function ReunionDetallePageClient({
   rubrosMantenimiento,
   iniciativasAhorro = null,
   costoLogistico = null,
+  inversionesCapex = null,
   puedeEditar,
   currentProfileId,
   currentRole,
@@ -1432,6 +1437,14 @@ export function ReunionDetallePageClient({
           Almacén. La página no lo carga en la reunión de seguimiento. */}
       {detalle.tipo === "presupuesto" && costoLogistico && (
         <SeccionCostoLogistico data={costoLogistico} />
+      )}
+
+      {/* Reunión de Presupuesto (las dos del mes): seguimiento mensual de
+          Inversiones / CAPEX. Es la rutina del DPO 5.3: qué estaba programado
+          para el mes cerrado, qué se hizo y con qué desvío, qué venció y qué
+          viene. Los compromisos salen al Action Log. */}
+      {detalle.tipo === "presupuesto" && inversionesCapex && (
+        <SeccionInversionesCapex data={inversionesCapex} />
       )}
 
       {/* Reunión de Iniciativas de Ahorro: las iniciativas del año con su

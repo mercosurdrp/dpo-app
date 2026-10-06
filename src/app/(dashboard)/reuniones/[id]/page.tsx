@@ -8,6 +8,11 @@ import {
 import { getSectoresAlmacen, getVehiculosActivos } from "@/actions/s5"
 import { listarRubrosMantenimiento } from "@/actions/mantenimiento-edilicio"
 import { listIniciativas } from "@/actions/presupuesto-iniciativas"
+import {
+  getPresupuestoCapex,
+  listInversiones,
+} from "@/actions/presupuesto-inversiones"
+import type { InversionesCapexReunionData } from "@/lib/reuniones-inversiones-capex"
 import { listResponsablesPosibles as listResponsablesPresupuesto } from "@/actions/presupuesto"
 import { getEjecucionPorRubro } from "@/actions/presupuesto-generador"
 import { getKpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
@@ -101,6 +106,24 @@ export default async function ReunionDetallePage({
     if ("data" in res) costoLogistico = res.data
   }
 
+  // Reunión de Presupuesto (las dos del mes): seguimiento mensual de
+  // Inversiones / CAPEX sobre el año del mes cerrado (DPO 5.3). Mismo registro
+  // y mismo criterio de desvíos que la solapa Inversiones de /presupuesto.
+  let inversionesCapex: InversionesCapexReunionData | null = null
+  if ("data" in detalleRes && detalleRes.data.tipo === "presupuesto") {
+    const { anio, mes } = mesCierreDe(detalleRes.data.fecha)
+    const [invRes, capexRes] = await Promise.all([
+      listInversiones(anio),
+      getPresupuestoCapex(anio),
+    ])
+    inversionesCapex = {
+      anio,
+      mesCierre: mes,
+      inversiones: "data" in invRes ? invRes.data : [],
+      capex: "data" in capexRes ? capexRes.data : null,
+    }
+  }
+
   if ("error" in detalleRes) {
     return (
       <div>
@@ -122,6 +145,7 @@ export default async function ReunionDetallePage({
       rubrosMantenimiento={rubrosRes.data ?? []}
       iniciativasAhorro={iniciativasAhorro}
       costoLogistico={costoLogistico}
+      inversionesCapex={inversionesCapex}
       puedeEditar={puedeEditar}
       currentProfileId={profile.id}
       currentRole={profile.role}
