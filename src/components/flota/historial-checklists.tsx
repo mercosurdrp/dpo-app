@@ -148,6 +148,7 @@ export function HistorialChecklists({
       (resultado === "todos" || c.resultado === resultado),
   )
   const verDocumentacion = resultado === "rechazado"
+  const desaprobados = checklists.filter((c) => c.resultado === "rechazado").length
   const dominios = Array.from(new Set(checklists.map((c) => c.dominio))).sort()
 
   return (
@@ -177,10 +178,15 @@ export function HistorialChecklists({
               <SelectTrigger className="h-8 w-44">
                 <SelectValue />
               </SelectTrigger>
+              {/* La cuenta va en la opción: un "no hay filas" después de
+                  filtrar no distingue "no hay ninguno" de "no entró en la
+                  ventana que se trajo". */}
               <SelectContent alignItemWithTrigger={false}>
                 <SelectItem value="todos">Aprobados y desaprobados</SelectItem>
                 <SelectItem value="aprobado">Sólo aprobados</SelectItem>
-                <SelectItem value="rechazado">Sólo desaprobados</SelectItem>
+                <SelectItem value="rechazado">
+                  Sólo desaprobados{desaprobados > 0 ? ` (${desaprobados})` : ""}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>

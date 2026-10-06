@@ -275,7 +275,12 @@ function agruparArrastre(items: ChecklistItemNoOk[]): GrupoArrastre[] {
 function duracionesPorFoco(items: ChecklistItemNoOk[]): number[] {
   const focos = new Map<string, { desdeMs: number; hastaMs: number }>()
   for (const i of items) {
-    const cierre = i.plan?.estado === "resuelto" ? i.plan.resueltoAt : null
+    // El cierre es el plan si se cerró y, si no, la vuelta a OK del ítem: un
+    // foco que nadie cerró en la app pero que el chofer ya reportó bien también
+    // tuvo un tiempo de respuesta, y dejarlo afuera sesgaba el promedio hacia
+    // los focos que alguien se acordó de cerrar.
+    const cierre =
+      i.plan?.estado === "resuelto" ? i.plan.resueltoAt : (i.volvioOkAt ?? null)
     if (!cierre || !i.hora) continue
     const desdeMs = new Date(i.hora).getTime()
     const hastaMs = new Date(cierre).getTime()
@@ -1167,9 +1172,15 @@ export function ChecklistsMtto({
 }
 
 /**
- * Tiempo de respuesta del foco: desde que el chofer cargó el checklist hasta
- * que se cerró el plan de acción. Mientras el plan sigue abierto muestra cuánto
- * lleva esperando, para que se vea qué está corriendo.
+ * Tiempo de respuesta del foco, en orden de qué prueba hay de que se resolvió:
+ *
+ *  1. **Plan cerrado** → de la carga del checklist al cierre del plan.
+ *  2. **Sin plan cerrado pero el ítem volvió a dar OK** → hasta esa vuelta a OK.
+ *     Es la prueba que carga el chofer. Sin esto, un foco que nadie cerró en la
+ *     app figuraba "abierto hace 64 días" aunque el checklist del día siguiente
+ *     ya lo mostrara en OK: el número no medía el defecto, medía el olvido de
+ *     cargar el plan. Se marca "sin plan cargado" porque eso sigue faltando.
+ *  3. **Nunca volvió a OK** → cuánto lleva abierto, que es lo que corre.
  */
 function TiempoRespuestaCell({
   item,
@@ -1178,6 +1189,37 @@ function TiempoRespuestaCell({
   item: ChecklistItemNoOk
   ahoraMs: number | null
 }) {
+  // 0. Repetición del mismo foco mientras seguía abierto: el tiempo es el del
+  //    primer reporte y ya está contado ahí. Mostrarlo de nuevo en cada fila
+  //    pintaba catorce focos rojos de días cada uno donde hubo uno solo.
+  if (item.repeticionDe) {
+    return (
+      <span className="flex flex-col">
+        <span className="text-sm text-muted-foreground">repetición</span>
+        <span className="text-[11px] text-muted-foreground">
+          mismo foco del {fmtFecha(item.repeticionDe)} · ya contado ahí
+        </span>
+      </span>
+    )
+  }
+  // 2. Sin plan cerrado, pero el chofer ya reportó el ítem en OK.
+  if (
+    item.plan?.estado !== "resuelto" &&
+    item.horasHastaOk != null &&
+    item.volvioOkAt != null
+  ) {
+    const color = colorTiempoRespuesta(item.horasHastaOk, item.critico)
+    return (
+      <span className="flex flex-col" title={textoMetaRespuesta(item.critico)}>
+        <span className={cn("text-sm font-semibold", CLASE_TIEMPO[color])}>
+          {formatDuracion(item.horasHastaOk)}
+        </span>
+        <span className="text-[11px] text-amber-600 dark:text-amber-400">
+          volvió a OK {fmtFechaHora(item.volvioOkAt)} · sin plan cargado
+        </span>
+      </span>
+    )
+  }
   if (item.plan?.estado === "resuelto" && item.horasResolucion != null) {
     const color = colorTiempoRespuesta(item.horasResolucion, item.critico)
     return (

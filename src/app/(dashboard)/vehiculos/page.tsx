@@ -31,7 +31,7 @@ export default async function VehiculosPage() {
     indispRes,
   ] = await Promise.all([
     getEstadoVehiculosHoy(),
-    getChecklists({ limit: 50 }),
+    getChecklists({ limit: 50, conRechazados: true }),
     getRegistrosCombustible({ limit: 50 }),
     getVehiculos(),
     getChoferes(),

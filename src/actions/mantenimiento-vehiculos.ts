@@ -1569,12 +1569,36 @@ export interface ChecklistItemNoOk {
   tipo: string // liberacion | retorno
   categoria: string
   item: string
+  /** Id del ítem del checklist: identifica el foco a lo largo del tiempo. */
+  itemId: string
   valor: string // nook | regular | malo
   critico: boolean
   comentario: string | null
   plan: ChecklistPlanAccion | null
   /** Horas entre la carga del checklist y el cierre del plan; null si sigue abierto. */
   horasResolucion: number | null
+  /**
+   * Cuándo ese mismo ítem volvió a dar OK en la unidad.
+   *
+   * Es la prueba de que el defecto se fue, y la carga el chofer. Se usa para los
+   * focos SIN plan cerrado: sin esto, un ítem que nadie cerró en la app figuraba
+   * "abierto hace 64 días" aunque el checklist del día siguiente ya lo mostrara
+   * en OK. null = nunca volvió a darse OK (sigue abierto de verdad).
+   */
+  volvioOkAt: string | null
+  /** Horas desde la carga hasta esa vuelta a OK. */
+  horasHastaOk: number | null
+  /**
+   * Fecha del PRIMER reporte del mismo foco, si esta fila es una repetición.
+   *
+   * Un defecto que el chofer reporta todos los días hasta que se arregla es UN
+   * foco con UN tiempo de respuesta, no catorce. La pérdida de fluidos del HELI1
+   * se reportó 14 días seguidos en julio: contada fila por fila pinta 14 focos
+   * rojos de días cada uno, cuando fue una sola parada mal atendida. Las
+   * repeticiones se marcan y no vuelven a mostrar el número.
+   * null = esta fila es el primer reporte del foco.
+   */
+  repeticionDe: string | null
 }
 
 /**
@@ -1623,7 +1647,7 @@ export async function getChecklistsMtto(): Promise<
       supabase
         .from("checklist_respuestas")
         .select(
-          "id, checklist_id, valor, comentario, item:checklist_items(nombre, categoria, critico), cv:checklist_vehiculos(fecha, hora, dominio, chofer, tipo)"
+          "id, checklist_id, item_id, valor, comentario, item:checklist_items(nombre, categoria, critico), cv:checklist_vehiculos(fecha, hora, dominio, chofer, tipo)"
         )
         .not("valor", "in", '("ok","bueno")'),
       supabase
@@ -1639,6 +1663,7 @@ export async function getChecklistsMtto(): Promise<
     type RespRow = {
       id: string
       checklist_id: string
+      item_id: string
       valor: string
       comentario: string | null
       item: { nombre: string; categoria: string; critico: boolean } | null
@@ -1662,6 +1687,7 @@ export async function getChecklistsMtto(): Promise<
         tipo: r.cv!.tipo,
         categoria: r.item!.categoria,
         item: r.item!.nombre,
+        itemId: r.item_id,
         valor: r.valor,
         critico: r.item!.critico,
         comentario: r.comentario?.trim() || null,
@@ -1733,13 +1759,80 @@ export async function getChecklistsMtto(): Promise<
       }
     }
 
-    const itemsNoOk: ChecklistItemNoOk[] = itemsBase
+    const conPlan = itemsBase.map((i) => ({
+      ...i,
+      plan: planesById.get(i.id) ?? null,
+    }))
+
+    /**
+     * Para los focos SIN plan cerrado, cuándo ese ítem volvió a dar OK en la
+     * unidad: la única prueba de que el defecto se fue cuando nadie cerró el
+     * plan en la app. Se consulta sólo para esos ítems —son un puñado— en vez
+     * de traerse las ~50.000 respuestas OK de toda la historia.
+     */
+    const vueltaOk = new Map<string, string>() // respuesta_id → hora del OK
+    const sinCierre = conPlan.filter((i) => i.plan?.estado !== "resuelto" && i.hora)
+    if (sinCierre.length > 0) {
+      const itemIds = [...new Set(sinCierre.map((i) => i.itemId))]
+      const dominios = [...new Set(sinCierre.map((i) => i.dominio))]
+      const { data: oks } = await supabase
+        .from("checklist_respuestas")
+        .select("item_id, valor, cv:checklist_vehiculos!inner(dominio, hora)")
+        .in("item_id", itemIds)
+        .in("valor", ["ok", "bueno"])
+        .in("cv.dominio", dominios)
+      type OkRow = { item_id: string; cv: { dominio: string; hora: string | null } | null }
+      const porClave = new Map<string, string[]>()
+      for (const o of ((oks || []) as unknown as OkRow[])) {
+        if (!o.cv?.hora) continue
+        const k = `${o.cv.dominio}|${o.item_id}`
+        const arr = porClave.get(k) ?? []
+        arr.push(o.cv.hora)
+        porClave.set(k, arr)
+      }
+      for (const arr of porClave.values()) arr.sort()
+      for (const i of sinCierre) {
+        const arr = porClave.get(`${i.dominio}|${i.itemId}`) ?? []
+        const ok = arr.find((h) => h > i.hora!)
+        if (ok) vueltaOk.set(i.id, ok)
+      }
+    }
+
+    const conTiempos = conPlan.map((i) => {
+      const volvioOkAt = vueltaOk.get(i.id) ?? null
+      return {
+        ...i,
+        horasResolucion: horasEntre(i.hora, i.plan?.resueltoAt ?? null),
+        volvioOkAt,
+        horasHastaOk: horasEntre(i.hora, volvioOkAt),
+      }
+    })
+
+    /**
+     * Episodios: reportes del mismo ítem en la misma unidad que terminaron en el
+     * MISMO momento son el mismo foco reportado varias veces mientras seguía
+     * abierto (el cierre es la prueba —plan cerrado o vuelta a OK—, y es común a
+     * todos los reportes de la racha). Se marca como repetición todo lo que no
+     * sea el primer reporte.
+     */
+    const primeroDelFoco = new Map<string, { id: string; fecha: string; hora: string }>()
+    const claveFoco = (i: (typeof conTiempos)[number]) =>
+      `${i.dominio}|${i.itemId}|${i.plan?.resueltoAt ?? i.volvioOkAt ?? "abierto"}`
+    for (const i of conTiempos) {
+      if (!i.hora) continue
+      const k = claveFoco(i)
+      const previo = primeroDelFoco.get(k)
+      if (!previo || i.hora < previo.hora) {
+        primeroDelFoco.set(k, { id: i.id, fecha: i.fecha, hora: i.hora })
+      }
+    }
+
+    const itemsNoOk: ChecklistItemNoOk[] = conTiempos
       .map((i) => {
-        const plan = planesById.get(i.id) ?? null
+        const primero = i.hora ? primeroDelFoco.get(claveFoco(i)) : undefined
         return {
           ...i,
-          plan,
-          horasResolucion: horasEntre(i.hora, plan?.resueltoAt ?? null),
+          repeticionDe: primero && primero.id !== i.id ? primero.fecha : null,
         }
       })
       .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0))

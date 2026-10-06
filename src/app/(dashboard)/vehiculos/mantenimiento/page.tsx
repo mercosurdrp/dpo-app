@@ -109,7 +109,7 @@ export default async function MantenimientoPage() {
     getAnalisisChecklist(),
     getHerramientas(),
     getTareasReprogramadas(),
-    getChecklists({ limit: 50 }),
+    getChecklists({ limit: 50, conRechazados: true }),
     getProfile(),
   ])
 

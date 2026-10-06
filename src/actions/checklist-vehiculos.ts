@@ -440,6 +440,17 @@ interface ChecklistFilter {
   chofer?: string
   resultado?: ResultadoChecklist
   limit?: number
+  /**
+   * Suma TODOS los checklists desaprobados, aunque queden fuera del `limit`.
+   *
+   * 🚨 Sin esto el filtro "Sólo desaprobados" de la lista mostraba cero filas:
+   * la pantalla pide las 50 más recientes y se cargan ~400 checklists por mes,
+   * así que esas 50 son los últimos tres días. Los 11 desaprobados de Pampeana
+   * son de abril a agosto de 2026 y no entraban nunca. Un filtro de la pantalla
+   * no puede depender de que el dato haya caído dentro de la ventana que se
+   * trajo para otra cosa.
+   */
+  conRechazados?: boolean
 }
 
 export async function getChecklists(
@@ -466,7 +477,33 @@ export async function getChecklists(
     const { data, error } = await query
     if (error) return { error: error.message }
 
-    const filas = (data || []) as ChecklistVehiculo[]
+    let filas = (data || []) as ChecklistVehiculo[]
+
+    // Los desaprobados son pocos (11 sobre 2.479) y son los únicos que exigen
+    // una acción: entran siempre, y después la lista se reordena por fecha.
+    if (filters?.conRechazados && filters?.resultado == null) {
+      let qRech = supabase
+        .from("checklist_vehiculos")
+        .select("*")
+        .eq("resultado", "rechazado")
+        .order("fecha", { ascending: false })
+        .order("hora", { ascending: false })
+      if (filters?.tipo) qRech = qRech.eq("tipo", filters.tipo)
+      if (filters?.fechaDesde) qRech = qRech.gte("fecha", filters.fechaDesde)
+      if (filters?.fechaHasta) qRech = qRech.lte("fecha", filters.fechaHasta)
+      if (filters?.dominio) qRech = qRech.eq("dominio", filters.dominio)
+      if (filters?.chofer) qRech = qRech.eq("chofer", filters.chofer)
+
+      const { data: rech } = await qRech
+      const vistos = new Set(filas.map((c) => c.id))
+      for (const c of (rech || []) as ChecklistVehiculo[]) {
+        if (!vistos.has(c.id)) filas.push(c)
+      }
+      filas = filas.sort(
+        (a, b) => b.fecha.localeCompare(a.fecha) || b.hora.localeCompare(a.hora)
+      )
+    }
+
     return { data: await conDocumentacion(supabase, filas) }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
