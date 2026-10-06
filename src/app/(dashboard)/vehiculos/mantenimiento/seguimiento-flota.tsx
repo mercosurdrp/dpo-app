@@ -83,7 +83,14 @@ export function SeguimientoFlota({
   const router = useRouter()
   const [, startTransition] = useTransition()
   const refresh = () => startTransition(() => router.refresh())
-  const [vista, setVista] = useState<"mes" | "dia">("mes")
+  /**
+   * Abre en "Por día": el calendario pinta cada día de cada unidad con su color
+   * (ruteó, correctivo, preventivo, indisponible) y se lee de un vistazo —qué
+   * día paró cada camión—, mientras que "Por mes" son totales que hay que
+   * interpretar. Los cuatro KPI están arriba de las dos vistas, así que el
+   * porcentaje del mes se sigue viendo igual.
+   */
+  const [vista, setVista] = useState<"mes" | "dia">("dia")
 
   const flota = useMemo(() => flotaDeRuta(unidades), [unidades])
 
@@ -282,11 +289,11 @@ export function SeguimientoFlota({
           </div>
         </div>
         <TabsList>
-          <TabsTrigger value="mes">
-            <Gauge aria-hidden /> Por mes
-          </TabsTrigger>
           <TabsTrigger value="dia">
             <CalendarDays aria-hidden /> Por día
+          </TabsTrigger>
+          <TabsTrigger value="mes">
+            <Gauge aria-hidden /> Por mes
           </TabsTrigger>
         </TabsList>
       </div>
