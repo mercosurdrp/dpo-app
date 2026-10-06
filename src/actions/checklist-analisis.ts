@@ -26,6 +26,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import { UMBRAL_CRONICO } from "@/lib/flota/checklist-cronicos"
+import { esFocoDeMantenimiento } from "@/lib/vehiculos/focos-checklist"
 
 // El checklist tiene TRES niveles, no dos: además de OK y NO OK existe REGULAR
 // ("leve presencia de fluidos", en el criterio del propio ítem). Aplanarlos a
@@ -272,7 +273,12 @@ export async function getAnalisisChecklist(periodo?: {
 
     // Los defectos son pocos (decenas): se agregan en memoria sin problema.
     const noOk = ((noOkRes.data || []) as unknown as RespuestaNoOk[]).filter(
-      (r) => r.item != null && r.cv != null
+      (r) =>
+        r.item != null &&
+        r.cv != null &&
+        // El tanque en reserva no es un defecto: se carga combustible y listo.
+        // Mismo criterio que el módulo de focos (`lib/vehiculos/focos-checklist`).
+        esFocoDeMantenimiento(r.item.nombre)
     )
 
     const porItem = new Map<string, RespuestaNoOk[]>()

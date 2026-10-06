@@ -15,6 +15,7 @@ import type {
   ChecklistItem,
   ChecklistVehiculo,
   ChecklistVehiculoConRespuestas,
+  MotivoRechazo,
   TipoChecklist,
   ResultadoChecklist,
   TiempoRutaSemanal,
@@ -511,8 +512,7 @@ export async function getChecklists(
 }
 
 /**
- * Completa `documentacion` en cada checklist: cómo contestó el chofer el ítem
- * de documentación de la unidad.
+ * Completa `documentacion` y, en los desaprobados, `motivos`.
  *
  * Es el único ítem que se mira aparte en la lista, porque un rechazo por
  * papeles no se arregla en el taller —va a /requisitos-legales— y mezclado con
@@ -548,11 +548,45 @@ async function conDocumentacion(
       else if (!porChecklist.has(r.checklist_id)) porChecklist.set(r.checklist_id, r.valor)
     }
 
+    // Por qué se desaprobó cada uno: los ítems en NO OK con el comentario del
+    // chofer. Sólo para los desaprobados —son pocos— porque es lo único que
+    // obliga a hacer algo, y abrirlos de a uno para enterarse no es manera.
+    const rechazados = filas.filter((c) => c.resultado === "rechazado")
+    const motivosPorChecklist = new Map<string, MotivoRechazo[]>()
+    if (rechazados.length > 0) {
+      const { data: malas } = await supabase
+        .from("checklist_respuestas")
+        .select("checklist_id, valor, comentario, item:checklist_items(nombre, categoria, critico)")
+        .in("checklist_id", rechazados.map((c) => c.id))
+        .not("valor", "in", '("ok","bueno")')
+      type MalaRow = {
+        checklist_id: string
+        comentario: string | null
+        item: { nombre: string; categoria: string; critico: boolean } | null
+      }
+      for (const m of ((malas || []) as unknown as MalaRow[])) {
+        if (!m.item) continue
+        const arr = motivosPorChecklist.get(m.checklist_id) ?? []
+        arr.push({
+          item: m.item.nombre,
+          categoria: m.item.categoria,
+          critico: m.item.critico,
+          comentario: m.comentario?.trim() || null,
+        })
+        motivosPorChecklist.set(m.checklist_id, arr)
+      }
+      // Los críticos primero: es lo que define si la unidad podía salir.
+      for (const arr of motivosPorChecklist.values()) {
+        arr.sort((a, b) => Number(b.critico) - Number(a.critico) || a.item.localeCompare(b.item))
+      }
+    }
+
     return filas.map((c) => {
       const v = porChecklist.get(c.id)
       return {
         ...c,
         documentacion: v == null ? null : v === "ok" || v === "bueno" ? "aprobada" : "desaprobada",
+        motivos: c.resultado === "rechazado" ? (motivosPorChecklist.get(c.id) ?? []) : null,
       }
     })
   } catch {

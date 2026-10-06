@@ -926,6 +926,15 @@ export interface VehiculoDocumento {
  */
 export type DocumentacionChecklist = "aprobada" | "desaprobada"
 
+/** Un ítem que el chofer contestó mal: es el motivo por el que el checklist se desaprobó. */
+export interface MotivoRechazo {
+  item: string
+  categoria: string
+  critico: boolean
+  /** Lo que escribió el chofer en ese ítem ("Tengo quemada una de freno lado derecho"). */
+  comentario: string | null
+}
+
 export interface ChecklistVehiculo {
   id: string
   tipo: TipoChecklist
@@ -936,6 +945,12 @@ export interface ChecklistVehiculo {
   resultado: ResultadoChecklist
   /** Derivado (no es columna): lo completa `getChecklists`. */
   documentacion?: DocumentacionChecklist | null
+  /**
+   * Por qué se desaprobó: los ítems que dieron NO OK, con el comentario del
+   * chofer. Derivado, y sólo para los desaprobados. Array vacío = se desaprobó
+   * sin ningún ítem en NO OK (pasa: hay 3 así en Pampeana).
+   */
+  motivos?: MotivoRechazo[] | null
   observaciones: string | null
   tiempo_ruta_minutos: number | null
   odometro: number | null

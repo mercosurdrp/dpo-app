@@ -107,6 +107,44 @@ export function DocumentacionBadge({
   )
 }
 
+/**
+ * Por qué se desaprobó: los ítems en NO OK con lo que escribió el chofer.
+ *
+ * Sin esto había que entrar con el ojito a cada checklist para enterarse de si
+ * fue una luz, el matafuegos o los papeles. Si no hay ningún ítem en NO OK se
+ * dice: un desaprobado sin ítem malo es un dato raro que hay que mirar, no un
+ * hueco que convenga dejar en blanco.
+ */
+function MotivoRechazoCell({ checklist }: { checklist: ChecklistVehiculo }) {
+  const motivos = checklist.motivos ?? []
+  if (motivos.length === 0) {
+    const obs = checklist.observaciones?.trim()
+    return (
+      <span className="flex flex-col gap-0.5">
+        <span className="text-xs text-amber-600 dark:text-amber-400">
+          sin ítem en NO OK
+        </span>
+        {obs && <span className="text-xs text-muted-foreground">{obs}</span>}
+      </span>
+    )
+  }
+  return (
+    <span className="flex flex-col gap-0.5">
+      {motivos.map((m, idx) => (
+        <span key={`${m.item}-${idx}`} className="text-xs">
+          <span className={m.critico ? "font-semibold text-red-700 dark:text-red-400" : ""}>
+            {m.item}
+            {m.critico ? " (crítico)" : ""}
+          </span>
+          {m.comentario && (
+            <span className="text-muted-foreground"> — “{m.comentario}”</span>
+          )}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 interface Props {
   checklists: ChecklistVehiculo[]
   /** Tipo de cada unidad: en autoelevadores el valor cargado es horómetro (hs). */
@@ -234,6 +272,7 @@ export function HistorialChecklists({
                   <TableHead className="text-right">Odóm./Horóm.</TableHead>
                   <TableHead>Resultado</TableHead>
                   {verDocumentacion && <TableHead>Documentación</TableHead>}
+                  {verDocumentacion && <TableHead>Por qué se desaprobó</TableHead>}
                   <TableHead className="text-right">T. Ruta</TableHead>
                   <TableHead className="text-right">Duración</TableHead>
                   {acciones && <TableHead className="w-28 text-right">Acciones</TableHead>}
@@ -278,6 +317,11 @@ export function HistorialChecklists({
                     {verDocumentacion && (
                       <TableCell>
                         <DocumentacionBadge estado={c.documentacion} />
+                      </TableCell>
+                    )}
+                    {verDocumentacion && (
+                      <TableCell className="max-w-80">
+                        <MotivoRechazoCell checklist={c} />
                       </TableCell>
                     )}
                     <TableCell className="text-right">

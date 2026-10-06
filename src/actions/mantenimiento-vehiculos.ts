@@ -19,6 +19,7 @@ import {
 } from "@/lib/vehiculos/lecturas"
 import { validarLectura } from "@/lib/vehiculos/validar-lectura"
 import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
+import { esFocoDeMantenimiento } from "@/lib/vehiculos/focos-checklist"
 import { TAREAS_CIL } from "@/lib/flota/cil-tareas"
 import type {
   CostosMantenimiento,
@@ -1677,6 +1678,9 @@ export async function getChecklistsMtto(): Promise<
     }
     const itemsBase = ((respRes.data || []) as unknown as RespRow[])
       .filter((r) => r.cv && r.item)
+      // El tanque en reserva no es un foco de mantenimiento: ver
+      // `lib/vehiculos/focos-checklist`.
+      .filter((r) => esFocoDeMantenimiento(r.item!.nombre))
       .map((r) => ({
         id: r.id,
         checklistId: r.checklist_id,
