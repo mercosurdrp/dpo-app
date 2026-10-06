@@ -343,6 +343,47 @@ export async function enviarNotasPendientes(supabase: SupabaseClient) {
   return { pendientes: data?.length ?? 0, enviadas };
 }
 
+/**
+ * Modo prueba (lo pide mercosur-atiende para el cliente de NOTAS_CHOFER_PRUEBA):
+ * arma el mismo mensaje que vería el chofer y lo manda SOLO al teléfono de
+ * NOTAS_CHOFER_PRUEBA_PHONE. No busca la ruta, no guarda nada ni copia al
+ * vendedor. Sin esa variable no hace nada.
+ */
+export async function enviarPrueba(
+  supabase: SupabaseClient,
+  input: { idCliente: string; mensaje: string; contacto: string | null },
+): Promise<ResultadoNota> {
+  const phone = (process.env.NOTAS_CHOFER_PRUEBA_PHONE ?? "").replace(
+    /\D/g,
+    "",
+  );
+  if (!PHONE_RE.test(phone))
+    return {
+      ok: false,
+      motivo: "invalido",
+      error: "El modo prueba no está configurado.",
+    };
+  const mensaje = limpiarMensaje(input.mensaje);
+  const { data: cliente } = await supabase
+    .from("bot_clientes_cache")
+    .select("nombre_cliente, localidad")
+    .eq("id_cliente", input.idCliente)
+    .maybeSingle();
+  const texto =
+    "🧪 *PRUEBA — así le llega al chofer*\n\n" +
+    textoChofer({
+      id_cliente: input.idCliente,
+      cliente_nombre: cliente?.nombre_cliente ?? null,
+      cliente_localidad: cliente?.localidad ?? null,
+      mensaje,
+      contacto: (input.contacto ?? "").replace(/\D/g, "").slice(0, 15) || null,
+    } as NotaChofer);
+  const s = await sendText(phone, texto);
+  return s.ok
+    ? { ok: true, estado: "enviada", chofer: "Prueba" }
+    : { ok: false, motivo: "error", error: `WhatsApp respondió ${s.status}.` };
+}
+
 /** ¿Este número es de un chofer? (para el webhook: le contesta «Recibido»). */
 export async function esChofer(supabase: SupabaseClient, phone: string) {
   const { data } = await supabase

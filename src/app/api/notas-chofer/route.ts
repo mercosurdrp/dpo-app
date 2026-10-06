@@ -9,7 +9,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { recibirNota } from "@/lib/notas-chofer/notas";
+import { enviarPrueba, recibirNota } from "@/lib/notas-chofer/notas";
 
 export const maxDuration = 60;
 
@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
     id_cliente?: number | string;
     mensaje?: string;
     contacto?: string | null;
+    prueba?: boolean;
   };
   try {
     body = await request.json();
@@ -41,13 +42,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const r = await recibirNota(createAdminClient(), {
+    const input = {
       idCliente,
       mensaje: body.mensaje,
       contacto: body.contacto ?? null,
-    });
+    };
+    const r = body.prueba
+      ? await enviarPrueba(createAdminClient(), input)
+      : await recibirNota(createAdminClient(), input);
     console.log(
-      `[notas-chofer] cliente=${idCliente} ${r.ok ? `estado=${r.estado}` : `motivo=${r.motivo}`}`,
+      `[notas-chofer] cliente=${idCliente}${body.prueba ? " PRUEBA" : ""} ${r.ok ? `estado=${r.estado}` : `motivo=${r.motivo}`}`,
     );
     return NextResponse.json(r);
   } catch (e) {
