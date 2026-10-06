@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
-import { CalendarDays, Gauge, Plus, Trash2 } from "lucide-react"
+import { CalendarDays, ChevronLeft, ChevronRight, Gauge, Plus, Trash2 } from "lucide-react"
 import { KpiCard, type EstadoKpi } from "./_components/kpi-card"
 import {
   Bar,
@@ -119,6 +119,10 @@ export function SeguimientoFlota({
   }, [mantenimientos, indisponibilidades])
 
   const [mesSel, setMesSel] = useState<string>(meses[0] ?? hoyISO().slice(0, 7))
+  // `meses` está ordenado del más nuevo al más viejo: el anterior es el que sigue.
+  const iMes = meses.indexOf(mesSel)
+  const mesAnterior = iMes >= 0 ? meses[iMes + 1] : undefined
+  const mesSiguiente = iMes > 0 ? meses[iMes - 1] : undefined
   const paleta = usePaletaViz()
 
   // Set de días ruteados: "DOMINIO|YYYY-MM-DD"
@@ -228,22 +232,54 @@ export function SeguimientoFlota({
     >
       <DpoSeccionCinta seccionId="seguimiento" />
 
-      {/* Controles */}
+      {/* Controles.
+          El mes se cambia con las flechas o con la lista. Las flechas no son un
+          adorno: la lista se abre con el mes elegido encima del botón, y más de
+          una vez el click volvió a caer sobre ese mismo mes —se elegía de nuevo
+          el mes que ya estaba y parecía que el filtro no hacía nada—. Con «/» un
+          click es un mes, sin ambigüedad. */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs text-muted-foreground">Mes</p>
-          <Select value={mesSel} onValueChange={(v) => v && setMesSel(v)}>
-            <SelectTrigger className="w-48 capitalize">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {meses.map((ym) => (
-                <SelectItem key={ym} value={ym} className="capitalize">
-                  {fmtMesLargo(ym)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              onClick={() => mesAnterior && setMesSel(mesAnterior)}
+              disabled={!mesAnterior}
+              title="Mes anterior"
+              aria-label="Mes anterior"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Select value={mesSel} onValueChange={(v) => v && setMesSel(v)}>
+              <SelectTrigger className="w-44 capitalize">
+                <SelectValue />
+              </SelectTrigger>
+              {/* alignItemWithTrigger=false: la lista baja debajo del botón como
+                  un desplegable normal, en vez de abrirse encima con el mes
+                  actual tapando el botón. */}
+              <SelectContent alignItemWithTrigger={false}>
+                {meses.map((ym) => (
+                  <SelectItem key={ym} value={ym} className="capitalize">
+                    {fmtMesLargo(ym)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              onClick={() => mesSiguiente && setMesSel(mesSiguiente)}
+              disabled={!mesSiguiente}
+              title="Mes siguiente"
+              aria-label="Mes siguiente"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
         </div>
         <TabsList>
           <TabsTrigger value="mes">
@@ -260,7 +296,7 @@ export function SeguimientoFlota({
         <KpiCard
           label="Disponibilidad de flota"
           valor={calc.flotaDisp == null ? null : `${calc.flotaDisp.toFixed(1)}%`}
-          sub={`Objetivo ${TARGET_DISP}% · click para verla por unidad`}
+          sub={`${fmtMesLargo(mesSel)} · objetivo ${TARGET_DISP}% · click para verla por unidad`}
           estado={estadoDisp}
           dpo="2.1"
           onClick={() => irA("mes", "tabla-disp-unidad")}
@@ -268,7 +304,7 @@ export function SeguimientoFlota({
         <KpiCard
           label="Utilización de flota"
           valor={calc.flotaUtil == null ? null : `${calc.flotaUtil.toFixed(1)}%`}
-          sub="Ruteados ÷ días laborales disp. · click para verla por unidad"
+          sub={`${fmtMesLargo(mesSel)} · ruteados ÷ días laborales disp. · click para verla por unidad`}
           dpo="2.1"
           onClick={() => irA("mes", "tabla-disp-unidad")}
         />
@@ -371,7 +407,12 @@ export function SeguimientoFlota({
 
         <Card id="tabla-disp-unidad">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Disponibilidad y utilización por unidad</CardTitle>
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              Disponibilidad y utilización por unidad
+              <span className="text-sm font-normal capitalize text-muted-foreground">
+                · {fmtMesLargo(mesSel)}
+              </span>
+            </CardTitle>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -428,7 +469,12 @@ export function SeguimientoFlota({
       <TabsContent value="dia">
         <Card id="calendario-disp">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Calendario de disponibilidad</CardTitle>
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              Calendario de disponibilidad
+              <span className="text-sm font-normal capitalize text-muted-foreground">
+                · {fmtMesLargo(mesSel)}
+              </span>
+            </CardTitle>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <table className="text-xs">
