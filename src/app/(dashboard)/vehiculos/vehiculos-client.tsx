@@ -1062,6 +1062,18 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                 value={editObs}
                 onChange={(e) => setEditObs(e.target.value)}
               />
+              {/* El rechazo sin ítem en NO OK queda como un cartel rojo sin
+                  motivo: el ítem corregido sobrescribe la respuesta y no deja
+                  rastro. Se avisa acá y la acción lo rechaza al guardar. */}
+              {editResultado === "rechazado" &&
+                (editChk?.motivos?.length ?? 0) === 0 &&
+                !editObs.trim() && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Este checklist no tiene ningún ítem en NO OK. Si lo dejás
+                    desaprobado, escribí acá por qué se rechazó — si no, no hay
+                    manera de saberlo después.
+                  </p>
+                )}
             </div>
           </div>
           <DialogFooter>

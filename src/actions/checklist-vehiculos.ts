@@ -672,6 +672,39 @@ export async function updateChecklist(
 
     const horaIso = new Date(`${input.fecha}T${input.hora}:00`).toISOString()
     const dominio = input.dominio.trim().toUpperCase()
+    const observaciones = input.observaciones?.trim() || null
+
+    /**
+     * Un checklist desaprobado SIN ningún ítem en NO OK tiene que decir por qué.
+     *
+     * 🚨 El resultado se calcula una sola vez, al cargar el checklist (si un ítem
+     * crítico da NO OK → rechazado), y después no se recalcula nunca. Si el
+     * defecto se arregla en el momento y alguien corrige la respuesta a OK, el
+     * checklist queda desaprobado para siempre y la corrección **sobrescribe** la
+     * respuesta: no queda rastro de qué estuvo mal. Al 06/10/2026 había 3 así
+     * (AE908DF del 03/08 y del 07/08, HELI1 del 26/06): rojos sin motivo, y
+     * ninguno con plan de acción que contara la historia.
+     *
+     * No se toca el resultado —es lo que el chofer firmó— pero no se puede
+     * guardar la edición sin una observación que explique el rechazo.
+     */
+    if (input.resultado === "rechazado" && !observaciones) {
+      const { data: resp } = await supabase
+        .from("checklist_respuestas")
+        .select("valor")
+        .eq("checklist_id", input.id)
+      const hayNoOk = ((resp || []) as Array<{ valor: string }>).some(
+        (r) => r.valor !== "ok" && r.valor !== "bueno"
+      )
+      if (!hayNoOk) {
+        return {
+          error:
+            "Este checklist está desaprobado y no tiene ningún ítem en NO OK. " +
+            "Escribí en Observaciones por qué se rechazó (por ejemplo: \"foco de freno quemado, " +
+            "se cambió en el momento\"), o pasalo a Aprobado.",
+        }
+      }
+    }
 
     const updateFields: Record<string, unknown> = {
       fecha: input.fecha,
@@ -680,7 +713,7 @@ export async function updateChecklist(
       hora: horaIso,
       resultado: input.resultado,
       odometro: input.odometro ?? null,
-      observaciones: input.observaciones?.trim() || null,
+      observaciones,
     }
 
     // Si se corrige el tipo, recalcular el tiempo en ruta para que no quede
