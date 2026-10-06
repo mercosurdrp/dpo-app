@@ -24,6 +24,7 @@
  * propia base (Pampeana desde 5/10/2026, Misiones desde 6/10/2026).
  */
 import { NextRequest, NextResponse } from "next/server"
+import { enviarNotasPendientes } from "@/lib/notas-chofer/notas"
 import { foxtrotDcIds } from "@/lib/foxtrot"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { sendText } from "@/lib/wa-bot/evolution"
@@ -461,12 +462,23 @@ async function handle(request: NextRequest) {
       }
     }
 
+    // ---- 6. Mensajes de clientes al chofer que esperaban la salida de la ruta ----
+    let notas: { pendientes: number; enviadas: number } | null = null
+    if (fecha === hoy && evolutionConfigurado) {
+      try {
+        notas = await enviarNotasPendientes(supabase)
+      } catch (err) {
+        console.error(`[foxtrot-cron-alertas] notas-chofer: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+
     const durationMs = Date.now() - startedAt
     console.log(
       `[foxtrot-cron-alertas] fecha=${fecha} detectados=${rechazos.length} nuevas=${nuevas} ` +
         `enviadas=${enviadas} simuladas=${simuladas} errores=${errores} outcomes=${outcomes} ` +
         `dry_run=${dryRun} envios_activos=${enviosActivos} ventana=${dentroVentana} ` +
-        `seguimiento=${seguimiento ? JSON.stringify(seguimiento) : "off"} duration_ms=${durationMs}`,
+        `seguimiento=${seguimiento ? JSON.stringify(seguimiento) : "off"} ` +
+        `notas=${notas ? JSON.stringify(notas) : "off"} duration_ms=${durationMs}`,
     )
 
     return NextResponse.json({
@@ -483,6 +495,7 @@ async function handle(request: NextRequest) {
       dentro_ventana: dentroVentana,
       evolution_configurado: evolutionConfigurado,
       seguimiento,
+      notas,
       ...(dryRun && textosDryRun.length > 0 ? { preview: textosDryRun.slice(0, 5) } : {}),
       duration_ms: durationMs,
     })

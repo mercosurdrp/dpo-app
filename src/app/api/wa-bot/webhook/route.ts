@@ -16,6 +16,7 @@
  *   3) Extraer texto + número del remitente
  *   3a) Número compartido entre empresas: si el remitente no es del equipo
  *       de este deploy y hay WA_WEBHOOK_REENVIO_URL, se reenvía ahí
+ *   3c) Si es un chofer (mensajes del cliente al chofer), «Recibido» y listo
  *   3b) Si tiene una pregunta de seguimiento de rechazo abierta, el mensaje
  *       es la respuesta (lib/foxtrot-alertas/seguimiento.ts) y termina ahí
  *   4) Resolver vendedor por phone_number
@@ -27,6 +28,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { chessLogin } from "@/lib/wa-bot/chess"
 import { procesarRespuesta } from "@/lib/foxtrot-alertas/seguimiento"
+import { esChofer } from "@/lib/notas-chofer/notas"
 import { esAudio, extractText, resolvePhoneFromKey, sendText, type EvolutionMessage } from "@/lib/wa-bot/evolution"
 import { formatTopPedidosMessage } from "@/lib/wa-bot/format"
 import { getTopPedidosForVendedor } from "@/lib/wa-bot/pedidos"
@@ -113,7 +115,7 @@ export async function POST(request: NextRequest) {
       .eq("phone_number", phone)
       .limit(1)
       .maybeSingle()
-    if (!propio) {
+    if (!propio && !(await esChofer(admin, phone))) {
       try {
         const r = await fetch(REENVIO_URL, {
           method: "POST",
@@ -129,6 +131,29 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: false, action: "reenvio_fallido" })
       }
     }
+  }
+
+  // 3c) Un chofer que contesta un mensaje de cliente: acuse y nada más (está
+  // manejando; no se le reenvía al cliente). Un «Recibido» cada 30 min como
+  // mucho, para no entrar en loop con una respuesta automática.
+  const chofer = await esChofer(admin, phone)
+  if (chofer) {
+    const desde = new Date(Date.now() - 30 * 60_000).toISOString()
+    const { count } = await admin
+      .from("bot_conversaciones_log")
+      .select("id", { count: "exact", head: true })
+      .eq("phone_number", phone)
+      .eq("error", "chofer_acuse")
+      .gte("created_at", desde)
+    const outMsg = "Recibido 👍"
+    if (!count) await sendText(phone, outMsg).catch(() => null)
+    await admin.from("bot_conversaciones_log").insert({
+      ...baseLog,
+      mensaje_out: count ? null : outMsg,
+      error: "chofer_acuse",
+      duration_ms: Date.now() - t0,
+    })
+    return NextResponse.json({ ok: true, action: "chofer_acuse" })
   }
 
   // 3b) Respuesta al seguimiento de un rechazo: tiene prioridad sobre el bot
