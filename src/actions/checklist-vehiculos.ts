@@ -465,9 +465,61 @@ export async function getChecklists(
 
     const { data, error } = await query
     if (error) return { error: error.message }
-    return { data: (data || []) as ChecklistVehiculo[] }
+
+    const filas = (data || []) as ChecklistVehiculo[]
+    return { data: await conDocumentacion(supabase, filas) }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Completa `documentacion` en cada checklist: cómo contestó el chofer el ítem
+ * de documentación de la unidad.
+ *
+ * Es el único ítem que se mira aparte en la lista, porque un rechazo por
+ * papeles no se arregla en el taller —va a /requisitos-legales— y mezclado con
+ * los focos mecánicos se pierde. El ítem se busca por NOMBRE (`documentaci%`)
+ * y no por id: cada tipo de unidad tiene su propia fila en `checklist_items`
+ * ("Documentación completa" del camión y la del autoelevador son dos ids).
+ *
+ * Query tolerante: si falla, la lista se muestra igual sin la columna.
+ */
+async function conDocumentacion(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  filas: ChecklistVehiculo[]
+): Promise<ChecklistVehiculo[]> {
+  if (filas.length === 0) return filas
+  try {
+    const { data: items } = await supabase
+      .from("checklist_items")
+      .select("id")
+      .ilike("nombre", "%documentaci%")
+    const ids = ((items || []) as Array<{ id: string }>).map((i) => i.id)
+    if (ids.length === 0) return filas
+
+    const { data: resp } = await supabase
+      .from("checklist_respuestas")
+      .select("checklist_id, valor")
+      .in("checklist_id", filas.map((c) => c.id))
+      .in("item_id", ids)
+
+    const porChecklist = new Map<string, string>()
+    for (const r of (resp || []) as Array<{ checklist_id: string; valor: string }>) {
+      // Si hubiera más de una respuesta, manda la peor: con un "no" alcanza.
+      if (r.valor !== "ok" && r.valor !== "bueno") porChecklist.set(r.checklist_id, r.valor)
+      else if (!porChecklist.has(r.checklist_id)) porChecklist.set(r.checklist_id, r.valor)
+    }
+
+    return filas.map((c) => {
+      const v = porChecklist.get(c.id)
+      return {
+        ...c,
+        documentacion: v == null ? null : v === "ok" || v === "bueno" ? "aprobada" : "desaprobada",
+      }
+    })
+  } catch {
+    return filas
   }
 }
 

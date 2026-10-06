@@ -917,6 +917,15 @@ export interface VehiculoDocumento {
   url?: string // derivada (getPublicUrl)
 }
 
+/**
+ * Cómo contestó el chofer el ítem de documentación de la unidad ("Documentación
+ * completa", crítico). Se mira sobre todo en los checklists desaprobados: un
+ * rechazo por papeles no se resuelve en el taller.
+ * null = ese checklist no preguntó por documentación (autoelevadores, versiones
+ * viejas del formulario).
+ */
+export type DocumentacionChecklist = "aprobada" | "desaprobada"
+
 export interface ChecklistVehiculo {
   id: string
   tipo: TipoChecklist
@@ -925,6 +934,8 @@ export interface ChecklistVehiculo {
   chofer: string
   hora: string // TIMESTAMPTZ
   resultado: ResultadoChecklist
+  /** Derivado (no es columna): lo completa `getChecklists`. */
+  documentacion?: DocumentacionChecklist | null
   observaciones: string | null
   tiempo_ruta_minutos: number | null
   odometro: number | null

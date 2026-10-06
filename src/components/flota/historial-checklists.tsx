@@ -42,7 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ClipboardCheck, Eye, Pencil, Trash2 } from "lucide-react"
-import type { ChecklistVehiculo } from "@/types/database"
+import type { ChecklistVehiculo, DocumentacionChecklist } from "@/types/database"
 
 function formatHora(isoStr: string) {
   const d = new Date(isoStr)
@@ -82,6 +82,31 @@ export function ResultadoBadge({ resultado }: { resultado: string }) {
   return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Rechazado</Badge>
 }
 
+/**
+ * Cómo quedó la documentación de la unidad en ese checklist. Se muestra en la
+ * vista de desaprobados: ahí importa distinguir el rechazo por papeles —que se
+ * resuelve en /requisitos-legales— del foco mecánico, que va al taller.
+ */
+export function DocumentacionBadge({
+  estado,
+}: {
+  estado: DocumentacionChecklist | null | undefined
+}) {
+  if (estado == null)
+    return <span className="text-xs text-muted-foreground">no se preguntó</span>
+  if (estado === "aprobada")
+    return (
+      <Badge variant="outline" className="border-green-200 text-green-700">
+        Aprobada
+      </Badge>
+    )
+  return (
+    <Badge variant="outline" className="border-red-200 font-semibold text-red-700">
+      Desaprobada
+    </Badge>
+  )
+}
+
 interface Props {
   checklists: ChecklistVehiculo[]
   /** Tipo de cada unidad: en autoelevadores el valor cargado es horómetro (hs). */
@@ -107,14 +132,22 @@ export function HistorialChecklists({
   // son dos preguntas distintas, y mezcladas en una lista de 50 filas hay que
   // ir leyendo badge por badge.
   const [tipo, setTipo] = useState("todos")
+  /**
+   * Aprobado / desaprobado. Los desaprobados son 11 sobre 2.479: buscarlos a ojo
+   * en una lista de 50 filas no se puede, y son los únicos que exigen una
+   * acción. Al filtrar por desaprobados se agrega la columna de documentación.
+   */
+  const [resultado, setResultado] = useState("todos")
 
   const esAutoelevador = (d: string) => tipoPorDominio[d] === "autoelevador"
 
   const filtrados = checklists.filter(
     (c) =>
       (dominio === "todos" || c.dominio === dominio) &&
-      (tipo === "todos" || c.tipo === tipo),
+      (tipo === "todos" || c.tipo === tipo) &&
+      (resultado === "todos" || c.resultado === resultado),
   )
+  const verDocumentacion = resultado === "rechazado"
   const dominios = Array.from(new Set(checklists.map((c) => c.dominio))).sort()
 
   return (
@@ -132,6 +165,22 @@ export function HistorialChecklists({
                 <SelectItem value="todos">Salida y retorno</SelectItem>
                 <SelectItem value="liberacion">Salida (liberación)</SelectItem>
                 <SelectItem value="retorno">Retorno</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs whitespace-nowrap text-muted-foreground">Resultado</Label>
+            <Select
+              value={resultado}
+              onValueChange={(v: string | null) => setResultado(v ?? "todos")}
+            >
+              <SelectTrigger className="h-8 w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectItem value="todos">Aprobados y desaprobados</SelectItem>
+                <SelectItem value="aprobado">Sólo aprobados</SelectItem>
+                <SelectItem value="rechazado">Sólo desaprobados</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -178,6 +227,7 @@ export function HistorialChecklists({
                   <TableHead>Chofer</TableHead>
                   <TableHead className="text-right">Odóm./Horóm.</TableHead>
                   <TableHead>Resultado</TableHead>
+                  {verDocumentacion && <TableHead>Documentación</TableHead>}
                   <TableHead className="text-right">T. Ruta</TableHead>
                   <TableHead className="text-right">Duración</TableHead>
                   {acciones && <TableHead className="w-28 text-right">Acciones</TableHead>}
@@ -219,6 +269,11 @@ export function HistorialChecklists({
                     <TableCell>
                       <ResultadoBadge resultado={c.resultado} />
                     </TableCell>
+                    {verDocumentacion && (
+                      <TableCell>
+                        <DocumentacionBadge estado={c.documentacion} />
+                      </TableCell>
+                    )}
                     <TableCell className="text-right">
                       {c.tiempo_ruta_minutos != null ? (
                         <TiempoRutaBadge minutos={c.tiempo_ruta_minutos} />

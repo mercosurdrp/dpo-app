@@ -58,15 +58,56 @@ export function formatDuracion(horas: number | null): string {
   return h > 0 ? `${d} d ${h} h` : `${d} d`
 }
 
-/** Semáforo del tiempo de respuesta: crítico ≤24 h, no crítico ≤72 h. */
+/**
+ * Tiempo de respuesta comprometido para un ítem observado en el checklist.
+ *
+ * **Crítico — 24 h.** Son los ítems marcados `critico` en `checklist_items`:
+ * frenos, luces, pérdida de fluidos, matafuegos, cinturón, botiquín, EPP y
+ * documentación. Si uno de esos está mal la unidad no debería salir, así que el
+ * plazo es el día: o se repara, o la unidad queda fuera de servicio con su OT.
+ *
+ * **No crítico — 72 h (3 días hábiles).** Lonas, 5S, carrito, espejos, niveles:
+ * no frenan el reparto, pero tres días es lo que tarda en conseguirse un
+ * repuesto común sin que el defecto se vuelva costumbre.
+ *
+ * Medido en Pampeana sobre los 56 focos cerrados con tiempo verificable (abril a
+ * septiembre de 2026), tomando como cierre el primer checklist en que el ítem
+ * volvió a dar OK: mediana de 24 h en total —22,6 h los no críticos, 96 h los
+ * críticos, inflados por la pérdida de fluidos del HELI1 que se arrastró tres
+ * semanas—. O sea: la meta no es un deseo, es lo que la operación ya cumple
+ * cuando el defecto se atiende de verdad.
+ *
+ * 🚨 El reloj NO mide "cuándo se cargó el plan en la app": mide contra la hora
+ * del checklist. Cerrar un plan tarde no mejora el número, y cargarlo tarde
+ * tampoco lo empeora si el defecto se resolvió en el día.
+ */
+export const META_RESPUESTA_HORAS = { critico: 24, noCritico: 72 } as const
+
+/** Horas comprometidas según el ítem. */
+export function metaRespuestaHoras(critico: boolean): number {
+  return critico ? META_RESPUESTA_HORAS.critico : META_RESPUESTA_HORAS.noCritico
+}
+
+/** "meta 24 h" / "meta 72 h (3 días)", para ponerlo al lado del número. */
+export function textoMetaRespuesta(critico: boolean): string {
+  return critico ? "meta 24 h (crítico)" : "meta 72 h (3 días)"
+}
+
+/**
+ * Semáforo del tiempo de respuesta.
+ *
+ * Verde = dentro de la meta. Ámbar = se pasó pero sigue en el orden del plazo
+ * (48 h en críticos, 5 días en no críticos). Rojo = se fue de escala: ahí ya no
+ * es un atraso, es un defecto que quedó conviviendo con la operación.
+ */
 export function colorTiempoRespuesta(
   horas: number | null,
   critico: boolean,
 ): "verde" | "ambar" | "rojo" | "neutro" {
   if (horas == null) return "neutro"
-  const meta = critico ? 24 : 72
+  const meta = metaRespuestaHoras(critico)
   if (horas <= meta) return "verde"
-  if (horas <= meta * 2) return "ambar"
+  if (horas <= (critico ? 48 : 120)) return "ambar"
   return "rojo"
 }
 

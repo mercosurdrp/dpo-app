@@ -73,6 +73,7 @@ import {
 import {
   CLASE_TIEMPO,
   colorTiempoRespuesta,
+  textoMetaRespuesta,
   formatDuracion,
 } from "@/lib/vehiculos/tiempo-resolucion"
 
@@ -1180,12 +1181,13 @@ function TiempoRespuestaCell({
   if (item.plan?.estado === "resuelto" && item.horasResolucion != null) {
     const color = colorTiempoRespuesta(item.horasResolucion, item.critico)
     return (
-      <span className="flex flex-col">
+      <span className="flex flex-col" title={textoMetaRespuesta(item.critico)}>
         <span className={cn("text-sm font-semibold", CLASE_TIEMPO[color])}>
           {formatDuracion(item.horasResolucion)}
         </span>
+        {/* El número solo no dice nada: al lado va contra qué plazo se lee. */}
         <span className="text-[11px] text-muted-foreground">
-          resuelto {fmtFechaHora(item.plan.resueltoAt)}
+          {textoMetaRespuesta(item.critico)} · resuelto {fmtFechaHora(item.plan.resueltoAt)}
         </span>
       </span>
     )
