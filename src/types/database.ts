@@ -933,6 +933,22 @@ export interface MotivoRechazo {
   critico: boolean
   /** Lo que escribió el chofer en ese ítem ("Tengo quemada una de freno lado derecho"). */
   comentario: string | null
+  /**
+   * Qué se hizo con ese foco.
+   *
+   * El checklist desaprobado NO se revierte cuando el defecto se arregla —es lo
+   * que el chofer firmó ese día— así que lo que cuenta la otra mitad de la
+   * historia es el plan de acción: el foco de freno quemado quedó rechazado para
+   * siempre, y al lado dice que se cambió el mismo día. Sin esto el rojo se lee
+   * como si nadie hubiera hecho nada.
+   * null = ese ítem no tiene plan de acción cargado.
+   */
+  plan: {
+    estado: string // pendiente | en_proceso | resuelto
+    resueltoAt: string | null
+    /** Horas entre la carga del checklist y el cierre del plan. */
+    horas: number | null
+  } | null
 }
 
 export interface ChecklistVehiculo {

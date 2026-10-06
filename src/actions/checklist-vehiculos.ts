@@ -556,22 +556,45 @@ async function conDocumentacion(
     if (rechazados.length > 0) {
       const { data: malas } = await supabase
         .from("checklist_respuestas")
-        .select("checklist_id, valor, comentario, item:checklist_items(nombre, categoria, critico)")
+        .select("id, checklist_id, valor, comentario, item:checklist_items(nombre, categoria, critico)")
         .in("checklist_id", rechazados.map((c) => c.id))
         .not("valor", "in", '("ok","bueno")')
       type MalaRow = {
+        id: string
         checklist_id: string
         comentario: string | null
         item: { nombre: string; categoria: string; critico: boolean } | null
       }
-      for (const m of ((malas || []) as unknown as MalaRow[])) {
-        if (!m.item) continue
+      const filasMalas = ((malas || []) as unknown as MalaRow[]).filter((m) => m.item)
+
+      // Qué se hizo con cada foco. El checklist no se revierte al arreglarlo, así
+      // que el plan de acción es lo que cuenta que el defecto ya se resolvió.
+      const planPorRespuesta = await fetchPlanesPorRespuesta(
+        supabase,
+        filasMalas.map((m) => m.id),
+        new Map(
+          filasMalas
+            .map((m) => [m.id, filas.find((c) => c.id === m.checklist_id)?.hora] as const)
+            .filter((e): e is readonly [string, string] => e[1] != null)
+            .map(([id, hora]) => [id, hora])
+        )
+      )
+
+      for (const m of filasMalas) {
         const arr = motivosPorChecklist.get(m.checklist_id) ?? []
+        const plan = planPorRespuesta.get(m.id)
         arr.push({
-          item: m.item.nombre,
-          categoria: m.item.categoria,
-          critico: m.item.critico,
+          item: m.item!.nombre,
+          categoria: m.item!.categoria,
+          critico: m.item!.critico,
           comentario: m.comentario?.trim() || null,
+          plan: plan
+            ? {
+                estado: plan.estado,
+                resueltoAt: plan.resueltoAt,
+                horas: plan.horasResolucion,
+              }
+            : null,
         })
         motivosPorChecklist.set(m.checklist_id, arr)
       }

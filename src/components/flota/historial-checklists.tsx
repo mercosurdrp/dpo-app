@@ -42,7 +42,11 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ClipboardCheck, Eye, Pencil, Trash2 } from "lucide-react"
-import type { ChecklistVehiculo, DocumentacionChecklist } from "@/types/database"
+import type {
+  ChecklistVehiculo,
+  DocumentacionChecklist,
+  MotivoRechazo,
+} from "@/types/database"
 
 function formatHora(isoStr: string) {
   const d = new Date(isoStr)
@@ -131,18 +135,53 @@ function MotivoRechazoCell({ checklist }: { checklist: ChecklistVehiculo }) {
   return (
     <span className="flex flex-col gap-0.5">
       {motivos.map((m, idx) => (
-        <span key={`${m.item}-${idx}`} className="text-xs">
-          <span className={m.critico ? "font-semibold text-red-700 dark:text-red-400" : ""}>
-            {m.item}
-            {m.critico ? " (crítico)" : ""}
+        <span key={`${m.item}-${idx}`} className="flex flex-col text-xs">
+          <span>
+            <span className={m.critico ? "font-semibold text-red-700 dark:text-red-400" : ""}>
+              {m.item}
+              {m.critico ? " (crítico)" : ""}
+            </span>
+            {m.comentario && (
+              <span className="text-muted-foreground"> — “{m.comentario}”</span>
+            )}
           </span>
-          {m.comentario && (
-            <span className="text-muted-foreground"> — “{m.comentario}”</span>
-          )}
+          {/* El checklist queda desaprobado igual: lo que cuenta que el foco ya
+              se arregló es el plan de acción, así que va en la misma fila. */}
+          <EstadoPlanFoco plan={m.plan} />
         </span>
       ))}
     </span>
   )
+}
+
+/** Qué se hizo con el foco que desaprobó el checklist. */
+function EstadoPlanFoco({ plan }: { plan: MotivoRechazo["plan"] }) {
+  if (!plan)
+    return (
+      <span className="text-[11px] text-amber-600 dark:text-amber-400">
+        sin plan de acción cargado
+      </span>
+    )
+  if (plan.estado === "resuelto")
+    return (
+      <span className="text-[11px] text-green-700 dark:text-green-400">
+        resuelto{plan.horas != null ? ` en ${formatDuracionHoras(plan.horas)}` : ""}
+      </span>
+    )
+  return (
+    <span className="text-[11px] text-amber-600 dark:text-amber-400">
+      plan {plan.estado === "en_proceso" ? "en proceso" : "pendiente"}
+    </span>
+  )
+}
+
+/** "40 min", "5 h", "2 d 4 h" — mismo formato que el tablero de mantenimiento. */
+function formatDuracionHoras(horas: number): string {
+  if (horas < 1) return `${Math.max(1, Math.round(horas * 60))} min`
+  if (horas < 24) return `${Math.round(horas)} h`
+  const d = Math.floor(horas / 24)
+  const h = Math.round(horas - d * 24)
+  return h > 0 ? `${d} d ${h} h` : `${d} d`
 }
 
 interface Props {
