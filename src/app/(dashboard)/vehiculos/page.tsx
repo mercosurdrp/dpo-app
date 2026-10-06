@@ -3,6 +3,7 @@ import { getRegistrosCombustible } from "@/actions/combustible"
 import { getVehiculos, getChoferes } from "@/actions/registros-vehiculos"
 import { getKmFlotaResumen, getAlertasVehiculos } from "@/actions/vehiculos-analytics"
 import { getMaestroFlota } from "@/actions/maestro-flota"
+import { getProfile } from "@/lib/session"
 import { VehiculosClient } from "./vehiculos-client"
 
 export default async function VehiculosPage() {
@@ -15,6 +16,7 @@ export default async function VehiculosPage() {
     kmResumenRes,
     alertasRes,
     maestroRes,
+    profile,
   ] = await Promise.all([
     getEstadoVehiculosHoy(),
     getChecklists({ limit: 50 }),
@@ -24,6 +26,7 @@ export default async function VehiculosPage() {
     getKmFlotaResumen(),
     getAlertasVehiculos(),
     getMaestroFlota(),
+    getProfile(),
   ])
 
   if ("error" in estadoRes) {
@@ -42,6 +45,9 @@ export default async function VehiculosPage() {
   const kmFlotaResumen = "data" in kmResumenRes ? kmResumenRes.data : null
   const alertas = "data" in alertasRes ? alertasRes.data : []
   const maestro = "data" in maestroRes ? maestroRes.data : null
+  // Los mismos roles que acepta `actualizarFichaVehiculo`: si no, el lápiz
+  // abriría un formulario que la acción va a rechazar al guardar.
+  const canEdit = profile?.role === "admin" || profile?.role === "supervisor"
 
   return (
     <VehiculosClient
@@ -53,6 +59,7 @@ export default async function VehiculosPage() {
       kmFlotaResumen={kmFlotaResumen}
       alertas={alertas}
       maestro={maestro}
+      canEdit={canEdit}
     />
   )
 }

@@ -216,6 +216,9 @@ export async function actualizarFichaVehiculo(
 
     if (error) return { error: error.message }
     revalidatePath(`/vehiculos/${dom}`)
+    // El maestro de flota (/vehiculos) también muestra estos campos y ahora se
+    // editan desde ahí: sin esto la tabla sigue mostrando el valor viejo.
+    revalidatePath("/vehiculos")
     return { data: fichaConFotoUrl(supabase, data as VehiculoFicha) }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }

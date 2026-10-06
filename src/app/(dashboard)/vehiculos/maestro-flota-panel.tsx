@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   ClipboardCheck,
   FileWarning,
+  Pencil,
   Search,
   Truck,
   Wrench,
@@ -36,6 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { EditarFichaDialog, type SugerenciasFicha } from "./editar-ficha-dialog"
 import type { MaestroFlota, MaestroFlotaUnidad } from "@/types/database"
 
 type Vista = "identificacion" | "asignacion" | "documentacion" | "estado"
@@ -154,14 +156,21 @@ export function MaestroFlotaPanel({
   maestro,
   tipo: tipoExterno,
   onTipoChange,
+  canEdit = false,
+  choferes = [],
 }: {
   maestro: MaestroFlota
   /** Filtro de tipo compartido con el resto de la pantalla de Vehículos. */
   tipo?: string
   onTipoChange?: (tipo: string) => void
+  /** Admin o supervisor: los roles que `actualizarFichaVehiculo` acepta. */
+  canEdit?: boolean
+  /** Nombres del catálogo de choferes, para sugerir en vez de tipear de nuevo. */
+  choferes?: string[]
 }) {
   const { unidades, resumen } = maestro
   const [vista, setVista] = useState<Vista>("identificacion")
+  const [editando, setEditando] = useState<MaestroFlotaUnidad | null>(null)
   const [busqueda, setBusqueda] = useState("")
   const [tipoLocal, setTipoLocal] = useState<string>("todos")
   const tipo = tipoExterno ?? tipoLocal
@@ -230,6 +239,30 @@ export function MaestroFlotaPanel({
         .some((v) => String(v).toLowerCase().includes(q))
     })
   }, [unidades, busqueda, tipo, verBajas, foco])
+
+  /**
+   * Lo que ya existe en la flota para ciudad, centro de costo y chofer. Los tres
+   * son texto libre: ofrecer lo cargado evita que la misma ubicación o el mismo
+   * chofer entren dos veces con grafías distintas.
+   */
+  const sugerencias = useMemo<SugerenciasFicha>(() => {
+    const ordenar = (vs: string[]) =>
+      Array.from(new Set(vs.map((v) => v.trim()).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b, "es")
+      )
+    const deFicha = (f: (u: MaestroFlotaUnidad) => string | null | undefined) =>
+      ordenar(unidades.map((u) => f(u) ?? ""))
+
+    return {
+      ciudad: deFicha((u) => u.ficha?.ciudad),
+      centro_costo: deFicha((u) => u.ficha?.centro_costo),
+      // El catálogo de choferes manda: la ficha puede tener nombres viejos.
+      chofer_asignado: ordenar([
+        ...choferes,
+        ...unidades.map((u) => u.ficha?.chofer_asignado ?? ""),
+      ]),
+    }
+  }, [unidades, choferes])
 
   /** Cuántos papeles hay detrás del filtro documental (el aviso cuenta papeles). */
   const papelesEnFoco = useMemo(() => {
@@ -446,6 +479,7 @@ export function MaestroFlotaPanel({
             <Table>
               <TableHeader>
                 <TableRow>
+                  {canEdit && <TableHead className="w-8 px-1" aria-label="Editar" />}
                   <TableHead>Dominio</TableHead>
                   <TableHead>Tipo</TableHead>
                   {vista === "identificacion" && (
@@ -493,13 +527,28 @@ export function MaestroFlotaPanel({
               </TableHeader>
               <TableBody>
                 {filtradas.map((u) => (
-                  <FilaUnidad key={u.dominio} u={u} vista={vista} />
+                  <FilaUnidad
+                    key={u.dominio}
+                    u={u}
+                    vista={vista}
+                    canEdit={canEdit}
+                    onEditar={() => setEditando(u)}
+                  />
                 ))}
               </TableBody>
             </Table>
           </div>
         )}
       </CardContent>
+
+      {canEdit && (
+        <EditarFichaDialog
+          unidad={editando}
+          onClose={() => setEditando(null)}
+          foco={vista === "asignacion" ? "asignacion" : "identificacion"}
+          sugerencias={sugerencias}
+        />
+      )}
     </Card>
   )
 }
@@ -552,12 +601,36 @@ function Papel({
   )
 }
 
-function FilaUnidad({ u, vista }: { u: MaestroFlotaUnidad; vista: Vista }) {
+function FilaUnidad({
+  u,
+  vista,
+  canEdit,
+  onEditar,
+}: {
+  u: MaestroFlotaUnidad
+  vista: Vista
+  canEdit: boolean
+  onEditar: () => void
+}) {
   const f = u.ficha
   const falta = (campo: string) => u.camposFaltantes.includes(campo)
 
   return (
     <TableRow className={cn(!u.activo && "opacity-60")}>
+      {canEdit && (
+        <TableCell className="px-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 text-muted-foreground hover:text-foreground"
+            onClick={onEditar}
+            title={`Editar la ficha de ${u.dominio}`}
+            aria-label={`Editar la ficha de ${u.dominio}`}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+        </TableCell>
+      )}
       <TableCell className="font-medium">
         <Link href={`/vehiculos/${encodeURIComponent(u.dominio)}`} className="hover:underline">
           {u.dominio}

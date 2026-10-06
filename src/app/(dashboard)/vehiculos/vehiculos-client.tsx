@@ -103,6 +103,8 @@ interface Props {
   alertas: AlertaVehiculo[]
   /** Padrón completo del parque (punto 1 de la auditoría de flota). */
   maestro: MaestroFlota | null
+  /** Admin o supervisor: habilita editar la ficha desde el maestro. */
+  canEdit: boolean
 }
 
 function formatFechaCorta(fechaIso: string) {
@@ -151,7 +153,7 @@ function formatHora(isoStr: string) {
 // con el módulo de Mantenimiento y los badges tienen que ser los mismos en los
 // dos lados, no dos copias que se desincronizan.
 
-export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehiculos, choferes, kmFlotaResumen, alertas, maestro }: Props) {
+export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehiculos, choferes, kmFlotaResumen, alertas, maestro, canEdit }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -568,7 +570,13 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
 
         {maestro && (
           <TabsContent value="maestro">
-            <MaestroFlotaPanel maestro={maestro} tipo={filtroTipo} onTipoChange={setFiltroTipo} />
+            <MaestroFlotaPanel
+              maestro={maestro}
+              tipo={filtroTipo}
+              onTipoChange={setFiltroTipo}
+              canEdit={canEdit}
+              choferes={choferes.filter((c) => c.active).map((c) => c.nombre)}
+            />
           </TabsContent>
         )}
 
