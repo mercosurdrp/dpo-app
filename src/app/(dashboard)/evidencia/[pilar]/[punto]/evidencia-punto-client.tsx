@@ -173,6 +173,7 @@ export function EvidenciaPuntoClient({
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewData, setPreviewData] = useState<{
     url: string
+    urlDescarga: string
     mime: string
     titulo: string
     office: boolean
@@ -275,7 +276,7 @@ export function EvidenciaPuntoClient({
       toast.error(res.error)
       return
     }
-    openUrlInNewTab(res.data.url)
+    openUrlInNewTab(res.data.urlDescarga)
   }
 
   async function handlePreview(a: DpoArchivo) {
@@ -286,6 +287,7 @@ export function EvidenciaPuntoClient({
     }
     setPreviewData({
       url: res.data.url,
+      urlDescarga: res.data.urlDescarga,
       mime: a.mime_type || "",
       titulo: a.titulo,
       office: esOffice(a.file_ext),
@@ -1137,7 +1139,7 @@ export function EvidenciaPuntoClient({
                   Abrir en nueva pestaña
                 </Button>
                 <Button
-                  onClick={() => openUrlInNewTab(previewData.url)}
+                  onClick={() => openUrlInNewTab(previewData.urlDescarga)}
                 >
                   <Download className="mr-1 size-4" />
                   Descargar
