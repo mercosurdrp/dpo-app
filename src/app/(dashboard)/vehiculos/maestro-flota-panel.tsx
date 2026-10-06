@@ -150,11 +150,26 @@ function ChipAviso({
   )
 }
 
-export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
+export function MaestroFlotaPanel({
+  maestro,
+  tipo: tipoExterno,
+  onTipoChange,
+}: {
+  maestro: MaestroFlota
+  /** Filtro de tipo compartido con el resto de la pantalla de Vehículos. */
+  tipo?: string
+  onTipoChange?: (tipo: string) => void
+}) {
   const { unidades, resumen } = maestro
   const [vista, setVista] = useState<Vista>("identificacion")
   const [busqueda, setBusqueda] = useState("")
-  const [tipo, setTipo] = useState<string>("todos")
+  const [tipoLocal, setTipoLocal] = useState<string>("todos")
+  const tipo = tipoExterno ?? tipoLocal
+  const setTipo = (t: string | ((prev: string) => string)) => {
+    const valor = typeof t === "function" ? t(tipo) : t
+    if (onTipoChange) onTipoChange(valor)
+    else setTipoLocal(valor)
+  }
   const [verBajas, setVerBajas] = useState(false)
   const [foco, setFoco] = useState<Foco | null>(null)
 

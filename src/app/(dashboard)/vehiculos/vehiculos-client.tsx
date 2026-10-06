@@ -98,7 +98,8 @@ interface Props {
   combustible: RegistroCombustible[]
   vehiculos: CatalogoVehiculo[]
   choferes: CatalogoChofer[]
-  kmFlotaResumen: KmFlotaResumen | null
+  /** Un resumen por tipo de unidad + "todos" (ver getKmFlotaResumen). */
+  kmFlotaResumen: Record<string, KmFlotaResumen> | null
   alertas: AlertaVehiculo[]
   /** Padrón completo del parque (punto 1 de la auditoría de flota). */
   maestro: MaestroFlota | null
@@ -126,6 +127,13 @@ const severidadConfig = {
     iconColor: "text-red-500",
   },
 } as const
+
+/** Selector de tipo de unidad. Camiones primero: es lo que se mira por defecto. */
+const FILTROS_TIPO = [
+  { valor: "camion", label: "Camiones" },
+  { valor: "autoelevador", label: "Autoelevadores" },
+  { valor: "todos", label: "Todos" },
+]
 
 const estadoConfig = {
   en_base: { label: "En Base", color: "bg-slate-100 text-slate-700", icon: Home },
@@ -268,11 +276,40 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
   const esAutoelevadorDominio = (dominio: string) =>
     tipoPorDominio[dominio] === "autoelevador"
 
+  /**
+   * Tipo de unidad que se mira en toda la pantalla. Arranca en camiones: es lo
+   * que se sigue a diario, y los autoelevadores (horómetro, sin ruta) ensuciaban
+   * los totales. El maestro usa el mismo filtro, así sus chips y este selector
+   * nunca muestran cosas distintas.
+   */
+  const [filtroTipo, setFiltroTipo] = useState<string>("camion")
+  const coincideTipo = (dominio: string) =>
+    filtroTipo === "todos" || tipoPorDominio[dominio] === filtroTipo
+  const cantidadTipo = (t: string) =>
+    t === "todos" ? vehiculos.length : vehiculos.filter((v) => v.tipo === t).length
+  // Si el maestro filtró por un tipo que no está en el selector (camioneta,
+  // acoplado), se suma como opción para que se vea qué está filtrado.
+  const opcionesTipo = FILTROS_TIPO.some((f) => f.valor === filtroTipo)
+    ? FILTROS_TIPO
+    : [
+        ...FILTROS_TIPO.slice(0, 2),
+        { valor: filtroTipo, label: filtroTipo.charAt(0).toUpperCase() + filtroTipo.slice(1) },
+        FILTROS_TIPO[2],
+      ]
+  // Los autoelevadores se miden con horómetro: lo que en camiones son km acá son horas.
+  const unidad = filtroTipo === "autoelevador" ? "hs" : "km"
+
+  const kmResumen = kmFlotaResumen?.[filtroTipo] ?? null
+  const flotaTipo = estadoVehiculos.filter((v) => coincideTipo(v.dominio))
+  const alertasTipo = alertas.filter((a) => coincideTipo(a.dominio))
+  const checklistsTipo = checklists.filter((c) => coincideTipo(c.dominio))
+  const combustibleTipo = combustible.filter((c) => coincideTipo(c.dominio))
+
   const personasOpts = choferes.map((c) => c.nombre)
 
-  const enBase = estadoVehiculos.filter((v) => v.estado === "en_base").length
-  const enRuta = estadoVehiculos.filter((v) => v.estado === "en_ruta").length
-  const retornados = estadoVehiculos.filter((v) => v.estado === "retornado").length
+  const enBase = flotaTipo.filter((v) => v.estado === "en_base").length
+  const enRuta = flotaTipo.filter((v) => v.estado === "en_ruta").length
+  const retornados = flotaTipo.filter((v) => v.estado === "retornado").length
 
   /**
    * Las tarjetas de estado enfocan la tabla de Estado Flota Hoy. Se maneja la
@@ -282,28 +319,28 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
   const [filtroEstado, setFiltroEstado] = useState<EstadoVehiculo["estado"] | null>(null)
   const flotaFiltrada =
     filtroEstado == null
-      ? estadoVehiculos
-      : estadoVehiculos.filter((v) => v.estado === filtroEstado)
+      ? flotaTipo
+      : flotaTipo.filter((v) => v.estado === filtroEstado)
 
   function verEstado(e: EstadoVehiculo["estado"] | null) {
     setFiltroEstado((prev) => (prev === e ? null : e))
     setTab("flota")
   }
 
-  const kmDelta = kmFlotaResumen && kmFlotaResumen.kmAyer > 0
-    ? ((kmFlotaResumen.kmHoy - kmFlotaResumen.kmAyer) / kmFlotaResumen.kmAyer) * 100
+  const kmDelta = kmResumen && kmResumen.kmAyer > 0
+    ? ((kmResumen.kmHoy - kmResumen.kmAyer) / kmResumen.kmAyer) * 100
     : null
   const kmSube = kmDelta != null && kmDelta >= 0
 
-  const alertasVisibles = alertasExpanded ? alertas : alertas.slice(0, 3)
+  const alertasVisibles = alertasExpanded ? alertasTipo : alertasTipo.slice(0, 3)
 
-  const serieDiariaChart = (kmFlotaResumen?.serieDiariaMes ?? []).map((d) => ({
+  const serieDiariaChart = (kmResumen?.serieDiariaMes ?? []).map((d) => ({
     fecha: formatFechaCorta(d.fecha),
     km: d.km,
   }))
 
-  const topMaxKm = kmFlotaResumen?.topVehiculosMes?.[0]?.km ?? 0
-  const bottomMaxKm = kmFlotaResumen?.bottomVehiculosMes?.reduce((a, b) => Math.max(a, b.km), 0) ?? 0
+  const topMaxKm = kmResumen?.topVehiculosMes?.[0]?.km ?? 0
+  const bottomMaxKm = kmResumen?.bottomVehiculosMes?.reduce((a, b) => Math.max(a, b.km), 0) ?? 0
 
   async function handleDelete() {
     if (!deleteId) return
@@ -358,21 +395,45 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
         </div>
       </div>
 
+      {/* Tipo de unidad: filtra alertas, tarjetas y todas las solapas. */}
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Tipo de unidad">
+        {opcionesTipo.map((f) => {
+          const activo = filtroTipo === f.valor
+          return (
+            <Button
+              key={f.valor}
+              size="sm"
+              variant={activo ? "default" : "outline"}
+              aria-pressed={activo}
+              onClick={() => {
+                setFiltroTipo(f.valor)
+                setFiltroEstado(null)
+              }}
+            >
+              {f.label}
+              <span className={activo ? "ml-1.5 opacity-80" : "ml-1.5 text-muted-foreground"}>
+                {cantidadTipo(f.valor)}
+              </span>
+            </Button>
+          )
+        })}
+      </div>
+
       {/* Banner de alertas */}
-      {alertas.length > 0 && (
+      {alertasTipo.length > 0 && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <div className="flex items-center gap-2">
               <Bell className="h-4 w-4 text-amber-500" />
-              <CardTitle className="text-base">Alertas de flota ({alertas.length})</CardTitle>
+              <CardTitle className="text-base">Alertas de flota ({alertasTipo.length})</CardTitle>
             </div>
-            {alertas.length > 3 && (
+            {alertasTipo.length > 3 && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setAlertasExpanded((v) => !v)}
               >
-                {alertasExpanded ? "Ver menos" : `Ver todas (${alertas.length})`}
+                {alertasExpanded ? "Ver menos" : `Ver todas (${alertasTipo.length})`}
               </Button>
             )}
           </CardHeader>
@@ -409,7 +470,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <TarjetaKpi
           label="Total Vehículos"
-          valor={estadoVehiculos.length}
+          valor={flotaTipo.length}
           Icon={Truck}
           iconoClase="bg-slate-100 text-slate-600"
           pista="Ver toda la flota"
@@ -439,8 +500,8 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
         />
 
         <TarjetaKpi
-          label="Km Hoy"
-          valor={kmFlotaResumen ? kmFlotaResumen.kmHoy.toLocaleString("es-AR") : "—"}
+          label={unidad === "hs" ? "Horas Hoy" : "Km Hoy"}
+          valor={kmResumen ? kmResumen.kmHoy.toLocaleString("es-AR") : "—"}
           Icon={Gauge}
           iconoClase="bg-indigo-100 text-indigo-600"
           detalle={
@@ -467,14 +528,14 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
         />
 
         <TarjetaKpi
-          label="Km Mes"
-          valor={kmFlotaResumen ? kmFlotaResumen.kmMesActual.toLocaleString("es-AR") : "—"}
+          label={unidad === "hs" ? "Horas Mes" : "Km Mes"}
+          valor={kmResumen ? kmResumen.kmMesActual.toLocaleString("es-AR") : "—"}
           Icon={MapPin}
           iconoClase="bg-cyan-100 text-cyan-600"
           detalle={
             <p className="mt-2 text-xs text-muted-foreground">
-              {kmFlotaResumen
-                ? `Promedio: ${kmFlotaResumen.promedioDiarioMes.toLocaleString("es-AR")} km/día`
+              {kmResumen
+                ? `Promedio: ${kmResumen.promedioDiarioMes.toLocaleString("es-AR")} ${unidad}/día`
                 : "Sin datos"}
             </p>
           }
@@ -507,7 +568,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
 
         {maestro && (
           <TabsContent value="maestro">
-            <MaestroFlotaPanel maestro={maestro} />
+            <MaestroFlotaPanel maestro={maestro} tipo={filtroTipo} onTipoChange={setFiltroTipo} />
           </TabsContent>
         )}
 
@@ -533,7 +594,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
               )}
             </CardHeader>
             <CardContent>
-              {estadoVehiculos.length === 0 ? (
+              {flotaTipo.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">
                   No hay vehículos registrados en el catálogo.
                 </p>
@@ -616,7 +677,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
         <TabsContent value="km" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Km por día — últimos 30 días</CardTitle>
+              <CardTitle className="text-base">{unidad === "hs" ? "Horas" : "Km"} por día — últimos 30 días</CardTitle>
             </CardHeader>
             <CardContent>
               {serieDiariaChart.length === 0 ? (
@@ -629,9 +690,9 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                     <BarChart data={serieDiariaChart}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="fecha" fontSize={11} />
-                      <YAxis fontSize={11} unit=" km" />
+                      <YAxis fontSize={11} unit={` ${unidad}`} />
                       <RechartsTooltip
-                        formatter={(v) => [`${Number(v).toLocaleString("es-AR")} km`, "Km"]}
+                        formatter={(v) => [`${Number(v).toLocaleString("es-AR")} ${unidad}`, unidad === "hs" ? "Horas" : "Km"]}
                       />
                       <Bar dataKey="km" fill="#3B82F6" radius={[4, 4, 0, 0]} />
                     </BarChart>
@@ -647,11 +708,11 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                 <CardTitle className="text-base">Top 5 vehículos del mes</CardTitle>
               </CardHeader>
               <CardContent>
-                {!kmFlotaResumen || kmFlotaResumen.topVehiculosMes.length === 0 ? (
+                {!kmResumen || kmResumen.topVehiculosMes.length === 0 ? (
                   <p className="text-center text-muted-foreground py-4">Sin datos.</p>
                 ) : (
                   <div className="space-y-3">
-                    {kmFlotaResumen.topVehiculosMes.map((v) => {
+                    {kmResumen.topVehiculosMes.map((v) => {
                       const pct = topMaxKm > 0 ? (v.km / topMaxKm) * 100 : 0
                       return (
                         <Link
@@ -665,7 +726,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                                 {v.dominio}
                               </span>
                               <span className="font-mono">
-                                {v.km.toLocaleString("es-AR")} km
+                                {v.km.toLocaleString("es-AR")} {unidad}
                               </span>
                             </div>
                             <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
@@ -688,11 +749,11 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                 <CardTitle className="text-base">Bottom 5 vehículos del mes</CardTitle>
               </CardHeader>
               <CardContent>
-                {!kmFlotaResumen || kmFlotaResumen.bottomVehiculosMes.length === 0 ? (
+                {!kmResumen || kmResumen.bottomVehiculosMes.length === 0 ? (
                   <p className="text-center text-muted-foreground py-4">Sin datos.</p>
                 ) : (
                   <div className="space-y-3">
-                    {kmFlotaResumen.bottomVehiculosMes.map((v) => {
+                    {kmResumen.bottomVehiculosMes.map((v) => {
                       const pct = bottomMaxKm > 0 ? (v.km / bottomMaxKm) * 100 : 0
                       return (
                         <Link
@@ -706,7 +767,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                                 {v.dominio}
                               </span>
                               <span className="font-mono">
-                                {v.km.toLocaleString("es-AR")} km
+                                {v.km.toLocaleString("es-AR")} {unidad}
                               </span>
                             </div>
                             <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
@@ -733,7 +794,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
               con el lápiz y el tacho porque es donde vive el formulario de
               edición; allá entra de consulta. */}
           <HistorialChecklists
-            checklists={checklists}
+            checklists={checklistsTipo}
             tipoPorDominio={tipoPorDominio}
             onEditar={openEditChk}
             onBorrar={(id) => {
@@ -755,7 +816,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
               </Link>
             </CardHeader>
             <CardContent>
-              {combustible.length === 0 ? (
+              {combustibleTipo.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">
                   No hay cargas de combustible registradas.
                 </p>
@@ -775,7 +836,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {combustible.map((c) => (
+                      {combustibleTipo.map((c) => (
                         <TableRow key={c.id}>
                           <TableCell className="text-sm">{c.fecha}</TableCell>
                           <TableCell>

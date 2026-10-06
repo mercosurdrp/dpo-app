@@ -85,62 +85,89 @@ export async function getKmPorVehiculo(filters?: {
   }
 }
 
-export async function getKmFlotaResumen(): Promise<{ data: KmFlotaResumen } | { error: string }> {
+/**
+ * Resumen de km de la flota, uno por tipo de unidad ("camion", "autoelevador"…)
+ * más "todos". La pantalla de Vehículos filtra por tipo y estos números no se
+ * pueden recortar en el cliente: son sumas por día. Además, en autoelevadores
+ * la lectura es el horómetro, así que mezclarlos con camiones sumaba horas a km.
+ */
+export async function getKmFlotaResumen(): Promise<
+  { data: Record<string, KmFlotaResumen> } | { error: string }
+> {
   try {
     await requireAuth()
     const hoy = today()
-    const ayer = addDays(hoy, -1)
     const inicioMes = startOfMonth(hoy)
     const hace30 = addDays(hoy, -29)
     const desde = inicioMes < hace30 ? inicioMes : hace30
 
-    const res = await getKmPorVehiculo({ fechaDesde: desde, fechaHasta: hoy })
+    const supabase = await createClient()
+    const [res, catRes] = await Promise.all([
+      getKmPorVehiculo({ fechaDesde: desde, fechaHasta: hoy }),
+      supabase.from("catalogo_vehiculos").select("dominio, tipo"),
+    ])
     if ("error" in res) return { error: res.error }
-    const dias = res.data
+    if (catRes.error) return { error: catRes.error.message }
 
-    const kmHoy = dias.filter((d) => d.fecha === hoy).reduce((a, b) => a + b.km, 0)
-    const kmAyer = dias.filter((d) => d.fecha === ayer).reduce((a, b) => a + b.km, 0)
-    const diasMes = dias.filter((d) => d.fecha >= inicioMes)
-    const kmMesActual = diasMes.reduce((a, b) => a + b.km, 0)
-    const fechasConActividadMes = new Set(diasMes.map((d) => d.fecha))
-    const promedioDiarioMes =
-      fechasConActividadMes.size > 0 ? Math.round(kmMesActual / fechasConActividadMes.size) : 0
-
-    const porDominioMes = new Map<string, number>()
-    for (const d of diasMes) {
-      porDominioMes.set(d.dominio, (porDominioMes.get(d.dominio) || 0) + d.km)
+    const tipoPorDominio = new Map(
+      (catRes.data ?? []).map((v) => [v.dominio as string, (v.tipo as string | null) ?? null])
+    )
+    const porTipo: Record<string, KmFlotaResumen> = { todos: resumirKm(res.data, hoy) }
+    for (const t of new Set(tipoPorDominio.values())) {
+      if (!t) continue
+      porTipo[t] = resumirKm(
+        res.data.filter((d) => tipoPorDominio.get(d.dominio) === t),
+        hoy
+      )
     }
-    const rankedMes = Array.from(porDominioMes.entries())
-      .map(([dominio, km]) => ({ dominio, km }))
-      .sort((a, b) => b.km - a.km)
-    const topVehiculosMes = rankedMes.slice(0, 5)
-    const bottomVehiculosMes = rankedMes.filter((v) => v.km > 0).slice(-5).reverse()
-
-    const serieMap = new Map<string, number>()
-    for (let i = 29; i >= 0; i--) {
-      const f = addDays(hoy, -i)
-      serieMap.set(f, 0)
-    }
-    for (const d of dias) {
-      if (serieMap.has(d.fecha)) {
-        serieMap.set(d.fecha, (serieMap.get(d.fecha) || 0) + d.km)
-      }
-    }
-    const serieDiariaMes = Array.from(serieMap.entries()).map(([fecha, km]) => ({ fecha, km }))
-
-    return {
-      data: {
-        kmHoy,
-        kmAyer,
-        kmMesActual,
-        promedioDiarioMes,
-        topVehiculosMes,
-        bottomVehiculosMes,
-        serieDiariaMes,
-      },
-    }
+    return { data: porTipo }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+function resumirKm(dias: VehiculoKmDia[], hoy: string): KmFlotaResumen {
+  const ayer = addDays(hoy, -1)
+  const inicioMes = startOfMonth(hoy)
+
+  const kmHoy = dias.filter((d) => d.fecha === hoy).reduce((a, b) => a + b.km, 0)
+  const kmAyer = dias.filter((d) => d.fecha === ayer).reduce((a, b) => a + b.km, 0)
+  const diasMes = dias.filter((d) => d.fecha >= inicioMes)
+  const kmMesActual = diasMes.reduce((a, b) => a + b.km, 0)
+  const fechasConActividadMes = new Set(diasMes.map((d) => d.fecha))
+  const promedioDiarioMes =
+    fechasConActividadMes.size > 0 ? Math.round(kmMesActual / fechasConActividadMes.size) : 0
+
+  const porDominioMes = new Map<string, number>()
+  for (const d of diasMes) {
+    porDominioMes.set(d.dominio, (porDominioMes.get(d.dominio) || 0) + d.km)
+  }
+  const rankedMes = Array.from(porDominioMes.entries())
+    .map(([dominio, km]) => ({ dominio, km }))
+    .sort((a, b) => b.km - a.km)
+  const topVehiculosMes = rankedMes.slice(0, 5)
+  const bottomVehiculosMes = rankedMes.filter((v) => v.km > 0).slice(-5).reverse()
+
+  const serieMap = new Map<string, number>()
+  for (let i = 29; i >= 0; i--) {
+    const f = addDays(hoy, -i)
+    serieMap.set(f, 0)
+  }
+  for (const d of dias) {
+    if (serieMap.has(d.fecha)) {
+      serieMap.set(d.fecha, (serieMap.get(d.fecha) || 0) + d.km)
+    }
+  }
+  const serieDiariaMes = Array.from(serieMap.entries()).map(([fecha, km]) => ({ fecha, km }))
+
+  return {
+    kmHoy,
+    kmAyer,
+    kmMesActual,
+    promedioDiarioMes,
+    topVehiculosMes,
+    bottomVehiculosMes,
+    serieDiariaMes,
   }
 }
 
