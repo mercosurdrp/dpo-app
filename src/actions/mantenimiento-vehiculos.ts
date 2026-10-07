@@ -1537,6 +1537,9 @@ export async function deleteMantenimiento(
 
 // ==================== CHECK LISTS (vista mantenimiento) ====================
 
+/** Valores de respuesta que NO son un defecto (el resto observa el ítem). */
+const VALORES_OK = new Set(["ok", "bueno"])
+
 export type ChecklistPlanTipo = "correctivo" | "preventivo" | "proactivo"
 export type ChecklistPlanEstado = "pendiente" | "en_proceso" | "resuelto"
 
@@ -2341,6 +2344,62 @@ export async function eliminarItemChecklist(
   try {
     await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
+
+    /**
+     * 🚨 No se puede borrar el ítem que sostiene un rechazo.
+     *
+     * El resultado del checklist se calcula una sola vez, al cargarlo, y no se
+     * recalcula NUNCA: un desaprobado queda desaprobado para siempre. Si lo que
+     * se borra es el único ítem en NO OK, el cartel rojo se queda sin un solo
+     * dato que explique por qué, y no hay forma de reconstruirlo.
+     *
+     * Es exactamente lo que pasó con los tres desaprobados sin motivo que
+     * aparecieron el 06/10/2026: al AE908DF del 03/08 (salida) y del 07/08
+     * (retorno) les falta la respuesta de «Luces de frenos» —crítico— y al HELI1
+     * del 26/06 le faltan «Estado del matafuegos» y «Pérdida de fluidos». Las
+     * respuestas no están: se borraron desde acá.
+     *
+     * La salida es corregir el ítem desde el checklist, que ya exige dejar la
+     * observación del motivo, y no borrarlo. Si el checklist YA tiene esa
+     * observación, el borrado se permite: el motivo quedó escrito.
+     */
+    const { data: respuesta } = await supabase
+      .from("checklist_respuestas")
+      .select("valor, checklist_id, item:checklist_items(nombre)")
+      .eq("id", respuestaId)
+      .maybeSingle()
+    const resp = respuesta as unknown as {
+      valor: string
+      checklist_id: string
+      item: { nombre: string } | null
+    } | null
+    if (resp && !VALORES_OK.has(resp.valor)) {
+      const { data: cl } = await supabase
+        .from("checklist_vehiculos")
+        .select("resultado, observaciones")
+        .eq("id", resp.checklist_id)
+        .maybeSingle()
+      const checklist = cl as { resultado: string | null; observaciones: string | null } | null
+      if (
+        checklist?.resultado === "rechazado" &&
+        !(checklist.observaciones ?? "").trim()
+      ) {
+        const { data: otras } = await supabase
+          .from("checklist_respuestas")
+          .select("valor")
+          .eq("checklist_id", resp.checklist_id)
+          .neq("id", respuestaId)
+        const quedaOtroNoOk = ((otras ?? []) as { valor: string }[]).some(
+          (o) => !VALORES_OK.has(o.valor)
+        )
+        if (!quedaOtroNoOk) {
+          return {
+            error: `«${resp.item?.nombre ?? "Este ítem"}» es el único ítem en NO OK de un checklist DESAPROBADO: si lo borrás, el rechazo queda sin motivo para siempre (el resultado no se recalcula nunca). Corregí el ítem desde el checklist —ahí la app pide la observación que explica el rechazo— en vez de borrarlo.`,
+          }
+        }
+      }
+    }
+
     // 1) plan de acción + foto (si tiene)
     const { data: plan } = await supabase
       .from("checklist_planes_accion")
