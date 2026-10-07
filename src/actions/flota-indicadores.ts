@@ -44,6 +44,7 @@ export type FlotaKpi =
   | "neumaticos_conformidad"
   | "neumaticos_medicion"
   | "neumaticos_desgaste"
+  | "presupuesto_desvio"
 
 export type PlanFlotaEstado = "abierto" | "en_progreso" | "cerrado"
 export type PlanFlotaItemEstado = "pendiente" | "en_progreso" | "completado"
@@ -182,6 +183,34 @@ const RUBRO_SIN_TRAZABILIDAD = "neumaticos"
  */
 const INICIO_TRAZABILIDAD = "2026-08-25"
 
+/**
+ * Rubros del presupuesto que responden al Gestor de Flota (DPO 3.2).
+ *
+ * El presupuesto del CD trae 46 rubros y el nombre es texto libre, escrito
+ * distinto según quién cargó el mes: "REPARACIÓN: RODADO" y "Reparación y
+ * Mtto: Neumáticos Rodados" conviven. Por eso se identifican por patrón y no
+ * por una lista cerrada de nombres.
+ *
+ * 🚨 `presupuestos_tareas` NO es el presupuesto completo: son los rubros que
+ * el control mensual marcó con desvío, cada uno con su causa y su responsable
+ * (69 filas para 46 rubros en 8 meses). El presupuesto entero vive en el Excel
+ * anual, fuera de la base. Entonces el denominador de este indicador es el
+ * presupuesto DE LOS RUBROS OBSERVADOS, no el de toda la flota: dice cuánto se
+ * pasó lo que ya se sabía que se estaba yendo, no qué porcentaje del
+ * presupuesto total se excedió. Es lo que el dato permite afirmar.
+ *
+ * 🚨 Queda AFUERA "SUBCONTRATACIÓN: FLOTA", que es acarreo de terceros: son
+ * ~$47 M contra los ~$8 M de reparación de rodados, así que adentro el
+ * indicador dejaría de medir la gestión de la flota propia para medir cuánto
+ * acarreo se contrató ese mes —una decisión que no toma mantenimiento—. Si se
+ * quiere seguir, va como indicador aparte.
+ */
+function esRubroDeFlota(rubro: string | null | undefined): boolean {
+  if (!rubro) return false
+  if (/subcontrataci/i.test(rubro)) return false
+  return /rodado|neum[áa]tic|autoelevador|combustible|gasoil/i.test(rubro)
+}
+
 /** Ventana de matcheo defecto de checklist → OT correctiva (días). */
 const DETECCION_VENTANA_DIAS = 15
 
@@ -280,6 +309,10 @@ const CO2_KG_POR_LITRO = 2.68
 
 const pad2 = (n: number) => String(n).padStart(2, "0")
 
+/** "$1.234.567" — para los motivos del detalle del desvío presupuestario. */
+const fmtPesos = (n: number) =>
+  `$${Math.round(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })}`
+
 /** Últimos 3 meses ARG como "YYYY-MM" (2 cerrados + el actual). */
 function meses3Argentina(): string[] {
   const s = new Intl.DateTimeFormat("en-CA", {
@@ -359,7 +392,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .map((it) => it.id),
     )
 
-    const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes, vehRes, repOtRes] = await Promise.all([
+    const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes, vehRes, repOtRes, presupRes] = await Promise.all([
       supabase
         .from("mantenimiento_realizados")
         .select("id, dominio, fecha, rubro")
@@ -419,6 +452,11 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .select("repuesto_id, ot:mantenimiento_realizados!inner(fecha, estado, rubro)")
         .neq("ot.estado", "cancelado")
         .gte("ot.fecha", inicioVentana),
+      // Presupuesto vs. real por rubro y mes (DPO 3.2 / R3.2.3).
+      supabase
+        .from("presupuestos_tareas")
+        .select("anio, mes, rubro, monto_presupuestado, monto_real")
+        .gte("anio", Number(meses[0].slice(0, 4))),
     ])
     if (otRes.error) return { error: otRes.error.message }
     if (otParadaRes.error) return { error: otParadaRes.error.message }
@@ -459,6 +497,37 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       acc.total++
       if (r.repuesto_id) acc.vinculados++
       trazaMes.set(ym, acc)
+    }
+
+    /**
+     * Desvío presupuestario de flota (DPO 3.2 / R3.2.3).
+     *
+     * (real − presupuestado) ÷ presupuestado, en %, sobre los rubros de flota
+     * del mes. Positivo = se gastó de más, que es el caso que importa.
+     *
+     * 🚨 Se suma primero y se divide después, no es el promedio de los desvíos
+     * de cada rubro: un rubro chico con 300 % de desvío —los $1,5 M de
+     * autoelevador de marzo contra un presupuesto de $1,6 M— pesaría igual que
+     * el combustible, que mueve diez veces más plata. El desvío que impacta en
+     * el resultado del CD es el de la plata, no el del porcentaje.
+     *
+     * Un rubro presupuestado en 0 con gasto real entra igual al numerador: es
+     * gasto no previsto, y es justamente lo que hay que ver.
+     */
+    const presupMes = new Map<string, { presupuestado: number; real: number }>()
+    for (const t of (presupRes.data || []) as unknown as Array<{
+      anio: number
+      mes: number
+      rubro: string | null
+      monto_presupuestado: number | null
+      monto_real: number | null
+    }>) {
+      if (!esRubroDeFlota(t.rubro)) continue
+      const ym = `${t.anio}-${pad2(t.mes)}`
+      const acc = presupMes.get(ym) ?? { presupuestado: 0, real: 0 }
+      acc.presupuestado += Number(t.monto_presupuestado ?? 0)
+      acc.real += Number(t.monto_real ?? 0)
+      presupMes.set(ym, acc)
     }
 
     /**
@@ -902,6 +971,18 @@ export async function getFlotaKpiSeriesExtra(): Promise<
           ym,
           valor: diasParado.get(ym) ?? 0,
         })),
+        // Mes sin presupuesto cargado = null (sin dato), no 0 %: no haber
+        // cargado el mes no es lo mismo que haber gastado lo previsto.
+        presupuesto_desvio: meses.map((ym) => {
+          const p = presupMes.get(ym)
+          return {
+            ym,
+            valor:
+              p && p.presupuestado > 0
+                ? ((p.real - p.presupuestado) / p.presupuestado) * 100
+                : null,
+          }
+        }),
         // Cuántas de las cubiertas medidas están dentro de norma. Mes sin
         // ninguna medición = null (sin dato), no 0 %: no medir no es lo mismo
         // que estar fuera de norma — eso lo dice `neumaticos_medicion`.
@@ -972,6 +1053,7 @@ export type FlotaKpiConDetalle =
   | "checklist_deteccion"
   | "checklist_resolucion"
   | "repuestos_trazabilidad"
+  | "presupuesto_desvio"
 
 export interface FilaDetalleKpi {
   /** Qué es la fila: "OT 1768", "AF028YB", … */
@@ -1194,6 +1276,71 @@ export async function getFlotaKpiDetalle(
         // Sin redondear: el panel divide numerador/denominador y tiene que dar
         // exactamente el mismo número que la tarjeta.
         data: { kpi, ym, numerador: suma, denominador: n, excluidos, filas },
+      }
+    }
+
+    if (kpi === "presupuesto_desvio") {
+      /**
+       * El detalle del desvío es la lista de rubros del mes con lo
+       * presupuestado, lo gastado y la diferencia en plata.
+       *
+       * `cuenta` marca los que se pasaron: son los que hay que explicar. El
+       * orden es por diferencia en PESOS y no por porcentaje, por lo mismo que
+       * el total se calcula sobre la suma — lo que duele es la plata.
+       */
+      const { data, error } = await supabase
+        .from("presupuestos_tareas")
+        .select("rubro, monto_presupuestado, monto_real, descripcion, estado")
+        .eq("anio", Number(ym.slice(0, 4)))
+        .eq("mes", Number(ym.slice(5, 7)))
+      if (error) return { error: error.message }
+
+      type Fila = {
+        rubro: string | null
+        monto_presupuestado: number | null
+        monto_real: number | null
+        descripcion: string | null
+        estado: string | null
+      }
+      const deFlota = ((data || []) as unknown as Fila[]).filter((t) => esRubroDeFlota(t.rubro))
+      let presupuestado = 0
+      let real = 0
+      const filas: FilaDetalleKpi[] = deFlota
+        .map((t) => {
+          const p = Number(t.monto_presupuestado ?? 0)
+          const r = Number(t.monto_real ?? 0)
+          presupuestado += p
+          real += r
+          const dif = r - p
+          const pct = p > 0 ? (dif / p) * 100 : null
+          return {
+            titulo: t.rubro ?? "sin rubro",
+            subtitulo:
+              `Presupuestado ${fmtPesos(p)} · Real ${fmtPesos(r)}` +
+              (t.descripcion ? ` — ${t.descripcion}` : ""),
+            fecha: null,
+            // "Cuenta" = se pasó del presupuesto. Es el que hay que explicar.
+            cuenta: dif > 0,
+            motivo:
+              p === 0
+                ? "Gasto no presupuestado para este mes"
+                : dif > 0
+                  ? `Se pasó ${fmtPesos(dif)} (${pct!.toFixed(0)} %)`
+                  : `Dentro del presupuesto, ${fmtPesos(-dif)} por debajo`,
+            valor: dif,
+          }
+        })
+        .sort((a, b) => (b.valor ?? 0) - (a.valor ?? 0))
+
+      return {
+        data: {
+          kpi,
+          ym,
+          numerador: Math.round(real),
+          denominador: Math.round(presupuestado),
+          excluidos: 0,
+          filas,
+        },
       }
     }
 

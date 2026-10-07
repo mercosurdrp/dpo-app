@@ -163,6 +163,10 @@ const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
     detalle: "repuestos_trazabilidad",
     label: "Ver los repuestos cargados en OT",
   },
+  presupuesto_desvio: {
+    detalle: "presupuesto_desvio",
+    label: "Ver el desvío rubro por rubro",
+  },
 }
 
 /** Encabezado del panel: qué significan el numerador y el denominador. */
@@ -173,6 +177,11 @@ const RESUMEN_DETALLE: Record<FlotaKpiConDetalle, (d: DetalleKpi) => string> = {
     `${d.denominador} ${d.denominador === 1 ? "plan resuelto" : "planes resueltos"}, ${(d.denominador > 0 ? d.numerador / d.denominador : 0).toFixed(1)} días promedio${d.excluidos > 0 ? ` · ${d.excluidos} sin tiempo medible` : ""}`,
   repuestos_trazabilidad: (d) =>
     `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "fila" : "filas"} de repuesto vinculan al ítem del pañol`,
+  presupuesto_desvio: (d) =>
+    `Gastado $${d.numerador.toLocaleString("es-AR")} contra $${d.denominador.toLocaleString("es-AR")} presupuestados` +
+    (d.denominador > 0
+      ? ` · ${(((d.numerador - d.denominador) / d.denominador) * 100).toFixed(0)} % de desvío`
+      : ""),
 }
 
 function DetalleKpiDialog({
@@ -334,6 +343,15 @@ const KPI_DEFS: KpiDef[] = [
     conSerie: true,
     dpo: "3.2",
     acumulativo: true,
+  },
+  {
+    kpi: "presupuesto_desvio",
+    label: "Desvío presupuestario de flota",
+    descripcion:
+      "Gasto real vs. presupuestado en los rubros de flota que el control mensual marcó con desvío: rodados, neumáticos, autoelevadores y combustible",
+    fmt: (v) => `${v > 0 ? "+" : ""}${v.toFixed(0)}%`,
+    conSerie: true,
+    dpo: "3.2",
   },
   {
     kpi: "pct_preventivo",
