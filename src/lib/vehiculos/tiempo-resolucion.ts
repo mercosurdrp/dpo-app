@@ -21,6 +21,13 @@ export interface PlanResumen {
   resueltoAt: string | null
   /** Horas entre la carga del checklist y el cierre del plan; null si sigue abierto. */
   horasResolucion: number | null
+  /**
+   * OT en la que se repara el defecto, cuando es más grave que un foco o un
+   * relay. null = se resolvió sin OT.
+   */
+  otId: string | null
+  /** N° de esa OT, para mostrarlo al lado del rechazo. */
+  otNumero: string | null
 }
 
 /** Horas transcurridas entre dos timestamps ISO. null si falta alguno o el orden es inválido. */

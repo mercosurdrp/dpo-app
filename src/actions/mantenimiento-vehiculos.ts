@@ -1555,6 +1555,19 @@ export interface ChecklistPlanAccion {
   repuestoCantidad: number | null
   /** Egreso de pañol que este plan ya generó. Si está, no se vuelve a descontar. */
   movimientoId: string | null
+  /**
+   * OT en la que se repara el defecto.
+   *
+   * Último tramo de la cadena del rechazo: checklist rechazado → foco → plan de
+   * acción → y si es más grave que un foco o un relay, una OT programada. null
+   * = se resolvió sin OT, que es el caso de la enorme mayoría (foco, mica,
+   * destellador).
+   */
+  otId: string | null
+  /** N° de esa OT, resuelto en la misma consulta para mostrarlo en la fila. */
+  otNumero: string | null
+  otFecha: string | null
+  otEstado: MantenimientoEstado | null
   createdAt: string
   updatedAt: string
 }
@@ -1611,6 +1624,9 @@ export interface ChecklistItemNoOk {
  * `42703` (columna inexistente) se prueba el anterior, y así el módulo sigue
  * andando sin la funcionalidad nueva en vez de romperse entero.
  */
+const PLAN_COLUMNAS_OT =
+  "id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, resuelto_at, repuesto_id, repuesto_cantidad, movimiento_id, ot_id, created_at, updated_at"
+/** Sin la OT asociada al plan. */
 const PLAN_COLUMNAS_FULL =
   "id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, resuelto_at, repuesto_id, repuesto_cantidad, movimiento_id, created_at, updated_at"
 /** Sin el repuesto del pañol. `resuelto_at` sella el fin del tiempo de respuesta. */
@@ -1619,6 +1635,87 @@ const PLAN_COLUMNAS =
 /** Mismo select sin `resuelto_at`, por si esa migración tampoco se aplicó. */
 const PLAN_COLUMNAS_LEGACY =
   "id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, created_at, updated_at"
+
+/**
+ * Lee planes de acción bajando un escalón de la cascada por cada 42703:
+ * OT → repuesto → resuelto_at → legacy. Centralizado para que la lectura del
+ * listado y la relectura del upsert no puedan quedar desalineadas.
+ */
+async function leerPlanesChecklist(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  respuestaIds: string[]
+): Promise<Record<string, unknown>[]> {
+  if (respuestaIds.length === 0) return []
+  const cascada = [
+    PLAN_COLUMNAS_OT,
+    PLAN_COLUMNAS_FULL,
+    PLAN_COLUMNAS,
+    PLAN_COLUMNAS_LEGACY,
+  ]
+  for (const [i, columnas] of cascada.entries()) {
+    const { data, error } = await supabase
+      .from("checklist_planes_accion")
+      .select(columnas)
+      .in("respuesta_id", respuestaIds)
+    if (!error) return (data || []) as unknown as Record<string, unknown>[]
+    if (error.code !== "42703" || i === cascada.length - 1) throw new Error(error.message)
+  }
+  return []
+}
+
+/** Fila de `checklist_planes_accion` → plan de acción, con lo que falte en null. */
+function mapPlanRow(row: Record<string, unknown>): ChecklistPlanAccion {
+  const estado = row.estado as ChecklistPlanEstado
+  return {
+    id: row.id as string,
+    respuestaId: row.respuesta_id as string,
+    tipo: row.tipo as ChecklistPlanTipo,
+    estado,
+    descripcion: row.descripcion as string,
+    fotoUrl: (row.foto_url as string | null) ?? null,
+    fotoPath: (row.foto_path as string | null) ?? null,
+    resueltoAt:
+      estado === "resuelto"
+        ? ((row.resuelto_at as string | null) ?? (row.updated_at as string | null) ?? null)
+        : null,
+    repuestoId: (row.repuesto_id as string | null) ?? null,
+    repuestoCantidad: (row.repuesto_cantidad as number | null) ?? null,
+    movimientoId: (row.movimiento_id as string | null) ?? null,
+    otId: (row.ot_id as string | null) ?? null,
+    otNumero: null,
+    otFecha: null,
+    otEstado: null,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  }
+}
+
+/**
+ * Completa el N° / fecha / estado de la OT de cada plan que tenga una.
+ *
+ * Se resuelve acá y no en la UI para que la fila del foco muestre "OT 1785" sin
+ * una consulta por fila. Muta los planes que recibe.
+ */
+async function completarOtDePlanes(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  planes: ChecklistPlanAccion[]
+): Promise<void> {
+  const ids = [...new Set(planes.map((p) => p.otId).filter((id): id is string => !!id))]
+  if (ids.length === 0) return
+  const { data } = await supabase
+    .from("mantenimiento_realizados")
+    .select("id, numero_ot, fecha, estado")
+    .in("id", ids)
+  type OtRow = { id: string; numero_ot: string | null; fecha: string; estado: MantenimientoEstado }
+  const porId = new Map(((data || []) as unknown as OtRow[]).map((o) => [o.id, o]))
+  for (const p of planes) {
+    const ot = p.otId ? porId.get(p.otId) : undefined
+    if (!ot) continue
+    p.otNumero = ot.numero_ot ?? null
+    p.otFecha = ot.fecha
+    p.otEstado = ot.estado
+  }
+}
 
 export interface ChecklistComentario {
   id: string
@@ -1701,66 +1798,12 @@ export async function getChecklistsMtto(): Promise<
     const respuestaIds = itemsBase.map((i) => i.id)
     const planesById = new Map<string, ChecklistPlanAccion>()
     if (respuestaIds.length > 0) {
-      type PlanRow = {
-        id: string
-        respuesta_id: string
-        tipo: ChecklistPlanTipo
-        estado: ChecklistPlanEstado
-        descripcion: string
-        foto_url: string | null
-        foto_path: string | null
-        resuelto_at?: string | null
-        repuesto_id?: string | null
-        repuesto_cantidad?: number | null
-        movimiento_id?: string | null
-        created_at: string
-        updated_at: string
+      for (const row of await leerPlanesChecklist(supabase, respuestaIds)) {
+        const plan = mapPlanRow(row)
+        planesById.set(plan.respuestaId, plan)
       }
-      let planesData: PlanRow[] = []
-      // Cascada: repuesto → resuelto_at → legacy. 42703 = esa migración todavía
-      // no está aplicada en la base.
-      const full = await supabase
-        .from("checklist_planes_accion")
-        .select(PLAN_COLUMNAS_FULL)
-        .in("respuesta_id", respuestaIds)
-      if (!full.error) {
-        planesData = (full.data || []) as unknown as PlanRow[]
-      } else {
-        if (full.error.code !== "42703") throw new Error(full.error.message)
-        const { data, error: planesErr } = await supabase
-          .from("checklist_planes_accion")
-          .select(PLAN_COLUMNAS)
-          .in("respuesta_id", respuestaIds)
-        if (planesErr) {
-          if (planesErr.code !== "42703") throw new Error(planesErr.message)
-          const legacy = await supabase
-            .from("checklist_planes_accion")
-            .select(PLAN_COLUMNAS_LEGACY)
-            .in("respuesta_id", respuestaIds)
-          if (legacy.error) throw new Error(legacy.error.message)
-          planesData = (legacy.data || []) as unknown as PlanRow[]
-        } else {
-          planesData = (data || []) as unknown as PlanRow[]
-        }
-      }
-      for (const p of planesData) {
-        planesById.set(p.respuesta_id, {
-          id: p.id,
-          respuestaId: p.respuesta_id,
-          tipo: p.tipo,
-          estado: p.estado,
-          descripcion: p.descripcion,
-          fotoUrl: p.foto_url,
-          fotoPath: p.foto_path,
-          resueltoAt:
-            p.estado === "resuelto" ? (p.resuelto_at ?? p.updated_at ?? null) : null,
-          repuestoId: p.repuesto_id ?? null,
-          repuestoCantidad: p.repuesto_cantidad ?? null,
-          movimientoId: p.movimiento_id ?? null,
-          createdAt: p.created_at,
-          updatedAt: p.updated_at,
-        })
-      }
+      // La OT del plan, para que el foco muestre su N° sin entrar a la orden.
+      await completarOtDePlanes(supabase, [...planesById.values()])
     }
 
     const conPlan = itemsBase.map((i) => ({
@@ -1896,6 +1939,9 @@ export async function upsertPlanChecklist(
 
     // Repuesto del pañol usado para resolver el ítem (foco, mica, destellador,
     // carro). Opcional: la enorme mayoría de los planes no consume nada.
+    // OT en la que se repara el defecto, cuando es más grave que un foco o un
+    // relay. Opcional: el plan es válido igual sin OT.
+    const otId = String(formData.get("ot_id") || "").trim() || null
     const repuestoId = String(formData.get("repuesto_id") || "").trim() || null
     const repuestoCantidadRaw = String(formData.get("repuesto_cantidad") || "").trim()
     const repuestoCantidad = repuestoId
@@ -1928,6 +1974,18 @@ export async function upsertPlanChecklist(
     if (sonda.error) {
       if (sonda.error.code !== "42703") return { error: sonda.error.message }
       hayColumnas = false
+    }
+
+    // Misma sonda para `ot_id`: si la migración no corrió, el vínculo con la OT
+    // se ignora y el resto del plan se guarda igual.
+    const sondaOt = await supabase
+      .from("checklist_planes_accion")
+      .select("ot_id")
+      .limit(1)
+    let hayOt = true
+    if (sondaOt.error) {
+      if (sondaOt.error.code !== "42703") return { error: sondaOt.error.message }
+      hayOt = false
     }
 
     let movimientoPrevio: string | null = null
@@ -2034,6 +2092,7 @@ export async function upsertPlanChecklist(
             movimiento_id: movimientoId,
           }
         : {}),
+      ...(hayOt ? { ot_id: otId } : {}),
       ...(sigueResuelto ? {} : { updated_at: new Date().toISOString() }),
     }
 
@@ -2075,7 +2134,15 @@ export async function upsertPlanChecklist(
           p.id,
         ])
       )
-      const comunes = { tipo, estado, descripcion, updated_at: new Date().toISOString() }
+      // La OT también va a toda la serie: es la misma reparación del mismo
+      // defecto repetido día a día, no una orden por checklist.
+      const comunes = {
+        tipo,
+        estado,
+        descripcion,
+        ...(hayOt ? { ot_id: otId } : {}),
+        updated_at: new Date().toISOString(),
+      }
       for (const rid of extras) {
         const planExistente = planPorRespuesta.get(rid)
         const { error } = planExistente
@@ -2090,57 +2157,146 @@ export async function upsertPlanChecklist(
       }
     }
 
-    // Misma cascada que en la lectura: repuesto → resuelto_at → legacy.
-    let row: Record<string, unknown> | null = null
-    if (hayColumnas) {
-      const full = await supabase
-        .from("checklist_planes_accion")
-        .select(PLAN_COLUMNAS_FULL)
-        .eq("respuesta_id", respuestaId)
-        .single()
-      if (full.error) return { error: full.error.message }
-      row = full.data as unknown as Record<string, unknown>
-    } else {
-      const releer = await supabase
-        .from("checklist_planes_accion")
-        .select(PLAN_COLUMNAS)
-        .eq("respuesta_id", respuestaId)
-        .single()
-      if (releer.error) {
-        if (releer.error.code !== "42703") return { error: releer.error.message }
-        const legacy = await supabase
-          .from("checklist_planes_accion")
-          .select(PLAN_COLUMNAS_LEGACY)
-          .eq("respuesta_id", respuestaId)
-          .single()
-        if (legacy.error) return { error: legacy.error.message }
-        row = legacy.data as unknown as Record<string, unknown>
-      } else {
-        row = releer.data as unknown as Record<string, unknown>
-      }
-    }
+    // Misma cascada que en la lectura: OT → repuesto → resuelto_at → legacy.
+    const filas = await leerPlanesChecklist(supabase, [respuestaId])
+    const row = filas[0]
+    if (!row) return { error: "El plan se guardó pero no se pudo releer" }
+    const plan = mapPlanRow(row)
+    await completarOtDePlanes(supabase, [plan])
+    return { data: plan }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
 
-    const estadoRow = row.estado as ChecklistPlanEstado
+/** Una OT de la unidad, lo mínimo para elegirla desde el plan de acción. */
+export interface OtParaPlan {
+  id: string
+  numeroOt: string | null
+  fecha: string
+  tipo: MantenimientoTipo
+  estado: MantenimientoEstado
+  taller: string | null
+}
+
+/**
+ * OTs de una unidad para asociarlas al plan de acción de un foco.
+ *
+ * Trae las últimas, de la más nueva a la más vieja: el defecto que deriva en OT
+ * se repara en una orden reciente o en una programada que todavía no se hizo.
+ */
+export async function getOtsDeUnidad(
+  dominio: string
+): Promise<{ data: OtParaPlan[] } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("mantenimiento_realizados")
+      .select("id, numero_ot, fecha, tipo, estado, taller")
+      .eq("dominio", dominio.trim().toUpperCase())
+      .order("fecha", { ascending: false })
+      .limit(50)
+    if (error) return { error: error.message }
+    type Row = {
+      id: string
+      numero_ot: string | null
+      fecha: string
+      tipo: MantenimientoTipo
+      estado: MantenimientoEstado
+      taller: string | null
+    }
+    return {
+      data: ((data || []) as unknown as Row[]).map((o) => ({
+        id: o.id,
+        numeroOt: o.numero_ot,
+        fecha: o.fecha,
+        tipo: o.tipo,
+        estado: o.estado,
+        taller: o.taller,
+      })),
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Crea la OT programada que sale de un plan de acción y la deja vinculada.
+ *
+ * Es el último tramo de la cadena del rechazo: cuando el defecto es más grave
+ * que un foco o un relay no se arregla en el momento, hay que programar la
+ * reparación. La OT nace **correctiva y programada** —el defecto ya existe y el
+ * trabajo todavía no se hizo— con la unidad, el ítem del checklist y el
+ * comentario del chofer ya escritos, para no volver a tipear lo mismo.
+ *
+ * El vínculo se escribe acá y no al guardar el plan: si quedara sólo en el
+ * formulario, cerrar el diálogo sin guardar dejaría una OT programada suelta,
+ * sin ningún foco que explique por qué existe.
+ */
+export async function crearOtProgramadaDesdePlan(input: {
+  /** Respuestas del foco: la del ítem y, si es una serie, el resto. */
+  respuestaIds: string[]
+  /** Fecha en que se programa la reparación. */
+  fecha: string
+  taller?: string
+  /** Qué hay que hacer. Por defecto, el ítem del checklist. */
+  descripcion?: string
+}): Promise<{ data: OtParaPlan } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const ids = [...new Set(input.respuestaIds.filter(Boolean))]
+    if (ids.length === 0) return { error: "Falta el ítem del checklist" }
+    if (!input.fecha) return { error: "Elegí la fecha en que se programa la OT" }
+
+    const { data: ctx, error: ctxErr } = await supabase
+      .from("checklist_respuestas")
+      .select("comentario, item:checklist_items(nombre), cv:checklist_vehiculos(fecha, dominio)")
+      .eq("id", ids[0])
+      .maybeSingle()
+    if (ctxErr) return { error: ctxErr.message }
+    const c = ctx as unknown as {
+      comentario: string | null
+      item: { nombre: string } | null
+      cv: { fecha: string; dominio: string } | null
+    } | null
+    if (!c?.cv) return { error: "No se encontró el checklist del ítem" }
+
+    const item = c.item?.nombre ?? "Defecto del checklist"
+    const comentario = c.comentario?.trim()
+    const creada = await createMantenimiento({
+      dominio: c.cv.dominio,
+      fecha: input.fecha,
+      tipo: "correctivo",
+      estado: "programado",
+      taller: input.taller?.trim() || undefined,
+      tareas: [{ descripcion: input.descripcion?.trim() || item }],
+      observaciones:
+        `Sale del plan de acción del checklist del ${c.cv.fecha} — ${item}` +
+        (comentario ? `. El chofer anotó: "${comentario}"` : ""),
+    })
+    if ("error" in creada) return { error: creada.error }
+    const ot = creada.data
+
+    // Vínculo inmediato con los planes que ya existen para ese foco. Los que
+    // todavía no existen lo reciben al guardarse, con el `ot_id` del formulario.
+    const { error: linkErr } = await supabase
+      .from("checklist_planes_accion")
+      .update({ ot_id: ot.id })
+      .in("respuesta_id", ids)
+    // 42703 = la migración del vínculo no está aplicada todavía: la OT queda
+    // creada igual y el plan simplemente no la referencia.
+    if (linkErr && linkErr.code !== "42703") return { error: linkErr.message }
+
     return {
       data: {
-        id: row.id as string,
-        respuestaId: row.respuesta_id as string,
-        tipo: row.tipo as ChecklistPlanTipo,
-        estado: estadoRow,
-        descripcion: row.descripcion as string,
-        fotoUrl: (row.foto_url as string | null) ?? null,
-        fotoPath: (row.foto_path as string | null) ?? null,
-        resueltoAt:
-          estadoRow === "resuelto"
-            ? ((row.resuelto_at as string | null) ??
-              (row.updated_at as string | null) ??
-              null)
-            : null,
-        repuestoId: (row.repuesto_id as string | null) ?? null,
-        repuestoCantidad: (row.repuesto_cantidad as number | null) ?? null,
-        movimientoId: (row.movimiento_id as string | null) ?? null,
-        createdAt: row.created_at as string,
-        updatedAt: row.updated_at as string,
+        id: ot.id,
+        numeroOt: ot.numero_ot ?? null,
+        fecha: ot.fecha,
+        tipo: ot.tipo,
+        estado: ot.estado,
+        taller: ot.taller ?? null,
       },
     }
   } catch (e) {

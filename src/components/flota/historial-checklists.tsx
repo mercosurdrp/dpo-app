@@ -162,15 +162,22 @@ function EstadoPlanFoco({ plan }: { plan: MotivoRechazo["plan"] }) {
         sin plan de acción cargado
       </span>
     )
+  // La OT cierra la cadena: el defecto más grave que un foco no se arregla en el
+  // momento, se repara en una orden, y ese N° es la constancia.
+  const ot = plan.otNumero ? (
+    <span className="text-sky-700 dark:text-sky-400"> · OT {plan.otNumero}</span>
+  ) : null
   if (plan.estado === "resuelto")
     return (
       <span className="text-[11px] text-green-700 dark:text-green-400">
         resuelto{plan.horas != null ? ` en ${formatDuracionHoras(plan.horas)}` : ""}
+        {ot}
       </span>
     )
   return (
     <span className="text-[11px] text-amber-600 dark:text-amber-400">
       plan {plan.estado === "en_proceso" ? "en proceso" : "pendiente"}
+      {ot}
     </span>
   )
 }

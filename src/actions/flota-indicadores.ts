@@ -186,6 +186,37 @@ const INICIO_TRAZABILIDAD = "2026-08-25"
 const DETECCION_VENTANA_DIAS = 15
 
 /**
+ * OTs que un plan de acción de checklist declara como SUYAS.
+ *
+ * La ventana de 15 días + categoría es una heurística: adivina que la OT salió
+ * del checklist porque hubo un defecto parecido poco antes. Desde el 07/10/2026
+ * el plan de acción apunta a su OT (`checklist_planes_accion.ot_id`), así que
+ * para esas la relación ya no se adivina: está declarada. Cuentan como
+ * anticipadas aunque caigan fuera de la ventana —el vínculo es el dato, no una
+ * inferencia— y la heurística queda para las OT viejas, que no lo tienen.
+ *
+ * Devuelve vacío si la columna todavía no existe (42703): el KPI vuelve a ser
+ * el de antes en vez de romperse.
+ */
+async function otsDeclaradasPorPlan(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("checklist_planes_accion")
+    .select("ot_id")
+    .not("ot_id", "is", null)
+  if (error) {
+    if (error.code !== "42703") throw new Error(error.message)
+    return new Set()
+  }
+  return new Set(
+    ((data || []) as unknown as { ot_id: string | null }[])
+      .map((p) => p.ot_id)
+      .filter((id): id is string => !!id),
+  )
+}
+
+/**
  * Qué categorías de checklist pueden considerarse anticipación de una OT, según
  * el rubro de la OT. `null` = no se puede exigir correspondencia.
  *
@@ -331,7 +362,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes, vehRes, repOtRes] = await Promise.all([
       supabase
         .from("mantenimiento_realizados")
-        .select("dominio, fecha, rubro")
+        .select("id, dominio, fecha, rubro")
         .eq("tipo", "correctivo")
         .neq("estado", "cancelado")
         .gte("fecha", inicioVentana),
@@ -485,8 +516,10 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       arr.sort((a, b) => a.fecha.localeCompare(b.fecha))
 
     const MS_DIA = 86_400_000
+    const declaradas = await otsDeclaradasPorPlan(supabase)
     const anticipadas = new Map<string, { conDefecto: number; total: number }>()
     for (const ot of (otRes.data || []) as Array<{
+      id: string
       dominio: string
       fecha: string
       rubro: string | null
@@ -499,12 +532,15 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       // Categorías admitidas para esta OT; `null` = cualquiera (ver el comentario
       // de CATEGORIAS_POR_RUBRO).
       const admitidas = CATEGORIAS_POR_RUBRO[ot.rubro ?? "general"] ?? null
-      const hubo = (defectosPorDominio.get(ot.dominio) ?? []).some((d) => {
-        const t = new Date(`${d.fecha}T00:00:00`).getTime()
-        const enVentana = t <= tOt && tOt - t <= DETECCION_VENTANA_DIAS * MS_DIA
-        if (!enVentana) return false
-        return admitidas === null || admitidas.includes(d.categoria ?? "")
-      })
+      const hubo =
+        // Declarada por el plan de acción: no hace falta adivinar nada.
+        declaradas.has(ot.id) ||
+        (defectosPorDominio.get(ot.dominio) ?? []).some((d) => {
+          const t = new Date(`${d.fecha}T00:00:00`).getTime()
+          const enVentana = t <= tOt && tOt - t <= DETECCION_VENTANA_DIAS * MS_DIA
+          if (!enVentana) return false
+          return admitidas === null || admitidas.includes(d.categoria ?? "")
+        })
       if (hubo) acc.conDefecto++
       anticipadas.set(ym, acc)
     }
@@ -1006,7 +1042,7 @@ export async function getFlotaKpiDetalle(
       const [otRes, defRes, itemsRes] = await Promise.all([
         supabase
           .from("mantenimiento_realizados")
-          .select("numero_ot, dominio, fecha, rubro, observaciones")
+          .select("id, numero_ot, dominio, fecha, rubro, observaciones")
           .eq("tipo", "correctivo")
           .neq("estado", "cancelado")
           .gte("fecha", desde)
@@ -1047,9 +1083,11 @@ export async function getFlotaKpiDetalle(
       }
       for (const arr of porDominio.values()) arr.sort((a, b) => b.fecha.localeCompare(a.fecha))
 
+      const declaradas = await otsDeclaradasPorPlan(supabase)
       const filas: FilaDetalleKpi[] = []
       let numerador = 0
       for (const ot of (otRes.data || []) as Array<{
+        id: string
         numero_ot: number | null
         dominio: string
         fecha: string
@@ -1058,22 +1096,25 @@ export async function getFlotaKpiDetalle(
       }>) {
         const tOt = new Date(`${ot.fecha}T00:00:00`).getTime()
         const admitidas = CATEGORIAS_POR_RUBRO[ot.rubro ?? "general"] ?? null
+        const declarada = declaradas.has(ot.id)
         const match = (porDominio.get(ot.dominio) ?? []).find((d) => {
           const t = new Date(`${d.fecha}T00:00:00`).getTime()
           if (!(t <= tOt && tOt - t <= DETECCION_VENTANA_DIAS * MES_MS_DIA)) return false
           return admitidas === null || admitidas.includes(d.categoria ?? "")
         })
-        if (match) numerador++
+        if (declarada || match) numerador++
         filas.push({
           titulo: ot.numero_ot ? `OT ${ot.numero_ot}` : "OT sin número",
           subtitulo: `${ot.dominio}${ot.observaciones ? ` — ${ot.observaciones}` : ""}`,
           fecha: ot.fecha,
-          cuenta: Boolean(match),
-          motivo: match
-            ? `Anticipada: "${match.nombre}" el ${match.fecha}`
-            : admitidas
-              ? `Sin defecto de ${admitidas.join("/")} en los ${DETECCION_VENTANA_DIAS} días previos`
-              : `Sin defecto de checklist en los ${DETECCION_VENTANA_DIAS} días previos`,
+          cuenta: declarada || Boolean(match),
+          motivo: declarada
+            ? "Vinculada desde el plan de acción del checklist"
+            : match
+              ? `Anticipada: "${match.nombre}" el ${match.fecha}`
+              : admitidas
+                ? `Sin defecto de ${admitidas.join("/")} en los ${DETECCION_VENTANA_DIAS} días previos`
+                : `Sin defecto de checklist en los ${DETECCION_VENTANA_DIAS} días previos`,
           valor: null,
         })
       }

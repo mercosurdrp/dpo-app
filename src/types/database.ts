@@ -948,6 +948,11 @@ export interface MotivoRechazo {
     resueltoAt: string | null
     /** Horas entre la carga del checklist y el cierre del plan. */
     horas: number | null
+    /**
+     * N° de la OT en la que se repara el defecto, cuando es más grave que un
+     * foco o un relay. null = se resolvió sin OT.
+     */
+    otNumero: string | null
   } | null
 }
 

@@ -3,6 +3,9 @@ import { horasEntre, type PlanEstado, type PlanResumen } from "./tiempo-resoluci
 
 type Supa = Awaited<ReturnType<typeof createClient>>
 
+const COLUMNAS_OT =
+  "respuesta_id, tipo, estado, descripcion, resuelto_at, ot_id, updated_at"
+/** Mismo select sin la OT asociada, por si esa migración no está aplicada. */
 const COLUMNAS = "respuesta_id, tipo, estado, descripcion, resuelto_at, updated_at"
 /** Mismo select sin resuelto_at, para el caso de que la migración no esté aplicada todavía. */
 const COLUMNAS_LEGACY = "respuesta_id, tipo, estado, descripcion, updated_at"
@@ -13,6 +16,7 @@ interface PlanRow {
   estado: PlanEstado
   descripcion: string
   resuelto_at?: string | null
+  ot_id?: string | null
   updated_at: string
 }
 
@@ -33,22 +37,33 @@ export async function fetchPlanesPorRespuesta(
   const out = new Map<string, PlanResumen>()
   if (respuestaIds.length === 0) return out
 
+  // Cascada: OT → resuelto_at → legacy. 42703 = columna inexistente ⇒ base sin
+  // esa migración aplicada, así que se prueba el select anterior.
   let rows: PlanRow[] = []
-  const { data, error } = await supa
-    .from("checklist_planes_accion")
-    .select(COLUMNAS)
-    .in("respuesta_id", respuestaIds)
-  if (error) {
-    // 42703 = columna inexistente ⇒ base sin la migración aplicada.
-    if (error.code !== "42703") throw new Error(error.message)
-    const legacy = await supa
+  for (const [i, columnas] of [COLUMNAS_OT, COLUMNAS, COLUMNAS_LEGACY].entries()) {
+    const { data, error } = await supa
       .from("checklist_planes_accion")
-      .select(COLUMNAS_LEGACY)
+      .select(columnas)
       .in("respuesta_id", respuestaIds)
-    if (legacy.error) throw new Error(legacy.error.message)
-    rows = (legacy.data ?? []) as unknown as PlanRow[]
-  } else {
-    rows = (data ?? []) as unknown as PlanRow[]
+    if (!error) {
+      rows = (data ?? []) as unknown as PlanRow[]
+      break
+    }
+    if (error.code !== "42703" || i === 2) throw new Error(error.message)
+  }
+
+  // N° de la OT de los planes que derivaron en una orden: es lo que se muestra
+  // al lado del rechazo, y el id solo no le dice nada a nadie.
+  const otIds = [...new Set(rows.map((p) => p.ot_id).filter((id): id is string => !!id))]
+  const numeroPorOt = new Map<string, string | null>()
+  if (otIds.length > 0) {
+    const { data: ots } = await supa
+      .from("mantenimiento_realizados")
+      .select("id, numero_ot")
+      .in("id", otIds)
+    for (const o of ((ots ?? []) as unknown as { id: string; numero_ot: string | null }[])) {
+      numeroPorOt.set(o.id, o.numero_ot)
+    }
   }
 
   for (const p of rows) {
@@ -60,6 +75,8 @@ export async function fetchPlanesPorRespuesta(
       descripcion: p.descripcion,
       resueltoAt,
       horasResolucion: horasEntre(horaPorRespuesta?.get(p.respuesta_id), resueltoAt),
+      otId: p.ot_id ?? null,
+      otNumero: p.ot_id ? (numeroPorOt.get(p.ot_id) ?? null) : null,
     })
   }
   return out

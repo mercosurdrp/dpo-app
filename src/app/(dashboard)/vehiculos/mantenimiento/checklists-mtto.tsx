@@ -41,6 +41,7 @@ import {
   ImageIcon,
   Loader2,
   Trash2,
+  Wrench,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from "recharts"
@@ -60,14 +61,17 @@ import { ScrollX } from "./_components/scroll-x"
 import { AdherenciaChecklistCard } from "./adherencia-checklist"
 import { KpiCard } from "./_components/kpi-card"
 import {
+  crearOtProgramadaDesdePlan,
   eliminarItemChecklist,
   eliminarPlanChecklist,
+  getOtsDeUnidad,
   getRepuestosPanol,
   upsertPlanChecklist,
   type ChecklistComentario,
   type ChecklistItemNoOk,
   type ChecklistPlanEstado,
   type ChecklistPlanTipo,
+  type OtParaPlan,
   type RepuestoPanol,
 } from "@/actions/mantenimiento-vehiculos"
 import {
@@ -113,6 +117,17 @@ function ValorBadge({ valor }: { valor: string }) {
       {label}
     </Badge>
   )
+}
+
+/** "OT 1785 · 07/10 · programada" — misma etiqueta en la fila y en el selector. */
+function otLabel(ot: {
+  numeroOt: string | null
+  fecha: string
+  estado: string
+  taller?: string | null
+}): string {
+  const estado = ot.estado === "en_taller" ? "en taller" : ot.estado
+  return `OT ${ot.numeroOt ?? "s/n"} · ${fmtFecha(ot.fecha)} · ${estado}`
 }
 
 const PLAN_TIPO_LABEL: Record<ChecklistPlanTipo, string> = {
@@ -388,6 +403,12 @@ function DetalleKpiDialog({
                           ? "Resuelto"
                           : "En curso"
                         : "Sin plan"}
+                      {/* Si derivó en OT, el N° va acá: es la constancia del arreglo. */}
+                      {i.plan?.otNumero && (
+                        <span className="block text-[11px] text-sky-700 dark:text-sky-400">
+                          OT {i.plan.otNumero}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right text-muted-foreground">
                       {i.horasResolucion != null ? formatDuracion(i.horasResolucion) : "—"}
@@ -1300,6 +1321,17 @@ function PlanCell({
         </Badge>
       </span>
       <span className="line-clamp-2 max-w-56 text-xs text-muted-foreground">{plan.descripcion}</span>
+      {/* La OT en la que se repara: último tramo de la cadena del rechazo. */}
+      {plan.otId && (
+        <span className="flex items-center gap-1 text-[11px] font-medium text-sky-700 dark:text-sky-400">
+          <Wrench className="size-3" />
+          {otLabel({
+            numeroOt: plan.otNumero,
+            fecha: plan.otFecha ?? "",
+            estado: plan.otEstado ?? "",
+          })}
+        </span>
+      )}
       <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
         {plan.fotoUrl && (
           <span className="flex items-center gap-0.5">
@@ -1343,16 +1375,56 @@ function PlanDialog({
   // El descuento ya se hizo: el selector queda a la vista pero bloqueado, para
   // que se entienda que el stock ya bajó y que volver a guardar no lo baja otra vez.
   const yaDescontado = Boolean(plan?.movimientoId)
+  // OT en la que se repara el defecto, cuando es más grave que un foco o un relay.
+  const [ots, setOts] = useState<OtParaPlan[]>([])
+  const [otId, setOtId] = useState<string>(plan?.otId ?? "")
+  const [nuevaOt, setNuevaOt] = useState(false)
+  const [otFecha, setOtFecha] = useState<string>(hoyISO())
+  const [otTaller, setOtTaller] = useState("")
+  const [creandoOt, setCreandoOt] = useState(false)
+  const [otAviso, setOtAviso] = useState<string | null>(null)
 
   useEffect(() => {
     let vivo = true
     getRepuestosPanol().then((res) => {
       if (vivo && "data" in res) setRepuestos(res.data)
     })
+    getOtsDeUnidad(item.dominio).then((res) => {
+      if (vivo && "data" in res) setOts(res.data)
+    })
     return () => {
       vivo = false
     }
-  }, [])
+  }, [item.dominio])
+
+  /**
+   * Crea la OT programada y la deja vinculada al foco en el momento.
+   *
+   * El vínculo lo escribe el servidor: si quedara sólo en el formulario, cerrar
+   * el diálogo sin guardar dejaría una OT programada suelta sin ningún foco que
+   * explique por qué existe.
+   */
+  function crearOt() {
+    setError(null)
+    setCreandoOt(true)
+    crearOtProgramadaDesdePlan({
+      respuestaIds: ids,
+      fecha: otFecha,
+      taller: otTaller.trim() || undefined,
+      descripcion: item.item,
+    }).then((res) => {
+      setCreandoOt(false)
+      if ("error" in res) {
+        setError(res.error)
+        return
+      }
+      setOts((prev) => [res.data, ...prev])
+      setOtId(res.data.id)
+      setNuevaOt(false)
+      setOtAviso(`${otLabel(res.data)} creada`)
+      router.refresh()
+    })
+  }
 
   function guardar() {
     setError(null)
@@ -1365,6 +1437,8 @@ function PlanDialog({
     fd.set("tipo", tipo)
     fd.set("estado", estado)
     fd.set("descripcion", descripcion.trim())
+    // Siempre, incluso vacío: así quitar la OT del plan también se guarda.
+    fd.set("ot_id", otId)
     if (repuestoId) {
       fd.set("repuesto_id", repuestoId)
       fd.set("repuesto_cantidad", repuestoCantidad || "1")
@@ -1454,6 +1528,104 @@ function PlanDialog({
               rows={4}
               placeholder="Describí la reparación realizada sobre este ítem…"
             />
+          </div>
+
+          {/*
+            OT asociada. Un foco o un relay se cambia en el momento y se cierra
+            acá; cuando el defecto es más grave que eso, la reparación hay que
+            programarla, y esa OT es la que cuenta el arreglo. Sin este campo la
+            relación existía sólo si alguien la escribía en el texto del plan.
+          */}
+          <div className="rounded-md border border-dashed p-3">
+            <Label className="text-xs text-muted-foreground">
+              ¿Deriva en una OT? (opcional)
+            </Label>
+            <Select
+              value={otId || "ninguna"}
+              onValueChange={(v: string | null) => {
+                setOtAviso(null)
+                setOtId(!v || v === "ninguna" ? "" : v)
+              }}
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Se resolvió sin OT" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ninguna">Se resolvió sin OT</SelectItem>
+                {ots.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    {otLabel(o)}
+                    {o.taller ? ` · ${o.taller}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {nuevaOt ? (
+              <div className="mt-2 space-y-2 rounded-md bg-muted/50 p-2">
+                <p className="text-xs text-muted-foreground">
+                  Se crea una OT <strong>correctiva programada</strong> del {item.dominio} por
+                  “{item.item}”, y queda vinculada a este foco.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">
+                      ¿Para cuándo?
+                    </Label>
+                    <Input
+                      type="date"
+                      value={otFecha}
+                      onChange={(e) => setOtFecha(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">
+                      Taller (opcional)
+                    </Label>
+                    <Input
+                      value={otTaller}
+                      onChange={(e) => setOtTaller(e.target.value)}
+                      placeholder="Quién la hace"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={crearOt}
+                    disabled={creandoOt || !otFecha}
+                  >
+                    {creandoOt && <Loader2 className="mr-1 size-3.5 animate-spin" />}
+                    Crear OT programada
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setNuevaOt(false)}
+                    disabled={creandoOt}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mt-2 h-7 gap-1 text-xs"
+                onClick={() => setNuevaOt(true)}
+              >
+                <Plus className="size-3.5" /> Crear OT programada
+              </Button>
+            )}
+
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {otAviso ??
+                "Un foco o un relay se cambia acá mismo y no lleva OT. Si el defecto es más grave, programá la reparación."}
+            </p>
           </div>
 
           {/*

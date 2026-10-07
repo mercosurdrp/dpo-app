@@ -593,6 +593,7 @@ async function conDocumentacion(
                 estado: plan.estado,
                 resueltoAt: plan.resueltoAt,
                 horas: plan.horasResolucion,
+                otNumero: plan.otNumero,
               }
             : null,
         })
