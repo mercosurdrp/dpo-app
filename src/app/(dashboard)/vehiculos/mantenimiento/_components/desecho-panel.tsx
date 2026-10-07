@@ -44,6 +44,7 @@ import type {
   Neumatico,
   RetiroCubiertas,
 } from "@/lib/vehiculos/neumaticos-tipos"
+import { DpoResponde } from "./dpo-badge"
 import { ProveedorPicker } from "./proveedor-picker"
 import {
   FacturaField,
@@ -177,6 +178,11 @@ export function DesechoPanel({
               tanda. La baja se hace al registrar el retiro, con el certificado de
               descarte — que es la evidencia del pilar.
             </p>
+            <DpoResponde
+              puntos={["1.4"]}
+              requisitos={["R1.4.1", "R1.4.2"]}
+              className="mt-1.5"
+            />
           </div>
           {puedeEditar && (
             <div className="flex flex-wrap gap-2">

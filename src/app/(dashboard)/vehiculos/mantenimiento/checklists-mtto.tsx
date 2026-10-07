@@ -47,7 +47,7 @@ import { cn } from "@/lib/utils"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from "recharts"
 import type { VehiculoTipo } from "@/types/database"
 import { usePaletaViz, type PaletaViz } from "./_components/paleta-viz"
-import { DpoSeccionCinta } from "./_components/dpo-badge"
+import { DpoResponde, DpoSeccionCinta } from "./_components/dpo-badge"
 import {
   FiltroPeriodo,
   dentroDe,
@@ -1537,9 +1537,12 @@ function PlanDialog({
             relación existía sólo si alguien la escribía en el texto del plan.
           */}
           <div className="rounded-md border border-dashed p-3">
-            <Label className="text-xs text-muted-foreground">
-              ¿Deriva en una OT? (opcional)
-            </Label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label className="text-xs text-muted-foreground">
+                ¿Deriva en una OT? (opcional)
+              </Label>
+              <DpoResponde puntos={["1.3", "2.4"]} requisitos={["R1.3.7"]} />
+            </div>
             <Select
               value={otId || "ninguna"}
               onValueChange={(v: string | null) => {
@@ -1635,9 +1638,12 @@ function PlanDialog({
             registra solo y el stock baja, en vez de descontarse a mano aparte.
           */}
           <div className="rounded-md border border-dashed p-3">
-            <Label className="text-xs text-muted-foreground">
-              ¿Se usó algo del pañol? (opcional)
-            </Label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label className="text-xs text-muted-foreground">
+                ¿Se usó algo del pañol? (opcional)
+              </Label>
+              <DpoResponde puntos={["2.3"]} requisitos={["R2.3.2"]} />
+            </div>
             <div className="mt-1 grid grid-cols-[1fr_5rem] gap-2">
               <Select
                 value={repuestoId || "ninguno"}

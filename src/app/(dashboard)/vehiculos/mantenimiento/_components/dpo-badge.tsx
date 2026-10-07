@@ -48,6 +48,41 @@ export function DpoPuntoBadge({ numero, className }: { numero: string; className
 }
 
 /**
+ * Qué responde UN bloque concreto, con el requisito puntual.
+ *
+ * La cinta de sección dice qué punto responde la solapa entera; esto dice qué
+ * responde la caja que el auditor tiene delante —el recuento, la política de
+ * stock, el retiro de cubiertas—. Sin esto hay que explicarle de palabra por
+ * qué cada cosa está en pantalla, que es justo lo que no conviene en una
+ * auditoría: lo que se explica de palabra no es evidencia.
+ */
+export function DpoResponde({
+  puntos,
+  requisitos,
+  className,
+}: {
+  /** Puntos del pilar Flota, ej. ["2.3"]. */
+  puntos: string[]
+  /** Requisitos puntuales, ej. ["R2.3.2"]. */
+  requisitos?: string[]
+  className?: string
+}) {
+  return (
+    <span className={cn("inline-flex flex-wrap items-center gap-1.5", className)}>
+      <span className="text-[11px] text-muted-foreground">Responde a</span>
+      {puntos.map((n) => (
+        <DpoPuntoBadge key={n} numero={n} />
+      ))}
+      {requisitos?.length ? (
+        <span className="text-[11px] text-muted-foreground/70">
+          {requisitos.join(" · ")}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+/**
  * Cinta de puntos DPO de una sección. Va debajo del título de la solapa, para
  * que el auditor lea de una qué requisito está mirando.
  */

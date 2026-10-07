@@ -43,7 +43,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
-import { DpoPuntoBadge, DpoSeccionCinta } from "./_components/dpo-badge"
+import { DpoPuntoBadge, DpoResponde, DpoSeccionCinta } from "./_components/dpo-badge"
 import {
   createConteo,
   createNovedad,
@@ -232,6 +232,7 @@ export function GestionMtto({
                 Registro de disposición de residuos de mantenimiento (neumáticos, aceites,
                 filtros…) con proveedor y certificado de descarte.
               </p>
+              <DpoResponde puntos={["1.4"]} requisitos={["R1.4.1", "R1.4.2"]} />
             </div>
             {puedeEditar && (
               <Button size="sm" onClick={() => setDialog("residuo")}>
@@ -341,6 +342,7 @@ export function GestionMtto({
                 Faltantes y pedidos de piezas detectados sobre las unidades, con prioridad
                 y estado de resolución.
               </p>
+              <DpoResponde puntos={["2.3"]} requisitos={["R2.3.4"]} />
             </div>
             {puedeEditar && (
               <Button size="sm" onClick={() => setDialog("novedad")}>
@@ -437,6 +439,7 @@ export function GestionMtto({
                 Stock mínimo, objetivo y máximo por pieza, con movimientos y conteos
                 físicos que respaldan la exactitud del inventario.
               </p>
+              <DpoResponde puntos={["2.3"]} requisitos={["R2.3.2", "R2.3.3"]} />
               {/* La frecuencia declarada y si la rutina se está cumpliendo: es
                   la mitad del R2.3.2 que no vivía en ningún lado. */}
               <p className="text-xs text-muted-foreground">
@@ -614,11 +617,11 @@ export function GestionMtto({
           {conteos.length > 0 && (
             <Card>
               <CardContent className="overflow-x-auto pt-6">
-                <div className="mb-2 flex items-center gap-2">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
                   <p className="text-sm font-medium text-foreground">
                     Conteos de stock realizados
                   </p>
-                  <DpoPuntoBadge numero="2.3" />
+                  <DpoResponde puntos={["2.3"]} requisitos={["R2.3.2", "R2.3.3"]} />
                 </div>
                 <Table>
                   <TableHeader>
@@ -1630,9 +1633,10 @@ function RepuestoDialog({
             va acá y lo que dice el consumo real, abajo, para contrastarlo.
           */}
           <div className="rounded-md border border-dashed p-3">
-            <Label className="text-xs text-muted-foreground">
-              Política de stock
-            </Label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label className="text-xs text-muted-foreground">Política de stock</Label>
+              <DpoResponde puntos={["2.3"]} requisitos={["R2.3.2"]} />
+            </div>
             <div className="mt-1 grid grid-cols-3 gap-3">
               <div>
                 <Label className="text-[11px] text-muted-foreground">Objetivo</Label>
@@ -1751,6 +1755,7 @@ function FrecuenciaRecuentoDialog({
         <DialogHeader>
           <DialogTitle>Frecuencia del recuento físico</DialogTitle>
         </DialogHeader>
+        <DpoResponde puntos={["2.3"]} requisitos={["R2.3.2"]} />
         <div className="space-y-2">
           <Label>Cada cuántos días</Label>
           <Input type="number" min={1} value={dias} onChange={(e) => setDias(e.target.value)} />
