@@ -137,6 +137,7 @@ import type {
 import type {
   ChecklistComentario,
   ChecklistItemNoOk,
+  ConsumoRepuesto,
   ConteoResumen,
   Novedad,
   TareaCil,
@@ -516,6 +517,8 @@ interface MantenimientoClientProps {
     ordenesCompra: OrdenCompra[]
     residuos: Residuo[]
     conteos: ConteoResumen[]
+    consumos: ConsumoRepuesto[]
+    recuentoFrecuenciaDias: number | null
   }
   flotaMetas: FlotaMeta[]
   flotaPlanes: FlotaPlanConItems[]
@@ -1038,6 +1041,8 @@ export function MantenimientoClient({
             ordenesCompra={gestion.ordenesCompra}
             residuos={gestion.residuos}
             conteos={gestion.conteos}
+            consumos={gestion.consumos}
+            recuentoFrecuenciaDias={gestion.recuentoFrecuenciaDias}
             puedeEditar={puedeEditar}
           />
         </TabsContent>

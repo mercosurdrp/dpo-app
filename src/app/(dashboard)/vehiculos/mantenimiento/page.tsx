@@ -176,7 +176,15 @@ export default async function MantenimientoPage() {
   const gestion =
     "data" in gestionRes
       ? gestionRes.data
-      : { novedades: [], repuestos: [], ordenesCompra: [], residuos: [], conteos: [] }
+      : {
+          novedades: [],
+          repuestos: [],
+          ordenesCompra: [],
+          residuos: [],
+          conteos: [],
+          consumos: [],
+          recuentoFrecuenciaDias: null,
+        }
   const flotaMetas = "data" in metasRes ? metasRes.data : []
   const flotaPlanes = "data" in planesFlotaRes ? planesFlotaRes.data : []
   const kpiSnapshots = "data" in kpiSnapshotsRes ? kpiSnapshotsRes.data : []

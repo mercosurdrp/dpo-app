@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  CalendarClock,
   ClipboardCheck,
   FileText,
   History,
@@ -54,10 +55,12 @@ import {
   getConteoDetalle,
   getMovimientosRepuesto,
   registrarMovimientoRepuesto,
+  setFrecuenciaRecuento,
   updateNovedadEstado,
   updateOrdenCompraEstado,
   upsertRepuesto,
   type ConteoItemDetalle,
+  type ConsumoRepuesto,
   type ConteoResumen,
   type MovimientoRepuesto,
   type Novedad,
@@ -105,6 +108,17 @@ const ESTADO_OC_BADGE: Record<string, string> = {
   anulada: BADGE_NEUTRO,
 }
 
+/**
+ * Clase ABC de la pieza. A = lo que se mueve (hay que no quedarse sin), C = lo
+ * que casi no sale. El color va de más a menos saturado, no de bueno a malo:
+ * ser C no tiene nada de malo.
+ */
+const CLASE_ABC_BADGE: Record<string, string> = {
+  A: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  B: "border-sky-500/20 bg-sky-500/5 text-sky-700/80 dark:text-sky-400/80",
+  C: "border-border bg-muted text-muted-foreground",
+}
+
 const MATERIAL_LABEL: Record<string, string> = {
   neumaticos: "Neumáticos",
   aceite: "Aceite usado",
@@ -121,6 +135,10 @@ interface Props {
   ordenesCompra: OrdenCompra[]
   residuos: Residuo[]
   conteos: ConteoResumen[]
+  /** Consumo real por pieza: respalda la política de stock declarada. */
+  consumos: ConsumoRepuesto[]
+  /** Cada cuántos días se declaró el recuento físico. null = sin declarar. */
+  recuentoFrecuenciaDias: number | null
   puedeEditar: boolean
 }
 
@@ -131,6 +149,8 @@ export function GestionMtto({
   ordenesCompra,
   residuos,
   conteos,
+  consumos,
+  recuentoFrecuenciaDias,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -138,10 +158,34 @@ export function GestionMtto({
   const refresh = () => startTransition(() => router.refresh())
 
   const [dialog, setDialog] = useState<
-    null | "novedad" | "repuesto" | "oc" | "residuo" | "conteo"
+    null | "novedad" | "repuesto" | "oc" | "residuo" | "conteo" | "frecuencia"
   >(null)
   const [conteoVer, setConteoVer] = useState<ConteoResumen | null>(null)
   const [repuestoEdit, setRepuestoEdit] = useState<Repuesto | null>(null)
+  const consumoPorPieza = useMemo(
+    () => new Map(consumos.map((c) => [c.repuestoId, c])),
+    [consumos]
+  )
+  /**
+   * Estado del recuento contra la frecuencia declarada.
+   *
+   * R2.3.2 no pide sólo que los recuentos existan: pide una **frecuencia
+   * definida**. Sin esto había dos recuentos sueltos y nada contra qué medir si
+   * la rutina se cumplía.
+   */
+  // El "hoy" se fija una vez al montar: leer el reloj en cada render es impuro
+  // y además haría parpadear el cálculo.
+  const [hoyMs] = useState(() => Date.now())
+  const recuento = useMemo(() => {
+    const ultimo = conteos.map((c) => c.fecha).sort().at(-1) ?? null
+    if (!ultimo) return { ultimo: null, dias: null as number | null, vencido: false }
+    const dias = Math.floor((hoyMs - Date.parse(`${ultimo}T00:00:00`)) / 86_400_000)
+    return {
+      ultimo,
+      dias,
+      vencido: recuentoFrecuenciaDias != null && dias > recuentoFrecuenciaDias,
+    }
+  }, [conteos, recuentoFrecuenciaDias, hoyMs])
   // Movimiento de stock: repuesto + tipo inicial (ingreso/egreso) del botón.
   const [movimiento, setMovimiento] = useState<{
     repuesto: Repuesto
@@ -393,9 +437,27 @@ export function GestionMtto({
                 Stock mínimo, objetivo y máximo por pieza, con movimientos y conteos
                 físicos que respaldan la exactitud del inventario.
               </p>
+              {/* La frecuencia declarada y si la rutina se está cumpliendo: es
+                  la mitad del R2.3.2 que no vivía en ningún lado. */}
+              <p className="text-xs text-muted-foreground">
+                {recuentoFrecuenciaDias
+                  ? `Recuento físico cada ${recuentoFrecuenciaDias} días.`
+                  : "Frecuencia de recuento sin declarar."}{" "}
+                {recuento.ultimo ? (
+                  <span className={cn(recuento.vencido && "font-medium text-destructive")}>
+                    Último hace {recuento.dias} día{recuento.dias === 1 ? "" : "s"}
+                    {recuento.vencido ? " — vencido" : ""}.
+                  </span>
+                ) : (
+                  <span>Todavía no se hizo ninguno.</span>
+                )}
+              </p>
             </div>
             {puedeEditar && (
               <div className="flex shrink-0 gap-2">
+                <Button size="sm" variant="outline" onClick={() => setDialog("frecuencia")}>
+                  <CalendarClock className="mr-1 size-4" /> Frecuencia
+                </Button>
                 <Button size="sm" variant="outline" onClick={() => setDialog("conteo")}>
                   <ClipboardCheck className="mr-1 size-4" /> Conteo de stock
                 </Button>
@@ -425,7 +487,10 @@ export function GestionMtto({
                       <TableHead>Repuesto</TableHead>
                       <TableHead className="text-right">Stock</TableHead>
                       <TableHead className="text-right">Mín</TableHead>
+                      <TableHead className="text-right">Obj</TableHead>
                       <TableHead className="text-right">Máx</TableHead>
+                      <TableHead>ABC</TableHead>
+                      <TableHead className="text-right">Cobertura</TableHead>
                       <TableHead>Ubicación</TableHead>
                       {puedeEditar && <TableHead className="w-40" />}
                     </TableRow>
@@ -465,7 +530,29 @@ export function GestionMtto({
                             {fmtNum(r.stock_min)}
                           </TableCell>
                           <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {r.stock_objetivo != null ? fmtNum(r.stock_objetivo) : "—"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
                             {fmtNum(r.stock_max)}
+                          </TableCell>
+                          <TableCell>
+                            {r.clase_abc ? (
+                              <Badge variant="outline" className={CLASE_ABC_BADGE[r.clase_abc]}>
+                                {r.clase_abc}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground/60">sin clasificar</span>
+                            )}
+                          </TableCell>
+                          {/* Días que dura el stock al ritmo real de salida: es
+                              lo que hace discutible el mínimo declarado. */}
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {(() => {
+                              const c = consumoPorPieza.get(r.id)
+                              if (!c || c.coberturaDias == null)
+                                return <span className="text-muted-foreground/60">sin salidas</span>
+                              return `${c.coberturaDias} d`
+                            })()}
                           </TableCell>
                           <TableCell className="text-foreground">{r.ubicacion || "—"}</TableCell>
                           {puedeEditar && (
@@ -714,6 +801,17 @@ export function GestionMtto({
       {dialog === "repuesto" && (
         <RepuestoDialog
           repuesto={repuestoEdit}
+          consumo={repuestoEdit ? (consumoPorPieza.get(repuestoEdit.id) ?? null) : null}
+          onClose={() => setDialog(null)}
+          onSaved={() => {
+            setDialog(null)
+            refresh()
+          }}
+        />
+      )}
+      {dialog === "frecuencia" && (
+        <FrecuenciaRecuentoDialog
+          actual={recuentoFrecuenciaDias}
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null)
@@ -1437,8 +1535,11 @@ function RepuestoDialog({
   repuesto,
   onClose,
   onSaved,
+  consumo,
 }: {
   repuesto: Repuesto | null
+  /** Lo que dicen los egresos reales de esta pieza. null = pieza nueva. */
+  consumo?: ConsumoRepuesto | null
   onClose: () => void
   onSaved: () => void
 }) {
@@ -1449,6 +1550,13 @@ function RepuestoDialog({
   const [min, setMin] = useState(repuesto ? String(repuesto.stock_min) : "")
   const [max, setMax] = useState(repuesto?.stock_max != null ? String(repuesto.stock_max) : "")
   const [ubicacion, setUbicacion] = useState(repuesto?.ubicacion ?? "")
+  const [objetivo, setObjetivo] = useState(
+    repuesto?.stock_objetivo != null ? String(repuesto.stock_objetivo) : ""
+  )
+  const [dias, setDias] = useState(
+    repuesto?.dias_stock != null ? String(repuesto.dias_stock) : ""
+  )
+  const [abc, setAbc] = useState<string>(repuesto?.clase_abc ?? "")
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
@@ -1462,6 +1570,9 @@ function RepuestoDialog({
       stock_min: parseNum(min) ?? 0,
       stock_max: parseNum(max),
       ubicacion,
+      stock_objetivo: parseNum(objetivo),
+      dias_stock: parseNum(dias),
+      clase_abc: abc === "A" || abc === "B" || abc === "C" ? abc : null,
     })
     setSaving(false)
     if ("error" in res) return toast.error(res.error)
@@ -1511,9 +1622,145 @@ function RepuestoDialog({
             <Label>Ubicación</Label>
             <Input value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} />
           </div>
+
+          {/*
+            Política de stock (DPO 2.3 / R2.3.2). El verificador no pregunta sólo
+            si los números existen: pregunta cómo se definieron y si se
+            actualizan según cómo se comportan las salidas. Por eso lo declarado
+            va acá y lo que dice el consumo real, abajo, para contrastarlo.
+          */}
+          <div className="rounded-md border border-dashed p-3">
+            <Label className="text-xs text-muted-foreground">
+              Política de stock
+            </Label>
+            <div className="mt-1 grid grid-cols-3 gap-3">
+              <div>
+                <Label className="text-[11px] text-muted-foreground">Objetivo</Label>
+                <Input
+                  type="number"
+                  value={objetivo}
+                  onChange={(e) => setObjetivo(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] text-muted-foreground">Días de cobertura</Label>
+                <Input type="number" value={dias} onChange={(e) => setDias(e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-[11px] text-muted-foreground">Clase ABC</Label>
+                <Select
+                  value={abc || "sin"}
+                  onValueChange={(v: string | null) => setAbc(!v || v === "sin" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sin">Sin clasificar</SelectItem>
+                    <SelectItem value="A">A — alta rotación</SelectItem>
+                    <SelectItem value="B">B — media</SelectItem>
+                    <SelectItem value="C">C — baja o nula</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {consumo && (
+              <div className="mt-2 rounded bg-muted/50 p-2 text-xs text-muted-foreground">
+                {consumo.consumo > 0 ? (
+                  <>
+                    Salieron <strong className="text-foreground">{consumo.consumo}</strong> en{" "}
+                    {consumo.ventanaDias} días ({consumo.consumoDia.toFixed(2)} por día).
+                    {consumo.coberturaDias != null && (
+                      <> El stock de hoy dura <strong className="text-foreground">{consumo.coberturaDias} días</strong>.</>
+                    )}{" "}
+                    Por consumo sería clase{" "}
+                    <strong className="text-foreground">{consumo.claseSugerida}</strong>
+                    {consumo.objetivoSugerido != null && (
+                      <> y el objetivo, <strong className="text-foreground">{consumo.objetivoSugerido}</strong> unidades</>
+                    )}
+                    .{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline"
+                      onClick={() => {
+                        setAbc(consumo.claseSugerida)
+                        if (consumo.objetivoSugerido != null)
+                          setObjetivo(String(consumo.objetivoSugerido))
+                        if (!dias) setDias("30")
+                      }}
+                    >
+                      Usar estos valores
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    Sin un solo egreso en la ventana observada ({consumo.ventanaDias} días):
+                    por consumo es clase C. Lo que tengas en el pañol es por criterio, no
+                    por rotación.
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? "Guardando…" : "Guardar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * Cada cuántos días se hace el recuento físico.
+ *
+ * R2.3.2 pide la frecuencia **definida**, no sólo que haya recuentos: sin un
+ * número declarado no hay contra qué decir si la rutina se cumple. Se guarda en
+ * la config del módulo, que es una sola fila para todo el pañol.
+ */
+function FrecuenciaRecuentoDialog({
+  actual,
+  onClose,
+  onSaved,
+}: {
+  actual: number | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [dias, setDias] = useState(actual != null ? String(actual) : "30")
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    setSaving(true)
+    const res = await setFrecuenciaRecuento(parseNum(dias) ?? null)
+    setSaving(false)
+    if ("error" in res) return toast.error(res.error)
+    toast.success("Frecuencia de recuento actualizada")
+    onSaved()
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Frecuencia del recuento físico</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label>Cada cuántos días</Label>
+          <Input type="number" min={1} value={dias} onChange={(e) => setDias(e.target.value)} />
+          <p className="text-xs text-muted-foreground">
+            Con esto la solapa avisa cuando el recuento está vencido. Son 19 piezas: el
+            recuento mensual es el que la operación sostiene.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
           <Button onClick={submit} disabled={saving}>

@@ -2447,7 +2447,47 @@ export interface Repuesto {
   stock_min: number
   stock_max: number | null
   ubicacion: string | null
+  /**
+   * Política de stock declarada (DPO Flota 2.3 / R2.3.2).
+   *
+   * Las columnas existen desde el 17/07/2026 pero nunca se habían expuesto, así
+   * que estaban vacías en las 19 piezas y el requisito quedaba a medias: el
+   * verificador pide mínimo, **objetivo** y máximo, los **días de stock
+   * deseados** y la **curva ABC**.
+   */
+  stock_objetivo: number | null
+  /** Días de cobertura que se quieren tener de esta pieza. */
+  dias_stock: number | null
+  clase_abc: "A" | "B" | "C" | null
 }
+
+/**
+ * Lo que el consumo real dice de una pieza, para contrastar con la política
+ * declarada.
+ *
+ * El verificador de R2.3.2 no sólo pide que el mínimo/objetivo/máximo existan:
+ * pide saber **cómo se definieron** y si se actualizan "en función de los
+ * cambios en el comportamiento de las salidas". Por eso el número declarado se
+ * muestra siempre al lado del calculado desde los egresos del pañol.
+ */
+export interface ConsumoRepuesto {
+  repuestoId: string
+  /** Unidades que salieron en la ventana. */
+  consumo: number
+  /** Días de la ventana observada (tope 90, o lo que haya de historia). */
+  ventanaDias: number
+  /** Unidades por día. 0 = la pieza no se movió. */
+  consumoDia: number
+  /** Días que dura el stock actual a ese ritmo. null = no se mueve. */
+  coberturaDias: number | null
+  /** Clase sugerida por Pareto sobre el consumo: A ≤80 %, B ≤95 %, C el resto. */
+  claseSugerida: "A" | "B" | "C"
+  /** Unidades que harían falta para cubrir los días deseados. */
+  objetivoSugerido: number | null
+}
+
+/** Días de cobertura que se asumen cuando la pieza todavía no los tiene declarados. */
+const DIAS_STOCK_POR_DEFECTO = 30
 export interface OrdenCompra {
   id: string
   numero: string | null
@@ -2480,6 +2520,10 @@ export async function getGestionMtto(): Promise<
         ordenesCompra: OrdenCompra[]
         residuos: Residuo[]
         conteos: ConteoResumen[]
+        /** Consumo real por pieza, para contrastar la política declarada. */
+        consumos: ConsumoRepuesto[]
+        /** Cada cuántos días se declaró el recuento físico. null = sin declarar. */
+        recuentoFrecuenciaDias: number | null
       }
     }
   | { error: string }
@@ -2502,15 +2546,130 @@ export async function getGestionMtto(): Promise<
       loadConteosResumen(supabase),
     ])
     for (const r of [nov, rep, oc, res]) if (r.error) throw new Error(r.error.message)
+    const repuestos = (rep.data || []) as Repuesto[]
     return {
       data: {
         novedades: (nov.data || []) as Novedad[],
-        repuestos: (rep.data || []) as Repuesto[],
+        repuestos,
         ordenesCompra: (oc.data || []) as OrdenCompra[],
         residuos: (res.data || []) as Residuo[],
         conteos,
+        consumos: await calcularConsumoRepuestos(supabase, repuestos),
+        recuentoFrecuenciaDias: await leerFrecuenciaRecuento(supabase),
       },
     }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Consumo real de cada repuesto en los últimos 90 días, con la clase ABC que
+ * sale de ese consumo.
+ *
+ * La curva es Pareto sobre unidades consumidas, no sobre plata: en este pañol
+ * todo vale parecido —focos, micas, relays— y lo que importa para el stock es
+ * cuántas salen, no cuánto cuestan. Una pieza sin un solo egreso es C: no
+ * inmoviliza decisión ninguna.
+ *
+ * 🚨 Con poca historia la clasificación es provisoria y hay que decirlo: al
+ * 07/10/2026 son 48 días y 14 de las 19 piezas no tuvieron ni un movimiento.
+ * Por eso el número calculado se muestra al lado del declarado en vez de
+ * pisarlo — la política la fija el Gestor de Flota, el cálculo sólo la
+ * respalda.
+ */
+async function calcularConsumoRepuestos(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  repuestos: Repuesto[]
+): Promise<ConsumoRepuesto[]> {
+  if (repuestos.length === 0) return []
+  const desde = new Date()
+  desde.setDate(desde.getDate() - 90)
+  const desdeISO = desde.toISOString().slice(0, 10)
+
+  const { data, error } = await supabase
+    .from("mantenimiento_repuestos_movimientos")
+    .select("repuesto_id, tipo, cantidad, fecha")
+    .eq("tipo", "egreso")
+    .gte("fecha", desdeISO)
+  if (error) return []
+
+  type Mov = { repuesto_id: string; cantidad: number | null; fecha: string | null }
+  const movs = (data || []) as unknown as Mov[]
+  const fechas = movs.map((m) => m.fecha).filter((f): f is string => !!f).sort()
+  // La ventana real es la historia que hay, no 90 días imaginarios: con 48 días
+  // de movimientos, dividir por 90 subestimaría el consumo a la mitad.
+  const ventanaDias = Math.max(
+    1,
+    fechas.length > 0
+      ? Math.round(
+          (Date.parse(fechas[fechas.length - 1]) - Date.parse(fechas[0])) / 86_400_000
+        ) || 1
+      : 1
+  )
+
+  const porPieza = new Map<string, number>()
+  for (const m of movs) {
+    porPieza.set(m.repuesto_id, (porPieza.get(m.repuesto_id) ?? 0) + Number(m.cantidad ?? 0))
+  }
+
+  // Pareto: A hasta el 80 % del consumo acumulado, B hasta el 95 %, C el resto.
+  const total = [...porPieza.values()].reduce((a, n) => a + n, 0)
+  const clase = new Map<string, "A" | "B" | "C">()
+  let acumulado = 0
+  for (const [id, n] of [...porPieza.entries()].sort((a, b) => b[1] - a[1])) {
+    acumulado += n
+    const pct = total > 0 ? (acumulado / total) * 100 : 100
+    clase.set(id, pct <= 80 ? "A" : pct <= 95 ? "B" : "C")
+  }
+
+  return repuestos.map((r) => {
+    const consumo = porPieza.get(r.id) ?? 0
+    const consumoDia = consumo / ventanaDias
+    const dias = r.dias_stock ?? DIAS_STOCK_POR_DEFECTO
+    return {
+      repuestoId: r.id,
+      consumo,
+      ventanaDias,
+      consumoDia,
+      coberturaDias: consumoDia > 0 ? Math.round(Number(r.stock_actual) / consumoDia) : null,
+      claseSugerida: clase.get(r.id) ?? "C",
+      objetivoSugerido:
+        consumoDia > 0 ? Math.max(Number(r.stock_min) || 0, Math.ceil(consumoDia * dias)) : null,
+    }
+  })
+}
+
+/** Frecuencia declarada del recuento. null si la migración no corrió todavía. */
+async function leerFrecuenciaRecuento(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("mantenimiento_config")
+    .select("recuento_frecuencia_dias")
+    .maybeSingle()
+  if (error) return null
+  return (data?.recuento_frecuencia_dias as number | null) ?? null
+}
+
+/** Define cada cuántos días se hace el recuento físico del pañol (R2.3.2). */
+export async function setFrecuenciaRecuento(
+  dias: number | null
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    if (dias != null && !(dias > 0)) return { error: "La frecuencia tiene que ser mayor a 0 días" }
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("mantenimiento_config")
+      .update({ recuento_frecuencia_dias: dias, updated_at: new Date().toISOString() })
+      .eq("id", true)
+    if (error) {
+      if (error.code === "42703")
+        return { error: "Falta aplicar la migración de la frecuencia de recuento en la base" }
+      return { error: error.message }
+    }
+    return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
@@ -3048,6 +3207,10 @@ export async function upsertRepuesto(input: {
   stock_min?: number | null
   stock_max?: number | null
   ubicacion?: string
+  /** Política de stock (R2.3.2): objetivo, días de cobertura y clase ABC. */
+  stock_objetivo?: number | null
+  dias_stock?: number | null
+  clase_abc?: "A" | "B" | "C" | null
 }): Promise<{ success: true } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
@@ -3061,6 +3224,9 @@ export async function upsertRepuesto(input: {
       stock_min: input.stock_min ?? 0,
       stock_max: input.stock_max ?? null,
       ubicacion: input.ubicacion?.trim() || null,
+      stock_objetivo: input.stock_objetivo ?? null,
+      dias_stock: input.dias_stock ?? null,
+      clase_abc: input.clase_abc ?? null,
       updated_at: new Date().toISOString(),
     }
     const { error } = input.id
