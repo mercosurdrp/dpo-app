@@ -174,7 +174,7 @@ export async function getTableroOperativo(): Promise<
           "neumatico_id, fecha, profundidad_mm, presion_psi, neumatico:mantenimiento_neumaticos!inner(estado)"
         )
         .eq("neumatico.estado", "instalado"),
-      supabase.from("mantenimiento_repuestos").select("stock_actual, stock_min, stock_max"),
+      selectRepuestosPanol(supabase, "stock_actual, stock_min, stock_max"),
       supabase.from("mantenimiento_ordenes_compra").select("estado"),
     ])
     for (const r of [
@@ -321,7 +321,7 @@ export async function getTableroOperativo(): Promise<
     // --- Inventario de repuestos ---
     let minimaSuperada = 0
     let maximaSuperada = 0
-    for (const r of (repuestosRes.data || []) as Array<{
+    for (const r of (repuestosRes.data || []) as unknown as Array<{
       stock_actual: number | null
       stock_min: number | null
       stock_max: number | null
@@ -2512,6 +2512,37 @@ export interface Residuo {
   created_at: string
 }
 
+/**
+ * Lee del catálogo SÓLO las piezas que están en el pañol.
+ *
+ * 🚨 Desde que el catálogo guarda también piezas de compra —filtros, aceites,
+ * refrigerante: lo que el taller trae contra la OT y nunca se stockea acá— todo
+ * lo que cuenta stock tiene que filtrar por `en_panol`. Sin esto, las 7 piezas
+ * de compra aparecerían en el inventario con stock 0, entrarían al recuento
+ * físico y hundirían la exactitud inventando diferencias que no existen.
+ *
+ * Tolera que la columna no esté aplicada todavía (42703): ahí todo el catálogo
+ * es pañol, que es como funcionaba antes.
+ */
+async function selectRepuestosPanol(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  columnas: string
+): Promise<{ data: Record<string, unknown>[]; error: { message: string } | null }> {
+  const con = await supabase
+    .from("mantenimiento_repuestos")
+    .select(columnas)
+    .eq("en_panol", true)
+    .order("nombre")
+  const salida = (r: { data: unknown; error: { message: string } | null }) => ({
+    data: (r.data ?? []) as Record<string, unknown>[],
+    error: r.error,
+  })
+  if (!con.error) return salida(con)
+  if (con.error.code !== "42703") return salida(con)
+  const sin = await supabase.from("mantenimiento_repuestos").select(columnas).order("nombre")
+  return salida(sin)
+}
+
 export async function getGestionMtto(): Promise<
   | {
       data: {
@@ -2533,7 +2564,7 @@ export async function getGestionMtto(): Promise<
     const supabase = await createClient()
     const [nov, rep, oc, res, conteos] = await Promise.all([
       supabase.from("mantenimiento_novedades").select("*").order("fecha", { ascending: false }),
-      supabase.from("mantenimiento_repuestos").select("*").order("nombre"),
+      selectRepuestosPanol(supabase, "*"),
       supabase
         .from("mantenimiento_ordenes_compra")
         .select("*")
@@ -2546,7 +2577,7 @@ export async function getGestionMtto(): Promise<
       loadConteosResumen(supabase),
     ])
     for (const r of [nov, rep, oc, res]) if (r.error) throw new Error(r.error.message)
-    const repuestos = (rep.data || []) as Repuesto[]
+    const repuestos = (rep.data || []) as unknown as Repuesto[]
     return {
       data: {
         novedades: (nov.data || []) as Novedad[],
@@ -3308,10 +3339,9 @@ export async function getRepuestosPanol(): Promise<
   try {
     await requireAuth()
     const supabase = await createClient()
-    const { data, error } = await supabase
-      .from("mantenimiento_repuestos")
-      .select("id, nombre, stock_actual")
-      .order("nombre")
+    // Sólo pañol: un plan de acción descuenta stock, y una pieza de compra no
+    // tiene stock que descontar.
+    const { data, error } = await selectRepuestosPanol(supabase, "id, nombre, stock_actual")
     if (error) return { error: error.message }
     return {
       data: (data ?? []).map((r) => ({
