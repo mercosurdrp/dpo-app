@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DocumentosDpoPanel } from "@/components/flota/documentos-dpo"
+import type { OtParaPedido } from "@/components/flota/pedidos-repuestos-panel"
 import { EstadoDpoPanel } from "@/components/flota/estado-dpo-panel"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -579,6 +580,29 @@ export function MantenimientoClient({
   const [, startTransition] = useTransition()
 
   const [tab, setTab] = useState("tablero")
+  /**
+   * OT para colgarle un pedido de repuestos: las programadas o en taller
+   * primero —son las que están esperando la pieza— y después las recientes.
+   */
+  const otsParaPedido = useMemo<OtParaPedido[]>(
+    () =>
+      [...mantenimientos]
+        .filter((m) => m.estado !== "cancelado")
+        .sort(
+          (a, b) =>
+            Number(b.estado === "programado" || b.estado === "en_taller") -
+              Number(a.estado === "programado" || a.estado === "en_taller") ||
+            b.fecha.localeCompare(a.fecha)
+        )
+        .slice(0, 60)
+        .map((m) => ({
+          id: m.id,
+          numeroOt: m.numero_ot ?? null,
+          fecha: m.fecha,
+          dominio: m.dominio,
+        })),
+    [mantenimientos]
+  )
   // Catálogo de proveedores/talleres en memoria: si alguien agrega uno desde
   // cualquier formulario (OT, cubiertas, gastos), aparece en todos sin recargar.
   const [provList, setProvList] = useState<MantenimientoProveedor[]>(proveedores)
@@ -1051,13 +1075,12 @@ export function MantenimientoClient({
         <TabsContent value="repuestos" className="space-y-6">
           <GestionMtto
             dominios={unidades.map((u) => u.dominio)}
-            novedades={gestion.novedades}
             repuestos={gestion.repuestos}
-            ordenesCompra={gestion.ordenesCompra}
             residuos={gestion.residuos}
             conteos={gestion.conteos}
             consumos={gestion.consumos}
             recuentoFrecuenciaDias={gestion.recuentoFrecuenciaDias}
+            otsParaPedido={otsParaPedido}
             puedeEditar={puedeEditar}
           />
         </TabsContent>
