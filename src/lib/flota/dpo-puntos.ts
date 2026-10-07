@@ -207,6 +207,17 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
       "Stock mínimo/objetivo/máximo con recuentos, y trazabilidad de la disposición de residuos de mantenimiento.",
   },
   {
+    // Los documentos no responden UN punto: son la evidencia documental de
+    // todos. Por eso la solapa no declara puntos propios y la lista los agrupa
+    // por el punto que cada documento dice responder.
+    id: "documentos",
+    label: "SOP y SLA",
+    grupo: "gestion",
+    puntos: [],
+    aporta:
+      "Procedimientos operativos estándar y acuerdos de servicio del pilar, con el punto del DPO que responde cada uno y su estado de firma.",
+  },
+  {
     id: "plantillas",
     label: "Plan / Plantillas",
     grupo: "gestion",

@@ -6,6 +6,8 @@ import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { DocumentosDpoPanel } from "@/components/flota/documentos-dpo"
+import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import {
   GRUPOS_ORDEN,
@@ -1030,6 +1032,12 @@ export function MantenimientoClient({
             pctExcelencia={estandares.pctExcelencia}
             puedeEditar={puedeEditar}
           />
+        </TabsContent>
+
+        {/* ============ TAB: SOP y SLA (evidencia documental del pilar) ============ */}
+        <TabsContent value="documentos" className="space-y-6">
+          <DpoSeccionCinta seccionId="documentos" />
+          <DocumentosDpoPanel />
         </TabsContent>
 
         {/* ============ TAB: Repuestos (inventario, OC y novedades) ============ */}

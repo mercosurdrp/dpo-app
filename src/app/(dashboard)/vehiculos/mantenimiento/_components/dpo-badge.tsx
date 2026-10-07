@@ -6,6 +6,7 @@ import { ShieldCheck } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { hrefEvidencia, puntoFlota, seccionFlota } from "@/lib/flota/dpo-puntos"
+import { DocsDePunto } from "@/components/flota/documentos-dpo"
 
 /**
  * Badge que declara, a la vista del auditor, qué punto del pilar Flota responde
@@ -100,6 +101,8 @@ export function DpoSeccionCinta({ seccionId, className }: { seccionId: string; c
           ({seccion.requisitos.join(" · ")})
         </span>
       ) : null}
+      {/* El procedimiento y el acuerdo que respaldan esta sección, a un click. */}
+      <DocsDePunto puntos={seccion.puntos} />
       <span className="w-full text-xs text-muted-foreground/80 sm:w-auto sm:border-l sm:border-border sm:pl-2">
         {seccion.aporta}
       </span>

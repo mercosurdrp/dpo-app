@@ -37,6 +37,7 @@ import type {
   MantenimientoRealizado,
   TipoChecklist,
 } from "@/types/database"
+import { DocumentosDpoPanel } from "@/components/flota/documentos-dpo"
 import { MaestroFlotaPanel } from "./maestro-flota-panel"
 // La disponibilidad de flota se ve con el MISMO componente que /vehiculos/mantenimiento:
 // dos pantallas que muestran el mismo porcentaje no pueden calcularlo cada una a su modo.
@@ -600,6 +601,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
           )}
           <TabsTrigger value="historial">Historial Checklists</TabsTrigger>
           <TabsTrigger value="combustible">Combustible</TabsTrigger>
+          <TabsTrigger value="documentos">SOP y SLA</TabsTrigger>
         </TabsList>
 
         {maestro && (
@@ -859,6 +861,14 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
               setDeleteType("checklist")
             }}
           />
+        </TabsContent>
+
+        {/* Tab: SOP y SLA — los procedimientos y acuerdos del pilar, a mano.
+            Están también en el módulo de Mantenimiento: es el mismo listado,
+            porque quien entra por Vehículos no tiene por qué saber en cuál de
+            las dos pantallas vive el papel que le piden. */}
+        <TabsContent value="documentos">
+          <DocumentosDpoPanel />
         </TabsContent>
 
         {/* Tab: Combustible */}
