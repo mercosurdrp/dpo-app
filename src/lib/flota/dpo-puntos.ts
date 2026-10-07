@@ -207,6 +207,17 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
       "Stock mínimo/objetivo/máximo con recuentos, y trazabilidad de la disposición de residuos de mantenimiento.",
   },
   {
+    // El mapa de la auditoría: qué puntuó el último ciclo y dónde está hoy la
+    // evidencia de cada punto. No declara puntos propios porque los responde a
+    // todos, leyéndolos.
+    id: "estado-dpo",
+    label: "Estado DPO",
+    grupo: "gestion",
+    puntos: [],
+    aporta:
+      "Estado de cada punto del pilar: puntaje y observación de la última auditoría, las solapas que lo respaldan y sus documentos.",
+  },
+  {
     // Los documentos no responden UN punto: son la evidencia documental de
     // todos. Por eso la solapa no declara puntos propios y la lista los agrupa
     // por el punto que cada documento dice responder.
@@ -235,6 +246,11 @@ export function seccionFlota(id: string): SeccionFlota | undefined {
 }
 
 export const GRUPOS_ORDEN: GrupoFlota[] = ["operacion", "analisis", "activos", "gestion"]
+
+/** Las solapas del módulo que declaran responder un punto ("2.3"). */
+export function seccionesDeFlotaPorPunto(numero: string): SeccionFlota[] {
+  return SECCIONES_FLOTA.filter((s) => s.puntos.includes(numero))
+}
 
 export function seccionesDeGrupo(g: GrupoFlota): SeccionFlota[] {
   return SECCIONES_FLOTA.filter((s) => s.grupo === g)
