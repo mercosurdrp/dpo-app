@@ -182,16 +182,34 @@ export async function registrarRetiroRecicladora(input: {
 
     const { data: cubiertas, error: cubErr } = await supabase
       .from("mantenimiento_neumaticos")
-      .select("id, numero, marca, medida, motivo_baja, estado")
+      .select("id, numero, marca, medida, motivo_baja, estado, fecha_baja, residuo_id")
       .in("id", ids)
     if (cubErr) return { error: cubErr.message }
     if (!cubiertas || cubiertas.length !== ids.length)
       return { error: "Alguna de las cubiertas elegidas ya no existe" }
 
-    const yaDeBaja = cubiertas.find((c) => c.estado === "baja")
-    if (yaDeBaja)
+    /**
+     * Una baja anterior SÍ se puede imputar al certificado.
+     *
+     * Antes se rechazaba cualquier cubierta ya dada de baja, y eso dejaba un
+     * agujero sin salida: la que se da de baja directamente —"enviada a la
+     * desechadora", sin pasar por la bandeja— quedaba fuera del circuito del
+     * certificado para siempre. El 24/09/2026 pasó con cuatro (la 1131R, la 28R
+     * y dos sin numerar): salieron del CD sin evidencia y no había forma de
+     * ampararlas desde la app.
+     *
+     * El certificado del operador cubre varios cientos de unidades, así que
+     * imputarlas es exactamente lo que corresponde. Lo único que no se toca es
+     * su **fecha de baja original**: el día en que se fue la goma no lo reescribe
+     * el día en que se cargó el papel.
+     *
+     * Lo que sí se rechaza es la que YA está amparada por otro certificado: eso
+     * sería contarla dos veces contra el tope.
+     */
+    const yaAmparada = cubiertas.find((c) => c.residuo_id)
+    if (yaAmparada)
       return {
-        error: `La cubierta ${yaDeBaja.numero ?? "sin código"} ya está dada de baja`,
+        error: `La cubierta ${yaAmparada.numero ?? "sin código"} ya está imputada a un certificado`,
       }
 
     const fecha = input.fecha || new Date().toISOString().slice(0, 10)
@@ -231,22 +249,39 @@ export async function registrarRetiroRecicladora(input: {
       .single()
     if (resErr) return { error: resErr.message }
 
-    const { error: bajaErr } = await supabase
-      .from("mantenimiento_neumaticos")
-      .update({
-        estado: "baja",
-        dominio: null,
-        posicion: null,
-        eje: null,
-        fecha_baja: fecha,
-        residuo_id: residuo.id,
-        updated_at: new Date().toISOString(),
-      })
-      .in("id", ids)
-    if (bajaErr) {
+    // Las que estaban en la bandeja se dan de baja ahora; las que ya estaban de
+    // baja sólo quedan imputadas al certificado, con su fecha original intacta.
+    const nuevas = cubiertas.filter((c) => c.estado !== "baja").map((c) => c.id)
+    const previas = cubiertas.filter((c) => c.estado === "baja").map((c) => c.id)
+    const ahora = new Date().toISOString()
+    const fallo = async (msg: string) => {
       // Sin cubiertas dadas de baja el residuo no representa nada.
       await supabase.from("mantenimiento_residuos").delete().eq("id", residuo.id)
-      return { error: bajaErr.message }
+      return { error: msg }
+    }
+
+    if (nuevas.length > 0) {
+      const { error: bajaErr } = await supabase
+        .from("mantenimiento_neumaticos")
+        .update({
+          estado: "baja",
+          dominio: null,
+          posicion: null,
+          eje: null,
+          fecha_baja: fecha,
+          residuo_id: residuo.id,
+          updated_at: ahora,
+        })
+        .in("id", nuevas)
+      if (bajaErr) return fallo(bajaErr.message)
+    }
+
+    if (previas.length > 0) {
+      const { error: impErr } = await supabase
+        .from("mantenimiento_neumaticos")
+        .update({ residuo_id: residuo.id, updated_at: ahora })
+        .in("id", previas)
+      if (impErr) return fallo(impErr.message)
     }
 
     // El motivo por el que se desechó cada una se conserva; si no tenía, queda
@@ -263,7 +298,8 @@ export async function registrarRetiroRecicladora(input: {
       cubiertas.map((c) => ({
         neumatico_id: c.id,
         tipo: "retiro_reciclado",
-        fecha,
+        // La que ya estaba de baja conserva el día en que salió.
+        fecha: c.estado === "baja" ? (c.fecha_baja ?? fecha) : fecha,
         numero: c.numero,
         medida: c.medida,
         factura_urls: input.certificado_urls?.length ? input.certificado_urls : null,

@@ -97,6 +97,22 @@ export function DesechoPanel({
     .reduce((a, r) => a + Number(r.cantidad ?? 0), 0)
   const sinCertificado = retiros.filter((r) => !r.certificado_url).length
 
+  /**
+   * Bajas que no están imputadas a ningún certificado.
+   *
+   * La cubierta que se da de baja directamente —"enviada a la desechadora", sin
+   * pasar por la bandeja— sale del CD sin evidencia ambiental. Para el pilar eso
+   * es un hueco en R1.4.2, así que se muestran acá y se pueden sumar a un retiro
+   * para quedar amparadas por el certificado que ya está cargado.
+   */
+  const bajasSinCertificado = useMemo(
+    () =>
+      neumaticos
+        .filter((n) => n.estado === "baja" && !n.residuo_id)
+        .sort((a, b) => (b.fecha_baja ?? "").localeCompare(a.fecha_baja ?? "")),
+    [neumaticos]
+  )
+
   // Los certificados cargados con lo que ya se les imputó. El operador entrega
   // UNO por varios cientos de unidades, no uno por viaje: lo que importa es
   // cuánto queda, y eso se cuenta sumando las cubiertas de todos los retiros
@@ -146,6 +162,15 @@ export function DesechoPanel({
                   {paraDesecho.length} esperando retiro
                 </Badge>
               )}
+              {bajasSinCertificado.length > 0 && (
+                <Badge
+                  variant="outline"
+                  className="border-destructive/40 bg-destructive/10 text-xs text-destructive"
+                >
+                  {bajasSinCertificado.length} baja
+                  {bajasSinCertificado.length > 1 ? "s" : ""} sin certificado
+                </Badge>
+              )}
             </CardTitle>
             <p className="mt-0.5 text-xs text-muted-foreground">
               La cubierta que ya no sirve queda acá hasta que la recicladora se lleva la
@@ -160,7 +185,7 @@ export function DesechoPanel({
               </Button>
               <Button
                 onClick={() => setRetiroOpen(true)}
-                disabled={paraDesecho.length === 0}
+                disabled={paraDesecho.length === 0 && bajasSinCertificado.length === 0}
               >
                 <Recycle className="mr-1 size-4" /> Registrar retiro
               </Button>
@@ -379,6 +404,7 @@ export function DesechoPanel({
       {retiroOpen && (
         <RetiroDialog
           cubiertas={paraDesecho}
+          bajasSinCertificado={bajasSinCertificado}
           certificadosCargados={certificados}
           onClose={() => setRetiroOpen(false)}
           onDone={() => {
@@ -518,11 +544,17 @@ function MarcarDesechoDialog({
 
 function RetiroDialog({
   cubiertas,
+  bajasSinCertificado,
   certificadosCargados,
   onClose,
   onDone,
 }: {
   cubiertas: Neumatico[]
+  /**
+   * Bajas anteriores que no están amparadas por ningún certificado. Se pueden
+   * sumar al retiro para imputarlas, sin tocar su fecha de baja original.
+   */
+  bajasSinCertificado: Neumatico[]
   /** Los certificados que ya están cargados, para reusar el que corresponda. */
   certificadosCargados: CertificadoDesecho[]
   onClose: () => void
@@ -729,7 +761,7 @@ function RetiroDialog({
 
           <div className="rounded-md border border-border">
             <div className="border-b bg-muted/50 px-3 py-2 text-sm font-medium">
-              Se llevan ({sel.size} de {cubiertas.length})
+              Se llevan ({sel.size} de {cubiertas.length + bajasSinCertificado.length})
             </div>
             <div className="max-h-56 overflow-y-auto">
               <ul className="divide-y">
@@ -754,6 +786,44 @@ function RetiroDialog({
                 ))}
               </ul>
             </div>
+
+            {/* Bajas anteriores sin amparo. Van aparte y desmarcadas: la bandeja
+                es lo que se lleva hoy, esto es ponerle el papel a lo que ya se
+                fue sin él. */}
+            {bajasSinCertificado.length > 0 && (
+              <>
+                <div className="border-y bg-destructive/5 px-3 py-2">
+                  <p className="text-sm font-medium text-destructive">
+                    Bajas sin certificado ({bajasSinCertificado.length})
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Se fueron sin evidencia. Tildalas para imputarlas a este
+                    certificado: conservan su fecha de baja original.
+                  </p>
+                </div>
+                <div className="max-h-40 overflow-y-auto">
+                  <ul className="divide-y">
+                    {bajasSinCertificado.map((n) => (
+                      <li key={n.id}>
+                        <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-muted/40">
+                          <Checkbox
+                            checked={sel.has(n.id)}
+                            onCheckedChange={() => toggle(n.id)}
+                          />
+                          <span className="font-medium">{n.numero || "sin código"}</span>
+                          <span className="text-muted-foreground">
+                            {[n.marca, n.medida].filter(Boolean).join(" · ")}
+                          </span>
+                          <span className="ml-auto whitespace-nowrap text-[11px] text-muted-foreground/80">
+                            baja {fmtFecha(n.fecha_baja)}
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
           </div>
 
           <div>

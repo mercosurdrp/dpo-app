@@ -171,10 +171,14 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     id: "neumaticos",
     label: "Neumáticos",
     grupo: "activos",
-    puntos: ["3.4"],
-    requisitos: ["R3.4.3", "R3.4.4"],
+    // El 1.4 va acá además de en Repuestos: el panel de desecho y reciclado es
+    // el que registra la disposición de las cubiertas con su certificado, que es
+    // la evidencia textual de R1.4.2 ("fecha, material, proveedor" + el número
+    // de fuego de cada cubierta). Mirar sólo Repuestos deja afuera el circuito.
+    puntos: ["3.4", "1.4"],
+    requisitos: ["R3.4.3", "R3.4.4", "R1.4.2"],
     aporta:
-      "Medición milimétrica mensual, presión, rotación y alineación por unidad.",
+      "Medición milimétrica mensual, presión, rotación y alineación por unidad, y la disposición final de cada cubierta —retiro de la recicladora, certificado de descarte y número de fuego—.",
   },
   {
     id: "estandares",
