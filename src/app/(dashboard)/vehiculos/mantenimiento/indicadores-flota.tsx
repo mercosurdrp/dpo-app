@@ -127,8 +127,16 @@ const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
   disponibilidad: { tab: "seguimiento", label: "Ver día a día por unidad" },
   utilizacion: { tab: "seguimiento", label: "Ver día a día por unidad" },
   correctivo_dias_parado: { tab: "seguimiento", label: "Ver las paradas del mes" },
-  costo_total: { tab: "historial", label: "Ver las órdenes de trabajo" },
-  pct_preventivo: { tab: "historial", label: "Ver las órdenes de trabajo" },
+  costo_total: {
+    tab: "historial",
+    label: "Ver las órdenes de trabajo",
+    labelSinDato: "Sin OT cargadas este mes",
+  },
+  pct_preventivo: {
+    tab: "historial",
+    label: "Ver las órdenes de trabajo",
+    labelSinDato: "Sin OT cargadas este mes",
+  },
   cumplimiento_plan: { tab: "tablero", label: "Ver el plan tarea por unidad" },
   services_vencidos: { tab: "tablero", label: "Ver el plan tarea por unidad" },
   docs_conformidad: { tab: "tablero", label: "Ver la documentación por unidad" },
@@ -166,6 +174,9 @@ const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
   presupuesto_desvio: {
     detalle: "presupuesto_desvio",
     label: "Ver el desvío rubro por rubro",
+    // Gris no es "cero desvío": es que nadie cargó el control del mes. La
+    // tarjeta lo dice en vez de dejar al lector adivinando.
+    labelSinDato: "Sin control de presupuesto este mes",
   },
 }
 
