@@ -2234,7 +2234,9 @@ function NuevoMantenimientoDialog({
               <span className="font-medium text-slate-800">Es trabajo de neumáticos</span>
               <span className="mt-0.5 block text-xs text-slate-600">
                 Rotación, alineación, balanceo, reparación o recapado. La OT se lista en la solapa
-                Neumáticos y no entre las de mantenimiento general.
+                Neumáticos y no entre las de mantenimiento general. Acá va la{" "}
+                <span className="font-medium">mano de obra</span>: la cubierta y el recapado se
+                cargan en Neumáticos, que es de donde sale su costo.
               </span>
             </span>
           </label>
@@ -3080,6 +3082,30 @@ function repuestosPayload(reps: RepuestoForm[]) {
 /** Valor del selector cuando la pieza NO sale del pañol (Radix no acepta ""). */
 const REPUESTO_SIN_PANOL = "__comprado__"
 
+/**
+ * ¿La fila de repuesto es una cubierta? El fierro de la goma se carga en
+ * Neumáticos —con número de fuego, proveedor y precio— y la OT se queda con la
+ * MANO DE OBRA. Si la cubierta entra también acá, la misma plata queda contada
+ * dos veces entre las dos pantallas.
+ *
+ * 🚨 Pasó con la OT 1772 del AE591EI (15/09/2026): las 4 Dayton N° 80 a 83 se
+ * cargaron como repuestos a $461.983,25 cada una —y además la factura de
+ * Marsilli como comprobante— cuando esas mismas 4 cubiertas ya tenían su costo
+ * unitario en el parque. Entre la OT y el panel de neumáticos el EI sumaba
+ * $3,99 M por una intervención de $2,15 M.
+ *
+ * Es un aviso y no un bloqueo: el parche, la válvula y el sellador sí son
+ * repuesto de taller y no tienen por qué ir al parque de cubiertas.
+ */
+const DESC_ES_CUBIERTA = /cubiert|neum[áa]tic|rodado/i
+const DESC_ES_INSUMO_GOMERIA = /parche|v[áa]lvula|sellador|pegamento|tal[óo]n|vulcaniz/i
+
+function esFilaDeCubierta(descripcion: string): boolean {
+  const d = descripcion.trim()
+  if (!d) return false
+  return DESC_ES_CUBIERTA.test(d) && !DESC_ES_INSUMO_GOMERIA.test(d)
+}
+
 // Editor de la lista de repuestos (descripción + cantidad + costo unitario) y,
 // desde el 25/08/2026, el vínculo con el ítem del pañol.
 //
@@ -3130,6 +3156,7 @@ function RepuestosEditor({
             const item = r.repuestoId ? itemPorId.get(r.repuestoId) : undefined
             const pedido = parseFloat(r.cantidad) || 0
             const faltaStock = item != null && pedido > Number(item.stock_actual)
+            const esCubierta = esFilaDeCubierta(r.descripcion)
             return (
             <div key={i} className="space-y-1.5 rounded-md border border-border p-2">
               <div className="flex items-center gap-2">
@@ -3184,6 +3211,18 @@ function RepuestosEditor({
                   El pañol tiene {Number(item!.stock_actual)} {item!.unidad} y la OT descuenta{" "}
                   {pedido}. Cargá primero el ingreso en Repuestos, o dejala como comprada para
                   esta OT.
+                </p>
+              )}
+              {esCubierta && (
+                <p className="flex items-start gap-1.5 rounded-md border border-amber-300/60 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <span>
+                    <span className="font-medium">La cubierta no va como repuesto.</span> Se carga
+                    en la solapa <span className="font-medium">Neumáticos</span>, con su número de
+                    fuego, proveedor y precio — ahí sigue el dibujo, las rotaciones y los
+                    recapados. Acá dejá sólo la mano de obra del cambio: si el precio va en los
+                    dos lados, el costo se cuenta dos veces.
+                  </span>
                 </p>
               )}
             </div>
@@ -3539,7 +3578,9 @@ function EditarMantenimientoDialog({
             <span>
               <span className="font-medium text-slate-800">Es trabajo de neumáticos</span>
               <span className="mt-0.5 block text-xs text-slate-600">
-                Con esto la OT pasa a listarse en la solapa Neumáticos.
+                Con esto la OT pasa a listarse en la solapa Neumáticos. Acá va la{" "}
+                <span className="font-medium">mano de obra</span>: la cubierta y el recapado se
+                cargan en Neumáticos, que es de donde sale su costo.
               </span>
             </span>
           </label>

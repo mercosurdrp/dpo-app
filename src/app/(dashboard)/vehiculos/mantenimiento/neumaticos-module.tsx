@@ -139,6 +139,7 @@ import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { ProveedorPicker, ProveedoresProvider } from "./_components/proveedor-picker"
 import { KpiCard } from "./_components/kpi-card"
 import { RecapadosPanel } from "./_components/recapados-panel"
+import { CostosNeumaticosPanel } from "./_components/costos-neumaticos-panel"
 import { DesechoPanel } from "./_components/desecho-panel"
 import { DesgastePorKmCard } from "./_components/desgaste-por-km"
 import {
@@ -1095,6 +1096,15 @@ export function NeumaticosModule({
           )}
         </CardContent>
       </Card>
+
+      {/* Qué gastó de goma cada unidad: compra de cubiertas + servicio de
+          recapado, con el mismo filtro de período que el resto del módulo. Va
+          antes de los envíos porque es el número que se mira primero. */}
+      <CostosNeumaticosPanel
+        neumaticos={neumaticos}
+        recapados={recapados}
+        unidades={unidades}
+      />
 
       {/* Envíos a recapado: la vuelta de la goma al recapador, con su costo */}
       <RecapadosPanel
