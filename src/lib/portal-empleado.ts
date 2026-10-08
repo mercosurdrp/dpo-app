@@ -7,6 +7,7 @@ import {
   CalendarCheck,
   CalendarRange,
   ClipboardList,
+  FileText,
   Fuel,
   Gauge,
   GraduationCap,
@@ -208,6 +209,15 @@ export const MODULOS_PORTAL: ModuloPortal[] = [
     href: "/instructivos",
     icon: BookOpenCheck,
     empresas: PAMPEANA,
+    grupo: "aprender",
+  },
+  // Biblioteca con los SOPs vigentes de todos los pilares, abierta a todos.
+  {
+    id: "sops",
+    label: "SOPs",
+    href: "/sops",
+    icon: FileText,
+    empresas: AMBAS,
     grupo: "aprender",
   },
 
