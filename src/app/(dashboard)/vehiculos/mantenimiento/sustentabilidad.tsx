@@ -18,13 +18,22 @@
 // ecológicos, y los puntúan el 2.2 y el 3.4. El 4.3 exige impacto ambiental.
 
 import { useMemo } from "react"
-import { Leaf, Recycle, TrendingDown, TrendingUp, Minus } from "lucide-react"
+import { FileDown, Leaf, Recycle, TrendingDown, TrendingUp, Minus } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { Neumatico, Recapado } from "@/lib/vehiculos/neumaticos-tipos"
-import type { SustentabilidadFlota } from "@/lib/vehiculos/sustentabilidad"
+import {
+  META_CO2_100KM,
+  META_RECUPERACION,
+  recuperacionDelAnio,
+  recuperacionPorMes,
+  tendencia3Meses,
+  type SustentabilidadFlota,
+  type Tendencia,
+} from "@/lib/vehiculos/sustentabilidad"
 
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard } from "./_components/kpi-card"
@@ -35,85 +44,7 @@ const fmtNum = (n: number | null | undefined, dec = 0) =>
 const fmtMes = (ym: string) =>
   new Date(`${ym}-01T12:00:00`).toLocaleDateString("es-AR", { month: "short", year: "2-digit" })
 
-/** Meta del PI de emisiones: el mejor mes cerrado del año es el piso a defender. */
-const META_CO2_100KM = 68 // kg CO2/100 km ≈ 25,4 L/100 km, el mejor mes de 2026
-
-const META_RECUPERACION = 70 // % de cubiertas recuperadas por recapado
-
-interface MesRecapado {
-  mes: string
-  recapadas: number
-  desechadas: number
-  pct: number | null
-}
-
-/**
- * Recuperación de cubiertas: de las que salieron de servicio en el mes, cuántas
- * volvieron a rodar recapadas en vez de irse a la recicladora.
- *
- * 🚨 El denominador son las bajas CON retiro a la recicladora (`residuo_id`), no
- * todas las bajas: de las 26 bajas de 2026, 18 son las cubiertas transferidas a
- * Misiones el 05/09 — salieron del parque pero no se desecharon, y contarlas
- * hundiría el indicador por una mudanza.
- */
-function recuperacionPorMes(neumaticos: Neumatico[], recapados: Recapado[]): MesRecapado[] {
-  const mapa = new Map<string, { recapadas: number; desechadas: number }>()
-  const get = (mes: string) => {
-    if (!mapa.has(mes)) mapa.set(mes, { recapadas: 0, desechadas: 0 })
-    return mapa.get(mes)!
-  }
-
-  for (const r of recapados) {
-    // Cuenta cuando VOLVIÓ recapada: es el momento en que la goma se recuperó.
-    const fecha = r.fecha_retorno
-    if (!fecha) continue
-    for (const it of r.items ?? []) {
-      if (it.resultado === "recapada") get(fecha.slice(0, 7)).recapadas++
-    }
-  }
-
-  for (const n of neumaticos) {
-    if (n.estado !== "baja" || !n.residuo_id || !n.fecha_baja) continue
-    get(n.fecha_baja.slice(0, 7)).desechadas++
-  }
-
-  return Array.from(mapa.entries())
-    .map(([mes, v]) => {
-      const total = v.recapadas + v.desechadas
-      return { mes, ...v, pct: total > 0 ? (v.recapadas / total) * 100 : null }
-    })
-    .sort((a, b) => a.mes.localeCompare(b.mes))
-}
-
-/**
- * Tendencia sobre los últimos 3 meses CERRADOS, que es lo que pide la guía del
- * punto. El mes en curso se excluye: va siempre a la baja porque está a medio
- * cargar, y haría ver una mejora que no existe.
- */
-function tendencia3Meses(
-  serie: Array<{ mes: string; valor: number | null }>,
-  mesActual: string,
-  /** true = bajar es mejorar (emisiones); false = subir es mejorar (recuperación). */
-  bajarEsMejor: boolean
-): { estado: "mejora" | "empeora" | "igual" | "sin_datos"; delta: number | null; meses: string[] } {
-  const cerrados = serie.filter((p) => p.mes < mesActual && p.valor != null).slice(-3)
-  if (cerrados.length < 2) return { estado: "sin_datos", delta: null, meses: [] }
-  const primero = cerrados[0].valor!
-  const ultimo = cerrados[cerrados.length - 1].valor!
-  const delta = ultimo - primero
-  const meses = cerrados.map((p) => p.mes)
-  if (Math.abs(delta) < 0.05) return { estado: "igual", delta, meses }
-  const mejora = bajarEsMejor ? delta < 0 : delta > 0
-  return { estado: mejora ? "mejora" : "empeora", delta, meses }
-}
-
-function ChipTendencia({
-  t,
-  unidad,
-}: {
-  t: { estado: "mejora" | "empeora" | "igual" | "sin_datos"; delta: number | null; meses: string[] }
-  unidad: string
-}) {
+function ChipTendencia({ t, unidad }: { t: Tendencia; unidad: string }) {
   if (t.estado === "sin_datos")
     return <Badge variant="outline">Sin datos para la tendencia</Badge>
   const Icono = t.estado === "mejora" ? TrendingDown : t.estado === "empeora" ? TrendingUp : Minus
@@ -165,14 +96,10 @@ export function Sustentabilidad({
   )
 
   const recup = useMemo(() => recuperacionPorMes(neumaticos, recapados), [neumaticos, recapados])
-  const recupAnio = useMemo(() => {
-    const anio = mesActual.slice(0, 4)
-    const delAnio = recup.filter((r) => r.mes.startsWith(anio))
-    const recapadas = delAnio.reduce((a, r) => a + r.recapadas, 0)
-    const desechadas = delAnio.reduce((a, r) => a + r.desechadas, 0)
-    const total = recapadas + desechadas
-    return { recapadas, desechadas, pct: total > 0 ? (recapadas / total) * 100 : null }
-  }, [recup, mesActual])
+  const recupAnio = useMemo(
+    () => recuperacionDelAnio(recup, mesActual.slice(0, 4)),
+    [recup, mesActual]
+  )
 
   const tRecup = useMemo(
     () => tendencia3Meses(recup.map((r) => ({ mes: r.mes, valor: r.pct })), mesActual, false),
@@ -183,7 +110,20 @@ export function Sustentabilidad({
 
   return (
     <div className="space-y-6">
-      <DpoSeccionCinta seccionId="sustentabilidad" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <DpoSeccionCinta seccionId="sustentabilidad" />
+        {/* La hoja que se adjunta en /evidencia/flota/4-3 como respaldo del
+            R4.3.2, y que sirve impresa para la cartelera del R4.3.1. Sale del
+            mismo cálculo que esta pantalla, así que no pueden decir distinto. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={() => window.open("/api/vehiculos/sustentabilidad/pdf", "_blank", "noopener")}
+        >
+          <FileDown className="mr-1 size-4" /> Hoja de evidencia (PDF)
+        </Button>
+      </div>
 
       {/* ============ PI 1 · emisiones ============ */}
       <Card>
