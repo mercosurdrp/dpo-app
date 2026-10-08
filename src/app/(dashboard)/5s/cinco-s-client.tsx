@@ -70,6 +70,9 @@ function formatMes(periodo: string) {
   return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" })
 }
 
+// Centinela de "sin filtro" (base-ui Select no acepta value="").
+const TODOS = "todos"
+
 export function CincoSClient({
   checksInicial,
   periodoActual,
@@ -104,24 +107,79 @@ export function CincoSClient({
   const [openNuevaAlmacen, setOpenNuevaAlmacen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [tipo, setTipo] = useState<S5Tipo>(tipoInicial)
+  // Filtros de flota: por defecto se ve todo el histórico.
+  const [filtroMes, setFiltroMes] = useState(TODOS)
+  const [filtroPatente, setFiltroPatente] = useState(TODOS)
+  const [filtroChofer, setFiltroChofer] = useState(TODOS)
 
   const canEdit = currentRole === "admin" || currentRole === "auditor"
 
-  // KPIs flota
+  const choferDe = (a: S5AuditoriaConMeta) =>
+    a.chofer_nombre_resuelto ?? a.chofer_nombre ?? null
+
+  const opcionesFlota = useMemo(() => {
+    const meses = new Set<string>()
+    const patentes = new Set<string>()
+    const choferes = new Set<string>()
+    for (const a of auditoriasFlota) {
+      meses.add(a.periodo)
+      if (a.vehiculo_dominio) patentes.add(a.vehiculo_dominio)
+      const c = choferDe(a)
+      if (c) choferes.add(c)
+    }
+    const mesesOrd = [...meses].sort().reverse()
+    const patentesOrd = [...patentes].sort()
+    const choferesOrd = [...choferes].sort()
+    const items = (vals: string[], label: (v: string) => string, todos: string) => {
+      const o: Record<string, string> = { [TODOS]: todos }
+      for (const v of vals) o[v] = label(v)
+      return o
+    }
+    return {
+      meses: mesesOrd,
+      patentes: patentesOrd,
+      choferes: choferesOrd,
+      mesesItems: items(mesesOrd, formatMes, "Todos los meses"),
+      patentesItems: items(patentesOrd, (v) => v, "Todas las patentes"),
+      choferesItems: items(choferesOrd, (v) => v, "Todos los choferes"),
+    }
+  }, [auditoriasFlota])
+
+  const flotaFiltrada = useMemo(
+    () =>
+      auditoriasFlota
+        .filter(
+          (a) =>
+            (filtroMes === TODOS || a.periodo === filtroMes) &&
+            (filtroPatente === TODOS || a.vehiculo_dominio === filtroPatente) &&
+            (filtroChofer === TODOS || choferDe(a) === filtroChofer)
+        )
+        .sort(
+          (x, y) =>
+            y.fecha.localeCompare(x.fecha) ||
+            y.created_at.localeCompare(x.created_at)
+        ),
+    [auditoriasFlota, filtroMes, filtroPatente, filtroChofer]
+  )
+
+  const hayFiltroFlota =
+    filtroMes !== TODOS || filtroPatente !== TODOS || filtroChofer !== TODOS
+
+  // KPIs flota (sobre lo filtrado)
   const kpisFlota = useMemo(() => {
-    const completadas = auditoriasFlota.filter((a) => a.estado === "completada")
+    const completadas = flotaFiltrada.filter((a) => a.estado === "completada")
     const prom =
       completadas.length > 0
         ? completadas.reduce((acc, a) => acc + (a.nota_total ?? 0), 0) /
           completadas.length
         : 0
     return {
-      total: auditoriasFlota.length,
+      total: flotaFiltrada.length,
       completadas: completadas.length,
       promedio: prom,
       pendientes: vehiculosPendientes.length,
     }
-  }, [auditoriasFlota, vehiculosPendientes])
+  }, [flotaFiltrada, vehiculosPendientes])
 
   const kpisAlmacen = useMemo(() => {
     const delMes = auditoriasAlmacen.filter((a) => a.periodo === periodoActual)
@@ -368,7 +426,9 @@ export function CincoSClient({
           {/* KPIs */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <KpiCard
-              label="Auditorías del mes"
+              label={
+                filtroMes === TODOS ? "Auditorías" : `Auditorías ${formatMes(filtroMes)}`
+              }
               value={kpisFlota.total}
               sub={`${kpisFlota.completadas} completadas`}
             />
@@ -398,15 +458,83 @@ export function CincoSClient({
 
           {/* Tabla auditorías flota */}
           <Card>
-            <CardHeader>
+            <CardHeader className="space-y-3">
               <CardTitle className="text-base">
-                Auditorías del mes — Flota
+                Auditorías — Flota ({flotaFiltrada.length})
               </CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={filtroMes}
+                  onValueChange={(v) => setFiltroMes(v ?? TODOS)}
+                  items={opcionesFlota.mesesItems}
+                >
+                  <SelectTrigger className="w-full capitalize sm:w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TODOS}>Todos los meses</SelectItem>
+                    {opcionesFlota.meses.map((m) => (
+                      <SelectItem key={m} value={m} className="capitalize">
+                        {formatMes(m)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={filtroPatente}
+                  onValueChange={(v) => setFiltroPatente(v ?? TODOS)}
+                  items={opcionesFlota.patentesItems}
+                >
+                  <SelectTrigger className="w-full sm:w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TODOS}>Todas las patentes</SelectItem>
+                    {opcionesFlota.patentes.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={filtroChofer}
+                  onValueChange={(v) => setFiltroChofer(v ?? TODOS)}
+                  items={opcionesFlota.choferesItems}
+                >
+                  <SelectTrigger className="w-full sm:w-60">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TODOS}>Todos los choferes</SelectItem>
+                    {opcionesFlota.choferes.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {hayFiltroFlota && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setFiltroMes(TODOS)
+                      setFiltroPatente(TODOS)
+                      setFiltroChofer(TODOS)
+                    }}
+                  >
+                    Limpiar filtros
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
-              {auditoriasFlota.length === 0 ? (
+              {flotaFiltrada.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  Aún no hay auditorías este mes.
+                  {auditoriasFlota.length === 0
+                    ? "Aún no hay auditorías de flota."
+                    : "Ninguna auditoría coincide con los filtros."}
                 </p>
               ) : (
                 <div className="overflow-x-auto">
@@ -423,14 +551,14 @@ export function CincoSClient({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {auditoriasFlota.map((a) => (
+                      {flotaFiltrada.map((a) => (
                         <TableRow key={a.id}>
                           <TableCell>{formatFecha(a.fecha)}</TableCell>
                           <TableCell className="font-medium">
                             {a.vehiculo_dominio ?? "—"}
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
-                            {a.chofer_nombre ?? "—"}
+                            {choferDe(a) ?? "—"}
                           </TableCell>
                           <TableCell className="text-sm">
                             {a.auditor_nombre}

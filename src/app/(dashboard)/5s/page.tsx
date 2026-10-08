@@ -45,7 +45,8 @@ export default async function CincoSPage({
     elegibles,
     historialResponsables,
   ] = await Promise.all([
-    getAuditorias({ tipo: "flota", periodo: periodoActual }),
+    // Flota trae el histórico entero: el filtro por mes/patente/chofer es del cliente.
+    getAuditorias({ tipo: "flota", limit: 1000 }),
     getAuditorias({ tipo: "almacen", limit: 500 }),
     getSectorResponsables(periodoActual),
     getVehiculosActivos(),
