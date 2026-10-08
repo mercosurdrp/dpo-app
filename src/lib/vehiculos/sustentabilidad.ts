@@ -9,6 +9,13 @@
  * (DEFRA / IPCC, ~2,68 kg CO2/L): es el que se usa para alcance 1 y el que hay
  * que citar como fuente ante la auditoría. Si algún día entra una unidad a GNC
  * o eléctrica, este número deja de servirle a esa unidad.
+ *
+ * 🚨 Es sólo el FALLBACK. El factor real sale de `HUELLA_PARAMS_DEFAULT.feGasoil`
+ * pisado por lo que esté guardado en `app_config` bajo "huella:params", que es
+ * de donde lo toma /huella-carbono. Las dos pantallas informan emisiones de la
+ * misma flota: si el PI de flota tuviera su propio 2,68 hardcodeado y alguien
+ * cambiara el factor en Huella de carbono, la empresa quedaría con dos números
+ * distintos de CO2 y es la primera cosa que un auditor cruza.
  */
 export const KG_CO2_POR_LITRO_DIESEL = 2.68
 
@@ -39,8 +46,8 @@ export interface SustentabilidadFlota {
 }
 
 /** Litros y km de un período, pasados a emisiones y al PI por 100 km. */
-export function agregadoCo2(litros: number, km: number) {
-  const co2Kg = litros * KG_CO2_POR_LITRO_DIESEL
+export function agregadoCo2(litros: number, km: number, factor = KG_CO2_POR_LITRO_DIESEL) {
+  const co2Kg = litros * factor
   return {
     litros: Math.round(litros * 10) / 10,
     km: Math.round(km),

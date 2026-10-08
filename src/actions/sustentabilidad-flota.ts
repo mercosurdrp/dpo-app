@@ -18,11 +18,29 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { leerClave } from "@/lib/clima-store"
+import { HUELLA_PARAMS_DEFAULT, type HuellaParams } from "@/lib/huella/definiciones"
 import {
   agregadoCo2,
   KG_CO2_POR_LITRO_DIESEL,
   type SustentabilidadFlota,
 } from "@/lib/vehiculos/sustentabilidad"
+
+/**
+ * El factor de emisión del gasoil, tomado de donde lo toma /huella-carbono:
+ * `app_config` bajo "huella:params", con el default del módulo de huella como
+ * respaldo. Las dos pantallas informan el CO2 de la MISMA flota, así que el
+ * factor tiene que ser uno solo.
+ */
+export async function factorGasoil(): Promise<number> {
+  try {
+    const guardado = await leerClave<Partial<HuellaParams>>("huella:params")
+    const fe = Number(guardado?.feGasoil ?? HUELLA_PARAMS_DEFAULT.feGasoil)
+    return Number.isFinite(fe) && fe > 0 ? fe : KG_CO2_POR_LITRO_DIESEL
+  } catch {
+    return KG_CO2_POR_LITRO_DIESEL
+  }
+}
 
 export async function getSustentabilidadFlota(
   desde?: string
@@ -30,6 +48,7 @@ export async function getSustentabilidadFlota(
   try {
     await requireAuth()
     const supabase = await createClient()
+    const factor = await factorGasoil()
 
     // 13 meses hacia atrás por defecto: alcanza para la tendencia de 3 meses que
     // pide la guía y para comparar contra el mismo mes del año anterior.
@@ -87,19 +106,19 @@ export async function getSustentabilidadFlota(
     }
 
     const porMes = Array.from(mesMap.entries())
-      .map(([mes, v]) => ({ mes, cargas: v.cargas, ...agregadoCo2(v.litros, v.km) }))
+      .map(([mes, v]) => ({ mes, cargas: v.cargas, ...agregadoCo2(v.litros, v.km, factor) }))
       .sort((a, b) => a.mes.localeCompare(b.mes))
 
     const porUnidad = Array.from(domMap.entries())
-      .map(([dominio, v]) => ({ dominio, ...agregadoCo2(v.litros, v.km) }))
+      .map(([dominio, v]) => ({ dominio, ...agregadoCo2(v.litros, v.km, factor) }))
       .sort((a, b) => b.co2Kg - a.co2Kg)
 
     return {
       data: {
-        factor: KG_CO2_POR_LITRO_DIESEL,
+        factor,
         porMes,
         porUnidad,
-        anio: agregadoCo2(litrosAnio, kmAnio),
+        anio: agregadoCo2(litrosAnio, kmAnio, factor),
       },
     }
   } catch (e) {

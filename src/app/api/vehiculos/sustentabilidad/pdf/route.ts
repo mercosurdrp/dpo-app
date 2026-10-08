@@ -23,9 +23,9 @@ import { NextResponse, type NextRequest } from "next/server"
 import PDFDocument from "pdfkit"
 import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
+import { factorGasoil } from "@/actions/sustentabilidad-flota"
 import {
   agregadoCo2,
-  KG_CO2_POR_LITRO_DIESEL,
   META_CO2_100KM,
   META_RECUPERACION,
   recuperacionDelAnio,
@@ -80,6 +80,8 @@ interface Accion {
 }
 
 interface Datos {
+  /** Factor de emisión del gasoil vigente (el mismo que /huella-carbono). */
+  factor: number
   porMes: MesSustentabilidad[]
   porUnidad: UnidadSustentabilidad[]
   anio: { litros: number; km: number; co2Kg: number; co2Por100Km: number | null }
@@ -178,6 +180,7 @@ async function cargarAcciones(
 
 async function cargar(): Promise<Datos> {
   const supabase = await createClient()
+  const factor = await factorGasoil()
   const hoy = new Date().toISOString().slice(0, 10)
   const anioActual = hoy.slice(0, 4)
   const inicio = `${Number(anioActual) - 1}-${hoy.slice(5, 7)}-01`
@@ -251,14 +254,15 @@ async function cargar(): Promise<Datos> {
   const recup = recuperacionPorMes(neumaticos, recapados)
 
   return {
+    factor,
     acciones: await cargarAcciones(supabase, `${anioActual}-01-01`),
     porMes: Array.from(mesMap.entries())
-      .map(([mes, v]) => ({ mes, cargas: v.cargas, ...agregadoCo2(v.litros, v.km) }))
+      .map(([mes, v]) => ({ mes, cargas: v.cargas, ...agregadoCo2(v.litros, v.km, factor) }))
       .sort((a, b) => a.mes.localeCompare(b.mes)),
     porUnidad: Array.from(domMap.entries())
-      .map(([dominio, v]) => ({ dominio, ...agregadoCo2(v.litros, v.km) }))
+      .map(([dominio, v]) => ({ dominio, ...agregadoCo2(v.litros, v.km, factor) }))
       .sort((a, b) => b.co2Kg - a.co2Kg),
-    anio: agregadoCo2(litrosAnio, kmAnio),
+    anio: agregadoCo2(litrosAnio, kmAnio, factor),
     recup,
     recupAnio: recuperacionDelAnio(recup, anioActual),
     parqueConRecapado: neumaticos.filter((n) => Number(n.vueltas_recapado || 0) > 0).length,
@@ -501,7 +505,7 @@ function buildCartelera(doc: Doc, d: Datos) {
     .fontSize(7.5)
     .text(
       `Datos al ${new Date().toLocaleDateString("es-AR")} · DPO Flota, punto 4.3 "Sustainability Goals". ` +
-        `CO2 = litros de gasoil × ${num(KG_CO2_POR_LITRO_DIESEL, 2)} kg CO2/L (factor de combustión de ` +
+        `CO2 = litros de gasoil × ${num(d.factor, 2)} kg CO2/L (factor de combustión de ` +
         "diésel, DEFRA/IPCC). Se actualiza desde el módulo de Mantenimiento de flota.",
       margin,
       doc.page.height - 44,
@@ -571,7 +575,7 @@ function build(doc: Doc, d: Datos) {
     },
     {
       label: "Factor de emisión",
-      value: `${num(KG_CO2_POR_LITRO_DIESEL, 2)}`,
+      value: `${num(d.factor, 2)}`,
       sub: "kg CO2 por litro de gasoil",
     },
   ])
@@ -583,7 +587,7 @@ function build(doc: Doc, d: Datos) {
     .fontSize(8)
     .text(
       "Método de cálculo: emisiones de alcance 1 por combustión propia = litros de gasoil consumidos × " +
-        `${num(KG_CO2_POR_LITRO_DIESEL, 2)} kg CO2/L (factor de combustión de diésel, DEFRA/IPCC). ` +
+        `${num(d.factor, 2)} kg CO2/L (factor de combustión de diésel, DEFRA/IPCC). ` +
         "Los litros y los kilómetros salen de los remitos de combustible cargados por unidad en el " +
         "módulo de flota: el indicador es trazable hasta el comprobante.",
       { width: doc.page.width - doc.page.margins.left * 2 }
