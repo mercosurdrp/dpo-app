@@ -1,18 +1,25 @@
 /**
  * Hoja de evidencia del punto 4.3 "Sustainability Goals" del pilar Flota.
  *
- * Es el respaldo que se adjunta en /evidencia/flota/4-3 para el R4.3.2 —el PI
- * elegido y su serie— y que impreso sirve para la cartelera del R4.3.1, que
- * pide que los choferes conozcan los objetivos.
+ * Dos salidas distintas, porque son dos públicos distintos:
+ *
+ *   GET /api/vehiculos/sustentabilidad/pdf
+ *     La hoja de evidencia para el auditor: la serie mensual de cada PI, la
+ *     apertura por unidad, el método de cálculo y las acciones registradas.
+ *     Es el respaldo del R4.3.2 y del R4.3.3.
+ *
+ *   GET /api/vehiculos/sustentabilidad/pdf?formato=cartelera
+ *     Una sola hoja para el pizarrón del sector, en letra grande y con cuatro
+ *     números. Es lo que pide el R4.3.1: que el chofer conozca los objetivos.
+ *     La hoja del auditor NO sirve para eso —tres páginas de tablas en cuerpo 8
+ *     no las lee nadie de pie frente a una cartelera—, y al revés tampoco.
  *
  * 🚨 Los dos PI, las metas y la tendencia salen de `lib/vehiculos/sustentabilidad`,
  * el mismo módulo que usa la pantalla. Si el PDF recalculara por su cuenta, el
  * auditor terminaría con dos números distintos del mismo indicador y el punto se
  * caería por eso.
- *
- * GET /api/vehiculos/sustentabilidad/pdf
  */
-import { NextResponse } from "next/server"
+import { NextResponse, type NextRequest } from "next/server"
 import PDFDocument from "pdfkit"
 import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
@@ -64,6 +71,14 @@ const num = (n: number | null | undefined, dec = 0) =>
         maximumFractionDigits: dec,
       }).format(n)
 
+/** Una acción del R4.3.3 tal como quedó registrada en el sistema. */
+interface Accion {
+  fecha: string
+  que: string
+  detalle: string
+  respaldo: string
+}
+
 interface Datos {
   porMes: MesSustentabilidad[]
   porUnidad: UnidadSustentabilidad[]
@@ -72,6 +87,93 @@ interface Datos {
   recupAnio: { recapadas: number; desechadas: number; pct: number | null }
   parqueConRecapado: number
   parqueTotal: number
+  acciones: Accion[]
+}
+
+/**
+ * Las acciones del R4.3.3 NO se escriben a mano en el PDF: se leen del sistema.
+ * El requisito pide acciones "definidas y ejecutadas", así que lo que vale es lo
+ * que tiene registro —la OT, el remito, el certificado—, no una lista declarada.
+ */
+async function cargarAcciones(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  desde: string
+): Promise<Accion[]> {
+  const acciones: Accion[] = []
+
+  // 1) OT que corrigieron pérdidas de fluidos: derrame evitado = suelo no contaminado.
+  const { data: ot } = await supabase
+    .from("mantenimiento_realizados")
+    .select(
+      "numero_ot, dominio, fecha, taller, observaciones, tareas:mantenimiento_realizado_tareas(descripcion)"
+    )
+    .neq("estado", "cancelado")
+    .gte("fecha", desde)
+    .order("fecha", { ascending: false })
+  const RE_FLUIDOS = /p[eé]rdida|fuga|derrame|gotea|hidr[aá]ulic/i
+  for (const o of (ot || []) as Array<{
+    numero_ot: string | null
+    dominio: string
+    fecha: string
+    taller: string | null
+    observaciones: string | null
+    tareas: { descripcion: string | null }[]
+  }>) {
+    const tareas = (o.tareas || []).map((t) => t.descripcion ?? "").filter(Boolean)
+    if (!RE_FLUIDOS.test([o.observaciones ?? "", ...tareas].join(" · "))) continue
+    acciones.push({
+      fecha: o.fecha,
+      que: "Reparación de pérdida de fluidos",
+      detalle: `${o.dominio} — ${tareas.join("; ") || "ver observaciones de la OT"}`,
+      respaldo: o.numero_ot ? `OT ${o.numero_ot}${o.taller ? ` · ${o.taller}` : " · personal propio"}` : "OT sin número",
+    })
+  }
+
+  // 2) Recapados: goma que vuelve a rodar en vez de comprar cubierta nueva.
+  const { data: rec } = await supabase
+    .from("mantenimiento_recapados")
+    .select("numero_remito, proveedor, fecha_retorno, items:mantenimiento_recapado_items(resultado)")
+    .not("fecha_retorno", "is", null)
+    .gte("fecha_retorno", desde)
+  for (const r of (rec || []) as Array<{
+    numero_remito: string | null
+    proveedor: string
+    fecha_retorno: string
+    items: { resultado: string }[]
+  }>) {
+    const n = (r.items || []).filter((i) => i.resultado === "recapada").length
+    if (n === 0) continue
+    acciones.push({
+      fecha: r.fecha_retorno,
+      que: "Recapado en lugar de compra de goma nueva",
+      detalle: `${n} ${n === 1 ? "cubierta recuperada" : "cubiertas recuperadas"} — ${r.proveedor}`,
+      respaldo: r.numero_remito ? `Remito ${r.numero_remito}` : "Remito de recapado",
+    })
+  }
+
+  // 3) Disposición final con certificado de la goma que ya no se puede recuperar.
+  const { data: res } = await supabase
+    .from("mantenimiento_residuos")
+    .select("fecha, material, descripcion, cantidad, unidad, proveedor, certificado_url")
+    .gte("fecha", desde)
+  for (const x of (res || []) as Array<{
+    fecha: string
+    material: string
+    descripcion: string | null
+    cantidad: number | null
+    unidad: string | null
+    proveedor: string | null
+    certificado_url: string | null
+  }>) {
+    acciones.push({
+      fecha: x.fecha,
+      que: "Disposición final con operador habilitado",
+      detalle: `${x.cantidad ?? "?"} ${x.unidad ?? "un"} de ${x.material}${x.descripcion ? ` (${x.descripcion})` : ""} — ${x.proveedor ?? "s/proveedor"}`,
+      respaldo: x.certificado_url ? "Certificado de disposición final" : "SIN certificado cargado",
+    })
+  }
+
+  return acciones.sort((a, b) => b.fecha.localeCompare(a.fecha))
 }
 
 async function cargar(): Promise<Datos> {
@@ -149,6 +251,7 @@ async function cargar(): Promise<Datos> {
   const recup = recuperacionPorMes(neumaticos, recapados)
 
   return {
+    acciones: await cargarAcciones(supabase, `${anioActual}-01-01`),
     porMes: Array.from(mesMap.entries())
       .map(([mes, v]) => ({ mes, cargas: v.cargas, ...agregadoCo2(v.litros, v.km) }))
       .sort((a, b) => a.mes.localeCompare(b.mes)),
@@ -172,12 +275,14 @@ function textoTendencia(t: Tendencia, unidad: string): string {
   return `${etiqueta} · ${señal}${num(t.delta, 1)} ${unidad} (${meses})`
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     await requireAuth()
   } catch {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
+
+  const cartelera = req.nextUrl.searchParams.get("formato") === "cartelera"
 
   let datos: Datos
   try {
@@ -191,7 +296,7 @@ export async function GET() {
 
   let buf: Buffer
   try {
-    buf = await render(datos)
+    buf = await render(datos, cartelera)
   } catch (err) {
     return NextResponse.json(
       { error: "pdf_error", message: err instanceof Error ? err.message : "Error" },
@@ -200,26 +305,33 @@ export async function GET() {
   }
 
   const anio = new Date().toISOString().slice(0, 4)
+  const nombre = cartelera
+    ? `cartelera-sostenibilidad-flota-${anio}.pdf`
+    : `dpo-flota-4-3-sustentabilidad-${anio}.pdf`
   return new NextResponse(new Uint8Array(buf), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="dpo-flota-4-3-sustentabilidad-${anio}.pdf"`,
+      "Content-Disposition": `inline; filename="${nombre}"`,
       "Cache-Control": "private, no-store",
     },
   })
 }
 
-async function render(d: Datos): Promise<Buffer> {
+async function render(d: Datos, cartelera: boolean): Promise<Buffer> {
   return await new Promise<Buffer>((resolve, reject) => {
     const doc = new PDFDocument({
       size: "A4",
-      margin: 36,
+      margin: cartelera ? 48 : 36,
       bufferPages: true,
       info: {
-        Title: "DPO Flota 4.3 · Objetivos de sostenibilidad",
+        Title: cartelera
+          ? "Objetivos de sostenibilidad de flota"
+          : "DPO Flota 4.3 · Objetivos de sostenibilidad",
         Author: "Mercosur · dpo-app",
-        Subject: "Evidencia del punto 4.3 del pilar Flota (R4.3.2 y R4.3.3)",
+        Subject: cartelera
+          ? "Cartelera de sostenibilidad para el personal de flota (R4.3.1)"
+          : "Evidencia del punto 4.3 del pilar Flota (R4.3.2 y R4.3.3)",
       },
     })
     const chunks: Buffer[] = []
@@ -227,13 +339,175 @@ async function render(d: Datos): Promise<Buffer> {
     doc.on("end", () => resolve(Buffer.concat(chunks)))
     doc.on("error", reject)
     try {
-      build(doc, d)
-      drawFooters(doc)
+      if (cartelera) {
+        buildCartelera(doc, d)
+      } else {
+        build(doc, d)
+        drawFooters(doc)
+      }
       doc.end()
     } catch (err) {
       reject(err)
     }
   })
+}
+
+/**
+ * Una hoja para el pizarrón. Sin tablas y con dos números grandes: el que pasa
+ * caminando tiene que entender qué se mide, cómo vamos y qué puede hacer él.
+ * La hoja del auditor no sirve para esto —tres páginas en cuerpo 8 no las lee
+ * nadie de pie— y al revés tampoco.
+ */
+function buildCartelera(doc: Doc, d: Datos) {
+  const margin = doc.page.margins.left
+  const usable = doc.page.width - margin * 2
+  const mesActual = new Date().toISOString().slice(0, 7)
+  const anio = mesActual.slice(0, 4)
+
+  const tCo2 = tendencia3Meses(
+    d.porMes.map((m) => ({ mes: m.mes, valor: m.co2Por100Km })),
+    mesActual,
+    true
+  )
+  const mesCerrado = [...d.porMes].reverse().find((m) => m.mes < mesActual) ?? null
+
+  doc.save()
+  doc.rect(0, 0, doc.page.width, 104).fill("#065f46")
+  doc.restore()
+  doc
+    .fillColor("#ffffff")
+    .font("Helvetica-Bold")
+    .fontSize(28)
+    .text("Cuidamos lo que usamos", margin, 28, { width: usable })
+  doc
+    .fillColor("#a7f3d0")
+    .font("Helvetica")
+    .fontSize(12.5)
+    .text("Objetivos de sostenibilidad de la flota · qué medimos y cómo vamos", margin, 66, {
+      width: usable,
+    })
+
+  doc.x = margin
+  doc.y = 124
+  doc
+    .fillColor(COLOR_TEXT)
+    .font("Helvetica")
+    .fontSize(10.5)
+    .text(
+      "AB InBev se propuso bajar sus emisiones y sus residuos. Nuestra parte, en flota, se mide con " +
+        "dos números, y los dos dependen de cómo manejamos y de cómo cuidamos las unidades.",
+      { width: usable }
+    )
+  doc.moveDown(1)
+
+  const tarjeta = (
+    titulo: string,
+    valor: string,
+    unidad: string,
+    meta: string,
+    pie: string,
+    ok: boolean
+  ) => {
+    const y = doc.y
+    const h = 112
+    doc.save()
+    doc.lineWidth(1).roundedRect(margin, y, usable, h, 8).fillAndStroke("#f0fdf4", "#86efac")
+    doc.restore()
+    doc
+      .fillColor("#065f46")
+      .font("Helvetica-Bold")
+      .fontSize(13)
+      .text(titulo, margin + 18, y + 13, { width: usable - 36 })
+    doc
+      .fillColor(ok ? "#047857" : "#b45309")
+      .font("Helvetica-Bold")
+      .fontSize(40)
+      .text(valor, margin + 18, y + 36, { width: usable * 0.42, lineBreak: false })
+    doc
+      .fillColor(COLOR_MUTED)
+      .font("Helvetica")
+      .fontSize(10)
+      .text(unidad, margin + 18, y + 84, { width: usable * 0.42, lineBreak: false })
+    doc
+      .fillColor(COLOR_TEXT)
+      .font("Helvetica-Bold")
+      .fontSize(12)
+      .text(meta, margin + usable * 0.46, y + 38, { width: usable * 0.54 - 18 })
+    doc
+      .fillColor(COLOR_MUTED)
+      .font("Helvetica")
+      .fontSize(9)
+      .text(pie, margin + usable * 0.46, y + 57, { width: usable * 0.54 - 18 })
+    doc.x = margin
+    doc.y = y + h + 12
+  }
+
+  tarjeta(
+    "1 · Cuánto CO2 emitimos por kilómetro",
+    num(mesCerrado?.co2Por100Km ?? d.anio.co2Por100Km, 1),
+    "kg de CO2 cada 100 km",
+    `Meta: ${META_CO2_100KM} kg`,
+    `En ${anio} llevamos ${num(d.anio.co2Kg / 1000, 1)} toneladas de CO2. ` +
+      (tCo2.estado === "mejora"
+        ? "Veníamos mejorando: hay que sostenerlo."
+        : "Veníamos para arriba: hay que bajarlo.") +
+      " Sale del gasoil que carga cada unidad.",
+    tCo2.estado === "mejora"
+  )
+
+  tarjeta(
+    "2 · Cuánta goma recuperamos en vez de tirarla",
+    d.recupAnio.pct != null ? `${num(d.recupAnio.pct, 0)}%` : "—",
+    `${d.recupAnio.recapadas} cubiertas recapadas en ${anio}`,
+    `Meta: ${META_RECUPERACION}%`,
+    `De cada 10 cubiertas que salen de servicio, ${
+      d.recupAnio.pct != null ? Math.round(d.recupAnio.pct / 10) : "—"
+    } vuelven a rodar recapadas. Las que no se pueden recuperar se retiran con certificado.`,
+    d.recupAnio.pct != null && d.recupAnio.pct >= META_RECUPERACION
+  )
+
+  doc.moveDown(0.3)
+  doc
+    .fillColor("#065f46")
+    .font("Helvetica-Bold")
+    .fontSize(13)
+    .text("Qué podés hacer vos", { width: usable })
+  doc.moveDown(0.3)
+  const tips = [
+    "Avisá cualquier pérdida de aceite o gasoil en el checklist. Una mancha en el piso es combustible tirado y suelo contaminado.",
+    "Controlá la presión de los neumáticos: inflados de menos gastan más gasoil y arruinan la cubierta antes de tiempo.",
+    "Evitá el ralentí innecesario y las aceleradas bruscas: ahí se va el gasoil que después aparece en este número.",
+    "No tires aceite, filtros ni cubiertas con los residuos comunes. Todo eso se retira con certificado.",
+  ]
+  for (const t of tips) {
+    const y = doc.y
+    doc.save()
+    doc.circle(margin + 4, y + 5, 2.5).fill("#047857")
+    doc.restore()
+    doc
+      .fillColor(COLOR_TEXT)
+      .font("Helvetica")
+      .fontSize(10.5)
+      .text(t, margin + 16, y, { width: usable - 16 })
+    doc.x = margin
+    doc.moveDown(0.4)
+  }
+
+  const bottom = doc.page.margins.bottom
+  doc.page.margins.bottom = 0
+  doc
+    .fillColor(COLOR_MUTED)
+    .font("Helvetica")
+    .fontSize(7.5)
+    .text(
+      `Datos al ${new Date().toLocaleDateString("es-AR")} · DPO Flota, punto 4.3 "Sustainability Goals". ` +
+        `CO2 = litros de gasoil × ${num(KG_CO2_POR_LITRO_DIESEL, 2)} kg CO2/L (factor de combustión de ` +
+        "diésel, DEFRA/IPCC). Se actualiza desde el módulo de Mantenimiento de flota.",
+      margin,
+      doc.page.height - 44,
+      { width: usable }
+    )
+  doc.page.margins.bottom = bottom
 }
 
 function build(doc: Doc, d: Datos) {
@@ -480,7 +754,8 @@ function build(doc: Doc, d: Datos) {
       "Recapado de cubiertas en lugar de compra de goma nueva; control de presión y rotación " +
         "programada, que bajan el consumo y alargan la vida de la cubierta; disposición certificada " +
         "de las cubiertas que no se pueden recuperar; y reparación de pérdidas de fluidos detectadas " +
-        "por el checklist diario, con la orden de trabajo como cierre.",
+        "por el checklist diario, con la orden de trabajo como cierre. El detalle de lo ejecutado, " +
+        "con su respaldo documental, está en el cuadro siguiente.",
     ],
   ]
 
@@ -493,4 +768,29 @@ function build(doc: Doc, d: Datos) {
       .text(cuerpo, { width: doc.page.width - doc.page.margins.left * 2 })
     doc.moveDown(0.5)
   }
+
+  // Las acciones NO se declaran, se listan desde el sistema: el requisito pide
+  // acciones "ejecutadas", así que lo que vale es lo que tiene registro.
+  doc.moveDown(0.3)
+  drawSectionTitle(doc, `Acciones ejecutadas y registradas en ${anio} (R4.3.3)`)
+  drawTable(
+    doc,
+    d.acciones,
+    [
+      { header: "Fecha", width: 48, get: (a) => a.fecha.slice(0, 10).split("-").reverse().join("/") },
+      { header: "Acción", width: 110, get: (a) => a.que },
+      { header: "Detalle", width: 160, get: (a) => a.detalle },
+      { header: "Respaldo", width: 95, get: (a) => a.respaldo },
+    ],
+    "Sin acciones registradas en el año"
+  )
+  doc
+    .fillColor(COLOR_MUTED)
+    .font("Helvetica")
+    .fontSize(7.5)
+    .text(
+      "Cada fila es un registro del sistema —orden de trabajo, remito de recapado o retiro de " +
+        "residuos— y se puede abrir en el módulo de Mantenimiento de flota con el número indicado.",
+      { width: doc.page.width - doc.page.margins.left * 2 }
+    )
 }

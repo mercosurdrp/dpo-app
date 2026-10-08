@@ -18,7 +18,7 @@
 // ecológicos, y los puntúan el 2.2 y el 3.4. El 4.3 exige impacto ambiental.
 
 import { useMemo } from "react"
-import { FileDown, Leaf, Recycle, TrendingDown, TrendingUp, Minus } from "lucide-react"
+import { FileDown, Leaf, Printer, Recycle, TrendingDown, TrendingUp, Minus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -112,17 +112,32 @@ export function Sustentabilidad({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <DpoSeccionCinta seccionId="sustentabilidad" />
-        {/* La hoja que se adjunta en /evidencia/flota/4-3 como respaldo del
-            R4.3.2, y que sirve impresa para la cartelera del R4.3.1. Sale del
+        {/* Dos salidas porque son dos públicos: la hoja de evidencia va a
+            /evidencia/flota/4-3 para el auditor (R4.3.2 y R4.3.3) y la cartelera
+            al pizarrón del sector para el chofer (R4.3.1). Las dos salen del
             mismo cálculo que esta pantalla, así que no pueden decir distinto. */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          onClick={() => window.open("/api/vehiculos/sustentabilidad/pdf", "_blank", "noopener")}
-        >
-          <FileDown className="mr-1 size-4" /> Hoja de evidencia (PDF)
-        </Button>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.open("/api/vehiculos/sustentabilidad/pdf", "_blank", "noopener")}
+          >
+            <FileDown className="mr-1 size-4" /> Hoja de evidencia (PDF)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              window.open(
+                "/api/vehiculos/sustentabilidad/pdf?formato=cartelera",
+                "_blank",
+                "noopener"
+              )
+            }
+          >
+            <Printer className="mr-1 size-4" /> Cartelera para imprimir
+          </Button>
+        </div>
       </div>
 
       {/* ============ PI 1 · emisiones ============ */}
