@@ -181,6 +181,22 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
       "Medición milimétrica mensual, presión, rotación y alineación por unidad, y la disposición final de cada cubierta —retiro de la recicladora, certificado de descarte y número de fuego—.",
   },
   {
+    // 🚨 El 4.3 NO pide medir el CO2 de cada unidad, que es lo que suena: pide
+    // ELEGIR un KPI/PI por su impacto ecológico (R4.3.2) y que muestre tendencia
+    // positiva sobre los últimos 3 meses. Los elegidos son emisiones por km
+    // —calculadas desde el gasoil, sin medir nada— y recuperación de cubiertas
+    // por recapado. Los indicadores que más se repiten en las OT (carrocería,
+    // luces) quedan afuera a propósito: son de confiabilidad, no ecológicos, y
+    // los puntúan el 2.2 y el 3.4.
+    id: "sustentabilidad",
+    label: "Sustentabilidad",
+    grupo: "analisis",
+    puntos: ["4.3"],
+    requisitos: ["R4.3.2", "R4.3.3"],
+    aporta:
+      "Dos PI de sostenibilidad con serie mensual y tendencia de 3 meses: kg de CO₂ cada 100 km —calculado desde el gasoil cargado por unidad— y porcentaje de cubiertas recuperadas por recapado, con los remitos y certificados de disposición como respaldo.",
+  },
+  {
     id: "estandares",
     label: "Estándares",
     grupo: "activos",

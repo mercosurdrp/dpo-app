@@ -22,6 +22,7 @@ import {
   getMantenimientoConfig,
 } from "@/actions/neumaticos"
 import { getRecapados } from "@/actions/recapados"
+import { getSustentabilidadFlota } from "@/actions/sustentabilidad-flota"
 import { getRetirosCubiertas } from "@/actions/desecho-neumaticos"
 import { getProveedores } from "@/actions/mantenimiento-gastos"
 import { getHerramientas } from "@/actions/mantenimiento-herramientas"
@@ -58,6 +59,7 @@ export default async function MantenimientoPage() {
     neumaticosRes,
     desgasteNeumaticosRes,
     recapadosRes,
+    sustentabilidadRes,
     retirosCubiertasRes,
     alineacionesRes,
     kmFlotaRes,
@@ -89,6 +91,7 @@ export default async function MantenimientoPage() {
     getNeumaticos(),
     getDesgasteNeumaticos(),
     getRecapados(),
+    getSustentabilidadFlota(),
     getRetirosCubiertas(),
     getAlineaciones(),
     getKmFlota(),
@@ -162,6 +165,15 @@ export default async function MantenimientoPage() {
     "data" in checklistsRes ? checklistsRes.data : { itemsNoOk: [], comentarios: [] }
   const neumaticos = "data" in neumaticosRes ? neumaticosRes.data : []
   const recapados = "data" in recapadosRes ? recapadosRes.data : []
+  const sustentabilidad =
+    "data" in sustentabilidadRes
+      ? sustentabilidadRes.data
+      : {
+          factor: 0,
+          porMes: [],
+          porUnidad: [],
+          anio: { litros: 0, km: 0, co2Kg: 0, co2Por100Km: null },
+        }
   const retirosCubiertas =
     "data" in retirosCubiertasRes ? retirosCubiertasRes.data : []
   const alineaciones = "data" in alineacionesRes ? alineacionesRes.data : []
@@ -248,6 +260,7 @@ export default async function MantenimientoPage() {
       checklistsFlota={checklistsFlota}
       neumaticos={neumaticos}
       recapados={recapados}
+      sustentabilidad={sustentabilidad}
       retirosCubiertas={retirosCubiertas}
       alineaciones={alineaciones}
       kmFlota={kmFlota}

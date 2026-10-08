@@ -54,6 +54,7 @@ import {
   Ban,
   CalendarClock,
   CircleDot,
+  Leaf,
   ClipboardCheck,
   ClipboardList,
   Cloud,
@@ -116,8 +117,10 @@ import { ChecklistsMtto } from "./checklists-mtto"
 import { Cil } from "./cil"
 import { NeumaticosModule } from "./neumaticos-module"
 import type { DesgasteFlota } from "@/actions/neumaticos"
+import type { SustentabilidadFlota } from "@/actions/sustentabilidad-flota"
 import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
+import { Sustentabilidad } from "./sustentabilidad"
 import { ProveedorPicker } from "./_components/proveedor-picker"
 import { GestionMtto } from "./gestion-mtto"
 import { HerramientasTab } from "./herramientas-tab"
@@ -346,6 +349,7 @@ const ICONO_SECCION: Record<string, LucideIcon> = {
   indicadores: TrendingUp,
   seguimiento: Activity,
   piramide: Triangle,
+  sustentabilidad: Leaf,
   neumaticos: CircleDot,
   estandares: ShieldCheck,
   herramientas: Hammer,
@@ -508,6 +512,8 @@ interface MantenimientoClientProps {
   checklistsFlota: ChecklistVehiculo[]
   neumaticos: Neumatico[]
   recapados: Recapado[]
+  /** Serie de combustible pasada a emisiones, para el PI del punto 4.3. */
+  sustentabilidad: SustentabilidadFlota
   retirosCubiertas: RetiroCubiertas[]
   alineaciones: Alineacion[]
   kmFlota: Record<string, KmFlotaUnidad>
@@ -555,6 +561,7 @@ export function MantenimientoClient({
   checklistsFlota,
   neumaticos,
   recapados,
+  sustentabilidad,
   retirosCubiertas,
   alineaciones,
   kmFlota,
@@ -983,6 +990,15 @@ export function MantenimientoClient({
           <PiramideDefectos
             itemsNoOk={checklists.itemsNoOk}
             mantenimientos={mantenimientos}
+          />
+        </TabsContent>
+
+        {/* ============ TAB: Sustentabilidad ============ */}
+        <TabsContent value="sustentabilidad" className="space-y-6">
+          <Sustentabilidad
+            datos={sustentabilidad}
+            neumaticos={neumaticos}
+            recapados={recapados}
           />
         </TabsContent>
 
