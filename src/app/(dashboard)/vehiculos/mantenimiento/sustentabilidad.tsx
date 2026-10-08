@@ -24,7 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { Neumatico, Recapado } from "@/lib/vehiculos/neumaticos-tipos"
-import type { SustentabilidadFlota } from "@/actions/sustentabilidad-flota"
+import type { SustentabilidadFlota } from "@/lib/vehiculos/sustentabilidad"
 
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard } from "./_components/kpi-card"
