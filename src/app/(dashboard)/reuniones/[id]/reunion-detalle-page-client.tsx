@@ -94,6 +94,7 @@ import { SeccionIniciativasAhorro } from "@/components/reuniones/seccion-iniciat
 import { SeccionCostoLogistico } from "@/components/reuniones/seccion-costo-logistico"
 import { SeccionInversionesCapex } from "@/components/reuniones/seccion-inversiones-capex"
 import type { InversionesCapexReunionData } from "@/lib/reuniones-inversiones-capex"
+import { RefrescoFotos } from "@/components/fotos/refresco-fotos"
 import type { CostoLogisticoReunionData } from "@/actions/reuniones-costo-logistico"
 import type { IniciativasAhorroReunionData } from "@/lib/reuniones-iniciativas-ahorro"
 import { SeccionInspeccionEdilicia } from "@/components/reuniones/seccion-inspeccion-edilicia"
@@ -205,6 +206,8 @@ interface Props {
   costoLogistico?: CostoLogisticoReunionData | null
   /** Reunión de Presupuesto (ambas del mes): Inversiones / CAPEX del año del cierre. */
   inversionesCapex?: InversionesCapexReunionData | null
+  /** Fotos (cuadro mensual, KPI combustible) vencidas: se recalculan en segundo plano. */
+  fotosVencidas?: string[]
   puedeEditar: boolean
   currentProfileId: string | null
   currentRole: UserRole
@@ -893,6 +896,7 @@ export function ReunionDetallePageClient({
   iniciativasAhorro = null,
   costoLogistico = null,
   inversionesCapex = null,
+  fotosVencidas = [],
   puedeEditar,
   currentProfileId,
   currentRole,
@@ -1297,6 +1301,8 @@ export function ReunionDetallePageClient({
 
   return (
     <div className="space-y-5">
+      <RefrescoFotos claves={fotosVencidas} />
+
       {/* Breadcrumb */}
       <div>
         <Link

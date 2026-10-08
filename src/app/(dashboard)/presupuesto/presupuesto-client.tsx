@@ -46,6 +46,7 @@ import {
 import { IniciativasAhorroSection } from "@/components/presupuesto/iniciativas-ahorro-section"
 import { PlanesAccionSection } from "@/components/presupuesto/planes-accion-section"
 import { InversionesSection } from "@/components/presupuesto/inversiones-section"
+import { RefrescoFotos } from "@/components/fotos/refresco-fotos"
 import {
   eliminarEerrAnual,
   eliminarTarea,
@@ -102,6 +103,8 @@ interface Props {
   mostrarInversiones: boolean
   inversiones: InversionConDetalle[]
   capex: PresupuestoCapex | null
+  /** Fotos (cuadro mensual, KPI combustible) vencidas: se recalculan en segundo plano. */
+  fotosVencidas?: string[]
 }
 
 const MESES = [
@@ -191,6 +194,7 @@ export function PresupuestoClient({
   mostrarInversiones,
   inversiones,
   capex,
+  fotosVencidas = [],
 }: Props) {
   const router = useRouter()
   const refrescarConScroll = useRefrescarConScroll()
@@ -317,6 +321,10 @@ export function PresupuestoClient({
 
   return (
     <div className="space-y-6">
+      {/* Fotos vencidas (cuadro mensual, KPI combustible): se recalculan en
+          segundo plano y la página se refresca sola. */}
+      <RefrescoFotos claves={fotosVencidas} />
+
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

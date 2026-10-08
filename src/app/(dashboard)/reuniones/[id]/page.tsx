@@ -13,6 +13,11 @@ import {
   listInversiones,
 } from "@/actions/presupuesto-inversiones"
 import type { InversionesCapexReunionData } from "@/lib/reuniones-inversiones-capex"
+import {
+  CLAVE_CUADRO_MENSUAL,
+  claveKpiCombustible,
+  clavesVencidas,
+} from "@/lib/fotos"
 import { listResponsablesPosibles as listResponsablesPresupuesto } from "@/actions/presupuesto"
 import { getEjecucionPorRubro } from "@/actions/presupuesto-generador"
 import { getKpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
@@ -71,6 +76,7 @@ export default async function ReunionDetallePage({
   // mismas cuatro cosas que lee esa página. Depende del tipo, por eso va
   // después del detalle y no en el Promise.all de arriba.
   let iniciativasAhorro: IniciativasAhorroReunionData | null = null
+  let fotosVencidas: string[] = []
   if ("data" in detalleRes && detalleRes.data.tipo === "iniciativas-ahorro") {
     const anio = anioIniciativasDe(detalleRes.data.fecha)
     const [iniRes, ejecRes, perdRes, combRes, costoHlRes, respPresRes] = await Promise.all([
@@ -90,6 +96,12 @@ export default async function ReunionDetallePage({
       costoHl: "data" in costoHlRes ? costoHlRes.data : {},
       responsables: "data" in respPresRes ? respPresRes.data : [],
     }
+    // El cuadro mensual y el KPI de combustible se sirvieron desde su última
+    // foto; si venció, el cliente la recalcula en segundo plano y refresca.
+    fotosVencidas = await clavesVencidas([
+      CLAVE_CUADRO_MENSUAL,
+      claveKpiCombustible(anio),
+    ])
   }
 
   // Reunión de Presupuesto, 1er encuentro del mes (el de los desvíos): costo
@@ -146,6 +158,7 @@ export default async function ReunionDetallePage({
       iniciativasAhorro={iniciativasAhorro}
       costoLogistico={costoLogistico}
       inversionesCapex={inversionesCapex}
+      fotosVencidas={fotosVencidas}
       puedeEditar={puedeEditar}
       currentProfileId={profile.id}
       currentRole={profile.role}

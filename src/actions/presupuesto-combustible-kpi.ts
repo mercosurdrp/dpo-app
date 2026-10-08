@@ -3,6 +3,7 @@
 import { esCargaSinRegistrar, medianasPorDominio } from "@/lib/vehiculos/combustible-limpio"
 import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
+import { claveKpiCombustible, conFoto, renovarFoto } from "@/lib/fotos"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 
 /**
@@ -234,8 +235,56 @@ interface IniciativaCombustible {
 export async function getKpiCombustible(
   anio: number,
 ): Promise<Result<Record<string, KpiCombustible>>> {
-  await requireAuth()
+  const profile = await requireAuth()
+  // Foto: el modo viajes pagina la vista de ciclos de Foxtrot (4.000+ filas
+  // de Colón en el año) y tarda varios segundos; el registro de combustible
+  // cambia 1×día. Se devuelve la última foto y, si venció, el cliente pide
+  // `recalcularKpiCombustible` en segundo plano (<RefrescoFotos>).
+  try {
+    const { datos } = await conFoto(
+      claveKpiCombustible(anio),
+      () => calcularKpiCombustible(anio),
+      profile.id,
+    )
+    return { data: datos }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error calculando el KPI de combustible",
+    }
+  }
+}
 
+/** Recalcula en vivo y pisa la foto. Lo dispara el cliente cuando la foto venció. */
+export async function recalcularKpiCombustible(
+  anio: number,
+): Promise<Result<Record<string, KpiCombustible>>> {
+  const profile = await requireAuth()
+  try {
+    const datos = await renovarFoto(
+      claveKpiCombustible(anio),
+      () => calcularKpiCombustible(anio),
+      profile.id,
+    )
+    return { data: datos }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error recalculando el KPI de combustible",
+    }
+  }
+}
+
+/** El cálculo en vivo. Lanza si alguna lectura falla, para no guardar una foto rota. */
+async function calcularKpiCombustible(
+  anio: number,
+): Promise<Record<string, KpiCombustible>> {
+  const res = await calcularKpiCombustibleResult(anio)
+  if ("error" in res) throw new Error(res.error)
+  return res.data
+}
+
+async function calcularKpiCombustibleResult(
+  anio: number,
+): Promise<Result<Record<string, KpiCombustible>>> {
   const kpis = Object.keys(DOMINIOS_POR_KPI)
   const todosLosDominios = [
     ...new Set(Object.values(DOMINIOS_POR_KPI).flat()),

@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { getPool } from "@/lib/mercosur-dashboard"
 import { requireAuth } from "@/lib/session"
+import { CLAVE_CUADRO_MENSUAL, conFoto, renovarFoto } from "@/lib/fotos"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getCumplimientoMes } from "@/actions/sla"
 import { buildWarehouseSerieDiaria } from "@/lib/warehouse/auto-indicadores"
@@ -56,13 +57,54 @@ function diffDias(a: string, b: string): number {
 export async function getCuadroMensualIndicadores(): Promise<
   Result<CuadroMensual>
 > {
-  await requireAuth()
+  const profile = await requireAuth()
   if (IS_MISIONES) {
     return {
       error: "El cuadro mensual de indicadores solo está disponible en Pampeana.",
     }
   }
+  // Foto: el cálculo tarda 10-15 s (8 tablas del año paginadas, el SLA de
+  // cada mes, la serie del depósito) y los datos cambian 1×día. Se devuelve
+  // la última foto; si está vencida, el cliente (<RefrescoFotos>) pide
+  // `recalcularCuadroMensual` en segundo plano y refresca la página.
+  try {
+    const { datos } = await conFoto(
+      CLAVE_CUADRO_MENSUAL,
+      () => calcularCuadroMensual(),
+      profile.id,
+    )
+    return { data: datos }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error calculando el cuadro mensual",
+    }
+  }
+}
 
+/** Recalcula en vivo y pisa la foto. Lo dispara el cliente cuando la foto venció. */
+export async function recalcularCuadroMensual(): Promise<Result<CuadroMensual>> {
+  const profile = await requireAuth()
+  if (IS_MISIONES) {
+    return {
+      error: "El cuadro mensual de indicadores solo está disponible en Pampeana.",
+    }
+  }
+  try {
+    const datos = await renovarFoto(
+      CLAVE_CUADRO_MENSUAL,
+      () => calcularCuadroMensual(),
+      profile.id,
+    )
+    return { data: datos }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error recalculando el cuadro mensual",
+    }
+  }
+}
+
+/** El cálculo en vivo, sin caché. Corre en el contexto del request (usa la sesión). */
+async function calcularCuadroMensual(): Promise<CuadroMensual> {
   const mesActual = mesActualARG()
   const meses = mesesEntre(INICIO, mesActual)
   const hoy = hoyARG()
@@ -805,12 +847,10 @@ export async function getCuadroMensualIndicadores(): Promise<
   }))
 
   return {
-    data: {
-      meses,
-      mesActual,
-      filas,
-      generadoEn: new Date().toISOString(),
-    },
+    meses,
+    mesActual,
+    filas,
+    generadoEn: new Date().toISOString(),
   }
 }
 

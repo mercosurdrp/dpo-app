@@ -34,6 +34,11 @@ import {
 } from "@/actions/presupuesto-inversiones"
 import { getProfile } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
+import {
+  CLAVE_CUADRO_MENSUAL,
+  claveKpiCombustible,
+  clavesVencidas,
+} from "@/lib/fotos"
 import type {
   IniciativaAhorroConDetalle,
   InversionConDetalle,
@@ -145,6 +150,13 @@ export default async function PresupuestoPage({
       : Promise.resolve<{ data: PresupuestoCapex | null }>({ data: null }),
   ])
 
+  // Fotos del cuadro mensual y del KPI de combustible que ya vencieron: el
+  // cliente las recalcula en segundo plano y refresca. Lo de arriba ya se
+  // sirvió desde la última foto, por eso la página abre rápido.
+  const fotosVencidas = mostrarIniciativas
+    ? await clavesVencidas([CLAVE_CUADRO_MENSUAL, claveKpiCombustible(anioActivo)])
+    : []
+
   if ("error" in tareasRes) {
     return (
       <div>
@@ -182,6 +194,7 @@ export default async function PresupuestoPage({
       mostrarInversiones={mostrarInversiones}
       inversiones={"data" in inversionesRes ? inversionesRes.data : []}
       capex={"data" in capexRes ? capexRes.data : null}
+      fotosVencidas={fotosVencidas}
     />
   )
 }
