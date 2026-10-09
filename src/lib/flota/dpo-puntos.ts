@@ -90,10 +90,14 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     id: "checklist-flota",
     label: "Checklist salida / retorno",
     grupo: "operacion",
-    puntos: ["1.3"],
-    requisitos: ["R1.3.2", "R1.3.3"],
+    // 🚨 También responde R1.1.1: el ítem crítico "Documentación completa" del
+    // checklist de salida es LA evidencia de que los papeles están a bordo de
+    // cada unidad —una verificación por salida, firmada por el chofer—, y no la
+    // foto de la documentación de un camión que había cargada en el punto.
+    puntos: ["1.3", "1.1"],
+    requisitos: ["R1.3.2", "R1.3.3", "R1.1.1"],
     aporta:
-      "Checklist de liberación y de retorno por unidad y por día: quién lo hizo, a qué hora, con qué odómetro y con qué resultado. Es la verificación previa a la salida del punto 1.3.",
+      "Checklist de liberación y de retorno por unidad y por día: quién lo hizo, a qué hora, con qué odómetro y con qué resultado. Es la verificación previa a la salida del punto 1.3, y su ítem crítico de documentación prueba que los papeles viajan en la unidad (R1.1.1).",
   },
   {
     id: "tablero",
