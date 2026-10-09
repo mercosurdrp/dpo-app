@@ -82,7 +82,8 @@ export function InversionesCapex({
   )
 
   const presupuesto = r.presupuesto
-  const base = presupuesto && presupuesto > 0 ? presupuesto : null
+  const planificado = r.presupuestoPlanificado
+  const base = presupuesto > 0 ? presupuesto : null
   const pctEjecutado = base ? (r.ejecutado / base) * 100 : null
   const pctPendiente = base ? (r.pendiente / base) * 100 : null
   const excedido = base !== null && r.comprometido > base
@@ -117,15 +118,16 @@ export function InversionesCapex({
                   Presupuesto CAPEX {anio}
                 </p>
                 <p className="text-lg font-bold text-slate-900">
-                  {presupuesto === null ? (
-                    <span className="text-base font-medium text-amber-700">
-                      Sin cargar
-                    </span>
-                  ) : (
-                    formatMoney(presupuesto)
-                  )}
+                  {formatMoney(presupuesto)}
                 </p>
-                {capex?.observaciones && !editando && (
+                {planificado && !editando && (
+                  <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">
+                    Es lo planificado: la suma de lo estimado de las {r.nTotal}{" "}
+                    inversiones del año. Si gerencia aprueba un monto distinto,
+                    cargalo acá.
+                  </p>
+                )}
+                {!planificado && capex?.observaciones && !editando && (
                   <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">
                     {capex.observaciones}
                   </p>
@@ -140,7 +142,7 @@ export function InversionesCapex({
                 onClick={() => setEditando(true)}
               >
                 <Pencil className="mr-2 size-3.5" />
-                {presupuesto === null ? "Cargar presupuesto" : "Editar"}
+                {planificado ? "Fijar monto aprobado" : "Editar"}
               </Button>
             )}
           </div>
@@ -241,19 +243,19 @@ export function InversionesCapex({
                 <strong className="text-slate-900">{formatMoney(r.comprometido)}</strong>
                 <span className="text-muted-foreground"> · {r.nTotal} inv.</span>
               </p>
-              <p>
-                {excedido ? "Excede el presupuesto" : "Disponible"}{" "}
-                <strong className={excedido ? "text-red-700" : "text-slate-900"}>
-                  {r.disponible === null ? "—" : formatMoney(Math.abs(r.disponible))}
-                </strong>
-              </p>
+              {planificado ? (
+                <p className="text-muted-foreground">
+                  Presupuesto = lo planificado
+                </p>
+              ) : (
+                <p>
+                  {excedido ? "Excede el presupuesto" : "Disponible"}{" "}
+                  <strong className={excedido ? "text-red-700" : "text-slate-900"}>
+                    {r.disponible === null ? "—" : formatMoney(Math.abs(r.disponible))}
+                  </strong>
+                </p>
+              )}
             </div>
-            {presupuesto === null && (
-              <p className="mt-2 text-xs text-amber-700">
-                Cargá el presupuesto CAPEX del año para ver cuánto de lo
-                comprometido entra y cuánto queda disponible.
-              </p>
-            )}
           </div>
 
           {/* Cumplimiento (R5.3.4: a tiempo y dentro del presupuesto) */}

@@ -154,7 +154,7 @@ function Lista({
 export function SeccionInversionesCapex({ data }: { data: InversionesCapexReunionData }) {
   const a = agendaInversiones(data)
   const r = a.resumen
-  const base = r.presupuesto && r.presupuesto > 0 ? r.presupuesto : null
+  const base = r.presupuesto > 0 ? r.presupuesto : null
   const pctEjec = base ? Math.round((r.ejecutado / base) * 100) : null
   const excedido = r.disponible !== null && r.disponible < 0
 
@@ -186,13 +186,12 @@ export function SeccionInversionesCapex({ data }: { data: InversionesCapexReunio
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Tile
             label="Presupuesto CAPEX"
-            valor={r.presupuesto === null ? "sin cargar" : fmtMoney(r.presupuesto)}
+            valor={fmtMoney(r.presupuesto)}
             detalle={
-              r.presupuesto === null
-                ? "Cargarlo en Presupuesto → Inversiones → Seguimiento CAPEX"
+              r.presupuestoPlanificado
+                ? `= lo planificado · ${r.nTotal} inversiones del año`
                 : `${r.nTotal} inversiones · comprometido ${fmtMoney(r.comprometido)}`
             }
-            tono={r.presupuesto === null ? "atencion" : "neutro"}
           />
           <Tile
             label="Ejecutado"
@@ -203,12 +202,20 @@ export function SeccionInversionesCapex({ data }: { data: InversionesCapexReunio
                 : `pendiente ${fmtMoney(r.pendiente)}`
             }
           />
-          <Tile
-            label={excedido ? "Excede el presupuesto" : "Disponible"}
-            valor={r.disponible === null ? "—" : fmtMoney(Math.abs(r.disponible))}
-            tono={excedido ? "mal" : r.disponible === null ? "neutro" : "bien"}
-            detalle="presupuesto − comprometido"
-          />
+          {r.presupuestoPlanificado ? (
+            <Tile
+              label="Pendiente de ejecutar"
+              valor={fmtMoney(r.pendiente)}
+              detalle="planificado − ejecutado"
+            />
+          ) : (
+            <Tile
+              label={excedido ? "Excede el presupuesto" : "Disponible"}
+              valor={r.disponible === null ? "—" : fmtMoney(Math.abs(r.disponible))}
+              tono={excedido ? "mal" : r.disponible === null ? "neutro" : "bien"}
+              detalle="presupuesto − comprometido"
+            />
+          )}
           <Tile
             label="En plazo y en presupuesto"
             valor={`${r.nEnPlazo} / ${r.nEnPresupuesto}`}

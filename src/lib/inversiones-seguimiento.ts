@@ -184,15 +184,25 @@ export interface MesSeguimiento {
 }
 
 export interface ResumenCapex {
-  /** Presupuesto CAPEX del año (null si no se cargó). */
-  presupuesto: number | null
+  /**
+   * Presupuesto CAPEX del año. Si no se cargó un monto aprobado aparte, el
+   * presupuesto ES lo planificado: la suma de lo estimado de las inversiones
+   * del año (así se maneja hoy; ver `presupuestoPlanificado`).
+   */
+  presupuesto: number
+  /** true cuando el presupuesto salió de lo planificado y no de un monto cargado. */
+  presupuestoPlanificado: boolean
   /** $ estimados de todas las inversiones vivas del año (sin canceladas). */
   comprometido: number
   /** $ reales de las realizadas (si falta el real, cuenta el estimado). */
   ejecutado: number
   /** $ estimados de lo que todavía no se hizo. */
   pendiente: number
-  /** presupuesto − comprometido (negativo = las inversiones superan el presupuesto). */
+  /**
+   * presupuesto − comprometido (negativo = las inversiones superan el monto
+   * aprobado). null cuando el presupuesto es lo planificado: ahí no hay margen
+   * que medir, lo que importa es cuánto se ejecutó de lo planificado.
+   */
   disponible: number | null
   nTotal: number
   nRealizadas: number
@@ -244,6 +254,9 @@ export function resumenCapex(
 
   for (const inv of inversiones) {
     if (inv.estado === "cancelada") continue
+    // CAPEX del año: sólo las inversiones del año. Las de 2 a 5 años son 3YP
+    // y se siguen aparte; si entraran acá el comprometido sumaría 2027-2030.
+    if (inv.horizonte_anios !== 1) continue
     nTotal++
     comprometido += inv.monto_estimado ?? 0
 
@@ -286,12 +299,14 @@ export function resumenCapex(
     m.realAcum = ra
   }
 
+  const presupuestoPlanificado = presupuesto === null
   return {
-    presupuesto,
+    presupuesto: presupuestoPlanificado ? comprometido : presupuesto,
+    presupuestoPlanificado,
     comprometido,
     ejecutado,
     pendiente,
-    disponible: presupuesto === null ? null : presupuesto - comprometido,
+    disponible: presupuestoPlanificado ? null : presupuesto - comprometido,
     nTotal,
     nRealizadas,
     nEnPlazo,
