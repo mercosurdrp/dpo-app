@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { getPool } from "@/lib/mercosur-dashboard"
 import { requireAuth } from "@/lib/session"
-import { CLAVE_CUADRO_MENSUAL, conFoto, renovarFoto } from "@/lib/fotos"
+import { CLAVE_CUADRO_MENSUAL, conFoto, leerFoto, renovarFoto } from "@/lib/fotos"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getCumplimientoMes } from "@/actions/sla"
 import { buildWarehouseSerieDiaria } from "@/lib/warehouse/auto-indicadores"
@@ -1028,4 +1028,23 @@ export async function getDetalleBultosFamilia(
 
   const { items, total } = armarItems(porFamilia, ORDEN_FAMILIAS)
   return { data: { mes, total, items } }
+}
+
+/**
+ * Sólo la última foto del cuadro, SIN calcular nada. Para las páginas donde el
+ * cuadro es un insumo secundario (/presupuesto usa el $/HL mensual): si no hay
+ * foto devuelve error y la página sigue sin ese dato, mientras el cliente la
+ * pide en segundo plano (RefrescoFotos). Calcularlo en vivo tarda ~40 s y era
+ * lo que hacía lenta la primera entrada después de un deploy o de una
+ * migración. El cuadro mensual propiamente dicho sigue usando
+ * getCuadroMensualIndicadores, que sí calcula si falta la foto.
+ */
+export async function getCuadroMensualFoto(): Promise<Result<CuadroMensual>> {
+  await requireAuth()
+  if (IS_MISIONES) return { error: "El cuadro mensual es sólo de Pampeana" }
+  const foto = await leerFoto<CuadroMensual>(CLAVE_CUADRO_MENSUAL)
+  if (!foto) {
+    return { error: "El cuadro mensual todavía no tiene foto; se está generando en segundo plano." }
+  }
+  return { data: foto.datos }
 }

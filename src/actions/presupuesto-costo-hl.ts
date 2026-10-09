@@ -1,6 +1,6 @@
 "use server"
 
-import { getCuadroMensualIndicadores } from "@/actions/cuadro-mensual"
+import { getCuadroMensualFoto } from "@/actions/cuadro-mensual"
 
 /**
  * Costo logístico por HL, mes a mes, para medir el aporte de cada iniciativa
@@ -37,7 +37,9 @@ type Result<T> = { data: T } | { error: string }
 export async function getCostoHlMensual(
   anio: number,
 ): Promise<Result<Record<number, CostoHlMes>>> {
-  const cuadro = await getCuadroMensualIndicadores()
+  // Sólo la foto: si todavía no existe, la página sigue sin $/HL y el
+  // cliente la genera en segundo plano. Nunca se calcula acá (tarda ~40 s).
+  const cuadro = await getCuadroMensualFoto()
   if ("error" in cuadro) return { error: cuadro.error }
 
   const fila = (id: string) => cuadro.data.filas.find((f) => f.def.id === id)
