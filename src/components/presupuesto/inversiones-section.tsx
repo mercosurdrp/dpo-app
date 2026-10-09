@@ -275,8 +275,8 @@ export function InversionesSection({
               <strong>fecha programada</strong>, <strong>monto estimado</strong>{" "}
               y el <strong>beneficio esperado</strong>. Al concretarse, marcá el
               estado y registrá <strong>cuánto salió</strong> realmente. Cada
-              inversión lleva su <strong>horizonte</strong>: del año, o a 2, 3 o
-              5 años, para separar lo inmediato de lo que se planifica a largo
+              inversión lleva su <strong>horizonte</strong>: del año, o a 2, 3, 4
+              o 5 años, para separar lo inmediato de lo que se planifica a largo
               plazo.
             </p>
             <p className="mt-1">

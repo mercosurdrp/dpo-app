@@ -26,7 +26,8 @@ import {
   construirLineaOrigen,
   type OrigenInversion,
 } from "@/lib/inversiones-origen"
-import type { EstadoInversion } from "@/types/database"
+import { HORIZONTES_INVERSION } from "@/types/database"
+import type { EstadoInversion, HorizonteInversion } from "@/types/database"
 
 const API_KEY = process.env.PRESUPUESTO_API_KEY
 
@@ -59,6 +60,7 @@ interface InversionExternaInput {
   avance_pct?: number | null
   origen_url?: string | null
   anio?: number | null
+  horizonte_anios?: number | null
 }
 
 function num(v: unknown): number | null {
@@ -81,6 +83,21 @@ function resolverAnio(item: InversionExternaInput): number {
     if (anio >= 2000 && anio <= 2100) return anio
   }
   return new Date().getFullYear()
+}
+
+/**
+ * Horizonte en años, contando el año del presupuesto como el primero: una
+ * inversión cargada en 2026 con fecha programada en 2029 es "a 4 años". Lo que
+ * cae a 5 años o más va a 5, que es el horizonte más largo.
+ */
+function resolverHorizonte(anio: number, item: InversionExternaInput): HorizonteInversion {
+  const explicito = num(item.horizonte_anios)
+  if (explicito && HORIZONTES_INVERSION.includes(explicito as HorizonteInversion)) {
+    return explicito as HorizonteInversion
+  }
+  const fechaAnio = Number(String(item.fecha_programada ?? "").slice(0, 4))
+  if (!(fechaAnio >= 2000 && fechaAnio <= 2100)) return 1
+  return Math.min(5, Math.max(1, fechaAnio - anio + 1)) as HorizonteInversion
 }
 
 export async function POST(request: NextRequest) {
@@ -139,8 +156,10 @@ export async function POST(request: NextRequest) {
       const responsableTexto = origen.responsable?.toLowerCase() ?? ""
       const estadoRaw = String(item.estado ?? "").trim().toLowerCase()
 
+      const anio = resolverAnio(item)
       const campos = {
-        anio: resolverAnio(item),
+        anio,
+        horizonte_anios: resolverHorizonte(anio, item),
         titulo,
         categoria: CATEGORIA_MANTENIMIENTO,
         descripcion: texto(item.descripcion),

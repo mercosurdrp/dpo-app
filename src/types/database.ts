@@ -3539,8 +3539,8 @@ export type EstadoInversion =
   | "cancelada"
 
 // Horizonte de planificación en años: 1 = del año, 2, 3 o 5 años.
-export type HorizonteInversion = 1 | 2 | 3 | 5
-export const HORIZONTES_INVERSION: HorizonteInversion[] = [1, 2, 3, 5]
+export type HorizonteInversion = 1 | 2 | 3 | 4 | 5
+export const HORIZONTES_INVERSION: HorizonteInversion[] = [1, 2, 3, 4, 5]
 
 export interface Inversion {
   id: string
