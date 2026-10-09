@@ -312,8 +312,9 @@ export function InversionesCapex({
             Seguimiento mensual {anio}
           </p>
           <p className="text-xs text-muted-foreground">
-            Plan = estimado de lo programado para el mes · Real = lo que salió
-            lo realizado en el mes · acumulados y diferencia
+            Sólo inversiones del año (las de 2 a 5 años van en Tabla y Gantt) ·
+            Plan = estimado de lo programado para el mes · Real = lo realizado
+            en el mes · acumulados y diferencia
           </p>
         </div>
         <Table>

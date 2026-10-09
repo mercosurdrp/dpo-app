@@ -191,6 +191,14 @@ export function InversionesSection({
   // Filtro por horizonte: null = todas
   const [horizonte, setHorizonte] = useState<HorizonteInversion | null>(null)
 
+  // Seguimiento CAPEX del año: sólo las inversiones del año (horizonte 1).
+  // Las de 2 a 5 años son 3YP y se siguen en Tabla y Gantt; si entraran acá
+  // el comprometido del año sumaría lo de 2027-2030.
+  const delAnio = useMemo(
+    () => inversiones.filter((i) => i.horizonte_anios === 1),
+    [inversiones],
+  )
+
   const filtradas = useMemo(
     () =>
       horizonte === null
@@ -444,7 +452,7 @@ export function InversionesSection({
       {vista === "seguimiento" && (
         <InversionesCapex
           anio={anio}
-          inversiones={filtradas}
+          inversiones={delAnio}
           capex={capex}
           puedeEditar={puedeEditar}
           onSaved={refrescar}
