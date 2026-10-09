@@ -53,6 +53,13 @@ export interface TemaParseado {
 export interface ParseoGops {
   anio: number
   temas: TemaParseado[]
+  /**
+   * Por tema (nombre), los meses que la hoja 'Resumen' marca como no reportables:
+   * sin Target (bimestrales en los meses pares) o con REAL en 0 (todavía no se
+   * completó). Sus respuestas se descartan y el import borra las que hubieran
+   * quedado de cargas anteriores. Vacío si el archivo no trae Resumen legible.
+   */
+  mesesExcluidos: Record<string, number[]>
   /** Hojas salteadas o rarezas que conviene mostrarle a quien importa. */
   avisos: string[]
 }
@@ -101,6 +108,8 @@ const MESES: Record<string, number> = {
 
 type Fila = unknown[]
 
+const MES_CORTO = ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
 function txt(v: unknown): string {
   if (v === null || v === undefined) return ""
   return String(v).replace(/\s+/g, " ").trim()
@@ -120,6 +129,53 @@ function valorDeCelda(v: unknown): ValorGop | null {
   if (n === "no") return "no"
   if (n === "na" || n === "n/a") return "na"
   return null
+}
+
+/**
+ * Lee la hoja 'Resumen' y devuelve, por KPI, los meses que NO hay que tomar:
+ *
+ * - Sin Target: el mes no se reporta (DQI, TLP y Combustible son bimestrales y en
+ *   los meses pares la celda está vacía). La hoja igual trae "No" precargado en
+ *   esas columnas; tomarlo como respuesta convertía cada mes par en un retroceso.
+ * - REAL en 0 con Target: el mes todavía no se completó. Todas las preguntas
+ *   están en el "No" precargado, no es que hayan retrocedido.
+ *
+ * El nombre del KPI es el mismo que `nombre` en HOJAS_CONOCIDAS.
+ */
+function leerResumen(filas: Fila[]): Map<string, { sinTarget: number[]; sinCargar: number[] }> {
+  const out = new Map<string, { sinTarget: number[]; sinCargar: number[] }>()
+  let filaHeader = -1
+  const colMes = new Map<number, number>() // mes → columna del Target (REAL es la siguiente)
+  for (let i = 0; i < Math.min(filas.length, 12) && filaHeader < 0; i++) {
+    const fila = filas[i] ?? []
+    colMes.clear()
+    fila.forEach((celda, j) => {
+      const mes = MESES[norm(celda)]
+      if (mes && !colMes.has(mes)) colMes.set(mes, j)
+    })
+    if (colMes.size >= 6) filaHeader = i
+  }
+  if (filaHeader < 0) return out
+
+  const header = (filas[filaHeader] ?? []).map(norm)
+  const colKpi = header.findIndex((h) => h === "kpi")
+  if (colKpi < 0) return out
+
+  for (let i = filaHeader + 1; i < filas.length; i++) {
+    const fila = filas[i] ?? []
+    const kpi = norm(fila[colKpi])
+    if (!kpi) continue
+    const sinTarget: number[] = []
+    const sinCargar: number[] = []
+    for (const [mes, col] of colMes) {
+      const target = fila[col]
+      const real = fila[col + 1]
+      if (target === null || target === undefined || txt(target) === "") sinTarget.push(mes)
+      else if (Number(real) === 0) sinCargar.push(mes)
+    }
+    out.set(kpi, { sinTarget, sinCargar })
+  }
+  return out
 }
 
 /**
@@ -288,6 +344,23 @@ export function parsearConsolidadoGops(
 
   const temas: TemaParseado[] = []
   const avisos: string[] = []
+  const mesesExcluidos: Record<string, number[]> = {}
+
+  const hojaResumen = wb.SheetNames.find((h) => norm(h) === "resumen")
+  const resumen = hojaResumen
+    ? leerResumen(
+        XLSX.utils.sheet_to_json<Fila>(wb.Sheets[hojaResumen], {
+          header: 1,
+          blankrows: false,
+          defval: null,
+        }),
+      )
+    : new Map<string, { sinTarget: number[]; sinCargar: number[] }>()
+  if (resumen.size === 0) {
+    avisos.push(
+      "No se pudo leer la hoja Resumen: se tomaron todos los meses hasta el corte, incluidos los que no tocaba reportar.",
+    )
+  }
 
   for (const hoja of wb.SheetNames) {
     const n = norm(hoja)
@@ -305,13 +378,29 @@ export function parsearConsolidadoGops(
 
     // Recién acá se descartan los meses futuros: el parseo de la hoja no tiene por qué
     // saber en qué mes estamos.
+    // Y los que el Resumen dice que no se reportan o no se completaron.
+    const meta = metadatosDeHoja(hoja)
+    const delResumen = resumen.get(norm(meta.nombre))
+    const excluidos = new Set([...(delResumen?.sinTarget ?? []), ...(delResumen?.sinCargar ?? [])])
+    if (resumen.size > 0 && !delResumen) {
+      avisos.push(`"${hoja}": no figura en la hoja Resumen, se tomaron todos los meses hasta el corte.`)
+    }
+    const sinCargar = (delResumen?.sinCargar ?? []).filter((m) => m <= hastaMes)
+    if (sinCargar.length > 0) {
+      avisos.push(
+        `${meta.nombre}: ${sinCargar.map((m) => MES_CORTO[m]).join(", ")} sin completar (REAL en 0 en el Resumen), no se tomó.`,
+      )
+    }
+    mesesExcluidos[meta.nombre] = [...excluidos].sort((a, b) => a - b)
+
     for (const p of preguntas) {
       for (const mes of Object.keys(p.respuestas)) {
-        if (Number(mes) > hastaMes) delete p.respuestas[Number(mes)]
+        const m = Number(mes)
+        if (m > hastaMes || excluidos.has(m)) delete p.respuestas[m]
       }
     }
 
-    temas.push({ ...metadatosDeHoja(hoja), preguntas })
+    temas.push({ ...meta, preguntas })
   }
 
   temas.sort((a, b) => a.orden - b.orden)
@@ -320,7 +409,7 @@ export function parsearConsolidadoGops(
     avisos.push("No se reconoció ninguna hoja de tema en el archivo.")
   }
 
-  return { anio, temas, avisos }
+  return { anio, temas, avisos, mesesExcluidos }
 }
 
 /**

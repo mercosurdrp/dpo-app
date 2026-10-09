@@ -573,6 +573,8 @@ export interface ResumenImportacion {
   preguntasNuevas: number
   preguntasTotal: number
   respuestas: number
+  /** Respuestas de cargas anteriores borradas por caer en meses sin reportar. */
+  respuestasBorradas?: number
   avisos: string[]
 }
 
@@ -621,6 +623,7 @@ export async function importarConsolidadoGops(
   let preguntasNuevas = 0
   let preguntasTotal = 0
   let respuestasTotal = 0
+  let respuestasBorradas = 0
 
   for (const tema of parseo.temas) {
     const { data: temaRow, error: temaErr } = await supabase
@@ -674,6 +677,21 @@ export async function importarConsolidadoGops(
     const idPorCodigo = new Map(
       (preguntasRows as Array<{ id: string; codigo: string }>).map((p) => [p.codigo, p.id]),
     )
+
+    // Los meses que el Resumen marca como no reportables (bimestral en mes par) o sin
+    // completar (REAL 0) no se toman, y se borra lo que un import anterior haya
+    // dejado en ellos: si no, el "No" precargado seguía figurando como retroceso.
+    const excluidos = parseo.mesesExcluidos[tema.nombre] ?? []
+    if (excluidos.length > 0) {
+      const { error: delErr, count } = await supabase
+        .from("gops_respuestas")
+        .delete({ count: "exact" })
+        .in("pregunta_id", [...idPorCodigo.values()])
+        .eq("anio", parseo.anio)
+        .in("mes", excluidos)
+      if (delErr) return { error: `Limpiando meses sin reportar de "${tema.hoja}": ${delErr.message}` }
+      respuestasBorradas += count ?? 0
+    }
     preguntasTotal += tema.preguntas.length
     preguntasNuevas += tema.preguntas.filter((p) => !yaEstaban.has(p.codigo)).length
 
@@ -709,6 +727,7 @@ export async function importarConsolidadoGops(
     preguntasNuevas,
     preguntasTotal,
     respuestas: respuestasTotal,
+    respuestasBorradas,
     avisos: parseo.avisos,
   }
 

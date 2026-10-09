@@ -68,6 +68,12 @@ export function ImportarDialog({ open, onOpenChange, anioSugerido, mesSugerido }
                 {resultado.preguntasNuevas} nuevas) · {resultado.respuestas} respuestas de{" "}
                 {resultado.meses.map((m) => MES_NOMBRE[m]).join(", ")} {resultado.anio}.
               </p>
+              {!!resultado.respuestasBorradas && (
+                <p className="mt-1">
+                  Se quitaron {resultado.respuestasBorradas} respuestas de meses que no tocaba
+                  reportar o que todavía no se completaron.
+                </p>
+              )}
             </div>
             {resultado.avisos.length > 0 && (
               <ul className="space-y-1 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
@@ -135,7 +141,9 @@ export function ImportarDialog({ open, onOpenChange, anioSugerido, mesSugerido }
             <p className="rounded-lg bg-slate-50 p-2 text-xs text-muted-foreground">
               El Excel trae los meses que todavía no se completaron con &ldquo;No&rdquo; precargado.
               Por eso se importa hasta el último mes realmente relevado: más allá de ahí, esos
-              &ldquo;No&rdquo; no son respuestas, son celdas sin usar.
+              &ldquo;No&rdquo; no son respuestas, son celdas sin usar. Además se lee la hoja
+              Resumen: un mes sin Target (las bimestrales en los meses pares) o con REAL en 0
+              no se toma, así no aparece como retroceso.
             </p>
 
             {error && (
