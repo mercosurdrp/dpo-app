@@ -236,6 +236,7 @@ export default async function MantenimientoPage() {
           pct: null,
           pctMandatorio: null,
           pctExcelencia: null,
+          revisiones: [],
         }
   const herramientas = "data" in herramientasRes ? herramientasRes.data : []
   // Query aparte y tolerante: si falla, el resto del módulo se sigue viendo.

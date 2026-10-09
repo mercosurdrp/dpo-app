@@ -40,6 +40,20 @@ export interface EstandarUnidad {
   tipo: "camion" | "autoelevador"
 }
 
+/**
+ * Última vez que se tocó la matriz de una unidad. El "cómo verificar" del punto
+ * 1.2 pide un check de conformidad **interno y mensual**: tener la matriz
+ * cargada no alcanza si la última revisión es de hace tres meses. Esto es lo
+ * que convierte "lo tengo" en "lo gestiono".
+ */
+export interface EstandarRevision {
+  dominio: string
+  ultima: string | null
+  diasDesde: number | null
+  /** Revisada dentro de los últimos 30 días. */
+  alDia: boolean
+}
+
 export interface EstandaresFlota {
   items: EstandarItem[]
   cumplimiento: EstandarCumplimiento[]
@@ -50,6 +64,8 @@ export interface EstandaresFlota {
   pctMandatorio: number | null
   /** Mismo cálculo, sólo sobre los ítems de excelencia. */
   pctExcelencia: number | null
+  /** Antigüedad de la revisión de cada unidad activa. */
+  revisiones: EstandarRevision[]
 }
 
 export async function getEstandaresFlota(): Promise<
@@ -66,7 +82,7 @@ export async function getEstandaresFlota(): Promise<
         .order("orden"),
       supabase
         .from("flota_estandar_cumplimiento")
-        .select("dominio, item_id, estado, observaciones")
+        .select("dominio, item_id, estado, observaciones, updated_at")
         .limit(5000),
       supabase
         .from("catalogo_vehiculos")
@@ -83,9 +99,34 @@ export async function getEstandaresFlota(): Promise<
     const unidades = (vehRes.data || []) as EstandarUnidad[]
     const dominiosActivos = new Set(unidades.map((u) => u.dominio))
     const itemIds = new Set(items.map((i) => i.id))
-    const cumplimiento = ((cumplRes.data || []) as EstandarCumplimiento[]).filter(
+    const filas = (cumplRes.data || []) as Array<
+      EstandarCumplimiento & { updated_at: string | null }
+    >
+    const cumplimiento = filas.filter(
       (c) => dominiosActivos.has(c.dominio) && itemIds.has(c.item_id)
     )
+
+    // Última marca de tiempo por unidad: la revisión de la unidad es la más
+    // reciente de sus ítems.
+    const ultimaPorDominio = new Map<string, string>()
+    for (const c of cumplimiento) {
+      if (!c.updated_at) continue
+      const previa = ultimaPorDominio.get(c.dominio)
+      if (!previa || c.updated_at > previa) ultimaPorDominio.set(c.dominio, c.updated_at)
+    }
+    const ahora = Date.now()
+    const revisiones: EstandarRevision[] = unidades.map((u) => {
+      const ultima = ultimaPorDominio.get(u.dominio) ?? null
+      const diasDesde = ultima
+        ? Math.floor((ahora - new Date(ultima).getTime()) / 86400000)
+        : null
+      return {
+        dominio: u.dominio,
+        ultima,
+        diasDesde,
+        alDia: diasDesde != null && diasDesde <= 30,
+      }
+    })
 
     const criticidadDe = new Map(items.map((i) => [i.id, i.criticidad]))
     // [ok, no_ok] global y por criticidad. Los N/A quedan fuera del denominador
@@ -115,6 +156,7 @@ export async function getEstandaresFlota(): Promise<
         pct: porcentaje(conteo.total),
         pctMandatorio: porcentaje(conteo.mandatorio),
         pctExcelencia: porcentaje(conteo.excelencia),
+        revisiones,
       },
     }
   } catch (e) {

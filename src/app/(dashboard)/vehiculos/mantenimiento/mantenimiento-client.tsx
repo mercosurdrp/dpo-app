@@ -1071,6 +1071,7 @@ export function MantenimientoClient({
             pct={estandares.pct}
             pctMandatorio={estandares.pctMandatorio}
             pctExcelencia={estandares.pctExcelencia}
+            revisiones={estandares.revisiones}
             puedeEditar={puedeEditar}
           />
         </TabsContent>

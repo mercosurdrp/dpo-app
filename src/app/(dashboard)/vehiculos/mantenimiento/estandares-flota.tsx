@@ -44,6 +44,7 @@ import {
   type EstandarCumplimiento,
   type EstandarEstado,
   type EstandarItem,
+  type EstandarRevision,
   type EstandarUnidad,
 } from "@/actions/flota-estandares"
 
@@ -120,6 +121,7 @@ interface Props {
   pct: number | null
   pctMandatorio: number | null
   pctExcelencia: number | null
+  revisiones: EstandarRevision[]
   puedeEditar: boolean
 }
 
@@ -138,6 +140,7 @@ export function EstandaresFlota({
   pct,
   pctMandatorio,
   pctExcelencia,
+  revisiones,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -549,6 +552,12 @@ export function EstandaresFlota({
   const mandatorio = resumen.mandatorio ?? pctMandatorio
   const excelencia = resumen.excelencia ?? pctExcelencia
 
+  // Cadencia de la revisión: el punto pide un check interno MENSUAL, así que
+  // una matriz cargada hace tres meses no sostiene el requisito.
+  const vencidas = revisiones
+    .filter((r) => !r.alDia)
+    .sort((a, b) => (b.diasDesde ?? 9999) - (a.diasDesde ?? 9999))
+
   return (
     <div className="space-y-4">
       <DpoSeccionCinta seccionId="estandares" />
@@ -560,6 +569,27 @@ export function EstandaresFlota({
             flota
           </CardTitle>
           <div className="flex items-center gap-2">
+            <Badge
+              className={cn(
+                "text-sm",
+                vencidas.length === 0
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+              )}
+              title={
+                vencidas.length === 0
+                  ? "Todas las unidades revisadas en los últimos 30 días"
+                  : `Sin revisar hace más de 30 días: ${vencidas
+                      .map((r) =>
+                        r.diasDesde == null
+                          ? `${r.dominio} (nunca)`
+                          : `${r.dominio} (${r.diasDesde} d)`
+                      )
+                      .join(", ")}`
+              }
+            >
+              Revisión mensual: {revisiones.length - vencidas.length}/{revisiones.length}
+            </Badge>
             {sinEvaluar > 0 && (
               <button
                 type="button"
