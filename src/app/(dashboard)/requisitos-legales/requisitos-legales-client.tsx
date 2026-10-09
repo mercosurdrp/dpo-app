@@ -158,10 +158,22 @@ function CategoriaTabla({
 }: CategoriaTablaProps) {
   const [filtroEstado, setFiltroEstado] = useState<string>("todos")
   const [busqueda, setBusqueda] = useState("")
+  // Los papeles de unidades vendidas o transferidas quedan fuera de la vista
+  // por defecto: no hay nada que renovar. Se pueden ver, no se borran.
+  const [verBajas, setVerBajas] = useState(false)
+
+  const bajas = useMemo(
+    () =>
+      requisitos.filter(
+        (r) => r.categoria_id === categoria.id && r.fuera_de_flota,
+      ).length,
+    [requisitos, categoria.id],
+  )
 
   const items = useMemo(() => {
     return requisitos
       .filter((r) => r.categoria_id === categoria.id)
+      .filter((r) => (verBajas ? true : !r.fuera_de_flota))
       .filter((r) => {
         if (filtroEstado !== "todos" && r.estado !== filtroEstado) return false
         if (
@@ -171,10 +183,12 @@ function CategoriaTabla({
           return false
         return true
       })
-  }, [requisitos, categoria.id, filtroEstado, busqueda])
+  }, [requisitos, categoria.id, filtroEstado, busqueda, verBajas])
 
   const stats = useMemo(() => {
-    const items = requisitos.filter((r) => r.categoria_id === categoria.id)
+    const items = requisitos.filter(
+      (r) => r.categoria_id === categoria.id && !r.fuera_de_flota,
+    )
     return items.reduce(
       (acc, r) => {
         acc[r.estado] += 1
@@ -242,6 +256,17 @@ function CategoriaTabla({
             <SelectItem value="vencido">Vencidos</SelectItem>
           </SelectContent>
         </Select>
+        {bajas > 0 && (
+          <Button
+            type="button"
+            variant={verBajas ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setVerBajas((v) => !v)}
+            title="Papeles de unidades vendidas o transferidas: siguen cargados pero no avisan vencimiento"
+          >
+            {verBajas ? "Ocultar" : "Ver"} unidades de baja ({bajas})
+          </Button>
+        )}
       </div>
 
       {/* Tabla */}
@@ -283,9 +308,17 @@ function CategoriaTabla({
               </TableRow>
             )}
             {items.map((r) => (
-              <TableRow key={r.id}>
+              <TableRow key={r.id} className={r.fuera_de_flota ? "opacity-60" : undefined}>
                 <TableCell className="font-medium">
                   {r.nombre}
+                  {r.fuera_de_flota && (
+                    <Badge
+                      className="ml-2 border-slate-200 bg-slate-100 align-middle text-[11px] font-normal text-slate-600"
+                      title={r.baja_detalle ?? undefined}
+                    >
+                      Fuera de flota
+                    </Badge>
+                  )}
                   {r.observaciones && (
                     <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
                       {r.observaciones}
@@ -444,7 +477,8 @@ export function RequisitosLegalesClient({
   const pendientesGestion = useMemo(() => {
     if (!gestionesMap) return 0
     return requisitos.filter(
-      (r) => r.estado !== "vigente" || gestionesMap.has(r.id),
+      (r) =>
+        !r.fuera_de_flota && (r.estado !== "vigente" || gestionesMap.has(r.id)),
     ).length
   }, [requisitos, gestionesMap])
 
@@ -455,7 +489,11 @@ export function RequisitosLegalesClient({
 
   const resumenPorCategoria = useMemo(() => {
     return categorias.map((c) => {
-      const items = requisitos.filter((r) => r.categoria_id === c.id)
+      // Los papeles de unidades dadas de baja no cuentan: no hay nada que
+      // renovar y ensuciaban el semáforo de la categoría.
+      const items = requisitos.filter(
+        (r) => r.categoria_id === c.id && !r.fuera_de_flota,
+      )
       const counts = items.reduce(
         (acc, r) => {
           acc[r.estado] += 1

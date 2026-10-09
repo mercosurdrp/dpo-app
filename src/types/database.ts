@@ -3246,6 +3246,13 @@ export interface RequisitoLegalConResponsable extends RequisitoLegal {
   responsable_email: string | null
   estado: EstadoRequisitoLegal
   dias_para_vencer: number
+  /**
+   * El papel es de una unidad que ya no está en el parque (vendida o
+   * transferida). No se borra —es historia y evidencia— pero no alerta.
+   */
+  fuera_de_flota: boolean
+  /** Motivo de la baja, tal como lo guarda el catálogo de vehículos. */
+  baja_detalle: string | null
 }
 
 export interface RequisitoLegalAlertaConfig {

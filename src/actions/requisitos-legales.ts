@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth, getProfile } from "@/lib/session"
+import { bajaDeUnidad, type UnidadCatalogo } from "@/lib/vehiculos/unidad-de-baja"
 import type {
   Profile,
   RequisitoLegal,
@@ -119,19 +120,35 @@ export async function listRequisitos(): Promise<
     await requireAuth()
     const supabase = await createClient()
 
-    const { data, error } = await supabase
-      .from("requisitos_legales")
-      .select(
-        "*, responsable:profiles!requisitos_legales_responsable_id_fkey(id, nombre, email)",
-      )
-      .order("fecha_vencimiento", { ascending: true })
+    const [{ data, error }, catsRes, vehRes] = await Promise.all([
+      supabase
+        .from("requisitos_legales")
+        .select(
+          "*, responsable:profiles!requisitos_legales_responsable_id_fkey(id, nombre, email)",
+        )
+        .order("fecha_vencimiento", { ascending: true }),
+      // Sólo las categorías de vehículo pueden quedar huérfanas de unidad.
+      supabase
+        .from("requisitos_legales_categorias")
+        .select("id")
+        .eq("tipo_identificador", "vehiculo"),
+      supabase.from("catalogo_vehiculos").select("dominio, active, descripcion"),
+    ])
 
     if (error) return { error: error.message }
+
+    const catsVehiculo = new Set(
+      ((catsRes.data ?? []) as Array<{ id: string }>).map((c) => c.id),
+    )
+    const catalogo = (vehRes.data ?? []) as UnidadCatalogo[]
 
     const enriched: RequisitoLegalConResponsable[] = (data ?? []).map((row) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const r = row as any
       const { estado, dias } = calcularEstado(r.fecha_vencimiento)
+      const baja = catsVehiculo.has(r.categoria_id)
+        ? bajaDeUnidad(catalogo, r.nombre)
+        : null
       return {
         id: r.id,
         categoria_id: r.categoria_id,
@@ -151,6 +168,8 @@ export async function listRequisitos(): Promise<
         responsable_email: r.responsable?.email ?? null,
         estado,
         dias_para_vencer: dias,
+        fuera_de_flota: baja !== null,
+        baja_detalle: baja,
       }
     })
 

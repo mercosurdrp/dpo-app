@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { bajaDeUnidad, type UnidadCatalogo } from "@/lib/vehiculos/unidad-de-baja"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -45,7 +46,7 @@ export async function GET(req: Request) {
 
   // 1. Requisitos en zona de alerta (hasta 30 días por delante; los vencidos
   //    también entran para que el responsable vea la urgencia)
-  const { data: requisitos, error: errReq } = await supabase
+  const { data: requisitosRaw, error: errReq } = await supabase
     .from("requisitos_legales")
     .select("id, nombre, fecha_vencimiento, responsable_id, categoria_id")
     .lte("fecha_vencimiento", isoDate(limite))
@@ -53,6 +54,11 @@ export async function GET(req: Request) {
   if (errReq) {
     return NextResponse.json({ error: errReq.message }, { status: 500 })
   }
+
+  // Los papeles de una unidad vendida o transferida no piden renovación: la
+  // unidad no está más en el CD. No se borran (son historia y evidencia), se
+  // sacan de la cola de alertas. Ver lib/vehiculos/unidad-de-baja.
+  const requisitos = await sinUnidadesDeBaja(supabase, requisitosRaw ?? [])
 
   // Se depura SIEMPRE, aunque no haya ningún requisito en ventana de alerta:
   // justamente el caso a limpiar es el del documento ya renovado.
@@ -252,6 +258,34 @@ const MOTIVO_DOC = "Documentación vencida"
 // abre el rango el día posterior al vencimiento y lo extiende cada día
 // mientras el documento siga vencido; al renovarse el rango deja de crecer y
 // queda como evidencia histórica del período fuera de servicio.
+/**
+ * Saca de la cola de alertas los papeles cuya unidad ya no está en el parque.
+ * Sólo mira las categorías de tipo vehículo: una licencia de conducir o una
+ * habilitación del establecimiento nunca se silencian por acá.
+ */
+async function sinUnidadesDeBaja<
+  T extends { nombre: string; categoria_id: string | null },
+>(supabase: ReturnType<typeof createAdminClient>, filas: T[]): Promise<T[]> {
+  if (filas.length === 0) return filas
+  const [catsRes, vehRes] = await Promise.all([
+    supabase
+      .from("requisitos_legales_categorias")
+      .select("id")
+      .eq("tipo_identificador", "vehiculo"),
+    supabase.from("catalogo_vehiculos").select("dominio, active, descripcion"),
+  ])
+  // Si alguna de las dos lecturas falla, se avisa de más y no de menos.
+  if (catsRes.error || vehRes.error) return filas
+  const catsVehiculo = new Set((catsRes.data ?? []).map((c) => c.id))
+  const catalogo = (vehRes.data ?? []) as UnidadCatalogo[]
+  return filas.filter(
+    (f) =>
+      !f.categoria_id ||
+      !catsVehiculo.has(f.categoria_id) ||
+      bajaDeUnidad(catalogo, f.nombre) === null,
+  )
+}
+
 async function syncIndisponibilidadDocumental(
   supabase: ReturnType<typeof createAdminClient>,
   hoy: Date,
