@@ -49,6 +49,7 @@ interface InversionExternaInput {
   inversion_id?: string | null
   titulo: string
   descripcion?: string | null
+  check?: string | null // nombre del check de origen (Fabric, Mantenimiento Global, Inspección)
   rubro?: string | null
   responsable?: string | null
   proveedor?: string | null
@@ -144,6 +145,7 @@ export async function POST(request: NextRequest) {
 
       const avanceRaw = num(item.avance_pct)
       const origen: OrigenInversion = {
+        check: texto(item.check),
         rubro: texto(item.rubro),
         responsable: texto(item.responsable),
         avancePct:

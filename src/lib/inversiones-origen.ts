@@ -5,7 +5,7 @@
  * base no se puede aplicar DDL desde la VM, así que la marca viaja como PRIMERA
  * LÍNEA de `observaciones` — visible y legible, no un código oculto:
  *
- *   Plan de mantenimiento edilicio · Rubro: Eléctrico · Responsable: Esteban Altube · Avance: 60% · https://…
+ *   Plan de mantenimiento edilicio · Check: Check de Fabric · Rubro: Eléctrico · Responsable: Esteban Altube · Avance: 60% · https://…
  *   <acá abajo sigue lo que haya escrito el usuario en dpo-app>
  *
  * La vinculación con el plan de origen NO depende de este texto: vive del otro
@@ -17,6 +17,8 @@
 export const MARCA_ORIGEN = "Plan de mantenimiento edilicio"
 
 export interface OrigenInversion {
+  /** De qué check nació el plan: "Check de Fabric", "Check de Mantenimiento Global", "Inspección mensual". */
+  check: string | null
   rubro: string | null
   responsable: string | null
   avancePct: number | null
@@ -26,6 +28,7 @@ export interface OrigenInversion {
 /** Arma la primera línea de observaciones a partir de los datos del plan. */
 export function construirLineaOrigen(o: OrigenInversion): string {
   const partes = [MARCA_ORIGEN]
+  if (o.check) partes.push(`Check: ${o.check}`)
   if (o.rubro) partes.push(`Rubro: ${o.rubro}`)
   if (o.responsable) partes.push(`Responsable: ${o.responsable}`)
   if (o.avancePct !== null) partes.push(`Avance: ${o.avancePct}%`)
@@ -69,6 +72,7 @@ export function leerObservaciones(observaciones: string | null): {
 
   return {
     origen: {
+      check: buscar("check"),
       rubro: buscar("rubro"),
       responsable: buscar("responsable"),
       avancePct: avance !== null && Number.isFinite(avance) ? avance : null,

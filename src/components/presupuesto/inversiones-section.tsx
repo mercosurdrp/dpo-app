@@ -143,6 +143,9 @@ function OrigenExterno({ inversion }: { inversion: InversionConDetalle }) {
   const { origen } = leerObservaciones(inversion.observaciones)
   if (!origen) return null
   const detalle = [origen.rubro, origen.responsable].filter(Boolean).join(" · ")
+  // Qué check la originó (Fabric, Mantenimiento Global, Recorrida mensual).
+  // Los planes viejos no traen el check hasta que el origen los vuelva a sincronizar.
+  const etiqueta = origen.check ?? MARCA_ORIGEN
   return (
     <p className="mt-1 flex items-center gap-1 text-xs text-blue-700">
       <ExternalLink className="size-3 shrink-0" />
@@ -154,10 +157,10 @@ function OrigenExterno({ inversion }: { inversion: InversionConDetalle }) {
           className="hover:underline"
           title="Abrir el plan de acción en Plan de Mantenimiento Edilicio"
         >
-          {MARCA_ORIGEN}
+          {etiqueta}
         </a>
       ) : (
-        <span>{MARCA_ORIGEN}</span>
+        <span>{etiqueta}</span>
       )}
       {detalle && <span className="text-muted-foreground">· {detalle}</span>}
     </p>
