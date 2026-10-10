@@ -180,7 +180,7 @@ export function SeccionFlotaRuteo({
                 Indicadores de Flota.
               </p>
 
-              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <Kpi
                   titulo="Disponibilidad de flota"
                   valor={data.flota.disponibilidadPct}
@@ -229,7 +229,42 @@ export function SeccionFlotaRuteo({
                   mejorSi="menor"
                   detalle={`${data.flota.proximosServices.length} unidad(es) a 30 días o menos`}
                 />
+                {/* R1.3.1a: el objetivo es 100 % y cualquier número por debajo
+                    tiene que salir de acá con una acción, no sólo mirarse. */}
+                <Kpi
+                  titulo="Adherencia al checklist"
+                  valor={data.adherencia?.pct ?? null}
+                  unidad="%"
+                  target={100}
+                  mejorSi="mayor"
+                  detalle={
+                    data.adherencia
+                      ? `semana del ${formatFecha(data.adherencia.desde)} al ${formatFecha(data.adherencia.hasta)} · ${data.adherencia.completos} de ${data.adherencia.ruteados} camión-día`
+                      : "sin días ruteados en la semana que cerró"
+                  }
+                />
               </div>
+
+              {/* Los días que faltan, uno por uno: es lo accionable de la
+                  tarjeta de adherencia. Sin el listado, el % se mira y se pasa
+                  de largo; con el listado, la reunión sabe a quién preguntarle. */}
+              {data.adherencia && data.adherencia.faltantes.length > 0 && (
+                <p className="mt-3 text-xs text-red-700">
+                  <span className="font-medium">
+                    Sin checklist completo en la semana:
+                  </span>{" "}
+                  {data.adherencia.faltantes
+                    .slice()
+                    .sort((a, b) => a.fecha.localeCompare(b.fecha))
+                    .map(
+                      (f) =>
+                        `${formatFecha(f.fecha)} ${f.dominio} (falta ${
+                          f.falta === "ambos" ? "salida y retorno" : f.falta
+                        })`
+                    )
+                    .join(" · ")}
+                </p>
+              )}
 
               {/* Próximos services: proyección por tasa de uso real (km/día). */}
               {data.flota.servicesAlDia !== fechaReunion && (

@@ -24,6 +24,10 @@ import type {
   MantenimientoRealizado,
 } from "@/types/database"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
+import {
+  getAdherenciaChecklist,
+  type DiaFaltante,
+} from "@/actions/checklist-adherencia"
 import { separarCargasSinRegistrar } from "@/lib/vehiculos/combustible-limpio"
 
 type Result<T> = { data: T } | { error: string }
@@ -86,6 +90,42 @@ export interface FlotaRuteoReunion {
     noDisponiblesHoy: UnidadNoDisponible[]
     /** Unidades de reparto consideradas (denominador del %): excluye depósito. */
     unidadesFlota: number
+  }
+  /**
+   * Adherencia al checklist de la semana que cerró (R1.3.1a). Va acá y no sólo
+   * en el tablero porque el requisito no pide el número: pide medidas de
+   * gestión rápidas cada vez que baja del 100 %, y el lugar donde eso queda
+   * registrado es esta reunión.
+   *
+   * La ventana es semanal —el resto del bloque es del mes— porque es la que la
+   * reunión del lunes puede accionar: los días que faltan son de la semana que
+   * acaba de cerrar, no de hace tres semanas. `null` si no hubo días ruteados.
+   */
+  adherencia: {
+    desde: string
+    hasta: string
+    pct: number | null
+    ruteados: number
+    completos: number
+    faltantes: DiaFaltante[]
+  } | null
+}
+
+/**
+ * Lunes a domingo de la semana ANTERIOR a `fecha`: la que cerró. En la reunión
+ * del lunes la semana en curso tiene un solo día, y el retorno de ese día ni
+ * siquiera pudo hacerse todavía.
+ */
+function semanaAnterior(fecha: string): { desde: string; hasta: string } {
+  const d = new Date(`${fecha}T12:00:00Z`)
+  const diaSemana = d.getUTCDay() === 0 ? 7 : d.getUTCDay()
+  const lunes = new Date(d)
+  lunes.setUTCDate(d.getUTCDate() - diaSemana + 1 - 7)
+  const domingo = new Date(lunes)
+  domingo.setUTCDate(lunes.getUTCDate() + 6)
+  return {
+    desde: lunes.toISOString().slice(0, 10),
+    hasta: domingo.toISOString().slice(0, 10),
   }
 }
 
@@ -243,8 +283,27 @@ export async function getFlotaRuteoReunion(
   const metaDe = (kpi: string) =>
     metas.find((m) => m.kpi === kpi)?.meta ?? null
 
+  // ── Adherencia al checklist de la semana que cerró (R1.3.1a) ──────────────
+  // Se reusa la acción del tablero para que no haya dos cuentas del mismo
+  // número: el denominador son los días que la unidad REPARTIÓ, no los días
+  // con checklist cargado.
+  const semana = semanaAnterior(fechaReunion)
+  const adhRes = await getAdherenciaChecklist(semana.desde, semana.hasta)
+  const adherencia =
+    "error" in adhRes || adhRes.data.ruteados === 0
+      ? null
+      : {
+          desde: semana.desde,
+          hasta: semana.hasta,
+          pct: adhRes.data.pct,
+          ruteados: adhRes.data.ruteados,
+          completos: adhRes.data.completos,
+          faltantes: adhRes.data.faltantes,
+        }
+
   return {
     data: {
+      adherencia,
       flota: {
         mes,
         disponibilidadPct: calc.flotaDisp,
