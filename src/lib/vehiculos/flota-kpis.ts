@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { calcularAdherenciaChecklist } from "@/lib/vehiculos/checklist-adherencia"
 import { conformidadDocumental } from "@/lib/vehiculos/documentos-conformidad"
 import { cumplimientoPlanDesdeEstados } from "@/lib/vehiculos/plan-cumplimiento"
 import { loadEstadoPlan } from "@/lib/vehiculos/plan-mantenimiento"
@@ -41,6 +42,29 @@ export function servicesVencidosDesdeProgramacion(
   programacion: ServiceGeneralUnidad[]
 ): number {
   return programacion.filter((p) => p.estado === "vencido").length
+}
+
+/**
+ * Adherencia al checklist del mes ARG en curso (DPO 1.3, R1.3.1a).
+ *
+ * A diferencia de los otros KPIs de este módulo, la adherencia SÍ es
+ * reconstruible hacia atrás: las ventas y los checklists quedan. Se fotografía
+ * igual por COSTO: el denominador son los camión-día de
+ * `ventas_diarias_cliente`, que son ~20.000 filas por trimestre (21 páginas de
+ * PostgREST), y el tablero de Indicadores ya carga 30 acciones. Con la foto, el
+ * tablero lee un número por mes cerrado y sólo el mes en curso se calcula en
+ * vivo, que es un mes de ventas.
+ */
+async function adherenciaChecklistMes(
+  client: SupabaseClient,
+  year: number,
+  mes: number,
+): Promise<number | null> {
+  const desde = `${year}-${String(mes).padStart(2, "0")}-01`
+  const fin = new Date(Date.UTC(year, mes, 0))
+  const hasta = fin.toISOString().slice(0, 10)
+  const { pct } = await calcularAdherenciaChecklist(client, desde, hasta)
+  return pct
 }
 
 /** Fecha de hoy "YYYY-MM-DD" en horario argentino. */
@@ -163,15 +187,16 @@ export async function capturarFlotaKpiSnapshots(client: SupabaseClient): Promise
   mes: number
   valores: Record<string, number | null>
 }> {
-  const [{ estados }, programacion, docsConformidad, estandaresConformidad] =
+  const { year, mes } = ymArgentina()
+  const [{ estados }, programacion, docsConformidad, estandaresConformidad, adherencia] =
     await Promise.all([
       loadEstadoPlan(client),
       loadServiceGeneral(client),
       docsConformidadFlota(client),
       estandaresConformidadFlota(client),
+      adherenciaChecklistMes(client, year, mes),
     ])
 
-  const { year, mes } = ymArgentina()
   const plan = cumplimientoPlanDesdeEstados(estados)
   const valores: Record<string, number | null> = {
     cumplimiento_plan: plan.pct,
@@ -186,6 +211,7 @@ export async function capturarFlotaKpiSnapshots(client: SupabaseClient): Promise
     estandares_conformidad: estandaresConformidad.total,
     estandares_mandatorios: estandaresConformidad.mandatorio,
     estandares_excelencia: estandaresConformidad.excelencia,
+    checklist_adherencia: adherencia,
   }
 
   const rows = Object.entries(valores).map(([kpi, valor]) => ({

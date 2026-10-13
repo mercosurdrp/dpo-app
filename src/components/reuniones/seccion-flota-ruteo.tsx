@@ -257,10 +257,15 @@ export function SeccionFlotaRuteo({
                     .slice()
                     .sort((a, b) => a.fecha.localeCompare(b.fecha))
                     .map(
+                      // Con el nombre: la medida de gestión que pide el
+                      // R1.3.1a se toma con una persona, y esta línea es la
+                      // que se lee en la reunión. "(titular)" avisa que ese
+                      // día no hubo ningún checklist y el nombre sale de quién
+                      // tiene asignada la unidad, no de quién firmó.
                       (f) =>
-                        `${formatFecha(f.fecha)} ${f.dominio} (falta ${
-                          f.falta === "ambos" ? "salida y retorno" : f.falta
-                        })`
+                        `${formatFecha(f.fecha)} ${f.dominio}${
+                          f.chofer ? ` — ${f.chofer}${f.choferDeducido ? " (titular)" : ""}` : ""
+                        } (falta ${f.falta === "ambos" ? "salida y retorno" : f.falta})`
                     )
                     .join(" · ")}
                 </p>

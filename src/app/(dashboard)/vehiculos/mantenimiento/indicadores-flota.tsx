@@ -159,6 +159,10 @@ const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
   neumaticos_desgaste: { tab: "neumaticos", label: "Ver el desgaste por km" },
   combustible_kml: { href: "/vehiculos/combustible", label: "Ver el módulo de Combustible" },
   co2_flota: { href: "/vehiculos/combustible", label: "Ver el módulo de Combustible" },
+  checklist_adherencia: {
+    tab: "checklists",
+    label: "Ver los días que faltan y de quién",
+  },
   checklist_deteccion: {
     detalle: "checklist_deteccion",
     label: "Ver las OT correctivas del mes",
@@ -432,6 +436,15 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => `${v.toFixed(1)}%`,
     conSerie: true,
     dpo: "1.2",
+  },
+  {
+    kpi: "checklist_adherencia",
+    label: "Adherencia al checklist",
+    descripcion:
+      "Camión-día con liberación Y retorno ÷ camión-día que efectivamente repartieron (no los que cargaron checklist: ese denominador se infla solo). El R1.3.1a exige 100 % porque el checklist no impide usar la unidad, y el 1.3 es mandatorio",
+    fmt: (v) => `${v.toFixed(1)}%`,
+    conSerie: true,
+    dpo: "1.3",
   },
   {
     kpi: "checklist_deteccion",
@@ -791,6 +804,26 @@ export function IndicadoresFlota({
         })
       )
     }
+
+    // Adherencia al checklist (R1.3.1a): también sale de la foto, pero el mes
+    // EN CURSO también. A diferencia del resto de los KPIs foto acá no hay
+    // cálculo en vivo posible en el cliente: el denominador son los camión-día
+    // de `ventas_diarias_cliente` (~20.000 filas por trimestre) y esta página
+    // no los tiene cargados. El cron pisa el mes en curso todos los días, así
+    // que el número tiene como máximo un día de atraso; el valor al minuto
+    // está en la tarjeta de Adherencia de la solapa Checklists, que es
+    // justamente a donde lleva el click.
+    out.set(
+      "checklist_adherencia",
+      meses3.map((ym) => {
+        const valor = snapBy.get(`checklist_adherencia|${ym}`)
+        return {
+          ym,
+          valor: valor != null ? Number(valor) : null,
+          parcial: ym === mesActual,
+        }
+      })
+    )
 
     // PIs calculados en el server (checklist, y a futuro combustible/CO2):
     // llegan como serie {ym, valor}; el mes en curso siempre es parcial.

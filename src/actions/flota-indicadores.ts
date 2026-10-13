@@ -27,6 +27,7 @@ export type FlotaKpi =
   | "pct_preventivo"
   | "cumplimiento_plan"
   | "services_vencidos"
+  | "checklist_adherencia"
   | "checklist_deteccion"
   | "checklist_resolucion"
   | "docs_conformidad"

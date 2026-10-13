@@ -15,6 +15,7 @@ import { DpoPuntoBadge } from "./_components/dpo-badge"
 import {
   getAdherenciaChecklist,
   type AdherenciaChecklist,
+  type DiaFaltante,
 } from "@/actions/checklist-adherencia"
 
 /**
@@ -27,6 +28,50 @@ import {
 
 function fmtDia(f: string): string {
   return f.slice(0, 10).split("-").reverse().slice(0, 2).join("/")
+}
+
+const FALTA_LABEL: Record<string, string> = {
+  ambos: "Sin ningún checklist",
+  retorno: "Falta el retorno",
+  liberacion: "Falta la salida",
+}
+
+/**
+ * Un día faltante, con el nombre de quién manejó.
+ *
+ * El R1.3.1a no pide el número: pide la medida de gestión, y una medida de
+ * gestión se toma con una persona. Cuando el día no tiene NINGÚN checklist el
+ * nombre sale del titular de la unidad y va con un "(titular)" al lado: ese
+ * día pudo haberlo manejado un suplente y reclamarle al titular sería
+ * reclamarle al equivocado.
+ */
+function FilaFaltante({ f }: { f: DiaFaltante }) {
+  return (
+    <li className="flex items-center justify-between gap-2 border-b pb-1 text-sm last:border-0">
+      <span className="min-w-0">
+        <span className="font-medium">{f.dominio}</span>
+        <span className="text-muted-foreground"> · {fmtDia(f.fecha)}</span>
+        {f.chofer && (
+          <span className="text-muted-foreground">
+            {" · "}
+            {f.chofer}
+            {f.choferDeducido && (
+              <span className="text-xs italic"> (titular)</span>
+            )}
+          </span>
+        )}
+      </span>
+      <span
+        className={
+          f.falta === "ambos"
+            ? "shrink-0 text-xs text-red-600 dark:text-red-400"
+            : "shrink-0 text-xs text-amber-600 dark:text-amber-400"
+        }
+      >
+        {FALTA_LABEL[f.falta]}
+      </span>
+    </li>
+  )
 }
 
 function hoyArg(): string {
@@ -81,12 +126,6 @@ function ultimosMeses(hoy: string, cantidad: number) {
  * viejo ya no se recupera y queda como incumplimiento del mes.
  */
 const DIAS_RECLAMABLES = 2
-
-const FALTA_LABEL: Record<string, string> = {
-  ambos: "Sin ningún checklist",
-  retorno: "Falta el retorno",
-  liberacion: "Falta la salida",
-}
 
 export function AdherenciaChecklistCard() {
   const meses = useMemo(() => ultimosMeses(hoyArg(), 6), [])
@@ -226,6 +265,7 @@ export function AdherenciaChecklistCard() {
                 <thead>
                   <tr className="border-b text-left text-xs uppercase text-muted-foreground">
                     <th className="py-2 pr-3 font-medium">Unidad</th>
+                    <th className="py-2 pr-3 font-medium">Chofer</th>
                     <th className="py-2 pr-3 font-medium">Días que repartió</th>
                     <th className="py-2 pr-3 font-medium">Con los dos checklists</th>
                     <th className="py-2 font-medium">Adherencia</th>
@@ -235,6 +275,9 @@ export function AdherenciaChecklistCard() {
                   {data.porUnidad.map((u) => (
                     <tr key={u.dominio} className="border-b last:border-0">
                       <td className="py-2 pr-3 font-medium">{u.dominio}</td>
+                      <td className="py-2 pr-3 text-muted-foreground">
+                        {u.chofer ?? "—"}
+                      </td>
                       <td className="py-2 pr-3 text-muted-foreground">{u.ruteados}</td>
                       <td className="py-2 pr-3 text-muted-foreground">{u.completos}</td>
                       <td className="py-2">
@@ -264,24 +307,7 @@ export function AdherenciaChecklistCard() {
                 </p>
                 <ul className="space-y-1">
                   {reclamables.map((f) => (
-                    <li
-                      key={`${f.fecha}|${f.dominio}`}
-                      className="flex items-center justify-between border-b pb-1 text-sm last:border-0"
-                    >
-                      <span>
-                        <span className="font-medium">{f.dominio}</span>
-                        <span className="text-muted-foreground"> · {fmtDia(f.fecha)}</span>
-                      </span>
-                      <span
-                        className={
-                          f.falta === "ambos"
-                            ? "text-xs text-red-600 dark:text-red-400"
-                            : "text-xs text-amber-600 dark:text-amber-400"
-                        }
-                      >
-                        {FALTA_LABEL[f.falta]}
-                      </span>
-                    </li>
+                    <FilaFaltante key={`${f.fecha}|${f.dominio}`} f={f} />
                   ))}
                 </ul>
               </div>
@@ -309,27 +335,7 @@ export function AdherenciaChecklistCard() {
                 {verCerrados && (
                   <ul className="space-y-1">
                     {(verTodos ? cerrados : cerrados.slice(0, 12)).map((f) => (
-                      <li
-                        key={`${f.fecha}|${f.dominio}`}
-                        className="flex items-center justify-between border-b pb-1 text-sm last:border-0"
-                      >
-                        <span>
-                          <span className="font-medium">{f.dominio}</span>
-                          <span className="text-muted-foreground">
-                            {" "}
-                            · {fmtDia(f.fecha)}
-                          </span>
-                        </span>
-                        <span
-                          className={
-                            f.falta === "ambos"
-                              ? "text-xs text-red-600 dark:text-red-400"
-                              : "text-xs text-amber-600 dark:text-amber-400"
-                          }
-                        >
-                          {FALTA_LABEL[f.falta]}
-                        </span>
-                      </li>
+                      <FilaFaltante key={`${f.fecha}|${f.dominio}`} f={f} />
                     ))}
                   </ul>
                 )}
