@@ -724,12 +724,26 @@ function facturasParaGuardar(
 }
 
 /**
+ * ¿El error es "esta base todavía no tiene la columna concepto"?
+ *
+ * Postgres lo devuelve como 42703, pero el insert casi nunca llega a la base:
+ * lo corta antes PostgREST contra su cache de esquema y el código que vuelve es
+ * PGRST204 ("Could not find the 'concepto' column of
+ * 'mantenimiento_realizado_facturas' in the schema cache"). Se miran los dos.
+ */
+function faltaColumnaConcepto(error: { code?: string | null; message?: string | null }) {
+  if (error.code === "42703" || error.code === "PGRST204") return true
+  const msg = error.message ?? ""
+  return /concepto/i.test(msg) && /schema cache|does not exist|no existe/i.test(msg)
+}
+
+/**
  * Inserta los comprobantes de la OT.
  *
  * 🚨 El código se deploya por push y el SQL lo corre otra persona después, así
  * que entre un momento y el otro la base todavía no tiene la columna `concepto`
- * (42703). En ese hueco se guarda la factura igual, sin el concepto: nunca se
- * pierde una carga por una migración que falta.
+ * (42703 / PGRST204). En ese hueco se guarda la factura igual, sin el concepto:
+ * nunca se pierde una carga por una migración que falta.
  */
 async function insertarFacturas(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -737,7 +751,7 @@ async function insertarFacturas(
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("mantenimiento_realizado_facturas").insert(filas)
   if (!error) return { error: null }
-  if (error.code !== "42703") return { error: error.message }
+  if (!faltaColumnaConcepto(error)) return { error: error.message }
   const sinConcepto = filas.map((f) => {
     const fila = { ...f } as Partial<typeof f>
     delete fila.concepto
