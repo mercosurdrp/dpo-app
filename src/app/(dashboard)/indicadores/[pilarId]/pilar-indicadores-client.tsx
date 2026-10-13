@@ -288,9 +288,9 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
                     Plan Territorial (5.1)
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    VLC/HL por ciudad · escenarios base/objetivo/ensueño ·
-                    simulador de relocalización del CD · planes de acción
-                    comercial+logística · revisión mensual
+                    Reestructuración de rutas de visita y de entrega por ciudad
+                    · VLC/HL antes/después · escenarios base/objetivo/ensueño ·
+                    planes conjuntos comercial+logística · revisión mensual
                   </p>
                 </div>
               </div>

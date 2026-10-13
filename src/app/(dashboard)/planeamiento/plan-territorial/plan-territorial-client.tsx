@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   Plus,
   CalendarCheck,
-  ChevronRight,
   Pencil,
 } from "lucide-react"
 import {
@@ -26,7 +25,7 @@ import {
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -66,12 +65,11 @@ import { RedisenoRutasSection } from "./rediseno-rutas"
 const PILAR_PLANEAMIENTO_COLOR = "#EC4899"
 
 
+/** Alcance del cambio de rutas: qué rutero tocó el plan. */
 const PALANCA_LABEL: Record<PalancaPlan, string> = {
-  frecuencia: "Frecuencia de visita",
-  drop_size: "Drop size",
-  cartera: "Revisión de cartera",
-  relocalizacion: "Relocalización del CD",
-  otro: "Otra",
+  ambas: "Rutas de entrega + visita",
+  entrega: "Rutas de entrega",
+  visita: "Rutas de visita (promotores)",
 }
 
 const ESTADO_LABEL: Record<string, string> = {
@@ -88,6 +86,22 @@ interface AportePlan {
   hl: number
   /** Cuánto baja el $/HL de TODA la red si esta ciudad llega a su meta. */
   aporte_red: number
+}
+
+/**
+ * Meses (1-12) en que se implementó alguna etapa de rutas de estos planes, sin
+ * repetir. Mira las etapas; si un plan no tiene ninguna documentada, usa su
+ * fecha de implementación general.
+ */
+function mesesImplementacion(planes: PlanTerritorial[]): number[] {
+  const meses = new Set<number>()
+  for (const p of planes) {
+    const fechas = p.etapas.length
+      ? p.etapas.map((e) => e.fecha_implementacion)
+      : [p.fecha_implementacion]
+    for (const f of fechas) if (f) meses.add(Number(f.slice(5, 7)))
+  }
+  return [...meses].sort((a, b) => a - b)
 }
 
 /**
@@ -157,6 +171,69 @@ function objetivoDerivado(
   return { vlc, aportes }
 }
 
+export interface AporteEnsueno {
+  ciudad: string
+  base: number
+  ensueno: number
+  hl: number
+  /** true si la ciudad ya tiene plan de rutas (su meta es la del plan). */
+  con_plan: boolean
+}
+
+/**
+ * Escenario de ensueño DERIVADO: toda la red con rutas reestructuradas. Las
+ * ciudades con plan llegan a su meta; a las demás se les aplica la misma
+ * reducción porcentual de $/HL que se fijó como meta en las ciudades con plan
+ * (ponderada por volumen). Es una extrapolación para dimensionar cuánto queda
+ * por capturar, no un plan: reemplaza al viejo "CD en San Nicolás", que no era
+ * un plan territorial.
+ */
+function ensuenoDerivado(
+  territorio: Territorio | null,
+  planes: PlanTerritorial[],
+): { vlc: number | null; pct: number | null; aportes: AporteEnsueno[] } {
+  if (!territorio || !territorio.total.hl) return { vlc: null, pct: null, aportes: [] }
+
+  const metaPorCiudad = new Map<string, number>()
+  for (const p of planes) {
+    if (p.meta == null) continue
+    const actual = metaPorCiudad.get(p.ciudad)
+    if (actual == null || p.meta < actual) metaPorCiudad.set(p.ciudad, p.meta)
+  }
+
+  // Reducción porcentual comprometida en las ciudades con plan, ponderada por HL.
+  let hlPlan = 0
+  let costoPlan = 0
+  let costoMeta = 0
+  for (const [ciudad, meta] of metaPorCiudad) {
+    const c = territorio.ciudades.find((x) => x.ciudad === ciudad)
+    if (!c || !c.hl) continue
+    hlPlan += c.hl
+    costoPlan += c.costo_total
+    costoMeta += Math.min(meta, c.costo_x_hl) * c.hl
+  }
+  if (!hlPlan || !costoPlan) return { vlc: null, pct: null, aportes: [] }
+  const pct = (costoPlan - costoMeta) / costoPlan
+
+  let costoTotal = 0
+  const aportes: AporteEnsueno[] = []
+  for (const c of territorio.ciudades) {
+    const meta = metaPorCiudad.get(c.ciudad)
+    const ens =
+      meta != null ? Math.min(meta, c.costo_x_hl) : c.costo_x_hl * (1 - pct)
+    costoTotal += ens * c.hl
+    aportes.push({
+      ciudad: c.ciudad,
+      base: c.costo_x_hl,
+      ensueno: ens,
+      hl: c.hl,
+      con_plan: meta != null,
+    })
+  }
+  aportes.sort((a, b) => b.hl - a.hl)
+  return { vlc: costoTotal / territorio.total.hl, pct, aportes }
+}
+
 interface Props {
   anio: number
   rol: string
@@ -168,6 +245,14 @@ interface Props {
   ruteros: Record<string, RuteroVigente | null>
   revisiones: RevisionTerritorial[]
   perfiles: Array<{ id: string; nombre: string }>
+  /** Archivos de evidencia del 5.1 (presentaciones de rutas) para linkear desde cada etapa. */
+  archivos: ArchivoEvidencia[]
+}
+
+export interface ArchivoEvidencia {
+  id: string
+  titulo: string
+  file_name: string
 }
 
 export function PlanTerritorialClient({
@@ -180,6 +265,7 @@ export function PlanTerritorialClient({
   ruteros,
   revisiones,
   perfiles,
+  archivos,
 }: Props) {
   const esEditor = ["admin", "supervisor", "admin_rrhh"].includes(rol)
 
@@ -194,6 +280,11 @@ export function PlanTerritorialClient({
   // cargó un número a mano en el escenario objetivo, ese manda.
   const obj = objetivoDerivado(territorio, planes)
   const vlcObjetivo = objetivo?.vlc_hl ?? obj.vlc
+
+  // El ensueño también se deriva (toda la red con rutas reestructuradas); un
+  // número cargado a mano en el escenario manda, igual que en el objetivo.
+  const ens = ensuenoDerivado(territorio, planes)
+  const vlcDream = dream?.vlc_hl ?? ens.vlc
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -221,8 +312,9 @@ export function PlanTerritorialClient({
             Plan Territorial (5.1)
           </h1>
           <p className="text-sm text-muted-foreground">
-            Reducir el VLC/HL reorganizando el territorio: frecuencia, drop size y
-            localización del centro de distribución.
+            Reestructuración de rutas por ciudad para bajar el VLC/HL: las de
+            visita de los promotores y las de entrega, juntas, porque el día de
+            visita define el día de pedido y ése el de reparto.
           </p>
         </div>
       </div>
@@ -274,12 +366,12 @@ export function PlanTerritorialClient({
             <EscenarioCard
               icono={<Sparkles className="h-5 w-5" />}
               titulo="De ensueño"
-              subtitulo={dream?.nombre ?? "Escenario aspiracional"}
-              valor={dream?.vlc_hl ?? null}
+              subtitulo={dream?.nombre ?? "Toda la red con rutas reestructuradas"}
+              valor={vlcDream}
               detalle={
-                vlcBase && dream?.vlc_hl
-                  ? `${num((100 * (dream.vlc_hl - vlcBase)) / vlcBase, 1)}% vs base`
-                  : "Corré la simulación para calcularlo"
+                vlcBase && vlcDream != null
+                  ? `${num((100 * (vlcDream - vlcBase)) / vlcBase, 1)}% vs base`
+                  : "Cargá planes con meta para extrapolarlo"
               }
               color={PILAR_PLANEAMIENTO_COLOR}
             />
@@ -314,7 +406,7 @@ export function PlanTerritorialClient({
             territorio={territorio}
             planes={planes}
             objetivo={vlcObjetivo}
-            dream={dream?.vlc_hl ?? null}
+            dream={vlcDream}
           />
 
           <PuenteObjetivo
@@ -324,7 +416,14 @@ export function PlanTerritorialClient({
             totalHl={territorio?.total.hl ?? 0}
           />
 
-          {dream && <EscenarioDreamCard dream={dream} />}
+          <EscenarioEnsuenoCard
+            nombre={dream?.nombre ?? "Toda la red con rutas reestructuradas"}
+            supuestos={dream?.supuestos ?? null}
+            manual={dream?.vlc_hl ?? null}
+            vlc={vlcDream}
+            pct={ens.pct}
+            aportes={ens.aportes}
+          />
         </TabsContent>
 
         {/* ---------------- Diagnóstico por ciudad ---------------- */}
@@ -434,6 +533,7 @@ export function PlanTerritorialClient({
               ciudades={(territorio?.ciudades ?? []).map((c) => c.ciudad)}
               perfiles={perfiles}
               territorio={territorio}
+              archivos={archivos}
             />
           ))}
         </TabsContent>
@@ -532,14 +632,11 @@ function SerieCiudad({
     costo: Math.round(m.costo_x_hl),
   }))
 
-  // Si hay un plan implementado en esta ciudad, marcamos el mes: es lo que
+  // Cada etapa de rutas implementada en esta ciudad marca su mes: es lo que
   // permite decir "acá tocamos" y leer el antes/después.
-  const marcas = planes
-    .filter((p) => p.ciudad === ciudad.ciudad && p.fecha_implementacion)
-    .map((p) => ({
-      mes: MESES[Number(p.fecha_implementacion!.slice(5, 7))],
-      titulo: p.titulo,
-    }))
+  const marcas = mesesImplementacion(
+    planes.filter((p) => p.ciudad === ciudad.ciudad),
+  ).map((m) => ({ mes: MESES[m] }))
 
   if (datos.length < 2) return null
 
@@ -584,73 +681,92 @@ function SerieCiudad({
 }
 
 /**
- * Escenario de ensueño: el CD en San Nicolás. Muestra los supuestos, la matriz
- * de km desde San Nicolás (solo lectura) y el ahorro por "costo por llegar".
- *
- * Probar OTRAS ubicaciones (km editables) no va acá: para eso está el simulador
- * de Costo por PDV, al que se linkea — no se duplica el motor.
+ * Escenario de ensueño: toda la red con rutas reestructuradas. Ciudad por
+ * ciudad, cuánto baja el $/HL si las que ya tienen plan llegan a su meta y las
+ * demás logran la misma reducción porcentual. Reemplaza al viejo "CD en San
+ * Nicolás": mudar el depósito no es un plan territorial.
  */
-function EscenarioDreamCard({ dream }: { dream: Escenario }) {
-  const km = dream.km_ciudad ?? {}
-  const ciudades = Object.keys(km).sort((a, b) => (km[b] ?? 0) - (km[a] ?? 0))
-
+function EscenarioEnsuenoCard({
+  nombre,
+  supuestos,
+  manual,
+  vlc,
+  pct,
+  aportes,
+}: {
+  nombre: string
+  supuestos: string | null
+  /** VLC/HL fijado a mano en el escenario (manda sobre el derivado). */
+  manual: number | null
+  vlc: number | null
+  pct: number | null
+  aportes: AporteEnsueno[]
+}) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">
-          Escenario de ensueño — {dream.nombre}
-        </CardTitle>
+        <CardTitle className="text-base">Escenario de ensueño — {nombre}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {dream.supuestos && (
+        {supuestos && (
           <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-            {dream.supuestos}
+            {supuestos}
           </p>
         )}
 
-        <div>
-          <p className="mb-2 text-xs font-semibold text-muted-foreground">
-            Km de ruta desde San Nicolás
+        {manual != null && (
+          <p className="text-sm text-amber-700">
+            El VLC/HL de este escenario está fijado a mano en {pesos(manual)}; la
+            tabla de abajo muestra la extrapolación automática.
           </p>
-          <div className="flex flex-wrap gap-4">
-            {ciudades.map((c) => (
-              <div
-                key={c}
-                className="rounded-lg border border-slate-200 px-3 py-2"
-              >
-                <p className="text-xs text-muted-foreground">{c}</p>
-                <p className="font-semibold">{num(km[c], 0)} km</p>
-              </div>
-            ))}
+        )}
+
+        {!aportes.length || pct == null ? (
+          <p className="text-sm text-muted-foreground">
+            Cargá al menos un plan de rutas con meta de $/HL para extrapolar el
+            escenario al resto de la red.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Ciudad</TableHead>
+                  <TableHead className="text-right">HL</TableHead>
+                  <TableHead className="text-right">$/HL hoy</TableHead>
+                  <TableHead className="text-right">$/HL ensueño</TableHead>
+                  <TableHead>Cómo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {aportes.map((a) => (
+                  <TableRow key={a.ciudad}>
+                    <TableCell className="font-medium">{a.ciudad}</TableCell>
+                    <TableCell className="text-right">{num(a.hl, 0)}</TableCell>
+                    <TableCell className="text-right">{pesos(a.base)}</TableCell>
+                    <TableCell className="text-right font-semibold text-emerald-700">
+                      {pesos(a.ensueno)}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {a.con_plan
+                        ? "Meta del plan de rutas"
+                        : `Misma reducción que los planes (−${num(100 * pct, 1)}%)`}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                <TableRow className="border-t-2 font-semibold">
+                  <TableCell>Red</TableCell>
+                  <TableCell className="text-right">
+                    {num(aportes.reduce((s, a) => s + a.hl, 0), 0)}
+                  </TableCell>
+                  <TableCell />
+                  <TableCell className="text-right">{pesos(vlc)}</TableCell>
+                  <TableCell />
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
-        </div>
-
-        <Card className="border-slate-200 bg-slate-50">
-          <CardContent className="space-y-2 pt-6 text-sm text-slate-700">
-            <p>
-              <strong>Cómo se calcula el ahorro.</strong> Se mide sobre el{" "}
-              <strong>costo por llegar</strong> (el line-haul: km de ida y vuelta
-              a cada ciudad × viajes × $/km), que es el único componente que se
-              mueve al cambiar de dónde sale el camión. Almacén y reparto quedan
-              igual. Es la misma apertura que muestra el pop-up de costo
-              logístico en Costo por PDV.
-            </p>
-            <p>
-              <strong>Ene–jun 2026:</strong> el costo de llegar baja{" "}
-              <strong>$60.733.313</strong> (entre 10,4% y 14,0% según el mes),
-              sobre un costo logístico de $863.552.156 y 48.238 HL ⇒ VLC/HL de{" "}
-              <strong>17.902 a 16.643</strong>, un <strong>7,03%</strong> menos.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Link
-          href="/planeamiento/costo-por-pdv"
-          className={buttonVariants({ variant: "secondary" })}
-        >
-          Ver el desglose y simular en Costo por PDV{" "}
-          <ChevronRight className="h-4 w-4" />
-        </Link>
+        )}
       </CardContent>
     </Card>
   )
@@ -683,12 +799,8 @@ function SerieRedTotal({
 
   // Sólo marcamos meses de implementación que existan en la serie cargada, así
   // no queda una línea colgada en un mes sin datos.
-  const marcas = planes
-    .filter((p) => p.fecha_implementacion)
-    .map((p) => ({
-      mes: MESES[Number(p.fecha_implementacion!.slice(5, 7))],
-      titulo: p.titulo,
-    }))
+  const marcas = mesesImplementacion(planes)
+    .map((m) => ({ mes: MESES[m] }))
     .filter((m) => datos.some((d) => d.mes === m.mes))
 
   return (
@@ -851,6 +963,7 @@ function PlanCard({
   ciudades,
   perfiles,
   territorio,
+  archivos,
 }: {
   plan: PlanTerritorial
   ciudad: CiudadResumen | undefined
@@ -859,6 +972,7 @@ function PlanCard({
   ciudades: string[]
   perfiles: Array<{ id: string; nombre: string }>
   territorio: Territorio | null
+  archivos: ArchivoEvidencia[]
 }) {
   const actual = ciudad?.costo_x_hl ?? null
   const delta =
@@ -940,6 +1054,7 @@ function PlanCard({
           ciudad={ciudad}
           rutero={rutero}
           esEditor={esEditor}
+          archivos={archivos}
         />
 
         {plan.avances.length > 0 && (
@@ -1028,7 +1143,7 @@ function PlanDialog({
   const [pendiente, startTransition] = useTransition()
 
   const [ciudad, setCiudad] = useState(plan?.ciudad ?? "")
-  const [palanca, setPalanca] = useState<PalancaPlan>(plan?.palanca ?? "otro")
+  const [palanca, setPalanca] = useState<PalancaPlan>(plan?.palanca ?? "ambas")
   const [titulo, setTitulo] = useState(plan?.titulo ?? "")
   const [descripcion, setDescripcion] = useState(plan?.descripcion ?? "")
   const [lineaBase, setLineaBase] = useState(
@@ -1100,7 +1215,7 @@ function PlanDialog({
               </select>
             </div>
             <div>
-              <Label htmlFor="palanca">Palanca</Label>
+              <Label htmlFor="palanca">Alcance del cambio de rutas</Label>
               <select
                 id="palanca"
                 name="palanca"

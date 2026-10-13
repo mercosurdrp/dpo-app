@@ -9,15 +9,17 @@ import {
   listarRevisiones,
 } from "@/actions/plan-territorial"
 import { getRuteroVigente, type RuteroVigente } from "@/actions/territorial-rutero"
+import { getArchivos } from "@/actions/dpo-evidencia"
 import { PlanTerritorialClient } from "./plan-territorial-client"
 
 export const dynamic = "force-dynamic"
 
 // Plan Territorial — DPO Pilar Planeamiento, punto 5.1.
 //
-// Misiones tiene su propia versión (motor de re-zonificación por k-means) en el
-// repo dpo-distribuciones; esta es la de Pampeana y ataca otras palancas:
-// frecuencia, drop size y relocalización del CD.
+// Es la reestructuración de rutas de una ciudad: las de visita de los
+// promotores y las de entrega, juntas (el día de visita define el día de
+// pedido y ése el de reparto). Misiones tiene su propia versión (motor de
+// re-zonificación por k-means) en el repo dpo-distribuciones.
 export default async function PlanTerritorialPage() {
   if (IS_MISIONES) notFound()
   const profile = await requireAuth()
@@ -25,7 +27,7 @@ export default async function PlanTerritorialPage() {
   const anio = new Date().getFullYear()
   const supabase = await createClient()
 
-  const [territorio, escenarios, planes, revisiones, perfilesRes] =
+  const [territorio, escenarios, planes, revisiones, perfilesRes, archivos51] =
     await Promise.all([
       getTerritorio(anio),
       getEscenarios(anio),
@@ -35,6 +37,13 @@ export default async function PlanTerritorialPage() {
         .from("profiles")
         .select("id, nombre")
         .order("nombre", { ascending: true }),
+      // Presentaciones del 5.1 (Planeamiento) para linkear desde cada etapa:
+      // la evidencia del análisis de rutas vive en dpo_archivos, no acá.
+      getArchivos({
+        pilar_codigo: "planeamiento",
+        punto_codigo: "5.1",
+        archivado: false,
+      }),
     ])
 
   // Rutero vigente de promotores (base comercial) para cada ciudad con plan:
@@ -61,6 +70,13 @@ export default async function PlanTerritorialPage() {
       revisiones={"data" in revisiones ? revisiones.data : []}
       perfiles={
         (perfilesRes.data ?? []) as Array<{ id: string; nombre: string }>
+      }
+      archivos={
+        "data" in archivos51
+          ? archivos51.data
+              .filter((a) => !a.deleted_at)
+              .map((a) => ({ id: a.id, titulo: a.titulo, file_name: a.file_name }))
+          : []
       }
     />
   )

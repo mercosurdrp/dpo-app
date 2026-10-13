@@ -269,33 +269,20 @@ export async function guardarEscenario(input: {
 }
 
 // ==================================================================
-// Simulación de relocalización del CD
-//
-// NO vive acá: el escenario de ensueño es siempre el CD en San Nicolás y se
-// muestra como supuestos + ahorro. Probar OTRAS ubicaciones (km editables) es
-// el simulador de Costo por PDV, al que la página linkea — no se duplica.
-// ==================================================================
-
-// ==================================================================
 // Planes territoriales (R5.1.2 y R5.1.4)
+//
+// Un plan territorial ES una reestructuración de rutas de una ciudad: las de
+// visita de los promotores y las de entrega, juntas, porque el día de visita
+// define el día de pedido y ése el de reparto (13/10/2026). Mudar el CD o
+// subir el drop size no son planes territoriales y ya no viven acá.
 // ==================================================================
 
-export type PalancaPlan =
-  | "frecuencia"
-  | "drop_size"
-  | "cartera"
-  | "relocalizacion"
-  | "otro"
+/** Alcance del cambio de rutas: qué rutero se tocó. */
+export type PalancaPlan = "entrega" | "visita" | "ambas"
 export type EstadoPlan = "pendiente" | "en_progreso" | "completado"
 export type PrioridadPlan = "alta" | "media" | "baja"
 
-const PALANCAS: PalancaPlan[] = [
-  "frecuencia",
-  "drop_size",
-  "cartera",
-  "relocalizacion",
-  "otro",
-]
+const PALANCAS: PalancaPlan[] = ["entrega", "visita", "ambas"]
 const ESTADOS: EstadoPlan[] = ["pendiente", "en_progreso", "completado"]
 const PRIORIDADES: PrioridadPlan[] = ["alta", "media", "baja"]
 
@@ -322,8 +309,11 @@ export interface PlanTerritorial {
   avances_count: number
   /** Los avances cargados, más nuevo primero. Es la bitácora del plan. */
   avances: AvanceTerritorial[]
-  /** Antes/después del rutero (promotores + reparto). null si no se documentó. */
-  rediseno: RedisenoRutas | null
+  /**
+   * Etapas de reestructuración de rutas (antes/después de promotores + reparto),
+   * en orden. Vacío si todavía no se documentó ninguna.
+   */
+  etapas: RedisenoRutas[]
   /** $/HL vigente de la ciudad. Se completa en la página con el territorio. */
   costo_actual?: number | null
 }
@@ -378,15 +368,22 @@ export async function listarPlanesTerritoriales(): Promise<
       }
     }
 
-    const redisenoMap = new Map<string, RedisenoRutas>()
+    // Etapas de rediseño, en orden, con el archivo de evidencia (la
+    // presentación del 5.1) ya resuelto para que la tarjeta lo linkee.
+    const etapasMap = new Map<string, RedisenoRutas[]>()
     if (ids.length) {
       const { data: reds } = await supabase
         .from("territorial_rediseno_rutas")
-        .select("*")
+        .select(
+          "*, evidencia:dpo_archivos!territorial_rediseno_rutas_evidencia_archivo_id_fkey(id, titulo, file_name)",
+        )
         .in("plan_id", ids)
+        .order("etapa", { ascending: true })
       for (const row of (reds ?? []) as unknown as Array<Record<string, unknown>>) {
         const red = parseRediseno(row)
-        redisenoMap.set(red.plan_id, red)
+        const arr = etapasMap.get(red.plan_id) ?? []
+        arr.push(red)
+        etapasMap.set(red.plan_id, arr)
       }
     }
 
@@ -399,7 +396,9 @@ export async function listarPlanesTerritoriales(): Promise<
           ciudad: r.ciudad,
           titulo: r.titulo,
           descripcion: r.descripcion ?? null,
-          palanca: (r.palanca as PalancaPlan) ?? "otro",
+          palanca: PALANCAS.includes(r.palanca as PalancaPlan)
+            ? (r.palanca as PalancaPlan)
+            : "ambas",
           linea_base: r.linea_base != null ? Number(r.linea_base) : null,
           linea_base_desde: r.linea_base_desde ?? null,
           linea_base_hasta: r.linea_base_hasta ?? null,
@@ -416,7 +415,7 @@ export async function listarPlanesTerritoriales(): Promise<
           updated_at: r.updated_at,
           avances_count: avancesMap.get(String(r.id))?.length ?? 0,
           avances: avancesMap.get(String(r.id)) ?? [],
-          rediseno: redisenoMap.get(String(r.id)) ?? null,
+          etapas: etapasMap.get(String(r.id)) ?? [],
         }
       }),
     }
@@ -441,10 +440,10 @@ export async function crearPlanTerritorial(
     if (!ciudad) return { error: "La ciudad es obligatoria" }
     if (!titulo) return { error: "El título es obligatorio" }
 
-    const palancaRaw = String(formData.get("palanca") ?? "otro").trim()
+    const palancaRaw = String(formData.get("palanca") ?? "ambas").trim()
     const palanca = PALANCAS.includes(palancaRaw as PalancaPlan)
       ? (palancaRaw as PalancaPlan)
-      : "otro"
+      : "ambas"
     const prioridadRaw = String(formData.get("prioridad") ?? "media").trim()
     const prioridad = PRIORIDADES.includes(prioridadRaw as PrioridadPlan)
       ? (prioridadRaw as PrioridadPlan)
@@ -856,13 +855,27 @@ const MOMENTO_NUM = [
 ] as const
 const MOMENTO_TXT = ["dias_visita", "mix_frecuencia", "dias_entrega"] as const
 
+/**
+ * Una ETAPA de reestructuración de rutas de un plan. Colón tiene dos: la de
+ * agosto (3 días de entrega) y la REV.06 de octubre (pueblos el miércoles).
+ * Cada etapa tiene su fecha, su antes/después y la presentación que la
+ * respalda (archivo de dpo_archivos, Planeamiento 5.1).
+ */
 export interface RedisenoRutas {
+  id: string
   plan_id: string
+  etapa: number
+  titulo: string | null
+  /** Desde cuándo rige. null = propuesta, todavía no implementada. */
+  fecha_implementacion: string | null
   antes: RuteroMomento
   despues: RuteroMomento
   ventanas_horarias: string | null
   justificacion: string | null
   resultado: string | null
+  evidencia_archivo_id: string | null
+  evidencia_titulo: string | null
+  evidencia_file_name: string | null
   updated_at: string
 }
 
@@ -881,50 +894,74 @@ function parseMomento(raw: unknown): RuteroMomento {
 }
 
 function parseRediseno(row: Record<string, unknown>): RedisenoRutas {
+  const ev = (row.evidencia ?? null) as {
+    id?: string
+    titulo?: string
+    file_name?: string
+  } | null
   return {
+    id: String(row.id),
     plan_id: String(row.plan_id),
+    etapa: Number(row.etapa ?? 1),
+    titulo: (row.titulo as string) ?? null,
+    fecha_implementacion: (row.fecha_implementacion as string) ?? null,
     antes: parseMomento(row.antes),
     despues: parseMomento(row.despues),
     ventanas_horarias: (row.ventanas_horarias as string) ?? null,
     justificacion: (row.justificacion as string) ?? null,
     resultado: (row.resultado as string) ?? null,
+    evidencia_archivo_id: (row.evidencia_archivo_id as string) ?? null,
+    evidencia_titulo: ev?.titulo ?? null,
+    evidencia_file_name: ev?.file_name ?? null,
     updated_at: String(row.updated_at),
   }
 }
 
-/**
- * Guarda (o reemplaza) el antes/después de rutas de un plan. Los campos vienen
- * como `antes.promotores`, `despues.dias_entrega`, etc. Pueden cargarlo los
- * editores o cualquiera de los dos responsables del plan.
- */
-export async function guardarRedisenoRutas(
+/** Puede tocar el rediseño un editor o cualquiera de los dos responsables. */
+async function puedeEditarPlan(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  profile: { id: string; role: string },
   planId: string,
+): Promise<string | null> {
+  const { data: plan, error: errP } = await supabase
+    .from("territorial_planes")
+    .select("created_by, responsable_comercial_id, responsable_logistica_id")
+    .eq("id", planId)
+    .single()
+  if (errP || !plan) return errP?.message ?? "Plan no encontrado"
+  const p = plan as {
+    created_by: string | null
+    responsable_comercial_id: string | null
+    responsable_logistica_id: string | null
+  }
+  if (
+    !esEditor(profile.role) &&
+    p.created_by !== profile.id &&
+    p.responsable_comercial_id !== profile.id &&
+    p.responsable_logistica_id !== profile.id
+  ) {
+    return "Solo los responsables o un editor pueden cargar el rediseño"
+  }
+  return null
+}
+
+/**
+ * Guarda una etapa de reestructuración de rutas de un plan: crea una nueva si
+ * `etapaId` es null, o reemplaza la existente. Los campos del antes/después
+ * vienen como `antes.promotores`, `despues.dias_entrega`, etc.
+ */
+export async function guardarEtapaRutas(
+  planId: string,
+  etapaId: string | null,
   formData: FormData,
-): Promise<Result<{ ok: true }>> {
+): Promise<Result<{ id: string }>> {
   try {
     const profile = await requireAuth()
     if (!planId) return { error: "ID de plan inválido" }
     const supabase = await createClient()
 
-    const { data: plan, error: errP } = await supabase
-      .from("territorial_planes")
-      .select("created_by, responsable_comercial_id, responsable_logistica_id")
-      .eq("id", planId)
-      .single()
-    if (errP || !plan) return { error: errP?.message ?? "Plan no encontrado" }
-    const p = plan as {
-      created_by: string | null
-      responsable_comercial_id: string | null
-      responsable_logistica_id: string | null
-    }
-    if (
-      !esEditor(profile.role) &&
-      p.created_by !== profile.id &&
-      p.responsable_comercial_id !== profile.id &&
-      p.responsable_logistica_id !== profile.id
-    ) {
-      return { error: "Solo los responsables o un editor pueden cargar el rediseño" }
-    }
+    const denegado = await puedeEditarPlan(supabase, profile, planId)
+    if (denegado) return { error: denegado }
 
     const leer = (momento: "antes" | "despues"): RuteroMomento => {
       const o: Record<string, unknown> = {}
@@ -933,25 +970,82 @@ export async function guardarRedisenoRutas(
       return parseMomento(o)
     }
 
-    const { error } = await supabase.from("territorial_rediseno_rutas").upsert(
-      {
-        plan_id: planId,
-        antes: leer("antes"),
-        despues: leer("despues"),
-        ventanas_horarias: strOrNull(formData.get("ventanas_horarias")),
-        justificacion: strOrNull(formData.get("justificacion")),
-        resultado: strOrNull(formData.get("resultado")),
-        updated_at: new Date().toISOString(),
-        updated_by: profile.id,
-      },
-      { onConflict: "plan_id" },
-    )
+    const fecha = strOrNull(formData.get("fecha_implementacion"))
+    if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return { error: "Fecha de implementación inválida" }
+    }
+
+    const valores = {
+      titulo: strOrNull(formData.get("titulo")),
+      fecha_implementacion: fecha,
+      antes: leer("antes"),
+      despues: leer("despues"),
+      ventanas_horarias: strOrNull(formData.get("ventanas_horarias")),
+      justificacion: strOrNull(formData.get("justificacion")),
+      resultado: strOrNull(formData.get("resultado")),
+      evidencia_archivo_id: strOrNull(formData.get("evidencia_archivo_id")),
+      updated_at: new Date().toISOString(),
+      updated_by: profile.id,
+    }
+
+    if (etapaId) {
+      const { error } = await supabase
+        .from("territorial_rediseno_rutas")
+        .update(valores)
+        .eq("id", etapaId)
+        .eq("plan_id", planId)
+      if (error) return { error: error.message }
+      revalidatePath(PATH)
+      return { data: { id: etapaId } }
+    }
+
+    // Etapa nueva: la siguiente a la última del plan. Dos usuarios creando a
+    // la vez chocan contra el índice único (plan_id, etapa) y uno reintenta.
+    const { data: ult } = await supabase
+      .from("territorial_rediseno_rutas")
+      .select("etapa")
+      .eq("plan_id", planId)
+      .order("etapa", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const etapa = Number((ult as { etapa?: number } | null)?.etapa ?? 0) + 1
+
+    const { data, error } = await supabase
+      .from("territorial_rediseno_rutas")
+      .insert({ plan_id: planId, etapa, ...valores })
+      .select("id")
+      .single()
+    if (error || !data) return { error: error?.message ?? "No se pudo crear la etapa" }
+    revalidatePath(PATH)
+    return { data: { id: (data as { id: string }).id } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error guardando el rediseño",
+    }
+  }
+}
+
+export async function eliminarEtapaRutas(
+  planId: string,
+  etapaId: string,
+): Promise<Result<{ ok: true }>> {
+  try {
+    const profile = await requireAuth()
+    if (!planId || !etapaId) return { error: "ID inválido" }
+    const supabase = await createClient()
+    const denegado = await puedeEditarPlan(supabase, profile, planId)
+    if (denegado) return { error: denegado }
+    const { error } = await supabase
+      .from("territorial_rediseno_rutas")
+      .delete()
+      .eq("id", etapaId)
+      .eq("plan_id", planId)
     if (error) return { error: error.message }
     revalidatePath(PATH)
     return { data: { ok: true } }
   } catch (err) {
     return {
-      error: err instanceof Error ? err.message : "Error guardando el rediseño",
+      error: err instanceof Error ? err.message : "Error eliminando la etapa",
     }
   }
 }
