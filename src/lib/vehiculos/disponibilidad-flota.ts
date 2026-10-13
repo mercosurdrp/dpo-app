@@ -305,3 +305,71 @@ export function calcularDisponibilidadMes(
 
   return { diasDelMes, diasPeriodo, diasLaborales, filas, flotaDisp, flotaUtil, camionesConParada }
 }
+
+/**
+ * Lo mismo pero para VARIOS meses (el año completo), para poder mirar el
+ * acumulado y no mes por mes.
+ *
+ * No recalcula nada: corre `calcularDisponibilidadMes` mes por mes y suma los
+ * días de cada unidad. Así el acumulado del año es por construcción la suma de
+ * lo que muestra cada mes, y las reglas del cálculo —el ruteo gana sobre
+ * cualquier parada, el mes en curso se corta en el día de hoy, el día no
+ * laboral no cuenta para la utilización— quedan en un solo lugar.
+ *
+ * 🚨 `porDia` viene VACÍO: la clave del mapa es el día del mes (1..31) y en un
+ * período de varios meses ese número se repite. El calendario día a día sólo
+ * tiene sentido sobre un mes, así que la pantalla fuerza la vista "Por mes"
+ * cuando el período elegido es un año.
+ */
+export function calcularDisponibilidadPeriodo(
+  meses: string[],
+  flota: UnidadFlota[],
+  mantenimientos: MantenimientoRealizado[],
+  indisponibilidades: FlotaIndisponibilidad[],
+  ruteoSet: Set<string>,
+  hoy: string
+): CalcDisponibilidadMes {
+  const porMes = meses.map((ym) =>
+    calcularDisponibilidadMes(ym, flota, mantenimientos, indisponibilidades, ruteoSet, hoy)
+  )
+
+  const acum = new Map<string, FilaDisp>()
+  for (const m of porMes) {
+    for (const f of m.filas) {
+      const a = acum.get(f.dominio)
+      if (!a) {
+        acum.set(f.dominio, { ...f, porDia: new Map() })
+        continue
+      }
+      a.diasPeriodo += f.diasPeriodo
+      a.pmc += f.pmc; a.pmp += f.pmp; a.ind += f.ind
+      a.drt += f.drt; a.dsp += f.dsp; a.lib += f.lib
+      a.parado += f.parado
+      a.disponibles += f.disponibles
+    }
+  }
+  const filas = [...acum.values()].map((f) => ({
+    ...f,
+    pctDisp: f.diasPeriodo > 0 ? (f.disponibles / f.diasPeriodo) * 100 : null,
+    pctUtil: f.drt + f.dsp > 0 ? (f.drt / (f.drt + f.dsp)) * 100 : null,
+  }))
+
+  // Mismos criterios de agregación de flota que el cálculo mensual.
+  const conDisp = filas.filter((f) => f.pctDisp != null)
+  const flotaDisp = conDisp.length
+    ? conDisp.reduce((a, f) => a + (f.pctDisp ?? 0), 0) / conDisp.length
+    : null
+  const enServicio = filas.filter((f) => f.drt > 0)
+  const totBaseUtil = enServicio.reduce((a, f) => a + f.drt + f.dsp, 0)
+  const totDrt = enServicio.reduce((a, f) => a + f.drt, 0)
+
+  return {
+    diasDelMes: porMes.reduce((a, m) => a + m.diasDelMes, 0),
+    diasPeriodo: porMes.reduce((a, m) => a + m.diasPeriodo, 0),
+    diasLaborales: porMes.reduce((a, m) => a + m.diasLaborales, 0),
+    filas,
+    flotaDisp,
+    flotaUtil: totBaseUtil > 0 ? (totDrt / totBaseUtil) * 100 : null,
+    camionesConParada: filas.filter((f) => f.parado > 0).length,
+  }
+}
