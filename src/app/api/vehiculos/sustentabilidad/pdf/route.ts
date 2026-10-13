@@ -167,11 +167,26 @@ async function cargarAcciones(
     proveedor: string | null
     certificado_url: string | null
   }>) {
+    // 🚨 "SIN certificado cargado" vale para las cubiertas, donde el operador
+    // emite certificado y lo tenemos. El aceite y los filtros de un service no
+    // pasan por el depósito: los retiene y los dispone el taller que hizo el
+    // trabajo, y lo que corresponde pedirle es una constancia. Marcar esos
+    // registros como si les faltara un certificado que nunca van a tener leía
+    // como 13 incumplimientos en la hoja de evidencia, cuando son justamente lo
+    // contrario: el seguimiento de un residuo que antes no se registraba.
+    const retenidoPorTaller = !x.certificado_url && x.material !== "neumaticos"
+    const cantidad = x.cantidad != null ? `${x.cantidad} ${x.unidad ?? "un"} de ` : ""
     acciones.push({
       fecha: x.fecha,
-      que: "Disposición final con operador habilitado",
-      detalle: `${x.cantidad ?? "?"} ${x.unidad ?? "un"} de ${x.material}${x.descripcion ? ` (${x.descripcion})` : ""} — ${x.proveedor ?? "s/proveedor"}`,
-      respaldo: x.certificado_url ? "Certificado de disposición final" : "SIN certificado cargado",
+      que: retenidoPorTaller
+        ? "Residuo de mantenimiento dispuesto por el taller"
+        : "Disposición final con operador habilitado",
+      detalle: `${cantidad}${x.material}${x.descripcion ? ` (${x.descripcion})` : ""} — ${x.proveedor ?? "s/proveedor"}`,
+      respaldo: x.certificado_url
+        ? "Certificado de disposición final"
+        : retenidoPorTaller
+          ? "Constancia del taller a requerir"
+          : "SIN certificado cargado",
     })
   }
 
