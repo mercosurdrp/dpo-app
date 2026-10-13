@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth } from "@/lib/session"
 import type {
   ReporteSeguridadAdjunto,
@@ -166,6 +167,63 @@ export async function getReportes(
     return {
       error: err instanceof Error ? err.message : "Error cargando reportes",
     }
+  }
+}
+
+// Meta de días sin accidente del contador de la Etapa 1 (reuniones), copiada
+// de Misiones. Una sola, como el contador (que es global). Vive en `app_config`
+// bajo `seguridad_meta_dias`; si nunca se tocó, vale META_DIAS_DEFAULT.
+const CLAVE_META_DIAS = "seguridad_meta_dias"
+const META_DIAS_DEFAULT = 300
+
+export async function getSeguridadMetaDias(): Promise<Result<number | null>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("app_config")
+      .select("valor")
+      .eq("clave", CLAVE_META_DIAS)
+      .maybeSingle()
+    if (error) return { error: error.message }
+    const fila = data as { valor: string } | null
+    if (!fila) return { data: META_DIAS_DEFAULT }
+    // Vacío = la borraron a propósito: sin meta.
+    const meta = fila.valor === "" ? null : Number(fila.valor)
+    return { data: meta != null && Number.isFinite(meta) ? meta : null }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando la meta",
+    }
+  }
+}
+
+export async function setSeguridadMetaDias(
+  dias: number | null
+): Promise<Result<true>> {
+  try {
+    const profile = await requireAuth()
+    if (!["admin", "admin_rrhh", "supervisor"].includes(profile.role)) {
+      return { error: "Sin permisos para editar la meta" }
+    }
+    if (dias !== null && (!Number.isFinite(dias) || dias < 0)) {
+      return { error: "Meta inválida" }
+    }
+    // La RLS de `app_config` no deja escribir desde la sesión; el permiso ya
+    // se validó arriba.
+    const admin = createAdminClient()
+    const { error } = await admin.from("app_config").upsert(
+      {
+        clave: CLAVE_META_DIAS,
+        valor: dias === null ? "" : String(Math.round(dias)),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "clave" }
+    )
+    if (error) return { error: error.message }
+    return { data: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error guardando la meta" }
   }
 }
 

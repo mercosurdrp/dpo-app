@@ -17,7 +17,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { getReportes } from "@/actions/reportes-seguridad"
+import {
+  getReportes,
+  getSeguridadMetaDias,
+  setSeguridadMetaDias,
+} from "@/actions/reportes-seguridad"
+import { cn } from "@/lib/utils"
 import {
   PiramideSeguridadPanel,
   type PiramideItem,
@@ -89,8 +94,11 @@ export function EtapaSeguridad({
   currentProfileId,
   currentRole,
   areaFoco,
+  puedeEditar = false,
 }: {
   fechaReunion: string
+  /** Editores de la reunión: pueden cambiar la meta de días sin accidente. */
+  puedeEditar?: boolean
   /** Profile actual; si se pasa junto con `currentRole`, las cards abren el detalle del reporte. */
   currentProfileId?: string | null
   currentRole?: UserRole
@@ -125,6 +133,29 @@ export function EtapaSeguridad({
       setCargando(false)
     })
   }, [])
+
+  // Meta de días sin accidente (app_config, default 300), igual que Misiones.
+  const [metaDias, setMetaDias] = useState<number | null>(null)
+  const [metaInput, setMetaInput] = useState<string>("")
+  useEffect(() => {
+    getSeguridadMetaDias().then((r) => {
+      if ("data" in r) {
+        setMetaDias(r.data)
+        setMetaInput(r.data != null ? String(r.data) : "")
+      }
+    })
+  }, [])
+
+  function guardarMeta(nuevo: string) {
+    const trimmed = nuevo.trim()
+    const n = trimmed === "" ? null : Number(trimmed)
+    if (n !== null && (!Number.isFinite(n) || n < 0)) return
+    if (n === metaDias) return
+    setMetaDias(n) // optimista
+    setSeguridadMetaDias(n).then((r) => {
+      if ("error" in r) setErrorMsg(r.error)
+    })
+  }
 
   const aniosDisponibles = useMemo(() => {
     const set = new Set<number>([anioReunion])
@@ -176,6 +207,12 @@ export function EtapaSeguridad({
     return { diasSinAccidente: dias, ultimoAccidente: max }
   }, [reportes])
 
+  // Días que faltan para cumplir la meta = meta − días sin accidente.
+  const diasRestantes =
+    metaDias != null && diasSinAccidente != null
+      ? Math.max(0, metaDias - diasSinAccidente)
+      : null
+
   const fechaUltimoHabil = useMemo(
     () => ultimoDiaHabilAnterior(fechaReunion),
     [fechaReunion],
@@ -213,29 +250,72 @@ export function EtapaSeguridad({
           </CardTitle>
           {!cargando && (
             <div
-              className="flex items-center gap-3 rounded-lg border bg-white px-4 py-2 shadow-sm"
+              className="flex items-stretch divide-x divide-slate-200 rounded-lg border bg-white shadow-sm"
               style={{ borderLeft: "4px solid #16a34a" }}
             >
-              <ShieldCheck className="size-7 text-green-600" />
-              <div className="leading-tight">
-                {diasSinAccidente === null ? (
-                  <>
-                    <p className="text-lg font-bold text-slate-900">Sin accidentes</p>
-                    <p className="text-[11px] text-muted-foreground">registrados</p>
-                  </>
+              {/* Días sin accidente */}
+              <div className="flex items-center gap-3 px-4 py-2">
+                <ShieldCheck className="size-7 shrink-0 text-green-600" />
+                <div className="leading-tight">
+                  {diasSinAccidente === null ? (
+                    <>
+                      <p className="text-lg font-bold text-slate-900">Sin accidentes</p>
+                      <p className="text-[11px] text-muted-foreground">registrados</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-2xl font-bold text-slate-900">
+                        {diasSinAccidente}{" "}
+                        <span className="text-sm font-medium text-muted-foreground">
+                          {diasSinAccidente === 1 ? "día" : "días"}
+                        </span>
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        sin accidentes · último {formatFechaCorta(ultimoAccidente!)}
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+              {/* Meta a cumplir (editable) */}
+              <div className="flex flex-col items-center justify-center px-3 py-2">
+                <p className="text-[10px] font-medium uppercase text-muted-foreground">
+                  Meta
+                </p>
+                {puedeEditar ? (
+                  <input
+                    type="number"
+                    min={0}
+                    value={metaInput}
+                    onChange={(e) => setMetaInput(e.target.value)}
+                    onBlur={() => guardarMeta(metaInput)}
+                    placeholder="—"
+                    title="Meta de días sin accidente (editable)"
+                    className="w-20 rounded border border-slate-300 px-2 py-0.5 text-center text-lg font-bold leading-none text-slate-900"
+                  />
                 ) : (
-                  <>
-                    <p className="text-2xl font-bold text-slate-900">
-                      {diasSinAccidente}{" "}
-                      <span className="text-sm font-medium text-muted-foreground">
-                        {diasSinAccidente === 1 ? "día" : "días"}
-                      </span>
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      sin accidentes · último {formatFechaCorta(ultimoAccidente!)}
-                    </p>
-                  </>
+                  <p className="text-lg font-bold leading-none text-slate-900">
+                    {metaDias ?? "—"}
+                  </p>
                 )}
+                <p className="mt-0.5 text-[10px] text-muted-foreground">días</p>
+              </div>
+              {/* Días restantes para la meta */}
+              <div className="flex flex-col items-center justify-center px-3 py-2">
+                <p className="text-[10px] font-medium uppercase text-muted-foreground">
+                  Faltan
+                </p>
+                <p
+                  className={cn(
+                    "text-xl font-bold leading-none",
+                    diasRestantes === 0 ? "text-emerald-600" : "text-slate-900",
+                  )}
+                >
+                  {diasRestantes == null ? "—" : diasRestantes}
+                </p>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  {diasRestantes === 0 ? "¡meta!" : "días"}
+                </p>
               </div>
             </div>
           )}
