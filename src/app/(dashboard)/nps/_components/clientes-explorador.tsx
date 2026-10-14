@@ -34,6 +34,7 @@ import type { NpsPlan } from "@/actions/nps-planes"
 import {
   ESTADO_PLAN,
   PlanBadge,
+  volvioAPuntuarBajo,
   planesPorClienteFoco,
   type PlanMarcable,
 } from "@/components/plan-badge"
@@ -194,6 +195,12 @@ export function ClientesExplorador({
 
   function filaCliente(c: NpsClienteDP) {
     const planesCli = planesPorCliente.get(c.cod_cliente) ?? []
+    // Ya tiene plan pero su ÚLTIMA encuesta lo da detractor y es posterior
+    // al plan: volver a ofrecer el botón, no taparlo con el "Con plan".
+    const reincidente = volvioAPuntuarBajo(
+      planesCli,
+      c.categoria === "Detractor" ? c.fecha_enc : null,
+    )
     return (
       <div
         key={`${c.cod_cliente}`}
@@ -225,10 +232,11 @@ export function ClientesExplorador({
         <span className="col-span-3 min-w-0 truncate text-xs text-slate-700">
           {c.promotor ?? "—"}
         </span>
-        <span className="col-span-1 text-right">
-          {planesCli.length > 0 ? (
+        <span className="col-span-1 flex flex-wrap items-center justify-end gap-1">
+          {planesCli.length > 0 && (
             <PlanBadge planes={planesCli} onVerPlan={onVerPlan} />
-          ) : (
+          )}
+          {planesCli.length === 0 ? (
             <button
               type="button"
               onClick={(e) => {
@@ -241,7 +249,20 @@ export function ClientesExplorador({
               <Target className="h-3.5 w-3.5" />
               Plan
             </button>
-          )}
+          ) : reincidente ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCrearPlan(c)
+              }}
+              className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+              title={`Volvió a puntuar bajo el ${FMT_DIA.format(new Date(c.fecha_enc))}, después del último plan. Crear otro plan de acción.`}
+            >
+              <Target className="h-3.5 w-3.5" />
+              Otro plan
+            </button>
+          ) : null}
         </span>
       </div>
     )
@@ -527,6 +548,12 @@ export function ClientesExplorador({
               const planesCli =
                 planesPorCliente.get(clienteModal.cod_cliente) ?? []
               const yaTiene = planesCli.length > 0
+              const reincidente = volvioAPuntuarBajo(
+                planesCli,
+                clienteModal.categoria === "Detractor"
+                  ? clienteModal.fecha_enc
+                  : null,
+              )
               return (
                 <>
                   {yaTiene && (
@@ -538,6 +565,13 @@ export function ClientesExplorador({
                           ? "un plan de acción"
                           : `${planesCli.length} planes de acción`}
                       </p>
+                      {reincidente && (
+                        <p className="mt-1 font-medium text-red-700">
+                          Volvió a puntuar bajo el{" "}
+                          {FMT_DIA.format(new Date(clienteModal.fecha_enc))},
+                          después del último plan: corresponde crear otro.
+                        </p>
+                      )}
                       <ul className="mt-1 space-y-0.5 text-emerald-900">
                         {planesCli.map((p) => (
                           <li key={p.id}>

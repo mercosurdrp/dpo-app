@@ -12,6 +12,42 @@ export interface PlanMarcable {
   foco_cliente_id: number | null
 }
 
+/** Plan con fechas, para saber si un voto bajo es posterior a él. */
+export interface PlanConFechas extends PlanMarcable {
+  created_at: string
+  updated_at: string
+  cerrado_en: string | null
+}
+
+/**
+ * Fecha (YYYY-MM-DD) desde la que un voto bajo nuevo justifica otro plan:
+ * la creación del plan si sigue abierto, o su cierre si ya se completó. Con
+ * varios planes vale la más reciente.
+ */
+export function fechaReferenciaPlanes(planes: PlanConFechas[]): string | null {
+  let ref: string | null = null
+  for (const p of planes) {
+    const f = (
+      p.estado === "completado" ? (p.cerrado_en ?? p.updated_at) : p.created_at
+    ).slice(0, 10)
+    if (ref == null || f > ref) ref = f
+  }
+  return ref
+}
+
+/**
+ * El cliente volvió a puntuar bajo DESPUÉS del último plan (creado o cerrado):
+ * hay que ofrecer crear otro, en vez de dejarlo tapado por el "Con plan".
+ */
+export function volvioAPuntuarBajo(
+  planes: PlanConFechas[],
+  fechaVotoBajo: string | null,
+): boolean {
+  if (!fechaVotoBajo || planes.length === 0) return false
+  const ref = fechaReferenciaPlanes(planes)
+  return ref != null && fechaVotoBajo.slice(0, 10) > ref
+}
+
 export const ESTADO_PLAN: Record<PlanEstado, string> = {
   pendiente: "pendiente",
   en_progreso: "en progreso",

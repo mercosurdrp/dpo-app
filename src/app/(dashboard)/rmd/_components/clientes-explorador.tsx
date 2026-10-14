@@ -40,6 +40,7 @@ import type { RmdPlan } from "@/actions/rmd-planes"
 import {
   ESTADO_PLAN,
   PlanBadge,
+  volvioAPuntuarBajo,
   planesPorClienteFoco,
   type PlanMarcable,
 } from "@/components/plan-badge"
@@ -230,6 +231,12 @@ export function ClientesExplorador({
 
   function filaCliente(c: RmdCliente) {
     const planesCli = planesPorCliente.get(c.cod_cliente) ?? []
+    // Ya tiene plan pero su ÚLTIMA puntuación es baja y posterior a él:
+    // volver a ofrecer el botón, no taparlo con el "Con plan".
+    const reincidente = volvioAPuntuarBajo(
+      planesCli,
+      c.ultima_puntuacion <= 3 ? c.ultima_fecha : null,
+    )
     return (
       <div
         key={`${c.cod_cliente}`}
@@ -272,10 +279,11 @@ export function ClientesExplorador({
         <span className="col-span-2 min-w-0 truncate text-xs text-slate-700">
           {c.chofer ?? "—"}
         </span>
-        <span className="col-span-2 text-right">
-          {planesCli.length > 0 ? (
+        <span className="col-span-2 flex flex-wrap items-center justify-end gap-1">
+          {planesCli.length > 0 && (
             <PlanBadge planes={planesCli} onVerPlan={onVerPlan} />
-          ) : (
+          )}
+          {planesCli.length === 0 ? (
             <button
               type="button"
               onClick={(e) => {
@@ -288,7 +296,20 @@ export function ClientesExplorador({
               <Target className="h-3.5 w-3.5" />
               Plan
             </button>
-          )}
+          ) : reincidente ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCrearPlan(c)
+              }}
+              className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+              title={`Volvió a puntuar bajo el ${FMT_DIA.format(new Date(c.ultima_fecha))}, después del último plan. Crear otro plan de acción.`}
+            >
+              <Target className="h-3.5 w-3.5" />
+              Otro plan
+            </button>
+          ) : null}
         </span>
       </div>
     )
@@ -667,6 +688,16 @@ export function ClienteModal({
                 ? "un plan de acción"
                 : `${planesCliente.length} planes de acción`}
             </p>
+            {volvioAPuntuarBajo(
+              planesCliente,
+              cliente.ultima_puntuacion <= 3 ? cliente.ultima_fecha : null,
+            ) && (
+              <p className="mt-1 font-medium text-red-700">
+                Volvió a puntuar bajo el{" "}
+                {FMT_DIA.format(new Date(cliente.ultima_fecha))}, después del
+                último plan: corresponde crear otro.
+              </p>
+            )}
             <ul className="mt-1 space-y-0.5 text-emerald-900">
               {planesCliente.map((p) => (
                 <li key={p.id}>

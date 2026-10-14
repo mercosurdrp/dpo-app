@@ -51,6 +51,8 @@ export interface RmdPlan {
   created_at: string
   updated_at: string
   avances_count: number
+  /** Fecha del avance que lo dejó completado (null si sigue abierto). */
+  cerrado_en: string | null
   // --- seguimiento del RMD del cliente foco ---
   baseline_rmd: number | null
   baseline_n: number | null
@@ -102,13 +104,22 @@ export async function listarPlanesRmd(): Promise<Result<RmdPlan[]>> {
     const ids = rows.map((r) => r.id as string)
 
     const countMap = new Map<string, number>()
+    const cerradoMap = new Map<string, string>()
     if (ids.length) {
       const { data: avs } = await supabase
         .from("rmd_planes_avances")
-        .select("plan_id")
+        .select("plan_id, estado_resultante, created_at")
         .in("plan_id", ids)
-      for (const a of (avs ?? []) as Array<{ plan_id: string }>) {
+        .order("created_at", { ascending: true })
+      for (const a of (avs ?? []) as Array<{
+        plan_id: string
+        estado_resultante: string | null
+        created_at: string
+      }>) {
         countMap.set(a.plan_id, (countMap.get(a.plan_id) ?? 0) + 1)
+        // El último avance que lo dejó completado es la fecha de cierre.
+        if (a.estado_resultante === "completado")
+          cerradoMap.set(a.plan_id, a.created_at)
       }
     }
 
@@ -190,6 +201,8 @@ export async function listarPlanesRmd(): Promise<Result<RmdPlan[]>> {
         created_at: r.created_at,
         updated_at: r.updated_at,
         avances_count: countMap.get(r.id) ?? 0,
+        cerrado_en:
+          r.estado === "completado" ? (cerradoMap.get(r.id) ?? null) : null,
         baseline_rmd: r.baseline_rmd ?? null,
         baseline_n: r.baseline_n ?? null,
         baseline_fecha: r.baseline_fecha ?? null,
