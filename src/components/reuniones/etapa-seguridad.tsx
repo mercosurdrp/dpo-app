@@ -219,25 +219,38 @@ export function EtapaSeguridad({
   )
 
   /**
-   * Todo lo cargado DESDE la reunión anterior, no lo cargado un día puntual.
+   * Lo que PASÓ desde la reunión anterior, por fecha del evento.
    *
-   * 🚨 Antes exigía created_at == último día hábil anterior, y como ese valor
-   * siempre cae de lunes a viernes, lo cargado un sábado o domingo no aparecía
-   * en NINGUNA reunión: el lunes busca el viernes y se saltea el fin de semana.
-   * Pasó con el incidente del viernes 17/07 (cargado el sábado 18) y con 3 de
-   * los 31 reportes existentes.
+   * La ventana va del último día hábil anterior hasta el día previo a la
+   * reunión (incluye el fin de semana en la reunión del lunes). Un reporte
+   * entra a la reunión cuya ventana contiene su `fecha` (día del evento).
    *
-   * El rango va del último día hábil anterior hasta el día previo a la reunión,
-   * así que no se duplica nada: lo del viernes se ve el lunes y no el viernes,
-   * que es la reunión donde se mira lo del jueves.
+   * 🚨 Antes se filtraba por created_at (día de carga). Como el incidente del
+   * día anterior se suele cargar a la mañana siguiente, antes de la reunión,
+   * caía en la reunión del día después: pasó el 14/10 con el incidente del
+   * 13/10 cargado a las 7:46.
+   *
+   * Carga tardía: si el evento es más viejo que la ventana ANTERIOR (ya no
+   * tuvo reunión donde mirarse mientras no estaba cargado), entra en la
+   * reunión que sigue al día de carga, por created_at. Se exige "más viejo
+   * que la ventana anterior" y no "más viejo que esta ventana" para no
+   * duplicar: evento del 13 cargado el 14 se ve el 14 por fecha, y el 15
+   * no vuelve a aparecer.
    */
   const reportesUltimoHabil = useMemo(() => {
+    const inicioVentanaAnterior = ultimoDiaHabilAnterior(fechaUltimoHabil)
     return reportes
       .filter((r) => {
+        const evento = r.fecha
+        if (evento >= fechaUltimoHabil && evento < fechaReunion) return true
         const cargado = fechaArDeTimestamp(r.created_at)
-        return cargado >= fechaUltimoHabil && cargado < fechaReunion
+        return (
+          evento < inicioVentanaAnterior &&
+          cargado >= fechaUltimoHabil &&
+          cargado < fechaReunion
+        )
       })
-      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : a.created_at < b.created_at ? 1 : -1))
   }, [reportes, fechaUltimoHabil, fechaReunion])
 
   return (
@@ -394,14 +407,14 @@ export function EtapaSeguridad({
           )}
         </section>
 
-        {/* Reportes cargados desde la reunión anterior */}
+        {/* Reportes ocurridos desde la reunión anterior (por fecha del evento) */}
         <section className="space-y-2">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
               <ClipboardList className="size-4 text-slate-600" />
-              Reportes cargados{" "}
+              Reportes{" "}
               {diaAnteriorA(fechaReunion) === fechaUltimoHabil
-                ? `el ${formatFechaCorta(fechaUltimoHabil)}`
+                ? `del ${formatFechaCorta(fechaUltimoHabil)}`
                 : `del ${formatFechaCorta(fechaUltimoHabil)} al ${formatFechaCorta(diaAnteriorA(fechaReunion))}`}
             </h3>
             {!cargando && (
