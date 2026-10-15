@@ -4,6 +4,7 @@ import {
   BookOpenCheck,
   Boxes,
   Brain,
+  Clock,
   CalendarCheck,
   CalendarRange,
   ClipboardList,
@@ -121,6 +122,16 @@ export const MODULOS_PORTAL: ModuloPortal[] = [
   },
 
   // ── Mi trabajo ──
+  // DPO Entrega 4.1: el chofer busca el cliente y ve la ventana horaria
+  // relevada, el teléfono del cliente y el celular de su vendedor.
+  {
+    id: "buscar-cliente",
+    label: "Buscar cliente",
+    href: "/buscar-cliente",
+    icon: Clock,
+    empresas: PAMPEANA,
+    grupo: "trabajo",
+  },
   // Vehículos (checklist), CIL, neumáticos y urea NO van en el menú: se entra
   // por el bloque «Mi camión» del Inicio. Combustible sí, pero sólo para los
   // maquinistas, que no tienen legajo vinculado a un camión y por eso no ven
