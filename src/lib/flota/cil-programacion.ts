@@ -98,7 +98,28 @@ function diasDelMes(ym: string): number {
 }
 
 /**
- * Los días hábiles del mes, de lunes a viernes y sin feriados.
+ * Días que no son feriado nacional pero tampoco son día de CIL, como `MM-DD`.
+ *
+ * 🚨 Nochebuena y el 31: no están en `feriados-ar` —no son feriados— pero el
+ * sorteo crudo le puso el 31/12 al DF y al SU y el 24/12 al DH, y nadie va a
+ * lavar y engrasar un camión esas tardes. Decisión de Francisco (15/10/2026):
+ * que le toque otro día.
+ *
+ * 🚨 Van acá y NO en `lib/feriados-ar`: ese archivo es el espejo de la lista de
+ * feriados nacionales que usa el WNP del depósito (jornada teórica 0 e
+ * indicador #38). Marcar ahí dos días que sí son laborables le cambiaría las
+ * horas teóricas a otro pilar.
+ *
+ * 🚨 Sacar dos días de la lista de hábiles corre el sorteo de TODO diciembre, no
+ * sólo de las unidades que caían el 24 o el 31: el hash reparte sobre la lista y
+ * la lista cambió de largo. Se pudo hacer porque de diciembre todavía no se
+ * avisó nada —el cron avisa con un día—; en el mes en curso esto no se toca.
+ */
+const VISPERAS_SIN_CIL: ReadonlySet<string> = new Set(["12-24", "12-31"])
+
+/**
+ * Los días hábiles del mes, de lunes a viernes, sin feriados y sin las vísperas
+ * del 24 y el 31 de diciembre.
  *
  * 🚨 Sábado afuera aunque la flota reparta los sábados: de las 61 tareas CIL
  * cargadas hasta el 28/09/2026 **ninguna** es de un sábado (33 son de lunes), y
@@ -115,7 +136,9 @@ export function diasHabilesDelMes(ym: string): number[] {
   for (let d = 1; d <= diasDelMes(ym); d++) {
     const dow = new Date(Date.UTC(a, m - 1, d)).getUTCDay()
     if (dow === 0 || dow === 6) continue
-    if (esFeriado(`${ym}-${String(d).padStart(2, "0")}`)) continue
+    const dd = String(d).padStart(2, "0")
+    if (esFeriado(`${ym}-${dd}`)) continue
+    if (VISPERAS_SIN_CIL.has(`${String(m).padStart(2, "0")}-${dd}`)) continue
     out.push(d)
   }
   return out
