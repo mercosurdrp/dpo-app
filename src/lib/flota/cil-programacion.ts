@@ -1,6 +1,10 @@
 /**
- * Programación del CIL: los DOS días del mes que le toca a cada camión (DPO
+ * Programación del CIL: los días del mes que le tocan a cada camión (DPO
  * Flota 4.1).
+ *
+ * 🚨 Cuántos días son depende del MES: dos hasta octubre/2026 y uno desde
+ * noviembre (ver `UN_DIA_POR_MES_DESDE`). La regla vieja no se reescribió para
+ * atrás a propósito — abajo está el por qué.
  *
  * 🚨 El día sale de un sorteo DETERMINISTA, no de una tirada guardada en la
  * base: `dominio + mes` entran a un hash y de ahí salen los dos días. La misma
@@ -32,8 +36,26 @@ export const TIPOS_CIL_PROGRAMADOS = ["camion"] as const
  */
 export const TOLERANCIA_DIAS = 2
 
-/** Cuántas veces al mes le toca a cada unidad. */
-export const VECES_POR_MES = 2
+/**
+ * Desde qué mes le toca UN solo día, en lugar de dos.
+ *
+ * 🚨 Decisión de Francisco (15/10/2026): con dos días al mes no llegan a hacer
+ * los dos CIL y el segundo se vencía solo. Un día que nadie puede cumplir no
+ * mide nada, sólo ensucia el tablero.
+ *
+ * 🚨 Arranca en NOVIEMBRE, no en octubre, aunque la decisión sea de mitad de
+ * octubre: los dos días de octubre ya estaban sorteados y avisados por la
+ * campanita —el 15/10 salió el aviso del segundo día del AF588SU y el del
+ * AF028YB para el 16—, y varios choferes ya habían cumplido el primero. Bajar
+ * la regla sobre el mes en curso le borra a la gente un día del que ya se le
+ * avisó, que es exactamente lo que este archivo evita.
+ */
+export const UN_DIA_POR_MES_DESDE = "2026-11"
+
+/** Cuántas veces al mes le toca a cada unidad en el mes `YYYY-MM`. */
+export function vecesPorMes(ym: string): 1 | 2 {
+  return ym >= UN_DIA_POR_MES_DESDE ? 1 : 2
+}
 
 /**
  * Mínimo de días entre las dos fechas de una unidad.
@@ -100,17 +122,29 @@ export function diasHabilesDelMes(ym: string): number[] {
 }
 
 /**
- * Los dos días que le tocan a una unidad en el mes, como fechas `YYYY-MM-DD`.
+ * Los días que le tocan a una unidad en el mes, como fechas `YYYY-MM-DD`: dos
+ * hasta octubre/2026 y uno desde noviembre.
  *
- * 🚨 Uno cae en la primera quincena y el otro en la segunda. Con dos tiradas
- * libres sobre el mes entero, un par como el 6 y el 8 era perfectamente posible:
- * "dos veces al mes" se cumpliría en el papel y la unidad quedaría tres semanas
- * sin que nadie la toque, que es justo lo que el 4.1 quiere evitar.
+ * 🚨 Cuando son dos, uno cae en la primera quincena y el otro en la segunda. Con
+ * dos tiradas libres sobre el mes entero, un par como el 6 y el 8 era
+ * perfectamente posible: "dos veces al mes" se cumpliría en el papel y la unidad
+ * quedaría tres semanas sin que nadie la toque, que es justo lo que el 4.1
+ * quiere evitar.
+ *
+ * 🚨 Cuando es uno, el sorteo va sobre el mes ENTERO y no sobre la primera
+ * quincena: con una sola fecha no hay nada que repartir, y atarla a los
+ * primeros quince días dejaría a toda la flota con el CIL hecho antes del 15 y
+ * la segunda mitad del mes sin que nadie toque un camión.
  */
 export function fechasCilDelMes(dominio: string, ym: string): string[] {
   if (ym < PROGRAMACION_DESDE) return []
   const habiles = diasHabilesDelMes(ym)
   if (habiles.length === 0) return []
+  if (vecesPorMes(ym) === 1) {
+    const h = hash32(`${dominio}|${ym}`)
+    const d = habiles[h % habiles.length]
+    return [`${ym}-${String(d).padStart(2, "0")}`]
+  }
   const primera = habiles.filter((d) => d <= 15)
   const segunda = habiles.filter((d) => d > 15)
   const h = hash32(`${dominio}|${ym}`)

@@ -23,7 +23,11 @@ import { PROGRAMACION_DESDE, fmtDiaConNombre } from "@/lib/flota/cil-programacio
 import { esFeriado } from "@/lib/feriados-ar"
 
 /**
- * Los dos días del mes que le tocan a cada camión, y qué pasó con cada uno.
+ * Los días del mes que le tocan a cada camión, y qué pasó con cada uno.
+ *
+ * 🚨 Cuántos son lo decide el mes: dos hasta octubre/2026 y uno desde noviembre.
+ * La tabla y el texto se arman con los días que devuelve la acción, no con un 2
+ * fijo, así que un mes de dos días y uno de un día se ven los dos bien.
  *
  * 🚨 El día no se sortea en el momento ni queda guardado en una tabla: se calcula
  * con `lib/flota/cil-programacion` a partir de la unidad y el mes, así que esta
@@ -92,6 +96,14 @@ export function ProgramacionCil({ mesActual }: { mesActual: string }) {
     u.dias.some((d) => d.estado === "hoy"),
   )
   const t = data?.totales
+  // Cuántos días tiene cada unidad en el mes elegido. Sale de lo que calculó la
+  // acción y no de un 2 fijo: hasta octubre/2026 son dos y desde noviembre uno,
+  // y la tabla tiene que servir para los dos casos sin quedar con una columna
+  // vacía ni comerse un día.
+  const diasPorUnidad = Math.max(
+    1,
+    ...(data?.unidades ?? []).map((u) => u.dias.length),
+  )
 
   return (
     <Card>
@@ -122,10 +134,20 @@ export function ProgramacionCil({ mesActual }: { mesActual: string }) {
 
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          A cada camión le tocan <strong>2 días por mes</strong>, sorteados: uno en cada
-          quincena, de lunes a viernes y sin feriados. El día sale de la unidad y del mes,
-          así que es siempre el mismo y el chofer lo ve de antemano en Mi CIL; el día
-          anterior y el mismo día le llega el aviso a su campanita.
+          {diasPorUnidad > 1 ? (
+            <>
+              A cada camión le tocan <strong>2 días por mes</strong>, sorteados: uno en
+              cada quincena, de lunes a viernes y sin feriados.
+            </>
+          ) : (
+            <>
+              A cada camión le toca <strong>1 día por mes</strong>, sorteado entre los
+              días hábiles del mes, de lunes a viernes y sin feriados.
+            </>
+          )}{" "}
+          El día sale de la unidad y del mes, así que es siempre el mismo y el chofer lo
+          ve de antemano en Mi CIL; el día anterior y el mismo día le llega el aviso a su
+          campanita.
         </p>
 
         {cargando ? (
@@ -217,8 +239,14 @@ export function ProgramacionCil({ mesActual }: { mesActual: string }) {
                   <tr className="border-b text-left text-xs uppercase text-muted-foreground">
                     <th className="py-2 pr-3 font-medium">Unidad</th>
                     <th className="py-2 pr-3 font-medium">Chofer</th>
-                    <th className="py-2 pr-3 font-medium">1ª quincena</th>
-                    <th className="py-2 font-medium">2ª quincena</th>
+                    {diasPorUnidad > 1 ? (
+                      <>
+                        <th className="py-2 pr-3 font-medium">1ª quincena</th>
+                        <th className="py-2 font-medium">2ª quincena</th>
+                      </>
+                    ) : (
+                      <th className="py-2 font-medium">Día asignado</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -246,7 +274,7 @@ export function ProgramacionCil({ mesActual }: { mesActual: string }) {
                           </span>
                         )}
                       </td>
-                      {[0, 1].map((i) => (
+                      {Array.from({ length: diasPorUnidad }, (_, i) => i).map((i) => (
                         <td key={i} className="py-2 pr-3">
                           {u.dias[i] ? <ChipDia dia={u.dias[i]} /> : "—"}
                         </td>

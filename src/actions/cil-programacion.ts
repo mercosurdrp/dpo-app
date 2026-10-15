@@ -16,8 +16,8 @@ import {
 } from "@/lib/flota/cil-choferes"
 
 /**
- * Programación del CIL: a cada camión le tocan dos días sorteados por mes, y acá
- * se ve qué pasó con cada uno.
+ * Programación del CIL: a cada camión le toca un día sorteado por mes —dos hasta
+ * octubre/2026, ver `UN_DIA_POR_MES_DESDE`—, y acá se ve qué pasó con cada uno.
  *
  * 🚨 No hay tabla de programación: los días se calculan con
  * `lib/flota/cil-programacion` y son siempre los mismos para la misma unidad y
@@ -27,8 +27,8 @@ import {
  * 🚨 Esto NO reemplaza la cobertura de `cil-cobertura.ts`, que es lo que mira el
  * auditor: la cobertura pregunta si la unidad cerró las tres letras del ciclo en
  * el mes, y esto pregunta si las hizo EL DÍA que le tocaba. Una unidad puede
- * estar al día en la cobertura y tener los dos días vencidos (las hizo cuando
- * quiso), y al revés no: si cumplió los dos días, cerró el ciclo.
+ * estar al día en la cobertura y tener sus días vencidos (las hizo cuando
+ * quiso), y al revés no: si cumplió los días que le tocaban, cerró el ciclo.
  */
 
 export type EstadoDiaCil =
@@ -247,7 +247,7 @@ export async function getProgramacionCilMes(
 export interface MiUnidadProgramada {
   dominio: string
   numero: string | null
-  /** Los dos días de ESTE mes, con lo que pasó en cada uno. */
+  /** Los días de ESTE mes, con lo que pasó en cada uno. */
   dias: DiaCil[]
   /** La próxima fecha que le toca, incluso si cae el mes que viene. */
   proxima: string | null
