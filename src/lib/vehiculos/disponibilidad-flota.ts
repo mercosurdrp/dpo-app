@@ -203,34 +203,51 @@ export function noDisponiblesEnFecha(
   return out.sort((a, b) => b.diasParada - a.diasParada || a.dominio.localeCompare(b.dominio))
 }
 
+/** Día siguiente a una fecha ISO, sin pasar por la zona horaria local. */
+function diaSiguiente(fecha: string): string {
+  const d = new Date(`${fecha}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
 /**
- * Estado día a día de cada unidad en un mes y agregados de flota.
- * `flota` ya debe venir filtrada con flotaDeRuta(); `hoy` en ISO (YYYY-MM-DD).
+ * Estado día a día de cada unidad en un RANGO de fechas y agregados de flota.
+ *
+ * Es el núcleo del seguimiento: el mes, el año y el rango libre que elige el
+ * usuario salen todos de acá, así que no puede pasar que el acumulado diga una
+ * cosa y los meses otra. `flota` ya debe venir filtrada con flotaDeRuta();
+ * `hoy` en ISO (YYYY-MM-DD).
+ *
+ * El rango se recorta a `hoy`: el futuro no se puede exigir —esos días todavía
+ * no pasaron— y contarlo como "disponible" o "parado" sería inventar.
  */
-export function calcularDisponibilidadMes(
-  mesSel: string,
+export function calcularDisponibilidadRango(
+  desde: string,
+  hasta: string,
   flota: UnidadFlota[],
   mantenimientos: MantenimientoRealizado[],
   indisponibilidades: FlotaIndisponibilidad[],
   ruteoSet: Set<string>,
   hoy: string
 ): CalcDisponibilidadMes {
-  const [y, mm] = mesSel.split("-").map(Number)
-  const diasDelMes = new Date(y, mm, 0).getDate()
-  const esMesActual = mesSel === hoy.slice(0, 7)
-  const esFuturo = mesSel > hoy.slice(0, 7)
-  const diasPeriodo = esFuturo ? 0 : esMesActual ? Number(hoy.slice(8, 10)) : diasDelMes
+  const hastaEf = hasta > hoy ? hoy : hasta
+  const fechas: string[] = []
+  for (let f = desde; f <= hastaEf; f = diaSiguiente(f)) fechas.push(f)
+  const diasPeriodo = fechas.length
+  // El calendario día a día tiene por columnas los días del mes, así que sólo
+  // se puede armar si el rango entero cae en un mismo mes. En un rango de
+  // varios meses el número de día se repetiría y pintaría cualquier cosa.
+  const unSoloMes = diasPeriodo > 0 && desde.slice(0, 7) === hastaEf.slice(0, 7)
 
   const paradas = paradasPorDominio(mantenimientos, hoy)
   const inds = indisponibilidadesPorDominio(indisponibilidades)
 
   // Días laborales = días con al menos un camión de la flota ruteado.
   // Los demás (domingos/feriados sin ruteo) NO cuentan para la utilización.
-  const laboral = new Set<number>()
-  for (let d = 1; d <= diasPeriodo; d++) {
-    const fecha = `${mesSel}-${pad(d)}`
+  const laboral = new Set<string>()
+  for (const fecha of fechas) {
     for (const u of flota) {
-      if (ruteoSet.has(`${u.dominio}|${fecha}`)) { laboral.add(d); break }
+      if (ruteoSet.has(`${u.dominio}|${fecha}`)) { laboral.add(fecha); break }
     }
   }
 
@@ -238,8 +255,8 @@ export function calcularDisponibilidadMes(
     const porDia = new Map<number, EstadoDiaFlota>()
     const ps = paradas.get(u.dominio) ?? []
     const is = inds.get(u.dominio) ?? []
-    for (let d = 1; d <= diasPeriodo; d++) {
-      const fecha = `${mesSel}-${pad(d)}`
+    let pmc = 0, pmp = 0, ind = 0, drt = 0, dsp = 0, lib = 0
+    for (const fecha of fechas) {
       // Prioridad: ruteó(DRT) > correctivo > preventivo > indisponible > disponible
       //
       // 🚨 El ruteo GANA sobre cualquier parada: si la unidad hizo su reparto
@@ -265,16 +282,14 @@ export function calcularDisponibilidadMes(
           if (fecha >= i.desde && fecha <= i.hasta) { est = "IND"; break }
         }
       }
-      if (est == null) est = laboral.has(d) ? "DSP" : "LIB" // LIB = día no laboral
-      porDia.set(d, est)
-    }
-    let pmc = 0, pmp = 0, ind = 0, drt = 0, dsp = 0, lib = 0
-    for (const e of porDia.values()) {
-      if (e === "PMC") pmc++
-      else if (e === "PMP") pmp++
-      else if (e === "IND") ind++
-      else if (e === "DRT") drt++
-      else if (e === "DSP") dsp++
+      if (est == null) est = laboral.has(fecha) ? "DSP" : "LIB" // LIB = día no laboral
+      if (unSoloMes) porDia.set(Number(fecha.slice(8, 10)), est)
+
+      if (est === "PMC") pmc++
+      else if (est === "PMP") pmp++
+      else if (est === "IND") ind++
+      else if (est === "DRT") drt++
+      else if (est === "DSP") dsp++
       else lib++
     }
     const parado = pmc + pmp + ind
@@ -300,26 +315,55 @@ export function calcularDisponibilidadMes(
   const totBaseUtil = enServicio.reduce((a, f) => a + f.drt + f.dsp, 0)
   const totDrt = enServicio.reduce((a, f) => a + f.drt, 0)
   const flotaUtil = totBaseUtil > 0 ? (totDrt / totBaseUtil) * 100 : null
-  const diasLaborales = laboral.size
-  const camionesConParada = filas.filter((f) => f.parado > 0).length
 
-  return { diasDelMes, diasPeriodo, diasLaborales, filas, flotaDisp, flotaUtil, camionesConParada }
+  return {
+    // Las columnas del calendario son los días del MES, no los del período: un
+    // rango del 10 al 20 se dibuja sobre octubre entero y los días de afuera se
+    // pintan como "fuera del período". Con el rango cruzando meses no hay
+    // calendario posible y el número no se usa.
+    diasDelMes: unSoloMes
+      ? new Date(Number(desde.slice(0, 4)), Number(desde.slice(5, 7)), 0).getDate()
+      : diasPeriodo,
+    diasPeriodo,
+    diasLaborales: laboral.size,
+    filas,
+    flotaDisp,
+    flotaUtil,
+    camionesConParada: filas.filter((f) => f.parado > 0).length,
+  }
 }
 
 /**
- * Lo mismo pero para VARIOS meses (el año completo), para poder mirar el
- * acumulado y no mes por mes.
- *
- * No recalcula nada: corre `calcularDisponibilidadMes` mes por mes y suma los
- * días de cada unidad. Así el acumulado del año es por construcción la suma de
- * lo que muestra cada mes, y las reglas del cálculo —el ruteo gana sobre
- * cualquier parada, el mes en curso se corta en el día de hoy, el día no
- * laboral no cuenta para la utilización— quedan en un solo lugar.
- *
- * 🚨 `porDia` viene VACÍO: la clave del mapa es el día del mes (1..31) y en un
- * período de varios meses ese número se repite. El calendario día a día sólo
- * tiene sentido sobre un mes, así que la pantalla fuerza la vista "Por mes"
- * cuando el período elegido es un año.
+ * Un mes: el rango va del día 1 al último día, cortado en hoy si es el mes en
+ * curso. `diasDelMes` sigue siendo el largo del mes calendario y no el del
+ * período, porque es lo que el calendario usa para dibujar las columnas (los
+ * días que todavía no pasaron se pintan como "fuera del período").
+ */
+export function calcularDisponibilidadMes(
+  mesSel: string,
+  flota: UnidadFlota[],
+  mantenimientos: MantenimientoRealizado[],
+  indisponibilidades: FlotaIndisponibilidad[],
+  ruteoSet: Set<string>,
+  hoy: string
+): CalcDisponibilidadMes {
+  const [y, mm] = mesSel.split("-").map(Number)
+  const diasDelMes = new Date(y, mm, 0).getDate()
+  const calc = calcularDisponibilidadRango(
+    `${mesSel}-01`,
+    `${mesSel}-${pad(diasDelMes)}`,
+    flota,
+    mantenimientos,
+    indisponibilidades,
+    ruteoSet,
+    hoy
+  )
+  return { ...calc, diasDelMes }
+}
+
+/**
+ * Varios meses completos (el año): del día 1 del primero al último día del
+ * último. Es el mismo rango, nombrado para los llamadores que piensan en meses.
  */
 export function calcularDisponibilidadPeriodo(
   meses: string[],
@@ -329,47 +373,23 @@ export function calcularDisponibilidadPeriodo(
   ruteoSet: Set<string>,
   hoy: string
 ): CalcDisponibilidadMes {
-  const porMes = meses.map((ym) =>
-    calcularDisponibilidadMes(ym, flota, mantenimientos, indisponibilidades, ruteoSet, hoy)
-  )
-
-  const acum = new Map<string, FilaDisp>()
-  for (const m of porMes) {
-    for (const f of m.filas) {
-      const a = acum.get(f.dominio)
-      if (!a) {
-        acum.set(f.dominio, { ...f, porDia: new Map() })
-        continue
-      }
-      a.diasPeriodo += f.diasPeriodo
-      a.pmc += f.pmc; a.pmp += f.pmp; a.ind += f.ind
-      a.drt += f.drt; a.dsp += f.dsp; a.lib += f.lib
-      a.parado += f.parado
-      a.disponibles += f.disponibles
+  if (meses.length === 0) {
+    return {
+      diasDelMes: 0, diasPeriodo: 0, diasLaborales: 0, filas: [],
+      flotaDisp: null, flotaUtil: null, camionesConParada: 0,
     }
   }
-  const filas = [...acum.values()].map((f) => ({
-    ...f,
-    pctDisp: f.diasPeriodo > 0 ? (f.disponibles / f.diasPeriodo) * 100 : null,
-    pctUtil: f.drt + f.dsp > 0 ? (f.drt / (f.drt + f.dsp)) * 100 : null,
-  }))
-
-  // Mismos criterios de agregación de flota que el cálculo mensual.
-  const conDisp = filas.filter((f) => f.pctDisp != null)
-  const flotaDisp = conDisp.length
-    ? conDisp.reduce((a, f) => a + (f.pctDisp ?? 0), 0) / conDisp.length
-    : null
-  const enServicio = filas.filter((f) => f.drt > 0)
-  const totBaseUtil = enServicio.reduce((a, f) => a + f.drt + f.dsp, 0)
-  const totDrt = enServicio.reduce((a, f) => a + f.drt, 0)
-
-  return {
-    diasDelMes: porMes.reduce((a, m) => a + m.diasDelMes, 0),
-    diasPeriodo: porMes.reduce((a, m) => a + m.diasPeriodo, 0),
-    diasLaborales: porMes.reduce((a, m) => a + m.diasLaborales, 0),
-    filas,
-    flotaDisp,
-    flotaUtil: totBaseUtil > 0 ? (totDrt / totBaseUtil) * 100 : null,
-    camionesConParada: filas.filter((f) => f.parado > 0).length,
-  }
+  const ordenados = [...meses].sort()
+  const primero = ordenados[0]
+  const ultimo = ordenados[ordenados.length - 1]
+  const [uy, um] = ultimo.split("-").map(Number)
+  return calcularDisponibilidadRango(
+    `${primero}-01`,
+    `${ultimo}-${pad(new Date(uy, um, 0).getDate())}`,
+    flota,
+    mantenimientos,
+    indisponibilidades,
+    ruteoSet,
+    hoy
+  )
 }

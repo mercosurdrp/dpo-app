@@ -44,6 +44,7 @@ import {
   TARGET_DISP,
   calcularDisponibilidadMes,
   calcularDisponibilidadPeriodo,
+  calcularDisponibilidadRango,
   flotaDeRuta,
   ruteoSetDe,
   type EstadoDiaFlota as Estado,
@@ -62,6 +63,8 @@ const fmtMesLargo = (ym: string) => {
 const esAnio = (periodo: string) => periodo.length === 4
 const fmtPeriodo = (periodo: string) =>
   esAnio(periodo) ? `año ${periodo}` : fmtMesLargo(periodo)
+/** Valor del item que abre los dos campos de fecha. No es un periodo real. */
+const OPCION_RANGO = "__rango"
 const pad = (n: number) => String(n).padStart(2, "0")
 const hoyISO = () => {
   const d = new Date()
@@ -165,6 +168,18 @@ export function SeguimientoFlota({
     return out
   }, [meses, primerMesConRuteo])
 
+  /**
+   * Rango libre de fechas. Cuando está puesto manda sobre el mes/año elegido:
+   * es el período que se está mirando. `null` = se está mirando un mes o un año.
+   */
+  const [rango, setRango] = useState<{ desde: string; hasta: string } | null>(null)
+  /** Primer día con ruteo cargado: el `min` de los dos campos de fecha. */
+  const primerDiaConRuteo = useMemo(() => {
+    let min: string | null = null
+    for (const d of diasRuteo) if (min == null || d.fecha < min) min = d.fecha
+    return min
+  }, [diasRuteo])
+
   const [mesSel, setMesSel] = useState<string>(meses[0] ?? hoyISO().slice(0, 7))
   // `opciones` está ordenado del más nuevo al más viejo: el anterior es el que sigue.
   const iMes = opciones.indexOf(mesSel)
@@ -178,38 +193,84 @@ export function SeguimientoFlota({
   const paleta = usePaletaViz()
 
   /**
-   * El calendario día a día no existe para un año: sus columnas son los días
-   * del mes. Al elegir un año se pasa solo a "Por mes" —que son totales y sí
-   * se pueden acumular— en vez de mostrar una grilla vacía.
+   * El calendario día a día no existe para un año ni para un rango de varios
+   * meses: sus columnas son los días del mes. En esos casos se pasa solo a
+   * "Por mes" —totales, que sí se pueden acumular— en vez de una grilla vacía.
    */
   const elegirPeriodo = (p: string) => {
+    if (p === OPCION_RANGO) {
+      // Arranca en el mes en curso: es el rango que casi siempre se quiere
+      // ajustar, y deja los dos campos con algo válido desde el primer click.
+      setRango({ desde: `${hoyISO().slice(0, 7)}-01`, hasta: hoyISO() })
+      setVista("mes")
+      return
+    }
+    setRango(null)
     setMesSel(p)
     if (esAnio(p)) setVista("mes")
   }
+
+  /**
+   * Mueve un extremo del rango sin dejar que se cruce con el otro: al correr el
+   * "desde" más allá del "hasta", el otro extremo lo sigue en vez de rechazar la
+   * fecha. Un rango invertido daría cero días sin decir por qué.
+   */
+  const moverRango = (extremo: "desde" | "hasta", valor: string) => {
+    if (!valor) return
+    const base = rango ?? { desde: valor, hasta: valor }
+    const next = { ...base, [extremo]: valor }
+    if (next.desde > next.hasta) {
+      if (extremo === "desde") next.hasta = valor
+      else next.desde = valor
+    }
+    setRango(next)
+    // Estirar el rango a dos meses deja el calendario sin grilla posible: se
+    // pasa a "Por mes" acá, porque la pestaña deshabilitada no se cierra sola y
+    // quedaba mostrando la grilla de otro período.
+    if (next.desde.slice(0, 7) !== next.hasta.slice(0, 7)) setVista("mes")
+  }
+
+  const periodoLabel = rango
+    ? `del ${fmtFecha(rango.desde)} al ${fmtFecha(rango.hasta)}`
+    : fmtPeriodo(mesSel)
+  /** El calendario sólo se puede dibujar sobre un mes. */
+  const sinCalendario = rango
+    ? rango.desde.slice(0, 7) !== rango.hasta.slice(0, 7)
+    : esAnio(mesSel)
 
   // Set de días ruteados: "DOMINIO|YYYY-MM-DD"
   const ruteoSet = useMemo(() => ruteoSetDe(diasRuteo), [diasRuteo])
 
   const calc = useMemo(
     () =>
-      esAnio(mesSel)
-        ? calcularDisponibilidadPeriodo(
-            mesesDelPeriodo,
+      rango
+        ? calcularDisponibilidadRango(
+            rango.desde,
+            rango.hasta,
             flota,
             mantenimientos,
             indisponibilidades,
             ruteoSet,
             hoyISO()
           )
-        : calcularDisponibilidadMes(
-            mesSel,
-            flota,
-            mantenimientos,
-            indisponibilidades,
-            ruteoSet,
-            hoyISO()
-          ),
-    [mesSel, mesesDelPeriodo, mantenimientos, indisponibilidades, flota, ruteoSet]
+        : esAnio(mesSel)
+          ? calcularDisponibilidadPeriodo(
+              mesesDelPeriodo,
+              flota,
+              mantenimientos,
+              indisponibilidades,
+              ruteoSet,
+              hoyISO()
+            )
+          : calcularDisponibilidadMes(
+              mesSel,
+              flota,
+              mantenimientos,
+              indisponibilidades,
+              ruteoSet,
+              hoyISO()
+            ),
+    [rango, mesSel, mesesDelPeriodo, mantenimientos, indisponibilidades, flota, ruteoSet]
   )
 
   const colorPct = (pct: number | null, target = TARGET_DISP) =>
@@ -287,15 +348,21 @@ export function SeguimientoFlota({
     })
   }
 
+  // 🚨 Con un rango puesto se filtra por el rango, no por `mesSel`: el mes
+  // seguía siendo el último elegido en el desplegable, así que el cuadro de
+  // abajo listaba las indisponibilidades de un mes que no se estaba mirando.
+  // Alcanza con que la indisponibilidad PISE el período: una parada del 28/09
+  // al 03/10 es parte de lo que explica octubre.
   const indDelMes = useMemo(
     () =>
       indisponibilidades
-        .filter(
-          (i) =>
-            i.fecha_desde.startsWith(mesSel) || i.fecha_hasta.startsWith(mesSel)
+        .filter((i) =>
+          rango
+            ? i.fecha_desde <= rango.hasta && i.fecha_hasta >= rango.desde
+            : i.fecha_desde.startsWith(mesSel) || i.fecha_hasta.startsWith(mesSel)
         )
         .sort((a, b) => b.fecha_desde.localeCompare(a.fecha_desde)),
-    [indisponibilidades, mesSel]
+    [indisponibilidades, mesSel, rango]
   )
 
   return (
@@ -321,13 +388,16 @@ export function SeguimientoFlota({
               size="icon"
               className="size-8"
               onClick={() => mesAnterior && elegirPeriodo(mesAnterior)}
-              disabled={!mesAnterior}
-              title="Mes anterior"
+              disabled={!!rango || !mesAnterior}
+              title={rango ? "Elegí un mes para volver a moverte de a uno" : "Mes anterior"}
               aria-label="Mes anterior"
             >
               <ChevronLeft className="size-4" />
             </Button>
-            <Select value={mesSel} onValueChange={(v) => v && elegirPeriodo(v)}>
+            <Select
+              value={rango ? OPCION_RANGO : mesSel}
+              onValueChange={(v) => v && elegirPeriodo(v)}
+            >
               <SelectTrigger className="w-44 capitalize">
                 <SelectValue />
               </SelectTrigger>
@@ -346,6 +416,9 @@ export function SeguimientoFlota({
                     </SelectItem>
                   )
                 )}
+                {/* Último de la lista: es la opción que se usa de a ratos, y
+                    arriba taparía los meses, que son el caso normal. */}
+                <SelectItem value={OPCION_RANGO}>Rango de fechas…</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -353,21 +426,63 @@ export function SeguimientoFlota({
               size="icon"
               className="size-8"
               onClick={() => mesSiguiente && elegirPeriodo(mesSiguiente)}
-              disabled={!mesSiguiente}
-              title="Mes siguiente"
+              disabled={!!rango || !mesSiguiente}
+              title={rango ? "Elegí un mes para volver a moverte de a uno" : "Mes siguiente"}
               aria-label="Mes siguiente"
             >
               <ChevronRight className="size-4" />
             </Button>
           </div>
+
+          {/* Los dos campos aparecen sólo con el rango puesto: ocupan lugar y el
+              90 % de las veces lo que se mira es un mes. El tope es hoy —el
+              futuro no se puede exigir— y el piso, el primer día con ruteo
+              cargado: antes de eso no hay con qué calcular. */}
+          {rango && (
+            <div className="mt-2 flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="disp-desde" className="text-xs text-muted-foreground">
+                  Desde
+                </Label>
+                <Input
+                  id="disp-desde"
+                  type="date"
+                  className="h-8 w-[9.5rem]"
+                  value={rango.desde}
+                  min={primerDiaConRuteo ?? undefined}
+                  max={hoyISO()}
+                  onChange={(e) => moverRango("desde", e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="disp-hasta" className="text-xs text-muted-foreground">
+                  Hasta
+                </Label>
+                <Input
+                  id="disp-hasta"
+                  type="date"
+                  className="h-8 w-[9.5rem]"
+                  value={rango.hasta}
+                  min={primerDiaConRuteo ?? undefined}
+                  max={hoyISO()}
+                  onChange={(e) => moverRango("hasta", e.target.value)}
+                />
+              </div>
+              <p className="pb-1.5 text-xs text-muted-foreground">
+                {calc.diasPeriodo} {calc.diasPeriodo === 1 ? "día" : "días"} ·{" "}
+                {calc.diasLaborales} laborales
+              </p>
+            </div>
+          )}
         </div>
         <TabsList>
-          {/* El calendario es por día del mes: con un año elegido no hay grilla
-              posible, así que la pestaña queda deshabilitada y dice por qué. */}
+          {/* El calendario es por día del mes: con un año elegido —o un rango
+              que cruza meses— no hay grilla posible, así que la pestaña queda
+              deshabilitada y dice por qué. */}
           <TabsTrigger
             value="dia"
-            disabled={esAnio(mesSel)}
-            title={esAnio(mesSel) ? "El calendario se mira de a un mes" : undefined}
+            disabled={sinCalendario}
+            title={sinCalendario ? "El calendario se mira de a un mes" : undefined}
           >
             <CalendarDays aria-hidden /> Por día
           </TabsTrigger>
@@ -382,7 +497,7 @@ export function SeguimientoFlota({
         <KpiCard
           label="Disponibilidad de flota"
           valor={calc.flotaDisp == null ? null : `${calc.flotaDisp.toFixed(1)}%`}
-          sub={`${fmtPeriodo(mesSel)} · objetivo ${TARGET_DISP}% · click para verla por unidad`}
+          sub={`${periodoLabel} · objetivo ${TARGET_DISP}% · click para verla por unidad`}
           estado={estadoDisp}
           dpo="2.1"
           onClick={() => irA("mes", "tabla-disp-unidad")}
@@ -390,7 +505,7 @@ export function SeguimientoFlota({
         <KpiCard
           label="Utilización de flota"
           valor={calc.flotaUtil == null ? null : `${calc.flotaUtil.toFixed(1)}%`}
-          sub={`${fmtPeriodo(mesSel)} · ruteados ÷ días laborales disp. · click para verla por unidad`}
+          sub={`${periodoLabel} · ruteados ÷ días laborales disp. · click para verla por unidad`}
           dpo="2.1"
           onClick={() => irA("mes", "tabla-disp-unidad")}
         />
@@ -417,7 +532,7 @@ export function SeguimientoFlota({
               <CardTitle className="flex flex-wrap items-center gap-2 text-base">
                 Días fuera de servicio por unidad
                 <span className="text-sm font-normal capitalize text-muted-foreground">
-                  · {fmtPeriodo(mesSel)}
+                  · {periodoLabel}
                 </span>
               </CardTitle>
               <p className="text-xs text-muted-foreground">
@@ -496,7 +611,7 @@ export function SeguimientoFlota({
             <CardTitle className="flex flex-wrap items-center gap-2 text-base">
               Disponibilidad y utilización por unidad
               <span className="text-sm font-normal capitalize text-muted-foreground">
-                · {fmtPeriodo(mesSel)}
+                · {periodoLabel}
               </span>
             </CardTitle>
           </CardHeader>
@@ -558,7 +673,7 @@ export function SeguimientoFlota({
             <CardTitle className="flex flex-wrap items-center gap-2 text-base">
               Calendario de disponibilidad
               <span className="text-sm font-normal capitalize text-muted-foreground">
-                · {fmtPeriodo(mesSel)}
+                · {periodoLabel}
               </span>
             </CardTitle>
           </CardHeader>
@@ -589,7 +704,11 @@ export function SeguimientoFlota({
                     </td>
                     {Array.from({ length: calc.diasDelMes }, (_, i) => i + 1).map((d) => {
                       const est = f.porDia.get(d)
-                      const fuera = d > calc.diasPeriodo
+                      // Fuera del período = el día no tiene estado. Sirve igual
+                      // para el mes en curso (los días que no pasaron) y para un
+                      // rango que arranca a mitad de mes, donde "d > diasPeriodo"
+                      // pintaba los días equivocados.
+                      const fuera = !f.porDia.has(d)
                       const txt =
                         fuera ? "—"
                           : est === "PMC" ? "parado (correctivo)"
