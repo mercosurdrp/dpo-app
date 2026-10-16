@@ -6,18 +6,22 @@ import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import { fetchFueraRutaSheet, type FueraRutaFila } from "@/lib/fuera-ruta/sheet"
 import { medidasDesdePedidos, medidasDesdeVentas } from "@/lib/fuera-ruta/medidas"
+import { FUERA_RUTA_CHESS_DESDE } from "@/lib/fuera-ruta/chess"
+import { sincronizarFueraRutaChess, hoyArg, restarDiasIso } from "@/lib/fuera-ruta/sync-chess"
 
 type Result<T> = { data: T } | { error: string }
 
 const SOLO_PAMPEANA = "El registro de fuera de ruta solo está disponible en Pampeana."
 
-/** Fila del registro: lo del sheet + bultos/HL medidos desde Chess. */
+/** Fila del registro: lo del sheet (o lo detectado en Chess) + bultos/HL medidos desde Chess. */
 export interface FueraRutaRegistro extends FueraRutaFila {
   bultos_pedido: number | null
   hl_pedido: number | null
   /** 'pedido' = medido con el pedido pendiente (puede cambiar) · 'venta' = facturado. */
   medida_origen: string | null
 }
+
+export type FueraRutaFuente = "sheet" | "chess"
 
 export interface FueraRutaDia {
   fecha: string
@@ -26,65 +30,68 @@ export interface FueraRutaDia {
   total_bultos: number
   total_hl: number
   /**
-   * false = el sheet no contestó y se muestra el último snapshot guardado.
-   * La solapa lo avisa para que nadie tome el registro por completo ese día.
+   * 'sheet' = fechas anteriores al 16/10/2026, cargadas a mano en Novedades
+   * Logísticas. 'chess' = desde esa fecha, detectado por el día pactado del cliente.
    */
-  sheet_ok: boolean
+  fuente: FueraRutaFuente
+  /**
+   * false = la fuente (sheet o Chess) no contestó y se muestra el último
+   * snapshot guardado. La solapa lo avisa para que nadie lo tome por completo.
+   */
+  fuente_ok: boolean
+  /** Cuándo se bajó de Chess el maestro de días pactados (sólo fuente 'chess'). */
+  dias_pactados_en: string | null
 }
 
-/** Hoy en Argentina (UTC-3): Vercel corre en UTC y a la noche cambiaría de día antes. */
-function hoyArg(): string {
-  return new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)
-}
+const COLUMNAS =
+  "clave, fecha_entrega, sucursal, deposito, cod_cliente, cliente, comprobante, nro_pedido, tipo_comprobante, monto, localidad, bultos, descripcion, cod_cliente_entregado, cliente_entregado, direccion_entrega, localidad_entrega, observaciones, patente, canal, bultos_pedido, hl_pedido, medida_origen"
 
 /**
  * Pedidos FUERA DE RUTA de una fecha de entrega.
  *
- * Sync-al-leer, estilo Pampeana: baja el sheet de Novedades Logísticas, upserta el
- * snapshot en `fuera_ruta_registros` (identidad = clave fecha|pedido|cliente, así
- * re-sincronizar no duplica y una corrección en el sheet actualiza la misma fila)
- * y devuelve las filas del día desde la base. El snapshot NUNCA borra: si en el
- * sheet borran filas o queda un filtro puesto, la historia registrada se conserva.
+ * Desde el 16/10/2026 la fuente es Chess: un pedido está fuera de ruta si su
+ * fecha de entrega no es un día pactado del cliente (`sincronizarFueraRutaChess`, en lib/fuera-ruta/sync-chess).
+ * Para fechas anteriores sigue valiendo el sheet de Novedades Logísticas, que
+ * se cargaba a mano: se sincroniza igual (por si corrigen algo viejo) pero
+ * nunca escribe fechas del período Chess.
  */
 export async function getFueraRuta(fecha: string): Promise<Result<FueraRutaDia>> {
   await requireAuth()
   if (IS_MISIONES) return { error: SOLO_PAMPEANA }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { error: "Fecha inválida." }
 
-  let sheetOk = true
-  try {
-    const filas = await fetchFueraRutaSheet()
-    if (filas.length > 0) {
-      const admin = createAdminClient()
-      const ahora = new Date().toISOString()
-      // primera_vez NO va en el payload: la pone el default en el insert y el
-      // upsert no la pisa (queda cuándo apareció el registro por primera vez).
-      const rows = filas.map((f) => ({ ...f, synced_at: ahora }))
-      for (let i = 0; i < rows.length; i += 500) {
-        const { error } = await admin
-          .from("fuera_ruta_registros")
-          .upsert(rows.slice(i, i + 500), { onConflict: "clave" })
-        if (error) throw new Error(`snapshot fuera de ruta: ${error.message}`)
-      }
+  const fuente: FueraRutaFuente = fecha >= FUERA_RUTA_CHESS_DESDE ? "chess" : "sheet"
+  let fuenteOk = true
+  let diasPactadosEn: string | null = null
+
+  if (fuente === "chess") {
+    try {
+      const r = await sincronizarFueraRutaChess(fecha, hoyArg())
+      diasPactadosEn = r.dias_pactados_en
+    } catch (e) {
+      console.warn("[fuera-ruta] Chess falló:", e instanceof Error ? e.message : e)
+      fuenteOk = false
     }
-  } catch (e) {
-    // Sheet caído o descompartido: la solapa sigue con el último snapshot.
-    console.warn("[fuera-ruta] sync falló:", e instanceof Error ? e.message : e)
-    sheetOk = false
+  } else {
+    try {
+      await sincronizarSheet()
+    } catch (e) {
+      // Sheet caído o descompartido: la solapa sigue con el último snapshot.
+      console.warn("[fuera-ruta] sync del sheet falló:", e instanceof Error ? e.message : e)
+      fuenteOk = false
+    }
   }
 
   const supabase = await createClient()
   const { data, error } = await supabase
     .from("fuera_ruta_registros")
-    .select(
-      "clave, fecha_entrega, sucursal, deposito, cod_cliente, cliente, comprobante, nro_pedido, tipo_comprobante, monto, localidad, bultos, descripcion, cod_cliente_entregado, cliente_entregado, direccion_entrega, localidad_entrega, observaciones, patente, canal, bultos_pedido, hl_pedido, medida_origen",
-    )
+    .select(COLUMNAS)
     .eq("fecha_entrega", fecha)
     .order("monto", { ascending: false, nullsFirst: false })
   if (error) return { error: `No se pudo leer el registro de fuera de ruta: ${error.message}` }
 
   let filas = (data ?? []) as FueraRutaRegistro[]
-  filas = await enriquecerMedidas(fecha, filas)
+  if (fuente === "sheet") filas = await enriquecerMedidas(fecha, filas)
 
   return {
     data: {
@@ -93,13 +100,40 @@ export async function getFueraRuta(fecha: string): Promise<Result<FueraRutaDia>>
       total_monto: filas.reduce((a, f) => a + (f.monto ?? 0), 0),
       total_bultos: filas.reduce((a, f) => a + (f.bultos_pedido ?? f.bultos ?? 0), 0),
       total_hl: filas.reduce((a, f) => a + (f.hl_pedido ?? 0), 0),
-      sheet_ok: sheetOk,
+      fuente,
+      fuente_ok: fuenteOk,
+      dias_pactados_en: diasPactadosEn,
     },
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Fuente sheet (fechas anteriores al 16/10/2026)
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Completa bultos/HL de las filas del día con el pedido real de Chess:
+ * Sync-al-leer del sheet de Novedades Logísticas: upserta el snapshot en
+ * `fuera_ruta_registros` (identidad = clave fecha|pedido|cliente). El snapshot
+ * NUNCA borra: si en el sheet borran filas o queda un filtro puesto, la
+ * historia registrada se conserva. Las fechas del período Chess se descartan:
+ * ahí manda Chess y una carga manual tardía no debe pisarlo.
+ */
+async function sincronizarSheet(): Promise<void> {
+  const filas = (await fetchFueraRutaSheet()).filter((f) => f.fecha_entrega < FUERA_RUTA_CHESS_DESDE)
+  if (filas.length === 0) return
+  const admin = createAdminClient()
+  const ahora = new Date().toISOString()
+  const rows = filas.map((f) => ({ ...f, synced_at: ahora }))
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await admin
+      .from("fuera_ruta_registros")
+      .upsert(rows.slice(i, i + 500), { onConflict: "clave" })
+    if (error) throw new Error(`snapshot fuera de ruta: ${error.message}`)
+  }
+}
+
+/**
+ * Completa bultos/HL de las filas del sheet con el pedido real de Chess:
  * fecha de hoy en adelante → /pedidos/ (pendiente, se re-mide en cada apertura);
  * fecha pasada reciente → /ventas/ (facturado, se mide UNA vez y queda).
  * El histórico viejo se cargó por backfill. Best effort: si Chess no contesta,
@@ -149,11 +183,6 @@ async function enriquecerMedidas(
   return filas
 }
 
-function restarDiasIso(fecha: string, dias: number): string {
-  const [y, m, d] = fecha.split("-").map((s) => parseInt(s, 10))
-  return new Date(Date.UTC(y, m - 1, d - dias)).toISOString().slice(0, 10)
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Acumulado mensual — para revisar meses anteriores (junto al VRL en la UI).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,6 +200,7 @@ export interface FueraRutaMes {
  * El acumulado publicado arranca en abril 2026 (definición del usuario, 2026-07-17):
  * la carga del sheet en los meses anteriores fue irregular y la serie no es
  * representativa. El detalle diario y la tabla conservan TODO el histórico igual.
+ * Octubre 2026 mezcla fuentes: sheet hasta el 15, Chess desde el 16.
  */
 const ACUMULADO_DESDE = "2026-04"
 

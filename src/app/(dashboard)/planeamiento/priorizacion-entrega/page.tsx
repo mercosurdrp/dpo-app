@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import { getPriorizacionEntrega, getVrlMensual } from "@/actions/priorizacion-entrega"
 import { getFueraRuta, getFueraRutaMensual } from "@/actions/fuera-ruta"
 import { IS_MISIONES } from "@/lib/empresa"
+import { FUERA_RUTA_CHESS_DESDE } from "@/lib/fuera-ruta/chess"
 import { PriorizacionClient, FueraRutaSolo } from "./priorizacion-client"
 
 export const dynamic = "force-dynamic"
@@ -42,7 +43,11 @@ export default async function PriorizacionEntregaPage({
   const vrlMeses = "error" in vrl ? [] : vrl.data
   const fueraRuta =
     "error" in fueraRutaRes
-      ? { fecha: fechaEntrega, filas: [], total_monto: 0, total_bultos: 0, total_hl: 0, sheet_ok: false }
+      ? {
+          fecha: fechaEntrega, filas: [], total_monto: 0, total_bultos: 0, total_hl: 0,
+          fuente: fechaEntrega >= FUERA_RUTA_CHESS_DESDE ? "chess" as const : "sheet" as const,
+          fuente_ok: false, dias_pactados_en: null,
+        }
       : fueraRutaRes.data
   const fueraRutaMensual = "error" in frMensualRes ? [] : frMensualRes.data
 

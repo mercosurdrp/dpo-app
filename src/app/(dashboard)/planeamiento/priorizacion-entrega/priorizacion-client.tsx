@@ -972,19 +972,25 @@ function ReprogramadosPreview({
 
 /**
  * Registro de PEDIDOS FUERA DE RUTA del día: entregas fuera del recorrido
- * planificado, cargadas a mano por logística en el sheet de Novedades y
- * snapshoteadas en `fuera_ruta_registros`. No compiten por el cupo del camión:
+ * planificado. Hasta el 15/10/2026 las cargaba a mano logística en el sheet de
+ * Novedades; desde el 16/10/2026 se detectan en Chess (entrega fuera del día
+ * pactado del cliente). Ambas quedan en `fuera_ruta_registros`. No compiten por el cupo del camión:
  * son otro circuito, pero se controlan desde la misma pantalla del día.
  */
 function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
   const { filas } = fueraRuta
+  const esChess = fueraRuta.fuente === "chess"
+  const diasPactadosTxt = fueraRuta.dias_pactados_en
+    ? ` · días pactados bajados el ${new Date(fueraRuta.dias_pactados_en).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" })}`
+    : ""
   return (
     <div className="space-y-3">
-      {!fueraRuta.sheet_ok && (
+      {!fueraRuta.fuente_ok && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          No se pudo leer el sheet de Novedades Logísticas: se muestra el último
-          registro guardado, que puede estar incompleto para hoy.
+          {esChess
+            ? "No se pudo consultar Chess: se muestra el último registro guardado, que puede estar desactualizado para esta fecha."
+            : "No se pudo leer el sheet de Novedades Logísticas: se muestra el último registro guardado, que puede estar incompleto."}
         </div>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -997,13 +1003,17 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
           {fueraRuta.total_monto > 0 && <> · {money(fueraRuta.total_monto)}</>}
         </p>
         <p className="text-xs text-muted-foreground">
-          Fuente: sheet Novedades Logísticas + medidas del pedido en Chess
+          {esChess
+            ? `Fuente: Chess · entrega fuera del día pactado del cliente${diasPactadosTxt}`
+            : "Fuente: sheet Novedades Logísticas + medidas del pedido en Chess"}
         </p>
       </div>
 
       {filas.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">
-          Sin pedidos fuera de ruta cargados para el {fueraRuta.fecha}.
+          {esChess
+            ? <>Ningún pedido del {fueraRuta.fecha} cae fuera del día pactado de su cliente.</>
+            : <>Sin pedidos fuera de ruta cargados para el {fueraRuta.fecha}.</>}
         </p>
       ) : (
         <Table className="text-xs">
@@ -1017,7 +1027,7 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
               <TableHead className="text-right">HL</TableHead>
               <TableHead className="text-right">Monto</TableHead>
               <TableHead>Patente</TableHead>
-              <TableHead>Autorización / obs.</TableHead>
+              <TableHead>{esChess ? "Día pactado" : "Autorización / obs."}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -1064,7 +1074,7 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
                   <TableCell className="text-xs tabular-nums">{f.patente ?? "—"}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     <div className="max-w-[220px] truncate" title={[f.descripcion, f.observaciones].filter(Boolean).join(" · ") || undefined}>
-                      {[f.descripcion, f.observaciones].filter(Boolean).join(" · ") || "—"}
+                      {esChess ? (f.descripcion ?? "—") : ([f.descripcion, f.observaciones].filter(Boolean).join(" · ") || "—")}
                     </div>
                   </TableCell>
                 </TableRow>
