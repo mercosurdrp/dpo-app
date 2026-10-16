@@ -19,6 +19,7 @@
 //   ...?fecha=2026-10-20                      una fecha puntual
 //   ...?desde=2026-10-16&hasta=2026-10-31     reconstruir un rango
 //   ...?dias=1                                forzar la renovación de días pactados
+//   ...?fecha=2026-10-16&hoy=2026-10-18       tratar esa fecha como pasada (camino /ventas/)
 
 import { NextRequest, NextResponse } from "next/server"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -64,7 +65,9 @@ export async function GET(request: NextRequest) {
   }
 
   const sp = request.nextUrl.searchParams
-  const hoy = hoyArg()
+  // ?hoy= fuerza qué se considera "hoy" (para probar el camino facturado de
+  // una fecha que todavía está pendiente). En producción no hace falta.
+  const hoy = ES_FECHA.test(sp.get("hoy") ?? "") ? sp.get("hoy")! : hoyArg()
   let fechas: string[]
   if (sp.get("fecha")) {
     const f = sp.get("fecha")!

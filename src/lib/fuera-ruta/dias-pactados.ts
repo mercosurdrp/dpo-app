@@ -136,7 +136,8 @@ export async function getDiasPactados(hoy: string): Promise<{ mapa: MapaDiasPact
 export async function renovarDiasPactados(hoy: string): Promise<{ mapa: MapaDiasPactados; generadoEn: string }> {
   const t0 = Date.now()
   const mapa = await calcularDiasPactados(hoy)
-  await guardarFoto(CLAVE_FOTO_DIAS_PACTADOS, mapa, Date.now() - t0, "fuera-ruta")
+  // generado_por es un uuid de profiles: la foto la genera el sistema, no un usuario.
+  await guardarFoto(CLAVE_FOTO_DIAS_PACTADOS, mapa, Date.now() - t0, null)
   return { mapa, generadoEn: new Date().toISOString() }
 }
 
