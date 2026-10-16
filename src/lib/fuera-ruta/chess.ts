@@ -98,7 +98,9 @@ function armarFila(
     cliente_entregado: null,
     direccion_entrega: b.direccion ?? pactado?.direccion ?? null,
     localidad_entrega: localidad,
-    observaciones: "Detectado en Chess (fuera del día pactado del cliente)",
+    observaciones: origen === "pedido"
+      ? "En el ruteo: pedido pendiente fuera del día pactado"
+      : "Entregado fuera del día pactado (facturado)",
     patente: b.patente,
     canal: b.canal ?? pactado?.canal ?? null,
     bultos_pedido: redondear(b.bultos),

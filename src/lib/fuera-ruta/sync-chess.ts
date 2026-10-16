@@ -37,16 +37,27 @@ export function hoyArg(): string {
   return new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)
 }
 
+/** Texto que marca una fila del ruteo que al final no salió fuera de ruta. */
+export const OBS_NO_SALIO = "Estaba en el ruteo y no se entregó fuera de ruta ese día (se sacó o se reprogramó)"
+
+/** Lista para el filtro `in` de PostgREST. Las claves no traen comillas. */
+function listaIn(valores: string[]): string {
+  return `(${valores.map((v) => `"${v}"`).join(",")})`
+}
+
 export function restarDiasIso(fecha: string, dias: number): string {
   const [y, m, d] = fecha.split("-").map((s) => parseInt(s, 10))
   return new Date(Date.UTC(y, m - 1, d - dias)).toISOString().slice(0, 10)
 }
 
 /**
- * Detecta en Chess los fuera de ruta de `fecha` y deja la base igual a Chess:
- * upserta las filas detectadas y borra las de esa fecha que ya no lo son (un
- * pedido pendiente que se reprograma al día pactado deja de estar fuera de
- * ruta; una factura anulada también). Sólo toca fechas del período Chess.
+ * Detecta en Chess los fuera de ruta de `fecha` y los guarda. Hay dos fotos:
+ *  - RUTEO (fecha de hoy en adelante): lo pendiente fuera de día. Se mantiene
+ *    igual a Chess (lo que se reprograma al día pactado desaparece).
+ *  - ENTREGADO (fecha pasada): lo facturado fuera de día pisa la fila del
+ *    ruteo y queda como 'venta'. Lo que estaba en el ruteo y no salió se
+ *    conserva como 'pedido' marcado, para comparar las dos fotos.
+ * Sólo toca fechas del período Chess.
  */
 export async function sincronizarFueraRutaChess(
   fecha: string,
@@ -74,7 +85,8 @@ export async function sincronizarFueraRutaChess(
   const ahora = new Date().toISOString()
   if (detectadas.length > 0) {
     // primera_vez NO va en el payload: la pone el default en el insert y el
-    // upsert no la pisa (queda cuándo apareció el registro por primera vez).
+    // upsert no la pisa (queda cuándo apareció el registro por primera vez,
+    // o sea si ya estaba en el ruteo o apareció recién al facturar).
     const rows = detectadas.map((f) => ({ ...f, synced_at: ahora }))
     for (let i = 0; i < rows.length; i += 500) {
       const { error } = await admin
@@ -83,14 +95,32 @@ export async function sincronizarFueraRutaChess(
       if (error) throw new Error(`snapshot fuera de ruta (Chess): ${error.message}`)
     }
   }
-  // Lo que Chess ya no marca para esa fecha se va: la base refleja Chess.
   const claves = detectadas.map((f) => f.clave)
-  let borrar = admin.from("fuera_ruta_registros").delete().eq("fecha_entrega", fecha)
-  if (claves.length > 0) {
-    borrar = borrar.not("clave", "in", `(${claves.map((c) => `"${c}"`).join(",")})`)
+  if (esPendiente) {
+    // Foto del RUTEO: refleja lo que hoy está pendiente fuera de día. Un pedido
+    // que se reprogramó al día pactado (o se eliminó) deja de figurar.
+    let borrar = admin
+      .from("fuera_ruta_registros")
+      .delete()
+      .eq("fecha_entrega", fecha)
+      .eq("medida_origen", "pedido")
+    if (claves.length > 0) borrar = borrar.not("clave", "in", listaIn(claves))
+    const { error } = await borrar
+    if (error) throw new Error(`limpieza fuera de ruta (ruteo): ${error.message}`)
+  } else {
+    // Foto de lo ENTREGADO: lo facturado fuera de día pisa la fila del ruteo
+    // (misma clave) y pasa a 'venta'. Lo que estaba en el ruteo y NO salió
+    // fuera de ruta se conserva como 'pedido' y se marca: es justamente lo que
+    // se sacó o reprogramó en el ruteo, y hay que poder verlo.
+    let marcar = admin
+      .from("fuera_ruta_registros")
+      .update({ observaciones: OBS_NO_SALIO, synced_at: ahora })
+      .eq("fecha_entrega", fecha)
+      .eq("medida_origen", "pedido")
+    if (claves.length > 0) marcar = marcar.not("clave", "in", listaIn(claves))
+    const { error } = await marcar
+    if (error) throw new Error(`marca fuera de ruta (no salió): ${error.message}`)
   }
-  const { error: errBorrar } = await borrar
-  if (errBorrar) throw new Error(`limpieza fuera de ruta (Chess): ${errBorrar.message}`)
 
   return {
     fecha,
