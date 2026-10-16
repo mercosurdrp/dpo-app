@@ -980,6 +980,10 @@ function ReprogramadosPreview({
 function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
   const { filas } = fueraRuta
   const esChess = fueraRuta.fuente === "chess"
+  const entregadoFoto = fueraRuta.foto === "entregado"
+  const nEntregados = filas.filter((f) => f.estado === "entregado" || f.estado === "entregado_sin_ruteo").length
+  const nSinRuteo = filas.filter((f) => f.estado === "entregado_sin_ruteo").length
+  const nNoSalio = filas.filter((f) => f.estado === "no_salio").length
   const diasPactadosTxt = fueraRuta.dias_pactados_en
     ? ` · días pactados bajados el ${new Date(fueraRuta.dias_pactados_en).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" })}`
     : ""
@@ -995,8 +999,21 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          <strong className="text-slate-900">Fuera de ruta</strong> · {filas.length}{" "}
-          {filas.length === 1 ? "pedido" : "pedidos"}
+          <strong className="text-slate-900">Fuera de ruta</strong>
+          {esChess && entregadoFoto ? (
+            <>
+              {" "}· {nEntregados} {nEntregados === 1 ? "entregado" : "entregados"} fuera de ruta
+              {nSinRuteo > 0 && <> ({nSinRuteo} sin figurar en el ruteo)</>}
+              {nNoSalio > 0 && (
+                <> · <span className="text-slate-500">{nNoSalio} {nNoSalio === 1 ? "quedó" : "quedaron"} en el ruteo y no {nNoSalio === 1 ? "salió" : "salieron"}</span></>
+              )}
+            </>
+          ) : (
+            <>
+              {" "}· {filas.length} {filas.length === 1 ? "pedido" : "pedidos"}
+              {esChess && <> en el ruteo fuera de su día</>}
+            </>
+          )}
           {fueraRuta.total_bultos > 0 && (
             <> · {fueraRuta.total_bultos.toLocaleString("es-AR")} bultos · {fueraRuta.total_hl.toFixed(1)} HL</>
           )}
@@ -1012,7 +1029,9 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
       {filas.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">
           {esChess
-            ? <>Ningún pedido del {fueraRuta.fecha} cae fuera del día pactado de su cliente.</>
+            ? (entregadoFoto
+                ? <>El {fueraRuta.fecha} no se entregó ningún pedido fuera del día pactado de su cliente.</>
+                : <>Ningún pedido del {fueraRuta.fecha} está en el ruteo fuera del día pactado de su cliente.</>)
             : <>Sin pedidos fuera de ruta cargados para el {fueraRuta.fecha}.</>}
         </p>
       ) : (
@@ -1028,6 +1047,7 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
               <TableHead className="text-right">Monto</TableHead>
               <TableHead>Patente</TableHead>
               <TableHead>{esChess ? "Día pactado" : "Autorización / obs."}</TableHead>
+              {esChess && <TableHead>Estado</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -1035,7 +1055,7 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
               const otroCliente =
                 f.cod_cliente_entregado != null && f.cod_cliente_entregado !== f.cod_cliente
               return (
-                <TableRow key={f.clave}>
+                <TableRow key={f.clave} className={f.estado === "no_salio" ? "text-muted-foreground opacity-70" : undefined}>
                   <TableCell>
                     <div className="max-w-[200px] truncate font-medium" title={f.cliente ?? undefined}>
                       {f.cliente ?? "—"}
@@ -1077,6 +1097,11 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
                       {esChess ? (f.descripcion ?? "—") : ([f.descripcion, f.observaciones].filter(Boolean).join(" · ") || "—")}
                     </div>
                   </TableCell>
+                  {esChess && (
+                    <TableCell className="text-xs">
+                      <EstadoFueraRuta estado={f.estado} />
+                    </TableCell>
+                  )}
                 </TableRow>
               )
             })}
@@ -1085,6 +1110,34 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
       )}
     </div>
   )
+}
+
+/**
+ * Las dos fotos del fuera de ruta Chess: lo que está en el ruteo (antes de la
+ * entrega) y lo que efectivamente salió (después). Un pedido puede estar en el
+ * ruteo y sacarse o reprogramarse; o salir fuera de ruta sin haber figurado.
+ */
+function EstadoFueraRuta({ estado }: { estado: FueraRutaRegistro["estado"] }) {
+  switch (estado) {
+    case "ruteo":
+      return <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">En el ruteo</Badge>
+    case "entregado":
+      return <Badge variant="outline" className="border-red-300 bg-red-50 text-red-800">Entregado fuera de ruta</Badge>
+    case "entregado_sin_ruteo":
+      return (
+        <Badge variant="outline" className="border-red-300 bg-red-50 text-red-800" title="Salió fuera de ruta sin haber figurado en el ruteo">
+          Entregado · no estaba en el ruteo
+        </Badge>
+      )
+    case "no_salio":
+      return (
+        <Badge variant="outline" className="border-slate-300 bg-slate-50 text-slate-600" title="Estaba en el ruteo y no se entregó fuera de ruta ese día (se sacó o se reprogramó)">
+          No salió
+        </Badge>
+      )
+    default:
+      return <span className="text-muted-foreground">—</span>
+  }
 }
 
 /**

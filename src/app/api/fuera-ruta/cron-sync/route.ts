@@ -8,8 +8,9 @@
 //   1) Renueva la foto de días pactados por cliente si tiene más de un día
 //      (bajar el maestro de clientes de Chess tarda ~10 s; la pantalla no debe pagarlo).
 //   2) Deja cerrados AYER y ANTEAYER con lo facturado (/ventas/) y precalcula HOY
-//      y MAÑANA con los pedidos pendientes (/pedidos/), así la pantalla abre al
-//      instante y el acumulado mensual está completo aunque nadie la abra.
+//      y los próximos 3 días con los pedidos pendientes (/pedidos/), así la
+//      pantalla abre al instante, la foto del ruteo existe antes de la entrega
+//      y el acumulado mensual está completo aunque nadie la abra.
 //
 // Auth: Bearer CRON_SECRET. Schedule en `vercel.json` (10:30 UTC = 07:30 ARG,
 // cuando las facturas del día ya están emitidas y las de ayer liquidadas).
@@ -81,7 +82,10 @@ export async function GET(request: NextRequest) {
     }
     fechas = rangoDeFechas(desde, hasta)
   } else {
-    fechas = [restarDiasIso(hoy, 2), restarDiasIso(hoy, 1), hoy, sumarDiasIso(hoy, 1)]
+    // Ayer y anteayer cerrados; hoy y los próximos 3 días precalculados (el
+    // viernes ya se rutea el lunes, y la foto del ruteo tiene que existir antes
+    // de la entrega para poder compararla con lo que salió).
+    fechas = [restarDiasIso(hoy, 2), restarDiasIso(hoy, 1), hoy, sumarDiasIso(hoy, 1), sumarDiasIso(hoy, 2), sumarDiasIso(hoy, 3)]
   }
   fechas = fechas.filter((f) => f >= FUERA_RUTA_CHESS_DESDE)
 

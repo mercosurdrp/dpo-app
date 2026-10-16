@@ -19,7 +19,18 @@ export interface FueraRutaRegistro extends FueraRutaFila {
   hl_pedido: number | null
   /** 'pedido' = medido con el pedido pendiente (puede cambiar) · 'venta' = facturado. */
   medida_origen: string | null
+  /** Cuándo apareció la fila por primera vez (en el ruteo, o recién al facturar). */
+  primera_vez: string | null
+  /**
+   * Sólo fuente Chess. 'ruteo' = pendiente, está en el ruteo fuera de día ·
+   * 'entregado' = salió fuera de ruta y ya estaba en el ruteo · 'entregado_sin_ruteo'
+   * = salió fuera de ruta sin haber figurado en el ruteo · 'no_salio' = estaba en
+   * el ruteo y no se entregó fuera de ruta ese día (se sacó o se reprogramó).
+   */
+  estado: FueraRutaEstado | null
 }
+
+export type FueraRutaEstado = "ruteo" | "entregado" | "entregado_sin_ruteo" | "no_salio"
 
 export type FueraRutaFuente = "sheet" | "chess"
 
@@ -41,10 +52,12 @@ export interface FueraRutaDia {
   fuente_ok: boolean
   /** Cuándo se bajó de Chess el maestro de días pactados (sólo fuente 'chess'). */
   dias_pactados_en: string | null
+  /** Fuente Chess: 'ruteo' = la fecha todavía no se entregó · 'entregado' = ya se facturó. */
+  foto: "ruteo" | "entregado" | null
 }
 
 const COLUMNAS =
-  "clave, fecha_entrega, sucursal, deposito, cod_cliente, cliente, comprobante, nro_pedido, tipo_comprobante, monto, localidad, bultos, descripcion, cod_cliente_entregado, cliente_entregado, direccion_entrega, localidad_entrega, observaciones, patente, canal, bultos_pedido, hl_pedido, medida_origen"
+  "clave, fecha_entrega, sucursal, deposito, cod_cliente, cliente, comprobante, nro_pedido, tipo_comprobante, monto, localidad, bultos, descripcion, cod_cliente_entregado, cliente_entregado, direccion_entrega, localidad_entrega, observaciones, patente, canal, bultos_pedido, hl_pedido, medida_origen, primera_vez"
 
 /**
  * Pedidos FUERA DE RUTA de una fecha de entrega.
@@ -90,21 +103,45 @@ export async function getFueraRuta(fecha: string): Promise<Result<FueraRutaDia>>
     .order("monto", { ascending: false, nullsFirst: false })
   if (error) return { error: `No se pudo leer el registro de fuera de ruta: ${error.message}` }
 
+  const hoy = hoyArg()
   let filas = (data ?? []) as FueraRutaRegistro[]
-  if (fuente === "sheet") filas = await enriquecerMedidas(fecha, filas)
+  if (fuente === "sheet") {
+    filas = await enriquecerMedidas(fecha, filas)
+    for (const f of filas) f.estado = null
+  } else {
+    for (const f of filas) f.estado = estadoChess(f, hoy)
+  }
+  // Los totales son de lo que efectivamente salió (o está por salir): lo que
+  // quedó en el ruteo y no se entregó fuera de ruta se lista, pero no suma.
+  const suman = filas.filter((f) => f.estado !== "no_salio")
 
   return {
     data: {
       fecha,
       filas,
-      total_monto: filas.reduce((a, f) => a + (f.monto ?? 0), 0),
-      total_bultos: filas.reduce((a, f) => a + (f.bultos_pedido ?? f.bultos ?? 0), 0),
-      total_hl: filas.reduce((a, f) => a + (f.hl_pedido ?? 0), 0),
+      total_monto: suman.reduce((a, f) => a + (f.monto ?? 0), 0),
+      total_bultos: suman.reduce((a, f) => a + (f.bultos_pedido ?? f.bultos ?? 0), 0),
+      total_hl: suman.reduce((a, f) => a + (f.hl_pedido ?? 0), 0),
       fuente,
       fuente_ok: fuenteOk,
       dias_pactados_en: diasPactadosEn,
+      foto: fuente === "chess" ? (fecha >= hoy ? "ruteo" : "entregado") : null,
     },
   }
+}
+
+/** Día (ARG) en que apareció la fila: si fue antes o el mismo día de la entrega, ya estaba en el ruteo. */
+function diaArg(iso: string | null): string | null {
+  if (!iso) return null
+  const t = Date.parse(iso)
+  return Number.isFinite(t) ? new Date(t - 3 * 3600 * 1000).toISOString().slice(0, 10) : null
+}
+
+function estadoChess(f: FueraRutaRegistro, hoy: string): FueraRutaEstado {
+  if (f.fecha_entrega >= hoy) return "ruteo"
+  if (f.medida_origen !== "venta") return "no_salio"
+  const visto = diaArg(f.primera_vez)
+  return visto && visto <= f.fecha_entrega ? "entregado" : "entregado_sin_ruteo"
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -204,27 +241,60 @@ export interface FueraRutaMes {
  */
 const ACUMULADO_DESDE = "2026-04"
 
-/** Acumulado por mes desde la vista (bypassa el techo de 1000 filas de PostgREST). */
+/**
+ * Acumulado por mes. Se agrega acá y no en la vista `v_fuera_ruta_mensual`
+ * porque desde el 16/10/2026 la tabla guarda también lo que quedó en el ruteo
+ * y no salió fuera de ruta ('pedido' en una fecha ya entregada): eso se lista
+ * para comparar, pero no cuenta como fuera de ruta.
+ */
 export async function getFueraRutaMensual(meses = 13): Promise<Result<FueraRutaMes[]>> {
   await requireAuth()
   if (IS_MISIONES) return { error: SOLO_PAMPEANA }
 
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from("v_fuera_ruta_mensual")
-    .select("*")
-    .gte("anio_mes", ACUMULADO_DESDE)
-    .limit(meses)
-  if (error) return { error: `No se pudo leer el acumulado de fuera de ruta: ${error.message}` }
+  const hoy = hoyArg()
+  type Fila = {
+    fecha_entrega: string
+    cod_cliente: number | null
+    bultos_pedido: number | null
+    bultos: number | null
+    hl_pedido: number | null
+    monto: number | null
+    medida_origen: string | null
+  }
+  const filas: Fila[] = []
+  // PostgREST corta en 1000 filas: se pagina.
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await supabase
+      .from("fuera_ruta_registros")
+      .select("fecha_entrega, cod_cliente, bultos_pedido, bultos, hl_pedido, monto, medida_origen")
+      .gte("fecha_entrega", `${ACUMULADO_DESDE}-01`)
+      .order("fecha_entrega")
+      .range(desde, desde + 999)
+    if (error) return { error: `No se pudo leer el acumulado de fuera de ruta: ${error.message}` }
+    const lote = (data ?? []) as Fila[]
+    filas.push(...lote)
+    if (lote.length < 1000) break
+  }
 
+  const porMes = new Map<string, FueraRutaMes & { _clientes: Set<number> }>()
+  for (const f of filas) {
+    const esChess = f.fecha_entrega >= FUERA_RUTA_CHESS_DESDE
+    if (esChess && f.fecha_entrega < hoy && f.medida_origen !== "venta") continue // no salió
+    const mes = f.fecha_entrega.slice(0, 7)
+    const m = porMes.get(mes) ?? { anio_mes: mes, pedidos: 0, clientes: 0, bultos: 0, hl: 0, monto: 0, _clientes: new Set<number>() }
+    m.pedidos += 1
+    if (f.cod_cliente != null) m._clientes.add(f.cod_cliente)
+    m.bultos += Number(f.bultos_pedido ?? f.bultos ?? 0)
+    m.hl += Number(f.hl_pedido ?? 0)
+    m.monto += Number(f.monto ?? 0)
+    porMes.set(mes, m)
+  }
+  const r2 = (n: number) => Math.round(n * 100) / 100
   return {
-    data: (data ?? []).map((r) => ({
-      anio_mes: String(r.anio_mes),
-      pedidos: Number(r.pedidos ?? 0),
-      clientes: Number(r.clientes ?? 0),
-      bultos: Number(r.bultos ?? 0),
-      hl: Number(r.hl ?? 0),
-      monto: Number(r.monto ?? 0),
-    })),
+    data: [...porMes.values()]
+      .sort((a, b) => b.anio_mes.localeCompare(a.anio_mes))
+      .slice(0, meses)
+      .map(({ _clientes, ...m }) => ({ ...m, clientes: _clientes.size, bultos: r2(m.bultos), hl: r2(m.hl), monto: r2(m.monto) })),
   }
 }
