@@ -6,9 +6,11 @@
 // descargarse (los archivos suelen quedar guardados como
 // application/octet-stream, que el navegador siempre descarga).
 //
-// Word/Excel/PowerPoint se abren en el visor web de Microsoft Office
-// (view.officeapps.live.com), que renderiza el documento en el navegador a
-// partir de la URL firmada — sin descargar. Es solo lectura: para editar
+// Word/Excel de nuestro Storage se convierten a HTML en el servidor
+// (/api/archivos/office, con SheetJS y mammoth) y se ven en el navegador sin
+// descargar. Antes iban al visor web de Microsoft (view.officeapps.live.com),
+// que el 16/10/2026 dejó de abrir nuestros archivos; queda sólo para URLs
+// externas y como alternativa para PowerPoint. Es solo lectura: para editar
 // sigue el flujo descargar → editar → "Nueva versión".
 //
 // El resto (CSV, ZIP, etc.) y cualquier URL externa se abren directo,
@@ -55,7 +57,17 @@ export function urlParaAbrir(url: string, nombre?: string): string {
   if (VISUALIZABLE.has(ext) && esDeNuestroStorage(url)) {
     return `/api/archivos/ver?src=${encodeURIComponent(url)}`
   }
-  if (OFFICE.has(ext)) return urlVisorOffice(url)
+  if (OFFICE.has(ext)) {
+    // Los Office de nuestro Storage se convierten a HTML en /api/archivos/office
+    // (el visor de Microsoft dejó de abrirlos, 16/10/2026). Los externos siguen
+    // yendo al visor de Microsoft.
+    if (esDeNuestroStorage(url)) {
+      const qs = new URLSearchParams({ src: url })
+      if (nombre) qs.set("nombre", nombre)
+      return `/api/archivos/office?${qs.toString()}`
+    }
+    return urlVisorOffice(url)
+  }
   return url
 }
 
