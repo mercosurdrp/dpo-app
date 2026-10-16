@@ -22,6 +22,7 @@ import {
   Package,
   Route as RouteIcon,
   Store,
+  LineChart as LineChartIcon,
 } from "lucide-react"
 import type { PilarConIndicadoresCount } from "@/actions/indicadores"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -283,6 +284,25 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
+          {!IS_MISIONES && (
+            <Link href="/indicadores/sci">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-sky-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-sky-100 text-sky-600 group-hover:bg-sky-200 transition-colors">
+                    <LineChartIcon className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      SCI — Curva de Ventas
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Desvío del HL diario del mes — Planeamiento 4.3 · Entrega 3.1
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
           {!IS_MISIONES && (
             <Link href="/indicadores/desvio-plan">
               <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-violet-300">
