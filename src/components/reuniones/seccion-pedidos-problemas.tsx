@@ -436,9 +436,11 @@ export function SeccionPedidosProblemas({
               hasta esa fecha.{" "}
               <strong>VRL</strong> = no se entregó por capacidad de reparto ·{" "}
               <strong>VRC</strong> = no se entregó por límite de crédito ·{" "}
-              <strong>Fuera de ruta</strong> = se llevó, pero fuera del recorrido
-              planificado. El que no se puede llevar se baja del camión y pasa a
-              contarse en el VRL, así que no se suma dos veces.
+              <strong>Fuera de ruta</strong> = se entregó fuera del día pactado
+              del cliente (desde el 16/10/2026 lo detecta Chess; antes, el sheet de
+              novedades). Cuenta sólo lo que realmente salió: lo que estaba en el
+              ruteo y se sacó o reprogramó se informa aparte, y el que se baja del
+              camión pasa a contarse en el VRL, así que no se suma dos veces.
             </p>
 
             {data.vrcError && (
@@ -514,11 +516,15 @@ export function SeccionPedidosProblemas({
                   mezclaría "no se entregó" con "se entregó mal". */}
               <Resumen
                 titulo="Fuera de ruta"
-                detalle={
+                detalle={[
+                  "realmente entregados fuera de su día pactado",
                   data.fdrBajados.pedidos > 0
-                    ? `se llevaron fuera del recorrido — otros ${data.fdrBajados.pedidos} se bajaron y están en el VRL`
-                    : "se llevaron, fuera del recorrido planificado"
-                }
+                    ? `otros ${data.fdrBajados.pedidos} se bajaron y están en el VRL`
+                    : null,
+                  data.fdrNoSalieron.pedidos > 0
+                    ? `${data.fdrNoSalieron.pedidos} estaban en el ruteo y no salieron`
+                    : null,
+                ].filter(Boolean).join(" — ")}
                 pedidos={data.totalFdr.pedidos}
                 bultos={data.totalFdr.bultos}
                 hl={data.totalFdr.hl}

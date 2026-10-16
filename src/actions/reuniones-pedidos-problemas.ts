@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getPool } from "@/lib/mercosur-dashboard"
+import { FUERA_RUTA_CHESS_DESDE } from "@/lib/fuera-ruta/chess"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -80,6 +81,13 @@ export interface PedidosConProblemasReunion {
   /** Fuera de ruta que terminó bajado del camión ⇒ vive dentro del VRL. */
   fdrBajados: TotalesFuente
   mesFdrBajados: TotalesFuente
+  /**
+   * Desde el 16/10/2026 (fuente Chess): pedidos que estaban en el ruteo fuera
+   * de su día pactado y NO salieron fuera de ruta (se sacaron o reprogramaron).
+   * Se informan para comparar con lo que realmente se hizo; no suman.
+   */
+  fdrNoSalieron: TotalesFuente
+  mesFdrNoSalieron: TotalesFuente
   vrcError: string | null
 }
 
@@ -210,20 +218,31 @@ export async function getPedidosConProblemas(
   }
 
   // ── FDR: entregas fuera del recorrido planificado ─────────────────────────
-  // Registro propio (`fuera_ruta_registros`, sincronizado del sheet de novedades
-  // de logística). Los bultos/HL se miden del pedido Chess y pueden faltar en los
-  // que nunca se facturaron: se muestran en 0 y el pedido igual se lista.
+  // Registro propio (`fuera_ruta_registros`). Hasta el 15/10/2026 venía del
+  // sheet de novedades de logística; desde el 16/10/2026 lo detecta Chess
+  // (entrega fuera del día pactado del cliente) y la tabla guarda dos fotos:
+  // lo que estaba en el ruteo ('pedido') y lo que realmente salió ('venta').
+  // 🚨 En la reunión cuenta SOLO lo que realmente se hizo: en el período Chess
+  // entran las filas 'venta'; las del ruteo que no salieron se informan aparte.
   const fdrRes = await supabase
     .from("fuera_ruta_registros")
     .select(
-      "fecha_entrega, cod_cliente, cliente, localidad, bultos_pedido, hl_pedido, monto, patente, nro_pedido"
+      "fecha_entrega, cod_cliente, cliente, localidad, bultos_pedido, hl_pedido, monto, patente, nro_pedido, medida_origen"
     )
     .gte("fecha_entrega", inferior)
     .lte("fecha_entrega", hasta)
   if (fdrRes.error) {
     return { error: `No se pudo leer el fuera de ruta: ${fdrRes.error.message}` }
   }
-  const fdrTodos: PedidoConProblema[] = (fdrRes.data ?? []).map((r) => ({
+  const esChess = (r: { fecha_entrega: unknown }) => String(r.fecha_entrega) >= FUERA_RUTA_CHESS_DESDE
+  const fdrFilas = (fdrRes.data ?? []).filter((r) => !esChess(r) || r.medida_origen === "venta")
+  const fdrNoSalieronFilas = (fdrRes.data ?? []).filter((r) => esChess(r) && r.medida_origen !== "venta")
+  const aTotal = (r: { fecha_entrega: unknown; bultos_pedido: unknown; hl_pedido: unknown }) => ({
+    fecha: String(r.fecha_entrega),
+    bultos: Number(r.bultos_pedido ?? 0),
+    hl: Number(r.hl_pedido ?? 0),
+  })
+  const fdrTodos: PedidoConProblema[] = fdrFilas.map((r) => ({
     fuente: "fdr" as const,
     fecha: String(r.fecha_entrega),
     idCliente: String(r.cod_cliente ?? ""),
@@ -277,6 +296,8 @@ export async function getPedidosConProblemas(
       mesFdrBajados: totales(
         fdrBajadosTodos.filter((p) => p.fecha >= inicioMes)
       ),
+      fdrNoSalieron: totales(fdrNoSalieronFilas.map(aTotal).filter((p) => p.fecha >= desde)),
+      mesFdrNoSalieron: totales(fdrNoSalieronFilas.map(aTotal).filter((p) => p.fecha >= inicioMes)),
       vrcError,
     },
   }
