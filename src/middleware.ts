@@ -88,6 +88,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/notas-chofer" ||
     pathname === "/api/cloudfleet/cron-sync" ||
     pathname === "/api/vehiculos/flota-kpi-cron" ||
+    pathname === "/api/fuera-ruta/cron-sync" ||
     pathname === "/api/vehiculos/cil-alertas" ||
     pathname === "/api/planeamiento/periodos-criticos/volumen/cron-sync" ||
     pathname === "/api/radar-rechazos/cron" ||
