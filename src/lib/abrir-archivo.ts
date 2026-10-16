@@ -49,10 +49,24 @@ function esDeNuestroStorage(url: string): boolean {
   }
 }
 
+/** URL final con la que se abre un archivo: visor propio, visor de Office o directa. */
+export function urlParaAbrir(url: string, nombre?: string): string {
+  const ext = extensionDe(nombre || url)
+  if (VISUALIZABLE.has(ext) && esDeNuestroStorage(url)) {
+    return `/api/archivos/ver?src=${encodeURIComponent(url)}`
+  }
+  if (OFFICE.has(ext)) return urlVisorOffice(url)
+  return url
+}
+
 /**
  * Abre un archivo en una pestaña nueva. Si es una imagen o PDF guardado en
  * nuestro Storage, lo enruta por el visor para que se vea inline; en cualquier
  * otro caso lo abre directo (el navegador decide, normalmente descargar).
+ *
+ * OJO: si antes de llamar hubo un `await` (p. ej. pedir la URL firmada al
+ * servidor), el bloqueador de popups puede comerse la pestaña. En ese caso
+ * usar `abrirVentanaPrevia()` ANTES del await y `abrirArchivoEn()` después.
  *
  * @param url    URL del archivo (signed URL o pública de Supabase, o externa).
  * @param nombre Nombre original del archivo (opcional). Mejora la detección de
@@ -60,20 +74,59 @@ function esDeNuestroStorage(url: string): boolean {
  */
 export function abrirArchivo(url: string, nombre?: string): void {
   if (typeof window === "undefined" || !url) return
-  const ext = extensionDe(nombre || url)
-  if (VISUALIZABLE.has(ext) && esDeNuestroStorage(url)) {
-    window.open(
-      `/api/archivos/ver?src=${encodeURIComponent(url)}`,
-      "_blank",
-      "noopener,noreferrer",
-    )
+  window.open(urlParaAbrir(url, nombre), "_blank", "noopener,noreferrer")
+}
+
+/**
+ * Abre una pestaña vacía de forma SINCRÓNICA (dentro del click del usuario),
+ * para que el bloqueador de popups no la frene. Devuelve la ventana o null si
+ * igual la bloquearon. Después de resolver la URL, completar con
+ * `abrirArchivoEn(ventana, url, nombre)`.
+ */
+export function abrirVentanaPrevia(): Window | null {
+  if (typeof window === "undefined") return null
+  const w = window.open("about:blank", "_blank")
+  if (w) {
+    try {
+      w.opener = null
+      w.document.title = "Abriendo archivo…"
+      w.document.body.innerHTML =
+        '<p style="font-family:sans-serif;color:#444;padding:24px">Abriendo archivo…</p>'
+    } catch {
+      // Si no se puede escribir en la pestaña, no pasa nada.
+    }
+  }
+  return w
+}
+
+/**
+ * Navega una pestaña abierta con `abrirVentanaPrevia()` al archivo. Si la
+ * pestaña no existe (bloqueada), cae a `abrirArchivo` como último recurso.
+ */
+export function abrirArchivoEn(
+  ventana: Window | null,
+  url: string,
+  nombre?: string,
+): void {
+  if (!url) {
+    cerrarVentanaPrevia(ventana)
     return
   }
-  if (OFFICE.has(ext)) {
-    window.open(urlVisorOffice(url), "_blank", "noopener,noreferrer")
+  const destino = urlParaAbrir(url, nombre)
+  if (ventana && !ventana.closed) {
+    ventana.location.href = destino
     return
   }
-  window.open(url, "_blank", "noopener,noreferrer")
+  abrirArchivo(url, nombre)
+}
+
+/** Cierra la pestaña previa si la operación falló. */
+export function cerrarVentanaPrevia(ventana: Window | null): void {
+  try {
+    if (ventana && !ventana.closed) ventana.close()
+  } catch {
+    // ignorar
+  }
 }
 
 /**

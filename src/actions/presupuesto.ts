@@ -265,6 +265,32 @@ export async function getSignedUrl(
   }
 }
 
+/**
+ * URL firmada que DESCARGA el archivo con su nombre original (Content-Disposition
+ * attachment). Es la alternativa cuando el visor web de Office no puede abrir
+ * el Excel: el usuario se lo baja y lo abre en su Excel.
+ */
+export async function getSignedUrlDescarga(
+  archivoUrl: string,
+  nombre?: string | null,
+): Promise<Result<{ url: string }>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(archivoUrl, 600, { download: nombre || true })
+    if (error || !data) {
+      return { error: error?.message ?? "No se pudo firmar URL" }
+    }
+    return { data: { url: data.signedUrl } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error firmando URL",
+    }
+  }
+}
+
 export async function listResponsablesPosibles(): Promise<
   Result<{ id: string; nombre: string; email: string }[]>
 > {

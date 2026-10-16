@@ -1,6 +1,11 @@
 "use client"
 
-import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
+import {
+  abrirVentanaPrevia,
+  abrirArchivoEn,
+  cerrarVentanaPrevia,
+  descargarArchivo,
+} from "@/lib/abrir-archivo"
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
@@ -51,6 +56,7 @@ import {
   eliminarEerrAnual,
   eliminarTarea,
   getSignedUrl,
+  getSignedUrlDescarga,
 } from "@/actions/presupuesto"
 import { SubirPresupuestoAnualDialog } from "@/components/presupuesto/subir-presupuesto-anual-dialog"
 import { SubirEerrAnualDialog } from "@/components/presupuesto/subir-eerr-anual-dialog"
@@ -244,14 +250,28 @@ export function PresupuestoClient({
     router.push(`/presupuesto?anio=${nuevo}`)
   }
 
-  async function abrirArchivo(url: string | null) {
+  async function abrirArchivo(url: string | null, nombre?: string | null) {
     if (!url) return
+    // La pestaña se abre ANTES de pedir la URL firmada: si se abre después del
+    // await, el bloqueador de popups la frena y parece que "Ver" no hace nada.
+    const ventana = abrirVentanaPrevia()
     const result = await getSignedUrl(url)
     if ("error" in result) {
+      cerrarVentanaPrevia(ventana)
       alert(`Error abriendo archivo: ${result.error}`)
       return
     }
-    abrirArchivoEnVisor(result.data.url)
+    abrirArchivoEn(ventana, result.data.url, nombre ?? undefined)
+  }
+
+  async function descargar(url: string | null, nombre?: string | null) {
+    if (!url) return
+    const result = await getSignedUrlDescarga(url, nombre)
+    if ("error" in result) {
+      alert(`Error descargando archivo: ${result.error}`)
+      return
+    }
+    descargarArchivo(result.data.url)
   }
 
   function handleEliminarEerr() {
@@ -405,10 +425,23 @@ export function PresupuestoClient({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => abrirArchivo(anual.archivo_url)}
+                    onClick={() =>
+                      abrirArchivo(anual.archivo_url, anual.archivo_nombre)
+                    }
+                  >
+                    <Eye className="mr-2 size-4" />
+                    Ver
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      descargar(anual.archivo_url, anual.archivo_nombre)
+                    }
                   >
                     <FileDown className="mr-2 size-4" />
-                    Ver
+                    Descargar
                   </Button>
                   {puedeEditar && (
                     <Button
@@ -481,10 +514,23 @@ export function PresupuestoClient({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => abrirArchivo(eerr.archivo_url)}
+                    onClick={() =>
+                      abrirArchivo(eerr.archivo_url, eerr.archivo_nombre)
+                    }
+                  >
+                    <Eye className="mr-2 size-4" />
+                    Ver
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      descargar(eerr.archivo_url, eerr.archivo_nombre)
+                    }
                   >
                     <FileDown className="mr-2 size-4" />
-                    Ver
+                    Descargar
                   </Button>
                   {puedeEditar && (
                     <>
