@@ -5,8 +5,8 @@ import type { KpiCombustible } from "@/actions/presupuesto-combustible-kpi"
 import type { CostoHlMes } from "@/actions/presupuesto-costo-hl"
 
 /**
- * Reunión de Iniciativas de Ahorro (el mismo día que la Reunión de Presupuesto
- * de seguimiento, 10:00): qué
+ * Reunión de Iniciativas de Ahorro (el mismo día que la 1ª Reunión de
+ * Presupuesto, la del cierre, 10:00): qué
  * iniciativas trae y en qué orden. Vive acá y no en el componente porque la
  * página de la reunión (server) necesita el año para hacer las lecturas y el
  * componente (client) necesita el orden: un archivo sin "use client" lo pueden
@@ -42,7 +42,7 @@ const ORDEN_FOCO: FocoIniciativa[] = [
 /**
  * Año cuyas iniciativas mira la reunión: el del mes ANTERIOR a la fecha de la
  * reunión. La reunión se hace con el cierre del mes previo ya cargado (va el
- * mismo día que la Reunión de Presupuesto de seguimiento, hacia el 23), así
+ * mismo día que la 1ª Reunión de Presupuesto, hacia el 16), así
  * que la de enero cierra el año anterior y no mira un año que todavía no tiene
  * un mes cargado.
  */

@@ -54,7 +54,7 @@ function segundoLunesTarget(iso: string): string {
  * martes 3. No contempla feriados, igual que el resto de las reglas.
  * Devuelve "YYYY-MM-DD".
  *
- * REGLA VIEJA: desde el 16/10/2026 el tipo usa 'presupuesto_seguimiento' (ver
+ * REGLA VIEJA: desde el 16/10/2026 el tipo usa 'presupuesto_cierre' (ver
  * el loop). Se conserva para que un deploy anterior a la migración no caiga en
  * dias_semana y cree la reunión todos los días hábiles.
  */
@@ -139,11 +139,11 @@ export async function GET(req: Request) {
         skipped.push({ tipo: t.tipo, motivo: "fuera_de_fecha_objetivo" })
         continue
       }
-    } else if (t.regla_especial === "presupuesto_seguimiento") {
-      // Iniciativas de Ahorro: el mismo día que la 2ª Reunión de Presupuesto
-      // (seguimiento, +7 del 1er hábil desde el 16), como reunión aparte. Para
-      // entonces el Cuadro mensual del mes cerrado ya está cargado.
-      if (presupuestoTargets(hoyIso)[1] !== hoyIso) {
+    } else if (t.regla_especial === "presupuesto_cierre") {
+      // Iniciativas de Ahorro: el mismo día que la 1ª Reunión de Presupuesto
+      // (cierre: 1er hábil desde el 16), como reunión aparte. Para entonces el
+      // Cuadro mensual del mes cerrado ya está cargado.
+      if (presupuestoTargets(hoyIso)[0] !== hoyIso) {
         skipped.push({ tipo: t.tipo, motivo: "fuera_de_fecha_objetivo" })
         continue
       }
