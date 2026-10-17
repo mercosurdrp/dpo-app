@@ -68,34 +68,41 @@ export function esPorCobertura(tpl: PadronTemplate | null | undefined): boolean 
 }
 
 /**
- * Devuelve los nombres que esta plantilla tiene que cubrir: los que están
- * agendados para ella en el año. Array vacío = sin control de cobertura.
+ * Devuelve los nombres que esta plantilla tiene que cubrir en el mes dado:
+ * los que están agendados para ella ese mes (planificada o realizada; una
+ * cancelada no cuenta). Array vacío = ese mes no hay nada que cubrir.
  *
- * Se mira el AÑO entero y no el mes: la agenda reparte a cada operador en
- * fechas distintas, y un padrón mes a mes cambiaría de tamaño según cuándo le
- * toca a cada uno. Quien hace la tarea la hace todo el año.
+ * Se mira el MES y no el año (cambiado el 17-10-2026): la agenda ya no pide a
+ * todos los operadores todos los meses. Picking va 1 por mes y operador; el
+ * resto de las tareas de Almacén, 1 cada 2 meses. Con el padrón anual, en
+ * los meses que no tocan el tablero reclamaba operadores que no estaban
+ * agendados. Si un mes no tiene agenda, no hay padrón y no hay aviso.
  */
 export async function resolverPadron(
   supabase: SupabaseLike,
   tpl: PadronTemplate | null | undefined,
-  anio: number = new Date().getUTCFullYear(),
+  mes: string = new Date().toISOString().slice(0, 7), // YYYY-MM
 ): Promise<string[]> {
   if (esPorCobertura(tpl) && tpl?.id) {
+    const [y, m] = mes.split("-").map(Number)
+    const desde = `${mes}-01`
+    const hasta = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
     const { data, error } = await supabase
       .from("owd_agenda")
-      .select("empleado_observado")
+      .select("empleado_observado, estado")
       .eq("template_id", tpl.id)
-      .gte("fecha", `${anio}-01-01`)
-      .lte("fecha", `${anio}-12-31`)
+      .gte("fecha", desde)
+      .lte("fecha", hasta)
     // Defensivo: si la agenda no está disponible no se rompe la pantalla de
     // OWD, simplemente queda sin control de cobertura.
     if (error || !Array.isArray(data)) return []
 
-    // Un mismo operador aparece en varias fechas; y como `empleado_observado`
-    // es texto libre, se deduplica por nombre normalizado y se conserva la
-    // primera forma en que vino escrito para mostrarla.
+    // Un mismo operador puede estar agendado más de una vez; y como
+    // `empleado_observado` es texto libre, se deduplica por nombre normalizado
+    // y se conserva la primera forma en que vino escrito para mostrarla.
     const porClave = new Map<string, string>()
-    for (const row of data as Array<{ empleado_observado?: string | null }>) {
+    for (const row of data as Array<{ empleado_observado?: string | null; estado?: string | null }>) {
+      if (row.estado === "cancelada") continue
       const nombre = (row.empleado_observado ?? "").trim()
       if (!nombre) continue
       const clave = normalizarNombre(nombre)
