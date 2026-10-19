@@ -66,6 +66,7 @@ import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
 import { TareasOperariosBloque } from "@/components/reuniones/tareas-operarios-bloque"
 import { ArbolFueraDeGatilloBloque } from "@/components/reuniones/arbol-fuera-de-gatillo-bloque"
 import { SeccionAvanceVenta } from "@/components/reuniones/seccion-avance-venta"
+import { SeccionSci, SECCION_SCI } from "@/components/reuniones/seccion-sci"
 import { SeccionFrescura } from "@/components/reuniones/seccion-frescura"
 import { SeccionSobrestock } from "@/components/reuniones/seccion-sobrestock"
 import {
@@ -1170,6 +1171,10 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === "rechazos"),
     [actividadesAll],
   )
+  const actividadesSci = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === SECCION_SCI),
+    [actividadesAll],
+  )
   const actividadesFrescura = useMemo(
     () => actividadesAll.filter((a) => a.seccion === "frescura"),
     [actividadesAll],
@@ -1531,6 +1536,21 @@ export function ReunionDetallePageClient({
           fechaReunion={detalle.fecha}
           reunionId={detalle.id}
           actividades={actividadesAvanceVenta}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
+      {/* Curva de ventas (SCI) — etapa propia: KPI 2 del TOR, evidencia de
+          Planeamiento 4.3 R4.3.3 (revisar la curva de ventas / paradas todos
+          los meses) y Entrega 3.1 KPI 7. Sólo Pampeana (Misiones no carga
+          ventas_diarias). */}
+      {!IS_MISIONES && detalle.tipo === "logistica-ventas" && (
+        <SeccionSci
+          fechaReunion={detalle.fecha}
+          reunionId={detalle.id}
+          actividades={actividadesSci}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
