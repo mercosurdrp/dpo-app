@@ -295,6 +295,7 @@ export function SciClient({ inicial }: Props) {
                         <p>{fmtN(d.hl)} HL · {fmtN(d.clientes)} clientes</p>
                         {d.motivo ? <p className="text-muted-foreground">No cuenta: {d.motivo}</p>
                           : d.hl > umbralPico ? <p style={{ color: AMBER }}>Por encima de promedio + 1 desvío</p> : null}
+                        {d.valido && d.feriado && <p className="text-muted-foreground">{d.feriado}: hubo reparto, cuenta</p>}
                       </div>
                     )
                   }}
@@ -317,8 +318,8 @@ export function SciClient({ inicial }: Props) {
             </ResponsiveContainer>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            Azul: días que entran en el cálculo · Ámbar: por encima de promedio + 1 desvío · Gris: feriados, domingos o días sin reparto
-            (≤ {UMBRAL_DIA_SIN_REPARTO_HL} HL), no cuentan.
+            Azul: días que entran en el cálculo · Ámbar: por encima de promedio + 1 desvío · Gris: domingos y días sin reparto
+            (≤ {UMBRAL_DIA_SIN_REPARTO_HL} HL), no cuentan. Un feriado o evento con camiones cargados cuenta como un día más.
           </p>
         </CardContent>
       </Card>
@@ -428,6 +429,10 @@ export function SciClient({ inicial }: Props) {
           <p className="text-xs text-muted-foreground mt-2">
             SCI en verde: mejor que el mismo mes del año anterior; en rojo: peor. Clic en una fila para ver su curva.
             Último día cargado: {fmtFecha(data.ultimaFecha)}.
+            {data.distribucionDesde && (
+              <> † Meses anteriores al {fmtFecha(data.distribucionDesde)}: no había planillas de carga, el HL es
+              facturación (Chess + GESCOM sin patentes) y no es comparable al decimal.</>
+            )}
           </p>
         </CardContent>
       </Card>
@@ -445,9 +450,15 @@ export function SciClient({ inicial }: Props) {
             Un SCI de 0 % sería vender exactamente lo mismo todos los días.
           </p>
           <p>
-            <span className="font-semibold">Fuente:</span> HL distribuidos con flota propia por día (Chess + GESCOM sin las
-            cuentas de patentes), la misma base de Períodos Críticos y del Dimensionamiento. Se excluyen domingos, feriados y
-            días sin reparto. La Curva de PDVs aplica la misma cuenta a los clientes entregados por día.
+            <span className="font-semibold">Fuente:</span> sólo lo distribuido: HL cargados por día en las planillas de
+            carga de Chess (por camión) y los repartos de GESCOM (por chofer), el mismo número de los tableros de
+            distribución y del Cuadro mensual. No es la facturación de Períodos Críticos (que incluye ventas que retiran
+            terceros). Se excluyen domingos y días sin reparto; un feriado con camiones cargados cuenta. La Curva de PDVs
+            aplica la misma cuenta a los clientes entregados por día.
+            {data.distribucionDesde && (
+              <> Antes del {fmtFecha(data.distribucionDesde)} no hay planillas cargadas y se usa la facturación, sólo
+              para tener referencia del año anterior.</>
+            )}
           </p>
           <p>
             <span className="font-semibold">Qué pide DPO:</span> Planeamiento 4.3 R4.3.3 (revisar el índice de la curva de ventas /
