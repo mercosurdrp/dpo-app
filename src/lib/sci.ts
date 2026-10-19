@@ -13,11 +13,20 @@
  * bajo" evita cancelaciones en temporada alta). La misma cuenta sobre los
  * clientes entregados por día da la "Curva de PDVs" (SCI de paradas).
  *
- * Fuente: pc_volumen_diario — HL distribuidos con flota propia (Chess + GESCOM
- * sin cuentas de patentes), la misma base de Períodos Críticos y del
- * Dimensionamiento. Se excluyen domingos, feriados (pc_feriados) y días sin
- * reparto (HL ≤ UMBRAL_DIA_SIN_REPARTO_HL), para que un día cerrado no cuente
- * como "venta cero" y no infle el desvío.
+ * Fuente: ventas_diarias — HL cargados por día en las planillas de carga de
+ * Chess (por camión) y los repartos de GESCOM (por chofer): es el mismo número
+ * que muestran los tableros de distribución y el Cuadro mensual ("HL
+ * distribuidos"). Sebastián Roselli, 19/10/2026: el SCI toma SÓLO lo
+ * distribuido (el 11/09/2026 la facturación de Períodos Críticos daba 642 HL
+ * por una cuenta de patentes nueva y el tablero 418 HL). Antes del primer día
+ * con ventas_diarias (2026-01-02) se usa la facturación de pc_volumen_diario
+ * para poder comparar con el año anterior; esos meses quedan marcados. Los
+ * clientes por día (Curva de PDVs) siguen saliendo de pc_volumen_diario.
+ * Se excluyen domingos y días sin reparto (HL ≤ UMBRAL_DIA_SIN_REPARTO_HL),
+ * para que un día cerrado no cuente como "venta cero" y no infle el desvío.
+ * Un feriado o evento de pc_feriados (Expoagro, Jueves Santo) con camiones
+ * cargados es un día de reparto como cualquier otro y CUENTA; el nombre queda
+ * sólo como nota del día.
  */
 
 export const UMBRAL_DIA_SIN_REPARTO_HL = 5
@@ -27,6 +36,8 @@ export interface DiaVolumen {
   hl: number             // HL distribuidos del día
   clientes: number       // clientes entregados (paradas) del día
   feriado: string | null // nombre del feriado si lo es (pc_feriados)
+  /** De dónde salió el HL: planillas de carga (distribucion) o facturación (facturacion, sólo histórico). */
+  fuente?: "distribucion" | "facturacion"
 }
 
 export interface DiaCurva extends DiaVolumen {
@@ -34,7 +45,7 @@ export interface DiaCurva extends DiaVolumen {
   semana: number         // semana del mes 1..5 (ceil(dia/7))
   diaSemana: number      // 1 = lunes … 6 = sábado
   valido: boolean        // entra en el cálculo
-  motivo: string | null  // por qué no entra (feriado / sin reparto)
+  motivo: string | null  // por qué no entra (domingo / sin reparto, con el feriado si lo hay)
 }
 
 export interface SciMes {
@@ -97,8 +108,7 @@ export function armarCurvaMes(dias: DiaVolumen[], anio: number, mes: number): Di
       const ds = diaSemanaIso(d.fecha)
       let motivo: string | null = null
       if (ds === 7) motivo = "domingo"
-      else if (d.feriado) motivo = `feriado: ${d.feriado}`
-      else if (!(d.hl > UMBRAL_DIA_SIN_REPARTO_HL)) motivo = "sin reparto"
+      else if (!(d.hl > UMBRAL_DIA_SIN_REPARTO_HL)) motivo = d.feriado ? `sin reparto (${d.feriado})` : "sin reparto"
       return {
         ...d,
         dia,
@@ -121,7 +131,9 @@ export function calcularSciMes(
   const validos = curva.filter((d) => d.valido)
   const n = validos.length
   const hls = validos.map((d) => d.hl)
-  const clis = validos.map((d) => d.clientes)
+  // Un día con planillas cargadas pero sin fila todavía en pc_volumen_diario
+  // (el cron de clientes corre a la mañana siguiente) no entra en la Curva de PDVs.
+  const clis = validos.map((d) => d.clientes).filter((c) => c > 0)
   const hlTotal = hls.reduce((a, b) => a + b, 0)
   const promedio = n ? hlTotal / n : 0
   const desvio = desvioPoblacional(hls)
