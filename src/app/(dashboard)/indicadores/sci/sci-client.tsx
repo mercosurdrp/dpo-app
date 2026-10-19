@@ -268,6 +268,14 @@ export function SciClient({ inicial }: Props) {
           <CardTitle className="text-base">
             Curva del mes · {mes ? MESES_LARGO[mes.mes - 1] : ""} {data.anio}
           </CardTitle>
+          {mes && mes.promedio > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Promedio <span className="font-semibold text-slate-900">{fmtN(mes.promedio)} HL/día</span>
+              {" · "}desvío <span className="font-semibold text-slate-900">±{fmtN(mes.desvio)} HL</span>
+              {mes.sci !== null && <> ({fmtN(mes.sci, 1)} % del promedio)</>}
+              {" · "}un día normal cae entre {fmtN(Math.max(0, mes.promedio - mes.desvio))} y {fmtN(umbralPico)} HL
+            </p>
+          )}
         </CardHeader>
         <CardContent>
           <div className="h-72">
@@ -293,10 +301,10 @@ export function SciClient({ inicial }: Props) {
                 />
                 {mes && mes.promedio > 0 && (
                   <>
-                    <ReferenceLine y={mes.promedio} stroke="#0F172A" strokeDasharray="4 4" label={{ value: "promedio", fontSize: 11, fill: "#0F172A", position: "insideTopLeft" }} />
-                    <ReferenceLine y={umbralPico} stroke={AMBER} strokeDasharray="2 4" label={{ value: "+1 desvío", fontSize: 11, fill: AMBER, position: "insideTopLeft" }} />
+                    <ReferenceLine y={mes.promedio} stroke="#0F172A" strokeDasharray="4 4" label={{ value: `promedio ${fmtN(mes.promedio)} HL`, fontSize: 11, fill: "#0F172A", position: "insideTopLeft" }} />
+                    <ReferenceLine y={umbralPico} stroke={AMBER} strokeDasharray="2 4" label={{ value: `+1 desvío · ${fmtN(umbralPico)} HL`, fontSize: 11, fill: AMBER, position: "insideTopLeft" }} />
                     {mes.promedio - mes.desvio > 0 && (
-                      <ReferenceLine y={mes.promedio - mes.desvio} stroke={AMBER} strokeDasharray="2 4" label={{ value: "−1 desvío", fontSize: 11, fill: AMBER, position: "insideBottomLeft" }} />
+                      <ReferenceLine y={mes.promedio - mes.desvio} stroke={AMBER} strokeDasharray="2 4" label={{ value: `−1 desvío · ${fmtN(mes.promedio - mes.desvio)} HL`, fontSize: 11, fill: AMBER, position: "insideBottomLeft" }} />
                     )}
                   </>
                 )}
