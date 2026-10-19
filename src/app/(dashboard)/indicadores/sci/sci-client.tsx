@@ -11,7 +11,8 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts"
 import { Activity, ArrowDownRight, ArrowUpRight, CalendarDays, Loader2, Minus, Store, TrendingDown } from "lucide-react"
-import { getSciData, type SciData } from "@/actions/sci"
+import { getSciData } from "@/actions/sci"
+import type { SciData } from "@/lib/sci-cargar"
 import {
   armarCurvaMes, DIAS_SEMANA_CORTO, MESES_CORTO, MESES_LARGO, UMBRAL_DIA_SIN_REPARTO_HL,
   type SciMes,

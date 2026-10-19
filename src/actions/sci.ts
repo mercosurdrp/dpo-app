@@ -9,8 +9,6 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { cargarSciData, hoyArg, type SciData } from "@/lib/sci-cargar"
 
-export type { SciData }
-
 type Result<T> = { data: T } | { error: string }
 
 export async function getSciData(params?: { anio?: number }): Promise<Result<SciData>> {
