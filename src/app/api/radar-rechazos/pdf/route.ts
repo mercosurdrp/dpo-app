@@ -9,10 +9,11 @@
  *
  * GET /api/radar-rechazos/pdf?fecha=YYYY-MM-DD   (sin `fecha`, la foto vigente)
  */
-import { NextResponse, type NextRequest } from "next/server"
+import { after, NextResponse, type NextRequest } from "next/server"
 import PDFDocument from "pdfkit"
 import { IS_MISIONES } from "@/lib/empresa"
 import { requireAuth } from "@/lib/session"
+import { registrarUsoRadar } from "@/lib/radar-rechazos/uso"
 import {
   getRadarCriticos,
   type RadarCriticoRow,
@@ -41,8 +42,9 @@ export async function GET(req: NextRequest) {
   if (IS_MISIONES) {
     return NextResponse.json({ error: "not-pampeana" }, { status: 404 })
   }
+  let profile: Awaited<ReturnType<typeof requireAuth>>
   try {
-    await requireAuth()
+    profile = await requireAuth()
   } catch {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
@@ -58,6 +60,10 @@ export async function GET(req: NextRequest) {
   if (!res.data) {
     return NextResponse.json({ error: "sin_foto" }, { status: 404 })
   }
+
+  // Registro de uso: quién bajó el PDF de críticos, de qué foto y cuándo.
+  const fechaPdf = res.data.fecha_entrega
+  after(() => registrarUsoRadar(profile, "PDF", fechaPdf, fecha !== undefined))
 
   let pdfBuf: Buffer
   try {

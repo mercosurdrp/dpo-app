@@ -1,9 +1,11 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
+import { after } from "next/server"
 import { ArrowLeft } from "lucide-react"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { getRadarFechas, getRadarRechazos } from "@/actions/radar-rechazos"
+import { registrarUsoRadar } from "@/lib/radar-rechazos/uso"
 import { RadarClient } from "./_components/radar-client"
 
 export const dynamic = "force-dynamic"
@@ -37,6 +39,13 @@ export default async function RadarRechazosPage({
   const puedeRegenerar =
     profile?.role === "admin" || profile?.role === "supervisor"
   const fechas = "error" in fechasRes ? [] : fechasRes.data
+
+  // Registro de uso: quién abrió el radar, qué foto y cuándo. Va en `after()`
+  // para no demorar la pantalla; si falla, el radar se ve igual.
+  if (profile) {
+    const fechaVista = "error" in res ? null : (res.data?.fecha_entrega ?? null)
+    after(() => registrarUsoRadar(profile, "ABRIR", fechaVista, fecha !== undefined))
+  }
 
   return (
     <div className="space-y-4">

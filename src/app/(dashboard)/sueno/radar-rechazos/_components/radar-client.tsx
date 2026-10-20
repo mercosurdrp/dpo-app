@@ -1,9 +1,11 @@
 "use client"
 
 import { useMemo, useState, useTransition } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   CalendarClock,
+  Eye,
   Download,
   FileText,
   History,
@@ -15,7 +17,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { Card } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import type {
@@ -254,6 +256,15 @@ export function RadarClient({
           >
             <FileText className="size-4" /> PDF críticos
           </Button>
+          {puedeRegenerar && (
+            <Link
+              href="/sueno/radar-rechazos/uso"
+              title="Quién abrió el radar y quién bajó el PDF"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              <Eye className="size-4" /> Uso
+            </Link>
+          )}
           {puedeRegenerar && !esHistorica && (
             <Button size="sm" onClick={regenerar} disabled={regenerando}>
               {regenerando ? (
