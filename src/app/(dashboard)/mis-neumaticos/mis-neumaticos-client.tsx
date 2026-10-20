@@ -16,8 +16,10 @@ import { cn } from "@/lib/utils"
 import { etiquetaCubierta } from "@/lib/vehiculos/numeracion-fuego"
 import {
   POSICION_AUXILIO,
+  ejeNumero,
   layoutDeTipo,
   posicionEnPalabras,
+  type PosicionNeumatico,
 } from "@/lib/vehiculos/neumaticos-layout"
 import { SiluetaUnidad } from "@/components/flota/silueta-unidad"
 import type { VehiculoTipo } from "@/types/database"
@@ -293,16 +295,37 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
             </p>
 
             {/* Qué cubierta es cuál: el código (1I, 2DE) no se deduce parado al
-                lado de la rueda. Frente arriba, izquierda y derecha como se ven
-                desde la cabina mirando para adelante. */}
+                lado de la rueda.
+                🚨 La referencia es el LADO DE LA CABINA, no izquierda/derecha.
+                El 19/10/2026 se comprobó que las direccionales del AF028YB se
+                venían cargando con los lados cambiados, y la causa era ésta:
+                "izquierda" cambia según hacia dónde mire el que está midiendo. */}
+            {unidad.cubiertas.length > 0 && (
+              <BuscadorDeRueda
+                layout={layout}
+                tipo={(unidad.tipo as VehiculoTipo | null) ?? null}
+                cubiertaDePos={cubiertaDePos}
+                onElegir={irACubierta}
+              />
+            )}
+
             {unidad.cubiertas.length > 0 && (
               <div className="mt-3 rounded-lg border border-border p-3">
                 <p className="text-xs font-medium text-foreground">
-                  ¿Cuál es cuál? Tocá la rueda para ir a su casillero
+                  …o tocá la rueda en el esquema
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  El frente del camión va arriba. <strong>Izquierda y derecha son mirando
-                  hacia adelante, sentado en la cabina.</strong>
+                  El frente del camión va arriba.{" "}
+                  <strong className="text-foreground">
+                    Guiate por el lado de la cabina, no por izquierda y derecha:
+                  </strong>{" "}
+                  el lado del conductor es el del volante, mires para donde mires.
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  En los ejes de rueda doble, <strong className="text-foreground">la de
+                  afuera</strong> es la que ves desde el costado del camión y{" "}
+                  <strong className="text-foreground">la de adentro</strong> es la que
+                  queda pegada a ella, del lado del chasis.
                 </p>
                 <div className="relative mx-auto mt-2 aspect-[3/4] w-full max-w-[17rem]">
                   <SiluetaUnidad layout={layout} tipo={(unidad.tipo as VehiculoTipo | null) ?? null} conLados />
@@ -370,12 +393,31 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
                           : "",
                       )}
                     >
+                      {/* 🚨 Adelante va la posición EN PALABRAS y el código
+                          queda atrás, chico. Al revés —que es como estaba— el
+                          que mide lee "2DE" y tiene que traducirlo solo: ahí se
+                          cargaron los lados cambiados en el YB. */}
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
                         <span className="text-sm font-semibold text-foreground">
-                          {c.posicion ?? "—"}
                           {palabras.texto ? (
+                            <>
+                              {palabras.eje}
+                              {palabras.ladoFisico ? (
+                                <>
+                                  {" · "}
+                                  <span className="text-primary">
+                                    {palabras.ladoFisico.replace("Lado del ", "")}
+                                  </span>
+                                </>
+                              ) : null}
+                              {palabras.rueda ? ` · ${palabras.rueda}` : ""}
+                            </>
+                          ) : (
+                            (c.posicion ?? "—")
+                          )}
+                          {palabras.texto && c.posicion ? (
                             <span className="ml-2 text-xs font-normal text-muted-foreground">
-                              {palabras.texto}
+                              ({c.posicion})
                             </span>
                           ) : null}
                         </span>
@@ -531,6 +573,205 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
           </button>
         )}
       </section>
+    </div>
+  )
+}
+
+/**
+ * Buscador guiado de rueda.
+ *
+ * 🚨 Nace del AF028YB: el 19/10/2026 se comprobó que las direccionales se
+ * venían cargando con los lados cambiados, y la causa no fue distracción. El
+ * esquema de arriba es un mapa visto desde ARRIBA, y el que mide está parado
+ * AL LADO de la rueda, muchas veces mirando de frente al camión: ahí izquierda
+ * y derecha se dan vuelta. Pedirle que se ubique en el mapa es pedirle que haga
+ * una rotación mental, y la mitad de las veces sale mal.
+ *
+ * Acá se invierte: en vez de buscar la rueda en un dibujo, contesta dónde está
+ * parado y la app resuelve el código. El lado se pregunta por la CABINA, que no
+ * depende de hacia dónde mire. El esquema sigue abajo para el que prefiere
+ * tocarlo — las dos formas llevan al mismo casillero.
+ */
+function BuscadorDeRueda({
+  layout,
+  tipo,
+  cubiertaDePos,
+  onElegir,
+}: {
+  layout: PosicionNeumatico[]
+  tipo: VehiculoTipo | null
+  cubiertaDePos: Map<string, MisNeumaticosData["unidades"][number]["cubiertas"][number]>
+  onElegir: (id: string) => void
+}) {
+  const [lado, setLado] = useState<string | null>(null)
+  const [eje, setEje] = useState<number | null>(null)
+
+  const ruedas = layout.filter((p) => p.code !== POSICION_AUXILIO)
+  const lados = [...new Set(ruedas.map((p) => p.code[1]))].filter(
+    (l) => l === "I" || l === "D"
+  )
+  const ejesDelLado = [
+    ...new Set(
+      ruedas.filter((p) => p.code[1] === lado).map((p) => ejeNumero(p.code))
+    ),
+  ].filter((n): n is number => n != null)
+  const candidatas = ruedas.filter(
+    (p) => p.code[1] === lado && ejeNumero(p.code) === eje
+  )
+  // Una sola candidata = el eje no es de rueda doble: ya está resuelto.
+  const resuelta = candidatas.length === 1 ? candidatas[0] : null
+
+  const nombreEje = (n: number) =>
+    posicionEnPalabras(tipo, `${n}${lado ?? "I"}`).eje ?? `Eje ${n}`
+
+  const Opcion = ({
+    activo,
+    onClick,
+    titulo,
+    ayuda,
+  }: {
+    activo: boolean
+    onClick: () => void
+    titulo: string
+    ayuda?: string
+  }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex-1 rounded-lg border p-3 text-left transition-colors",
+        activo
+          ? "border-primary bg-primary/10"
+          : "border-border bg-background hover:bg-muted/50"
+      )}
+    >
+      <span className="block text-sm font-semibold text-foreground">{titulo}</span>
+      {ayuda && (
+        <span className="mt-0.5 block text-xs text-muted-foreground">{ayuda}</span>
+      )}
+    </button>
+  )
+
+  const Paso = ({ n, texto }: { n: number; texto: string }) => (
+    <p className="mb-1.5 mt-3 flex items-center gap-1.5 text-xs font-semibold text-foreground first:mt-0">
+      <span className="flex size-4 items-center justify-center rounded-full bg-foreground text-[10px] font-bold text-background">
+        {n}
+      </span>
+      {texto}
+    </p>
+  )
+
+  const irA = (code: string) => {
+    const c = cubiertaDePos.get(code)
+    if (c) onElegir(c.id)
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-border p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-xs font-medium text-foreground">
+          ¿Cuál es cuál? Contestá y te llevo al casillero
+        </p>
+        {(lado || eje) && (
+          <button
+            type="button"
+            onClick={() => {
+              setLado(null)
+              setEje(null)
+            }}
+            className="text-xs text-muted-foreground underline"
+          >
+            Empezar de nuevo
+          </button>
+        )}
+      </div>
+
+      <Paso n={1} texto="¿De qué lado del camión estás parado?" />
+      <div className="flex gap-2">
+        {lados.map((l) => (
+          <Opcion
+            key={l}
+            activo={lado === l}
+            onClick={() => {
+              setLado(l)
+              setEje(null)
+            }}
+            titulo={l === "I" ? "Lado del CONDUCTOR" : "Lado del ACOMPAÑANTE"}
+            ayuda={l === "I" ? "El del volante" : "El otro"}
+          />
+        ))}
+      </div>
+
+      {lado && (
+        <>
+          <Paso n={2} texto="¿Qué eje?" />
+          <div className="flex gap-2">
+            {ejesDelLado.map((n) => {
+              const dobles =
+                ruedas.filter((p) => p.code[1] === lado && ejeNumero(p.code) === n)
+                  .length > 1
+              return (
+                <Opcion
+                  key={n}
+                  activo={eje === n}
+                  onClick={() => setEje(n)}
+                  titulo={nombreEje(n)}
+                  ayuda={dobles ? "Rueda doble" : "Una rueda por lado"}
+                />
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {lado && eje != null && candidatas.length > 1 && (
+        <>
+          <Paso n={3} texto="¿Cuál de las dos?" />
+          <div className="flex gap-2">
+            {candidatas
+              .slice()
+              .sort((a) => (a.code[2] === "E" ? -1 : 1))
+              .map((p) => (
+                <Opcion
+                  key={p.code}
+                  activo={false}
+                  onClick={() => irA(p.code)}
+                  titulo={p.code[2] === "E" ? "La de AFUERA" : "La de ADENTRO"}
+                  ayuda={
+                    p.code[2] === "E"
+                      ? "La que ves parado al costado"
+                      : "La que queda pegada a la de afuera"
+                  }
+                />
+              ))}
+          </div>
+        </>
+      )}
+
+      {resuelta && (
+        <div className="mt-3">
+          <Opcion
+            activo={false}
+            onClick={() => irA(resuelta.code)}
+            titulo={`Ir a ${posicionEnPalabras(tipo, resuelta.code).texto}`}
+            ayuda={
+              cubiertaDePos.get(resuelta.code)
+                ? `Cubierta ${etiquetaCubierta(cubiertaDePos.get(resuelta.code)!)}`
+                : "Sin cubierta cargada en esta posición"
+            }
+          />
+        </div>
+      )}
+
+      {cubiertaDePos.get(POSICION_AUXILIO) && (
+        <button
+          type="button"
+          onClick={() => irA(POSICION_AUXILIO)}
+          className="mt-3 w-full rounded-lg border border-dashed border-border p-2 text-xs text-muted-foreground hover:bg-muted/50"
+        >
+          Estoy en la rueda de auxilio
+        </button>
+      )}
     </div>
   )
 }

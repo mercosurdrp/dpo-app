@@ -130,11 +130,17 @@ export function filasDelLayout(layout: PosicionNeumatico[]) {
 export interface PosicionEnPalabras {
   /** "Izquierda" / "Derecha", o null en la de auxilio. */
   lado: "Izquierda" | "Derecha" | null
+  /**
+   * El mismo lado dicho como se para el que mide: "Lado del conductor" /
+   * "Lado del acompañante". Es la referencia que NO depende de dónde estés
+   * parado, y la que usó Francisco cuando dictó la medición del YB.
+   */
+  ladoFisico: "Lado del conductor" | "Lado del acompañante" | null
   /** "Eje delantero", "Eje trasero", "2º eje"… */
   eje: string | null
-  /** "rueda de afuera" / "rueda de adentro" en los ejes de rueda dual. */
+  /** "la de afuera" / "la de adentro" en los ejes de rueda dual. */
   rueda: string | null
-  /** Todo junto, para mostrar debajo del código: "Eje trasero · derecha · rueda de afuera". */
+  /** Todo junto: "Eje trasero · lado del conductor · la de afuera". */
   texto: string
 }
 
@@ -147,14 +153,27 @@ const ORDINAL_EJE = ["1º", "2º", "3º", "4º"]
  * está parado al lado de la rueda: los choferes cargan la medición mensual y
  * montan cubiertas sin saber cuál es la izquierda y cuál la derecha, y una
  * medición cargada en la rueda equivocada arruina el desgaste de las dos gomas.
- * Izquierda y derecha son SIEMPRE mirando hacia adelante, sentado en la cabina
- * — el mismo criterio con el que está armado el diagrama (frente arriba).
+ *
+ * 🚨 Por eso NO se dice "izquierda/derecha" primero. El 19/10/2026 se comprobó
+ * que las direccionales del AF028YB se venían cargando con los lados cambiados:
+ * el que medía le atribuía la izquierda al código 1D y viceversa. Izquierda y
+ * derecha dependen de hacia dónde mire el que está parado al lado de la rueda;
+ * "lado del conductor" y "lado del acompañante" no dependen de nada. Es como lo
+ * dictó Francisco al medir con calibre ("1 izquierdo lado conductor",
+ * "acompañante atrás interno"), y es lo que se muestra adelante en la pantalla.
+ * Izquierda/derecha queda como aclaración entre paréntesis, nunca sola.
  */
 export function posicionEnPalabras(
   tipo: VehiculoTipo | null,
   code: string | null
 ): PosicionEnPalabras {
-  const vacio: PosicionEnPalabras = { lado: null, eje: null, rueda: null, texto: "" }
+  const vacio: PosicionEnPalabras = {
+    lado: null,
+    ladoFisico: null,
+    eje: null,
+    rueda: null,
+    texto: "",
+  }
   if (!code) return vacio
   if (code === POSICION_AUXILIO) return { ...vacio, texto: "Rueda de auxilio" }
 
@@ -178,10 +197,17 @@ export function posicionEnPalabras(
     }
   }
 
+  // Volante a la izquierda: I = lado del conductor, D = lado del acompañante.
   const lado = code[1] === "I" ? "Izquierda" : code[1] === "D" ? "Derecha" : null
+  const ladoFisico =
+    code[1] === "I"
+      ? ("Lado del conductor" as const)
+      : code[1] === "D"
+        ? ("Lado del acompañante" as const)
+        : null
   const rueda =
-    code[2] === "E" ? "rueda de afuera" : code[2] === "I" ? "rueda de adentro" : null
+    code[2] === "E" ? "la de afuera" : code[2] === "I" ? "la de adentro" : null
 
-  const partes = [eje, lado?.toLowerCase(), rueda].filter(Boolean)
-  return { lado, eje, rueda, texto: partes.join(" · ") }
+  const partes = [eje, ladoFisico?.toLowerCase(), rueda].filter(Boolean)
+  return { lado, ladoFisico, eje, rueda, texto: partes.join(" · ") }
 }

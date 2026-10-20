@@ -4026,12 +4026,13 @@ function PosicionDialog({
             </Badge>
           </DialogTitle>
           {/* El código no alcanza para ir a montar la cubierta: al lado de la
-              rueda hay que saber qué lado es. Izquierda y derecha, mirando
-              hacia adelante desde la cabina. */}
+              rueda hay que saber qué lado es. Se nombra por el lado de la
+              cabina, que no cambia según hacia dónde mire el que está parado
+              ahí — ver el 🚨 de `posicionEnPalabras`. */}
           <p className="text-xs font-medium text-foreground">
             {posicionEnPalabras(unidad.tipo ?? null, pos.code).texto}
             <span className="ml-1 font-normal text-muted-foreground">
-              (mirando hacia adelante desde la cabina)
+              (el lado del conductor es el del volante)
             </span>
           </p>
           <DialogDescription>

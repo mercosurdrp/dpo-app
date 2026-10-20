@@ -61,7 +61,7 @@ export function SiluetaUnidad({
       {/* Frente de la unidad */}
       <div className="absolute inset-x-0 top-0 flex flex-col items-center gap-0.5">
         <span className="text-[9px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-          {conCabina ? "Frente" : "Lanza"}
+          {conCabina ? "Frente · cabina" : "Lanza"}
         </span>
         <span className="h-[3px] w-10 rounded-full bg-muted-foreground/60" />
       </div>
@@ -95,14 +95,25 @@ export function SiluetaUnidad({
             style={{ top: `${f.y}%`, left: `${f.x1}%`, width: `${f.x2 - f.x1}%` }}
           />
         ))}
-      {/* Costados rotulados: es lo que el chofer no tiene cómo deducir */}
+      {/* Costados rotulados: es lo que el chofer no tiene cómo deducir.
+          🚨 Dicen CONDUCTOR / ACOMPAÑANTE y no izquierda/derecha. El 19/10/2026
+          se comprobó que las direccionales del AF028YB se cargaban con los lados
+          cambiados: "izquierda" depende de hacia dónde mire el que está parado
+          al lado de la rueda, y la mitad de las veces mira de frente al camión.
+          El lado de la cabina no se puede confundir. */}
       {conLados && (
         <>
-          <span className="absolute left-0 top-1/2 -translate-y-1/2 -rotate-90 text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Izquierda
+          <span className="absolute left-0 top-1/2 flex -translate-y-1/2 -rotate-90 items-baseline gap-1 whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.18em] text-foreground">
+            Conductor
+            <span className="font-normal tracking-normal text-muted-foreground">
+              (izq.)
+            </span>
           </span>
-          <span className="absolute right-0 top-1/2 -translate-y-1/2 rotate-90 text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Derecha
+          <span className="absolute right-0 top-1/2 flex -translate-y-1/2 rotate-90 items-baseline gap-1 whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.18em] text-foreground">
+            Acompañante
+            <span className="font-normal tracking-normal text-muted-foreground">
+              (der.)
+            </span>
           </span>
         </>
       )}
