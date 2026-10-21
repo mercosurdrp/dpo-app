@@ -9,7 +9,17 @@ import {
   Plus,
   FileText,
   Trash2,
+  MapPin,
+  Wrench,
+  Activity,
+  Target,
 } from "lucide-react"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -44,6 +54,7 @@ import { getDownloadUrl } from "@/actions/dpo-evidencia"
 import type { RuteroVigente } from "@/actions/territorial-rutero"
 import { MESES, num, pesos } from "./formato"
 import type { ArchivoEvidencia } from "./plan-territorial-client"
+import { HistoriaSeccion, chipsMomento, imagenesDe } from "./historia-etapa"
 
 // ==================================================================
 // Reestructuración de rutas de un plan territorial, por ETAPAS
@@ -367,6 +378,32 @@ function EtapaCard({
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
+      {/* La historia, en el orden en que se cuenta */}
+      <HistoriaSeccion
+        icono={<MapPin className="h-4 w-4" />}
+        titulo="Cómo estaba"
+        subtitulo={etapa.antes.dias_entrega ? `Entrega: ${etapa.antes.dias_entrega}` : null}
+        texto={etapa.antes_texto}
+        chips={chipsMomento(etapa.antes)}
+        imagenes={imagenesDe(etapa.imagenes, "antes")}
+      />
+      <HistoriaSeccion
+        icono={<Wrench className="h-4 w-4" />}
+        titulo="Qué se hizo"
+        subtitulo={
+          etapa.despues.dias_entrega ? `Entrega: ${etapa.despues.dias_entrega}` : null
+        }
+        texto={etapa.cambio_texto ?? etapa.justificacion}
+        chips={chipsMomento(etapa.despues)}
+        imagenes={imagenesDe(etapa.imagenes, "cambio")}
+      />
+
+      <Accordion>
+        <AccordionItem value="detalle" className="border-b-0">
+          <AccordionTrigger className="py-2 text-xs font-semibold text-muted-foreground">
+            Detalle del rutero antes / después, fuentes y supuestos
+          </AccordionTrigger>
+          <AccordionContent className="space-y-3">
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -386,24 +423,31 @@ function EtapaCard({
 
       {etapa.ventanas_horarias && (
         <p className="text-sm">
-          <span className="text-muted-foreground">Ventanas horarias: </span>
+          <span className="text-muted-foreground">Fuentes y supuestos: </span>
           {etapa.ventanas_horarias}
         </p>
       )}
-      {etapa.justificacion && (
+      {etapa.justificacion && etapa.cambio_texto && (
         <p className="whitespace-pre-wrap text-sm">
           <span className="text-muted-foreground">Por qué se cambió: </span>
           {etapa.justificacion}
         </p>
       )}
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
 
-      {/* Resultado en vivo (R5.1.4): mismo número que Costo por PDV */}
+      {/* Cómo viene: resultado en vivo (R5.1.4), mismo número que Costo por PDV */}
       <div className="rounded-md bg-slate-50 p-3">
-        <p className="text-xs font-semibold text-muted-foreground">
-          Resultado en $/HL de {plan.ciudad}
-          {etapa.fecha_implementacion
-            ? ` · cambio del ${fmtFecha(etapa.fecha_implementacion)}`
-            : ""}
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+          <Activity className="h-4 w-4 text-muted-foreground" />
+          Cómo viene
+          <span className="text-xs font-normal text-muted-foreground">
+            $/HL de {plan.ciudad}
+            {etapa.fecha_implementacion
+              ? ` · cambio del ${fmtFecha(etapa.fecha_implementacion)}`
+              : ""}
+          </span>
         </p>
         {!res ? (
           <p className="mt-1 text-xs text-muted-foreground">
@@ -470,6 +514,14 @@ function EtapaCard({
           </p>
         )}
       </div>
+
+      <HistoriaSeccion
+        icono={<Target className="h-4 w-4" />}
+        titulo="Qué se espera"
+        subtitulo={plan.meta != null ? `Meta ${pesos(plan.meta)} /HL` : null}
+        texto={etapa.esperado_texto}
+        imagenes={imagenesDe(etapa.imagenes, "esperado")}
+      />
     </div>
   )
 }
@@ -556,6 +608,9 @@ function EtapaDialog({
   const [ventanas, setVentanas] = useState(etapa?.ventanas_horarias ?? "")
   const [justificacion, setJustificacion] = useState(etapa?.justificacion ?? "")
   const [resultado, setResultado] = useState(etapa?.resultado ?? "")
+  const [antesTexto, setAntesTexto] = useState(etapa?.antes_texto ?? "")
+  const [cambioTexto, setCambioTexto] = useState(etapa?.cambio_texto ?? "")
+  const [esperadoTexto, setEsperadoTexto] = useState(etapa?.esperado_texto ?? "")
 
   function tomarRuteroVigente() {
     if (!rutero) return
@@ -586,6 +641,9 @@ function EtapaDialog({
     fd.set("ventanas_horarias", ventanas)
     fd.set("justificacion", justificacion)
     fd.set("resultado", resultado)
+    fd.set("antes_texto", antesTexto)
+    fd.set("cambio_texto", cambioTexto)
+    fd.set("esperado_texto", esperadoTexto)
     startTransition(async () => {
       const r = await guardarEtapaRutas(plan.id, etapa?.id ?? null, fd)
       if ("error" in r) setError(r.error)
@@ -694,8 +752,51 @@ function EtapaDialog({
             </div>
           ))}
 
+          <div className="space-y-3 rounded-md border border-slate-200 p-3">
+            <p className="text-xs font-semibold text-muted-foreground">
+              La historia, como se cuenta en la revisión (lo que decía la presentación)
+            </p>
+            <div>
+              <Label htmlFor="antes_texto">Cómo estaba</Label>
+              <Textarea
+                id="antes_texto"
+                rows={4}
+                className="mt-1"
+                value={antesTexto}
+                onChange={(e) => setAntesTexto(e.target.value)}
+                placeholder="Cómo se atendía la ciudad antes: días de visita y de entrega, viajes, qué andaba mal, $/HL de la línea base."
+              />
+            </div>
+            <div>
+              <Label htmlFor="cambio_texto">Qué se hizo</Label>
+              <Textarea
+                id="cambio_texto"
+                rows={4}
+                className="mt-1"
+                value={cambioTexto}
+                onChange={(e) => setCambioTexto(e.target.value)}
+                placeholder="El cambio de rutas, desde cuándo, quiénes cambian de día, qué se midió al implementarlo."
+              />
+            </div>
+            <div>
+              <Label htmlFor="esperado_texto">Qué se espera</Label>
+              <Textarea
+                id="esperado_texto"
+                rows={3}
+                className="mt-1"
+                value={esperadoTexto}
+                onChange={(e) => setEsperadoTexto(e.target.value)}
+                placeholder="Meta de $/HL, carga por día estimada, qué número se sigue."
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Los mapas y gráficos de la etapa se cargan por fuera (Planeamiento
+              → evidencia); «Cómo viene» se calcula solo con el costo mensual.
+            </p>
+          </div>
+
           <div>
-            <Label htmlFor="ventanas_horarias">Ventanas horarias relevadas</Label>
+            <Label htmlFor="ventanas_horarias">Fuentes y supuestos (ventanas horarias, períodos medidos)</Label>
             <Textarea
               id="ventanas_horarias"
               rows={2}

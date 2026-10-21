@@ -379,11 +379,30 @@ export async function listarPlanesTerritoriales(): Promise<
         )
         .in("plan_id", ids)
         .order("etapa", { ascending: true })
+      const todas: RedisenoRutas[] = []
       for (const row of (reds ?? []) as unknown as Array<Record<string, unknown>>) {
         const red = parseRediseno(row)
         const arr = etapasMap.get(red.plan_id) ?? []
         arr.push(red)
         etapasMap.set(red.plan_id, arr)
+        todas.push(red)
+      }
+
+      // Los mapas de la historia viven en el bucket privado: se firman todos
+      // juntos (una sola llamada) por una hora, que es lo que dura la página
+      // abierta. Si falla la firma la etapa se muestra igual, sin imágenes.
+      const paths = [...new Set(todas.flatMap((e) => e.imagenes.map((i) => i.path)))]
+      if (paths.length) {
+        const { data: firmadas } = await supabase.storage
+          .from("dpo-evidencia")
+          .createSignedUrls(paths, 60 * 60)
+        const urlPorPath = new Map<string, string>()
+        for (const f of firmadas ?? []) {
+          if (f.path && f.signedUrl && !f.error) urlPorPath.set(f.path, f.signedUrl)
+        }
+        for (const e of todas) {
+          for (const i of e.imagenes) i.url = urlPorPath.get(i.path) ?? null
+        }
       }
     }
 
@@ -861,6 +880,18 @@ const MOMENTO_TXT = ["dias_visita", "mix_frecuencia", "dias_entrega"] as const
  * Cada etapa tiene su fecha, su antes/después y la presentación que la
  * respalda (archivo de dpo_archivos, Planeamiento 5.1).
  */
+export type MomentoImagen = "antes" | "cambio" | "esperado"
+
+/** Mapa o gráfico de una etapa, sacado de la presentación. */
+export interface ImagenEtapa {
+  /** Clave en el bucket dpo-evidencia. */
+  path: string
+  titulo: string | null
+  momento: MomentoImagen
+  /** URL firmada (1 h) para mostrarla; null si no se pudo firmar. */
+  url: string | null
+}
+
 export interface RedisenoRutas {
   id: string
   plan_id: string
@@ -873,6 +904,11 @@ export interface RedisenoRutas {
   ventanas_horarias: string | null
   justificacion: string | null
   resultado: string | null
+  /** La historia en cuatro partes: cómo estaba, qué se hizo, (cómo viene se calcula), qué se espera. */
+  antes_texto: string | null
+  cambio_texto: string | null
+  esperado_texto: string | null
+  imagenes: ImagenEtapa[]
   evidencia_archivo_id: string | null
   evidencia_titulo: string | null
   evidencia_file_name: string | null
@@ -893,6 +929,27 @@ function parseMomento(raw: unknown): RuteroMomento {
   return m
 }
 
+function parseImagenes(raw: unknown): ImagenEtapa[] {
+  if (!Array.isArray(raw)) return []
+  const out: ImagenEtapa[] = []
+  for (const x of raw) {
+    const o = (x && typeof x === "object" ? x : {}) as Record<string, unknown>
+    const path = typeof o.path === "string" ? o.path.trim() : ""
+    if (!path) continue
+    const momento = o.momento
+    out.push({
+      path,
+      titulo: typeof o.titulo === "string" && o.titulo.trim() ? o.titulo.trim() : null,
+      momento:
+        momento === "antes" || momento === "cambio" || momento === "esperado"
+          ? momento
+          : "cambio",
+      url: null,
+    })
+  }
+  return out
+}
+
 function parseRediseno(row: Record<string, unknown>): RedisenoRutas {
   const ev = (row.evidencia ?? null) as {
     id?: string
@@ -910,6 +967,10 @@ function parseRediseno(row: Record<string, unknown>): RedisenoRutas {
     ventanas_horarias: (row.ventanas_horarias as string) ?? null,
     justificacion: (row.justificacion as string) ?? null,
     resultado: (row.resultado as string) ?? null,
+    antes_texto: (row.antes_texto as string) ?? null,
+    cambio_texto: (row.cambio_texto as string) ?? null,
+    esperado_texto: (row.esperado_texto as string) ?? null,
+    imagenes: parseImagenes(row.imagenes),
     evidencia_archivo_id: (row.evidencia_archivo_id as string) ?? null,
     evidencia_titulo: ev?.titulo ?? null,
     evidencia_file_name: ev?.file_name ?? null,
@@ -983,6 +1044,10 @@ export async function guardarEtapaRutas(
       ventanas_horarias: strOrNull(formData.get("ventanas_horarias")),
       justificacion: strOrNull(formData.get("justificacion")),
       resultado: strOrNull(formData.get("resultado")),
+      antes_texto: strOrNull(formData.get("antes_texto")),
+      cambio_texto: strOrNull(formData.get("cambio_texto")),
+      esperado_texto: strOrNull(formData.get("esperado_texto")),
+      // `imagenes` no viene del formulario: se cargan por fuera y se conservan.
       evidencia_archivo_id: strOrNull(formData.get("evidencia_archivo_id")),
       updated_at: new Date().toISOString(),
       updated_by: profile.id,
