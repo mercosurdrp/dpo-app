@@ -19,11 +19,20 @@ import {
   eliminarObservacionIndicador,
 } from "@/actions/reuniones-indicadores-observaciones"
 import { ActividadFormDialog } from "./actividad-form-dialog"
+import { ActionLogSeccion } from "./action-log-seccion"
 import type {
+  ReunionActividadConResponsable,
   ReunionIndicadorObservacionConAutor,
   S5SectorAlmacen,
   TipoReunion,
 } from "@/types/database"
+
+/**
+ * Sección de las actividades que nacen del Tablero de control. Quedan en su
+ * propio Action Log debajo del tablero (no en el general de la Etapa 2) y en
+ * el historial del indicador.
+ */
+export const SECCION_TABLERO = "tablero"
 
 interface IndicadorOpt {
   id: string
@@ -58,6 +67,7 @@ export function TableroObservaciones({
   reunionTipo,
   indicadores,
   observaciones,
+  actividades,
   responsables,
   sectoresAlmacen,
   vehiculos,
@@ -70,6 +80,8 @@ export function TableroObservaciones({
   reunionTipo: TipoReunion
   indicadores: IndicadorOpt[]
   observaciones: ReunionIndicadorObservacionConAutor[]
+  /** Actividades de la sección «tablero» (las que nacieron acá). */
+  actividades: ReunionActividadConResponsable[]
   responsables: ResponsableOpt[]
   sectoresAlmacen?: S5SectorAlmacen[]
   vehiculos?: { id: string; dominio: string }[]
@@ -166,7 +178,8 @@ export function TableroObservaciones({
       </div>
       <p className="mt-0.5 text-xs text-muted-foreground">
         Si un indicador no cumplió o pasó algo, dejalo acotado acá eligiendo el
-        indicador. Haciendo clic en el nombre del indicador en el cuadro se ve
+        indicador. Las acciones que salen del tablero quedan en el Action Log
+        de abajo. Haciendo clic en el nombre del indicador en el cuadro se ve
         todo su historial.
       </p>
 
@@ -333,6 +346,22 @@ export function TableroObservaciones({
         </ul>
       )}
 
+      <div className="mt-4 pb-1">
+        <ActionLogSeccion
+          reunionId={reunionId}
+          reunionTipo={reunionTipo}
+          seccion={SECCION_TABLERO}
+          titulo="Tablero de control"
+          actividades={actividades}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onChanged={onChanged}
+          ocultarNuevo
+          onVerIndicador={onVerHistorial}
+          vacioTexto="Sin acciones del tablero. Elegí un indicador arriba y tocá «Crear acción»."
+        />
+      </div>
+
       {indicadorSel && (
         <ActividadFormDialog
           open={openAccion}
@@ -343,6 +372,7 @@ export function TableroObservaciones({
           sectoresAlmacen={sectoresAlmacen}
           vehiculos={vehiculos}
           rubrosMantenimiento={rubrosMantenimiento}
+          seccion={SECCION_TABLERO}
           indicador={{ id: indicadorSel.id, nombre: indicadorSel.nombre }}
           onSaved={onChanged}
         />

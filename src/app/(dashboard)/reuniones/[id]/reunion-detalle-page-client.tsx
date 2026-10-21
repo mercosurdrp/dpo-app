@@ -58,7 +58,10 @@ import {
 import { IS_MISIONES } from "@/lib/empresa"
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
-import { TableroObservaciones } from "@/components/reuniones/tablero-observaciones"
+import {
+  SECCION_TABLERO,
+  TableroObservaciones,
+} from "@/components/reuniones/tablero-observaciones"
 import {
   IndicadorHistorialDialog,
   type IndicadorHistorialRef,
@@ -1210,6 +1213,11 @@ export function ReunionDetallePageClient({
   )
   const actividadesSla = useMemo(
     () => actividadesAll.filter((a) => a.seccion === "sla"),
+    [actividadesAll],
+  )
+  // Etapa 3: acciones que nacieron del Tablero de control (sección propia).
+  const actividadesTablero = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === SECCION_TABLERO),
     [actividadesAll],
   )
   const actividadesAccCom = useMemo(
@@ -2530,6 +2538,7 @@ export function ReunionDetallePageClient({
                 nombre: i.nombre,
               }))}
               observaciones={observacionesTablero}
+              actividades={actividadesTablero}
               responsables={responsables}
               sectoresAlmacen={sectoresAlmacen}
               vehiculos={vehiculos}

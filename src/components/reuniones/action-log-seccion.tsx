@@ -63,6 +63,10 @@ export function ActionLogSeccion({
   responsables,
   puedeEditar,
   onChanged,
+  indicador,
+  ocultarNuevo,
+  onVerIndicador,
+  vacioTexto,
 }: {
   reunionId: string
   reunionTipo: TipoReunion
@@ -72,6 +76,13 @@ export function ActionLogSeccion({
   responsables: ResponsableOpt[]
   puedeEditar: boolean
   onChanged: () => void
+  /** Tablero de control: el compromiso nuevo queda atado a este indicador. */
+  indicador?: { id: string; nombre: string } | null
+  /** Oculta el botón «Compromiso» del encabezado (la sección tiene el suyo). */
+  ocultarNuevo?: boolean
+  /** Si viene, cada compromiso muestra su indicador como chip clickeable. */
+  onVerIndicador?: (indicadorId: string) => void
+  vacioTexto?: string
 }) {
   const [openForm, setOpenForm] = useState(false)
   const [editando, setEditando] =
@@ -112,7 +123,7 @@ export function ActionLogSeccion({
             ({actividades.length})
           </span>
         </div>
-        {puedeEditar && (
+        {puedeEditar && !ocultarNuevo && (
           <Button
             type="button"
             size="sm"
@@ -131,7 +142,7 @@ export function ActionLogSeccion({
 
       {actividades.length === 0 ? (
         <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-          Sin compromisos en esta sección.
+          {vacioTexto ?? "Sin compromisos en esta sección."}
         </p>
       ) : (
         <ul className="divide-y">
@@ -140,17 +151,29 @@ export function ActionLogSeccion({
               key={act.id}
               className="flex items-start justify-between gap-3 px-3 py-2 hover:bg-slate-50"
             >
-              <button
-                type="button"
-                className="flex-1 text-left"
-                onClick={() => setDetalle(act)}
-              >
-                <p className="text-sm text-slate-800">{act.descripcion}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {act.responsable_nombre ?? "Sin responsable"} ·{" "}
-                  {formatFecha(act.fecha_compromiso)}
-                </p>
-              </button>
+              <div className="flex min-w-0 flex-1 items-start gap-2">
+                {onVerIndicador && act.indicador_id && act.indicador_nombre && (
+                  <button
+                    type="button"
+                    onClick={() => onVerIndicador(act.indicador_id!)}
+                    className="mt-0.5 shrink-0 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"
+                    title="Ver el historial del indicador"
+                  >
+                    {act.indicador_nombre}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left"
+                  onClick={() => setDetalle(act)}
+                >
+                  <p className="text-sm text-slate-800">{act.descripcion}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {act.responsable_nombre ?? "Sin responsable"} ·{" "}
+                    {formatFecha(act.fecha_compromiso)}
+                  </p>
+                </button>
+              </div>
               <div className="flex items-center gap-1.5">
                 <EstadoBadge estado={act.estado} />
                 {puedeEditar && (
@@ -185,6 +208,7 @@ export function ActionLogSeccion({
         actividad={editando}
         responsables={responsables}
         seccion={seccion}
+        indicador={indicador}
         onSaved={() => {
           setOpenForm(false)
           setEditando(null)
