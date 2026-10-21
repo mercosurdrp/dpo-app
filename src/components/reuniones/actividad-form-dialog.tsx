@@ -59,6 +59,12 @@ interface Props {
   rubrosMantenimiento?: RubroOpt[]
   /** Sección a la que queda atado el compromiso (ej. 'rechazos'). Solo al crear. */
   seccion?: string | null
+  /**
+   * Indicador del Tablero de control (Etapa 3) del que nace la actividad
+   * (sólo al crear). Queda guardado en la actividad y la muestra el historial
+   * del indicador.
+   */
+  indicador?: { id: string; nombre: string } | null
   onSaved: () => void
 }
 
@@ -123,6 +129,7 @@ export function ActividadFormDialog({
   vehiculos,
   rubrosMantenimiento,
   seccion,
+  indicador,
   onSaved,
 }: Props) {
   const editing = !!actividad
@@ -180,6 +187,11 @@ export function ActividadFormDialog({
       formData.set("reunion_id", reunionId)
       // Etiqueta la actividad con la sección (solo al crear).
       if (seccion) formData.set("seccion", seccion)
+      // Nacida del tablero: queda atada al indicador (solo al crear).
+      if (indicador) {
+        formData.set("indicador_id", indicador.id)
+        formData.set("indicador_nombre", indicador.nombre)
+      }
     }
     if (responsableId) formData.set("responsable_id", responsableId)
     else formData.delete("responsable_id")
@@ -237,6 +249,17 @@ export function ActividadFormDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {(editing ? actividad?.indicador_nombre : indicador?.nombre) && (
+            <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+              <span className="font-semibold">Indicador:</span>{" "}
+              {editing ? actividad?.indicador_nombre : indicador?.nombre}
+              <span className="text-blue-700">
+                {" "}
+                · la acción queda en el historial de este indicador del
+                tablero.
+              </span>
+            </p>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="act_descripcion">Descripción *</Label>
             <Textarea

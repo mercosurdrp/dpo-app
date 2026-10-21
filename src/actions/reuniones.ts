@@ -631,6 +631,8 @@ export async function getReunionDetalle(
           s5_vehiculo_id: r.s5_vehiculo_id ?? null,
           mantenimiento_rubro: r.mantenimiento_rubro ?? null,
           seccion: r.seccion ?? null,
+          indicador_id: r.indicador_id ?? null,
+          indicador_nombre: r.indicador_nombre ?? null,
           responsable_nombre: r.responsable?.nombre ?? null,
           reunion_origen_id: r.reunion_origen?.id ?? r.reunion_id,
           reunion_origen_fecha: r.reunion_origen?.fecha ?? "",
@@ -1203,6 +1205,12 @@ export async function crearActividad(
     const observaciones =
       String(formData.get("observaciones") ?? "").trim() || null
     const seccion = String(formData.get("seccion") ?? "").trim() || null
+    // Actividad nacida del Tablero de control: queda atada al indicador.
+    const indicador_id =
+      String(formData.get("indicador_id") ?? "").trim() || null
+    const indicador_nombre = indicador_id
+      ? String(formData.get("indicador_nombre") ?? "").trim() || null
+      : null
 
     if (!reunion_id) return { error: "La reunión es obligatoria" }
     if (!descripcion) return { error: "La descripción es obligatoria" }
@@ -1220,6 +1228,8 @@ export async function crearActividad(
         fecha_compromiso,
         observaciones,
         seccion,
+        indicador_id,
+        indicador_nombre,
         estado: "no_comenzada",
         created_by: profile.id,
         destino: destinoParsed.destino,
@@ -1326,6 +1336,14 @@ export async function actualizarActividad(
     const observaciones =
       String(formData.get("observaciones") ?? "").trim() || null
     const estadoRaw = String(formData.get("estado") ?? "").trim()
+    // Indicador del tablero: sólo se toca si el formulario lo manda (el
+    // formulario de edición lo manda siempre, vacío = desatar).
+    const tocaIndicador = formData.has("indicador_id")
+    const indicador_id =
+      String(formData.get("indicador_id") ?? "").trim() || null
+    const indicador_nombre = indicador_id
+      ? String(formData.get("indicador_nombre") ?? "").trim() || null
+      : null
 
     if (!descripcion) return { error: "La descripción es obligatoria" }
 
@@ -1351,6 +1369,10 @@ export async function actualizarActividad(
       s5_sector_numero: destinoParsed.s5_sector_numero,
       s5_vehiculo_id: destinoParsed.s5_vehiculo_id,
       mantenimiento_rubro: destinoParsed.mantenimiento_rubro,
+    }
+    if (tocaIndicador) {
+      update.indicador_id = indicador_id
+      update.indicador_nombre = indicador_nombre
     }
 
     if (nuevoEstado) {

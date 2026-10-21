@@ -35,6 +35,12 @@ import {
   getCostoLogisticoReunion,
   type CostoLogisticoReunionData,
 } from "@/actions/reuniones-costo-logistico"
+import {
+  getResumenHistorialIndicadores,
+  listObservacionesReunion,
+  type IndicadorHistorialResumen,
+} from "@/actions/reuniones-indicadores-observaciones"
+import type { ReunionIndicadorObservacionConAutor } from "@/types/database"
 import { getProfile } from "@/lib/session"
 import { ReunionDetallePageClient } from "./reunion-detalle-page-client"
 
@@ -136,6 +142,22 @@ export default async function ReunionDetallePage({
     }
   }
 
+  // Etapa 3 (Logística, Warehouse, Matinal): observaciones del tablero de esta
+  // reunión y el conteo por indicador para marcar los que tienen historial.
+  let observacionesTablero: ReunionIndicadorObservacionConAutor[] = []
+  let historialIndicadores: Record<string, IndicadorHistorialResumen> = {}
+  if (
+    "data" in detalleRes &&
+    ["logistica", "warehouse", "matinal-distribucion"].includes(detalleRes.data.tipo)
+  ) {
+    const [obsRes, resumenRes] = await Promise.all([
+      listObservacionesReunion(id),
+      getResumenHistorialIndicadores(detalleRes.data.tipo),
+    ])
+    if ("data" in obsRes) observacionesTablero = obsRes.data
+    if ("data" in resumenRes) historialIndicadores = resumenRes.data
+  }
+
   if ("error" in detalleRes) {
     return (
       <div>
@@ -159,6 +181,8 @@ export default async function ReunionDetallePage({
       costoLogistico={costoLogistico}
       inversionesCapex={inversionesCapex}
       fotosVencidas={fotosVencidas}
+      observacionesTablero={observacionesTablero}
+      historialIndicadores={historialIndicadores}
       puedeEditar={puedeEditar}
       currentProfileId={profile.id}
       currentRole={profile.role}

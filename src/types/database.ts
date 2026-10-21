@@ -3819,6 +3819,32 @@ export interface ReunionActividad {
   // Sección/indicador de la reunión al que pertenece (ej. 'rechazos'). NULL =
   // action log general (temas fuera de las secciones).
   seccion: string | null
+  /** Indicador del Tablero de control (Etapa 3) del que nació: uuid de la
+   *  config o clave 'auto_*'. NULL = no viene del tablero. */
+  indicador_id: string | null
+  /** Nombre del indicador al momento de crear la actividad (foto). */
+  indicador_nombre: string | null
+}
+
+// Observación del Tablero de control (Etapa 3) atada a un indicador. Se carga
+// debajo del tablero y se lee desde el historial del indicador (modal al hacer
+// clic en su nombre), juntando todas las reuniones del mismo tipo.
+export interface ReunionIndicadorObservacion {
+  id: string
+  reunion_id: string
+  /** uuid de reuniones_indicadores_config o clave 'auto_*'. */
+  indicador_id: string
+  indicador_nombre: string
+  texto: string
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReunionIndicadorObservacionConAutor
+  extends ReunionIndicadorObservacion {
+  autor_nombre: string | null
+  reunion_fecha: string
 }
 
 export interface ReunionActividadConResponsable extends ReunionActividad {

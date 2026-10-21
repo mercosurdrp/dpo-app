@@ -20,6 +20,7 @@ import {
   FileDown,
   Gauge,
   Hand,
+  History,
   ListTodo,
   Pencil,
   Plus,
@@ -57,6 +58,12 @@ import {
 import { IS_MISIONES } from "@/lib/empresa"
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
+import { TableroObservaciones } from "@/components/reuniones/tablero-observaciones"
+import {
+  IndicadorHistorialDialog,
+  type IndicadorHistorialRef,
+} from "@/components/reuniones/indicador-historial-dialog"
+import type { IndicadorHistorialResumen } from "@/actions/reuniones-indicadores-observaciones"
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { ContadorReunion } from "@/components/reuniones/contador-reunion"
@@ -131,6 +138,7 @@ import {
 } from "@/components/reuniones/warehouse-perdidas-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
+  ReunionIndicadorObservacionConAutor,
   ReunionActividadConResponsable,
   ReunionAsistenteConProfile,
   ReunionDetalle,
@@ -209,6 +217,10 @@ interface Props {
   inversionesCapex?: InversionesCapexReunionData | null
   /** Fotos (cuadro mensual, KPI combustible) vencidas: se recalculan en segundo plano. */
   fotosVencidas?: string[]
+  /** Etapa 3: observaciones del tablero cargadas en ESTA reunión. */
+  observacionesTablero?: ReunionIndicadorObservacionConAutor[]
+  /** Etapa 3: cuántas observaciones/acciones tiene cada indicador (todas las reuniones del tipo). */
+  historialIndicadores?: Record<string, IndicadorHistorialResumen>
   puedeEditar: boolean
   currentProfileId: string | null
   currentRole: UserRole
@@ -786,6 +798,14 @@ function ActividadListItem({
               </span>
             )}
             {actividad.motivo && <span>Motivo: {actividad.motivo}</span>}
+            {actividad.indicador_nombre && (
+              <span
+                className="rounded-full border border-blue-200 bg-blue-50 px-1.5 font-medium text-blue-800"
+                title="Nació del Tablero de control (Etapa 3)"
+              >
+                Indicador: {actividad.indicador_nombre}
+              </span>
+            )}
           </div>
           {actividad.observaciones && (
             <p className="mt-1 text-xs text-slate-600">
@@ -898,6 +918,8 @@ export function ReunionDetallePageClient({
   costoLogistico = null,
   inversionesCapex = null,
   fotosVencidas = [],
+  observacionesTablero = [],
+  historialIndicadores = {},
   puedeEditar,
   currentProfileId,
   currentRole,
@@ -987,6 +1009,9 @@ export function ReunionDetallePageClient({
   }
 
   const [openConfigInd, setOpenConfigInd] = useState(false)
+  // Etapa 3: historial de un indicador (clic en su nombre en el cuadro).
+  const [indicadorHistorial, setIndicadorHistorial] =
+    useState<IndicadorHistorialRef | null>(null)
   const [openActForm, setOpenActForm] = useState(false)
   const [actividadEditando, setActividadEditando] =
     useState<ReunionActividadConResponsable | null>(null)
@@ -2058,8 +2083,50 @@ export function ReunionDetallePageClient({
                 <tbody>
                   {indicadoresMes.indicadores.map((ind) => (
                     <tr key={ind.id} className="border-b last:border-0">
-                      <td className="sticky left-0 w-[160px] min-w-[160px] max-w-[160px] truncate bg-white px-2 py-2 align-middle text-sm font-medium text-slate-900" title={ind.nombre}>
-                        {ind.nombre}
+                      <td className="sticky left-0 w-[160px] min-w-[160px] max-w-[160px] bg-white px-2 py-2 align-middle text-sm font-medium text-slate-900">
+                        {(() => {
+                          const h = historialIndicadores[ind.id]
+                          const total = h ? h.observaciones + h.acciones : 0
+                          return (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setIndicadorHistorial({
+                                  id: ind.id,
+                                  nombre: ind.nombre,
+                                  unidad: ind.unidad,
+                                  meta: ind.meta,
+                                  gatillo: ind.gatillo ?? null,
+                                })
+                              }
+                              className="flex w-full items-center gap-1 text-left hover:text-blue-700 hover:underline"
+                              title={
+                                total > 0
+                                  ? `Ver historial: ${h!.observaciones} observaciones, ${h!.acciones} acciones${
+                                      h!.acciones_abiertas > 0
+                                        ? ` (${h!.acciones_abiertas} abiertas)`
+                                        : ""
+                                    }`
+                                  : "Ver historial de observaciones y acciones"
+                              }
+                            >
+                              <span className="min-w-0 flex-1 truncate">{ind.nombre}</span>
+                              {total > 0 && (
+                                <span
+                                  className={cn(
+                                    "inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 text-[10px] font-semibold leading-4",
+                                    h!.acciones_abiertas > 0
+                                      ? "border-amber-200 bg-amber-50 text-amber-800"
+                                      : "border-blue-200 bg-blue-50 text-blue-800",
+                                  )}
+                                >
+                                  <History className="size-3" />
+                                  {total}
+                                </span>
+                              )}
+                            </button>
+                          )
+                        })()}
                       </td>
                       <td className="sticky left-[160px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 align-middle text-xs text-muted-foreground">
                         {ind.unidad ?? "—"}
@@ -2454,6 +2521,34 @@ export function ReunionDetallePageClient({
               </table>
             </div>
           )}
+          {indicadoresMes && indicadoresMes.indicadores.length > 0 && (
+            <TableroObservaciones
+              reunionId={detalle.id}
+              reunionTipo={detalle.tipo}
+              indicadores={indicadoresMes.indicadores.map((i) => ({
+                id: i.id,
+                nombre: i.nombre,
+              }))}
+              observaciones={observacionesTablero}
+              responsables={responsables}
+              sectoresAlmacen={sectoresAlmacen}
+              vehiculos={vehiculos}
+              rubrosMantenimiento={rubrosMantenimiento}
+              puedeEditar={puedeEditar}
+              onChanged={refrescar}
+              onVerHistorial={(id) => {
+                const ind = indicadoresMes.indicadores.find((i) => i.id === id)
+                const obs = observacionesTablero.find((o) => o.indicador_id === id)
+                setIndicadorHistorial({
+                  id,
+                  nombre: ind?.nombre ?? obs?.indicador_nombre ?? "Indicador",
+                  unidad: ind?.unidad ?? null,
+                  meta: ind?.meta ?? null,
+                  gatillo: ind?.gatillo ?? null,
+                })
+              }}
+            />
+          )}
         </CardContent>
       </Card>
       )}
@@ -2535,6 +2630,16 @@ export function ReunionDetallePageClient({
 
 
       {/* Subdialogs */}
+      <IndicadorHistorialDialog
+        open={indicadorHistorial !== null}
+        onOpenChange={(o) => {
+          if (!o) setIndicadorHistorial(null)
+        }}
+        reunionTipo={detalle.tipo}
+        reunionId={detalle.id}
+        indicador={indicadorHistorial}
+      />
+
       <ActividadFormDialog
         open={openActForm}
         onOpenChange={(o) => {
