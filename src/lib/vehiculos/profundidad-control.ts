@@ -14,6 +14,22 @@ import { TOLERANCIA_SUBIDA_MM } from "@/lib/flota/neumaticos-control"
  * La función es pura —recibe lo que ya se leyó de la base— para que la misma
  * regla valga en la carga de la ronda del operador y en la corrección puntual
  * del módulo de mantenimiento, que usan clientes de Supabase distintos.
+ *
+ * 🚨 El nominal del alta NO es referencia (`origen === "alta"`). Es el dibujo
+ * declarado del modelo, no algo que alguien haya medido, y cuando está mal
+ * obliga a mentir: el 20/10/2026 las 4 Dayton de tracción del AE591EI figuraban
+ * con 15 mm de nominal, el Gestor de Flota midió 16,46–16,68 con calibre y la
+ * app no lo dejó cargarlo, así que tuvo que escribir 15 sabiendo que estaba
+ * mal. Un validador que fuerza un dato falso es peor que no tenerlo: la
+ * corrección hubo que hacerla después a mano, fila por fila.
+ *
+ * Es la misma barrera que ya aplica `desgaste-neumaticos.ts` para no arrancar
+ * un tramo de desgaste en un nominal; acá faltaba.
+ *
+ * Qué se pierde: la primera medición real de una cubierta recién dada de alta
+ * queda sin referencia contra la cual compararse. El tipeo grande igual no
+ * pasa, lo ataja `PROF_MAX_MM` en `validarProfundidad`, y la ronda siguiente ya
+ * tiene una medición de verdad contra la cual comparar.
  */
 
 export interface EntradaProfundidad {
@@ -27,6 +43,8 @@ export interface MedicionPrevia {
   neumatico_id: string
   fecha: string
   profundidad_mm: number
+  /** `"alta"` es el nominal declarado del modelo: no sirve de referencia. */
+  origen?: string | null
 }
 
 /** Montaje de una cubierta: corta la comparación hacia atrás. */
@@ -49,8 +67,9 @@ const ddmmaaaa = (iso: string) => iso.split("-").reverse().join("/")
  *
  * La referencia de cada cubierta es su medición más reciente ANTERIOR a la
  * fecha que se carga (así una corrección del mismo día no se compara contra sí
- * misma) y posterior a su último montaje: una cubierta que vuelve del
- * recapador sí tiene más dibujo que cuando salió, y eso es legítimo.
+ * misma), posterior a su último montaje —una cubierta que vuelve del recapador
+ * sí tiene más dibujo que cuando salió, y eso es legítimo— y que sea una
+ * medición de verdad, no el nominal del alta.
  */
 export function errorProfundidadQueSube(datos: {
   entradas: EntradaProfundidad[]
@@ -73,6 +92,7 @@ export function errorProfundidadQueSube(datos: {
     let ref: MedicionPrevia | null = null
     for (const m of mediciones) {
       if (m.neumatico_id !== e.neumatico_id) continue
+      if (m.origen === "alta") continue
       if (m.fecha >= e.fecha) continue
       if (desde && m.fecha < desde) continue
       if (!ref || m.fecha > ref.fecha) ref = m
