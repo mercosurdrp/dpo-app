@@ -1621,7 +1621,9 @@ function ResumenEscenarios({
     {
       label: `VLC/HL red ${anio}`,
       valor: base,
-      nota: ultimoMes ? `acumulado a ${MESES[ultimoMes]}` : "sin costo cargado",
+      nota: ultimoMes
+        ? `acumulado a ${MESES[ultimoMes]} · sólo lo entregado a PDV, sin la bolsa de depósito (no es el VLC/HL del Sueño)`
+        : "sin costo cargado",
       color: "#334155",
     },
     {
@@ -1644,7 +1646,7 @@ function ResumenEscenarios({
     <Card>
       <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 pt-6">
         {items.map((it) => (
-          <div key={it.label} className="min-w-[150px]">
+          <div key={it.label} className="min-w-[150px] max-w-[260px]">
             <p className="text-xs font-semibold" style={{ color: it.color }}>
               {it.label}
             </p>

@@ -766,7 +766,7 @@ export async function registrarMedicionNeumatico(input: {
       const [{ data: medPrevias }, { data: montajes }, { data: fichas }] = await Promise.all([
         supabase
           .from("mantenimiento_neumatico_mediciones")
-          .select("neumatico_id, fecha, profundidad_mm")
+          .select("neumatico_id, fecha, profundidad_mm, origen")
           .eq("neumatico_id", input.neumatico_id)
           .not("profundidad_mm", "is", null),
         supabase

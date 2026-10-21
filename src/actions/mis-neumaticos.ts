@@ -181,7 +181,7 @@ export async function getMisNeumaticos(): Promise<
       ? await Promise.all([
           supabase
             .from("mantenimiento_neumatico_mediciones")
-            .select("neumatico_id, fecha, profundidad_mm")
+            .select("neumatico_id, fecha, profundidad_mm, origen")
             .in("neumatico_id", ids)
             .not("profundidad_mm", "is", null)
             .lt("fecha", hoy)
@@ -202,6 +202,10 @@ export async function getMisNeumaticos(): Promise<
     const referencias = new Map<string, { fecha: string; profundidad_mm: number }>()
     for (const m of prevRes.data ?? []) {
       if (referencias.has(m.neumatico_id)) continue // vienen de la más nueva a la más vieja
+      // El nominal del alta no es una medición: ni marca en rojo acá ni frena
+      // en el servidor. Tiene que ser la misma regla en los dos lados, o la
+      // pantalla pinta de rojo un número que al guardar entra igual.
+      if (m.origen === "alta") continue
       const montaje = ultimoMontaje.get(m.neumatico_id)
       // Una cubierta que volvió del recapador sí tiene más dibujo que antes: la
       // comparación no cruza su último montaje.
@@ -392,7 +396,7 @@ export async function guardarMedicionesNeumaticos(
       const [{ data: medPrevias }, { data: montajes }, { data: fichas }] = await Promise.all([
         supabase
           .from("mantenimiento_neumatico_mediciones")
-          .select("neumatico_id, fecha, profundidad_mm")
+          .select("neumatico_id, fecha, profundidad_mm, origen")
           .in("neumatico_id", idsMedidos)
           .not("profundidad_mm", "is", null),
         supabase
