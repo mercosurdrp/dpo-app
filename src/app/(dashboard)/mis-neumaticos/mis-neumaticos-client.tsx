@@ -372,6 +372,37 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
               </p>
             ) : (
               <div className="mt-3 space-y-3">
+                {/* 🚨 Dónde apoyar el calibre, no cómo usarlo. Dos rondas
+                    enteras se descartaron por leer BAJO —la del 14/09 en cuatro
+                    unidades y la del 13/08 en el AE908DH, ésta hasta 3 mm— y el
+                    instrumento no tuvo nada que ver: un calibre digital se
+                    equivoca en centésimas, no en milímetros. Lo que mueve
+                    milímetros es apoyar la varilla sobre el testigo de desgaste
+                    o cambiar de canal entre rondas. El criterio existía sólo en
+                    un comentario del código; el que mide nunca lo vio. */}
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+                  <p className="text-xs font-semibold text-foreground">
+                    Antes de medir: dónde apoyar el calibre
+                  </p>
+                  <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
+                    <li>
+                      <strong className="text-foreground">Siempre el mismo canal</strong>, el
+                      del centro de la banda. El canal del hombro tiene otra profundidad y
+                      cambiar de canal entre rondas se lee después como desgaste.
+                    </li>
+                    <li>
+                      <strong className="text-foreground">Nunca sobre el testigo de
+                      desgaste</strong> — el resaltito que aparece cada tanto dentro del
+                      canal. Está a 1,6 mm del fondo, así que apoyar ahí te hace leer unos
+                      2 mm de menos en toda la unidad.
+                    </li>
+                    <li>
+                      Con el calibre <strong className="text-foreground">cerrado tiene que
+                      marcar 0,00</strong>. Si marca otra cosa, ponelo en cero antes de
+                      arrancar.
+                    </li>
+                  </ul>
+                </div>
                 {unidad.cubiertas.map((c) => {
                   const v = valores[c.id] ?? { mm: "", psi: "" }
                   const errorMm = validarProfundidad(v.mm)
@@ -592,6 +623,52 @@ export function MisNeumaticosClient({ data }: { data: MisNeumaticosData }) {
  * depende de hacia dónde mire. El esquema sigue abajo para el que prefiere
  * tocarlo — las dos formas llevan al mismo casillero.
  */
+/* 🚨 `Opcion` y `Paso` viven ACÁ y no dentro de `BuscadorDeRueda`. Declarar un
+   componente dentro del render lo vuelve a crear en cada pasada, así que React
+   lo trata como otro componente y le descarta el estado. Hoy ninguno de los dos
+   tiene estado propio, pero el día que alguien le agregue uno el bug no se iba
+   a entender. Lo marca `react-hooks/static-components`. */
+function Opcion({
+  activo,
+  onClick,
+  titulo,
+  ayuda,
+}: {
+  activo: boolean
+  onClick: () => void
+  titulo: string
+  ayuda?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex-1 rounded-lg border p-3 text-left transition-colors",
+        activo
+          ? "border-primary bg-primary/10"
+          : "border-border bg-background hover:bg-muted/50"
+      )}
+    >
+      <span className="block text-sm font-semibold text-foreground">{titulo}</span>
+      {ayuda && (
+        <span className="mt-0.5 block text-xs text-muted-foreground">{ayuda}</span>
+      )}
+    </button>
+  )
+}
+
+function Paso({ n, texto }: { n: number; texto: string }) {
+  return (
+    <p className="mb-1.5 mt-3 flex items-center gap-1.5 text-xs font-semibold text-foreground first:mt-0">
+      <span className="flex size-4 items-center justify-center rounded-full bg-foreground text-[10px] font-bold text-background">
+        {n}
+      </span>
+      {texto}
+    </p>
+  )
+}
+
 function BuscadorDeRueda({
   layout,
   tipo,
@@ -623,43 +700,6 @@ function BuscadorDeRueda({
 
   const nombreEje = (n: number) =>
     posicionEnPalabras(tipo, `${n}${lado ?? "I"}`).eje ?? `Eje ${n}`
-
-  const Opcion = ({
-    activo,
-    onClick,
-    titulo,
-    ayuda,
-  }: {
-    activo: boolean
-    onClick: () => void
-    titulo: string
-    ayuda?: string
-  }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex-1 rounded-lg border p-3 text-left transition-colors",
-        activo
-          ? "border-primary bg-primary/10"
-          : "border-border bg-background hover:bg-muted/50"
-      )}
-    >
-      <span className="block text-sm font-semibold text-foreground">{titulo}</span>
-      {ayuda && (
-        <span className="mt-0.5 block text-xs text-muted-foreground">{ayuda}</span>
-      )}
-    </button>
-  )
-
-  const Paso = ({ n, texto }: { n: number; texto: string }) => (
-    <p className="mb-1.5 mt-3 flex items-center gap-1.5 text-xs font-semibold text-foreground first:mt-0">
-      <span className="flex size-4 items-center justify-center rounded-full bg-foreground text-[10px] font-bold text-background">
-        {n}
-      </span>
-      {texto}
-    </p>
-  )
 
   const irA = (code: string) => {
     const c = cubiertaDePos.get(code)
