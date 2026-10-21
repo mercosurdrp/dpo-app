@@ -31,6 +31,12 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -330,17 +336,118 @@ export function PlanTerritorialClient({
         </Card>
       )}
 
-      <Tabs defaultValue="escenarios">
+      <Tabs defaultValue="resumen">
         <TabsList>
-          <TabsTrigger value="escenarios">Escenarios</TabsTrigger>
-          <TabsTrigger value="ciudades">Diagnóstico por ciudad</TabsTrigger>
-          <TabsTrigger value="planes">
-            Planes de acción ({planes.length})
+          <TabsTrigger value="resumen">Resumen</TabsTrigger>
+          <TabsTrigger value="planes">Planes ({planes.length})</TabsTrigger>
+          <TabsTrigger value="revisiones">
+            Revisión mensual ({revisiones.length})
           </TabsTrigger>
-          <TabsTrigger value="revisiones">Revisión mensual</TabsTrigger>
+          <TabsTrigger value="ciudades">Diagnóstico por ciudad</TabsTrigger>
+          <TabsTrigger value="escenarios">Escenarios y metodología</TabsTrigger>
         </TabsList>
 
-        {/* ---------------- Escenarios (R5.1.1) ---------------- */}
+        {/* ---------------- Resumen: una pantalla por ciudad con plan ---------------- */}
+        <TabsContent value="resumen" className="space-y-4 pt-4">
+          <ResumenEscenarios
+            anio={anio}
+            meses={territorio?.meses ?? []}
+            base={vlcBase}
+            objetivo={vlcObjetivo}
+            dream={vlcDream}
+            revisiones={revisiones}
+          />
+          {planes.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Todavía no hay planes territoriales cargados. Cargá el primero en
+              la solapa Planes.
+            </p>
+          )}
+          <div className="grid gap-4 lg:grid-cols-2">
+            {planes.map((p) => (
+              <ResumenCiudadCard
+                key={p.id}
+                plan={p}
+                ciudad={territorio?.ciudades.find((c) => c.ciudad === p.ciudad)}
+              />
+            ))}
+          </div>
+        </TabsContent>
+
+        {/* ---------------- Planes (R5.1.2 / R5.1.4) ---------------- */}
+        <TabsContent value="planes" className="space-y-4 pt-4">
+          {esEditor && (
+            <PlanDialog
+              ciudades={(territorio?.ciudades ?? []).map((c) => c.ciudad)}
+              perfiles={perfiles}
+              territorio={territorio}
+              trigger={
+                <Button>
+                  <Plus className="h-4 w-4" /> Nuevo plan territorial
+                </Button>
+              }
+            />
+          )}
+          {planes.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Todavía no hay planes territoriales cargados.
+            </p>
+          )}
+          {planes.map((p) => (
+            <PlanCard
+              key={p.id}
+              plan={p}
+              ciudad={territorio?.ciudades.find((c) => c.ciudad === p.ciudad)}
+              rutero={ruteros[p.ciudad] ?? null}
+              esEditor={esEditor}
+              ciudades={(territorio?.ciudades ?? []).map((c) => c.ciudad)}
+              perfiles={perfiles}
+              territorio={territorio}
+              archivos={archivos}
+            />
+          ))}
+        </TabsContent>
+
+        {/* ---------------- Revisiones (R5.1.3) ---------------- */}
+        <TabsContent value="revisiones" className="space-y-4 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-3xl text-sm text-muted-foreground">
+              Ventas y operaciones revisan el progreso{" "}
+              <strong>como mínimo una vez por mes</strong>. Cada registro es la
+              evidencia de esa revisión. Los números salen solos del costo
+              cargado; la conclusión es para lo que los números no dicen.
+            </p>
+            {esEditor && (
+              <NuevaRevisionDialog anio={anio} vlcActual={vlcBase} />
+            )}
+          </div>
+          {revisiones.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Sin revisiones registradas en {anio}.
+            </p>
+          )}
+          <div className="space-y-3">
+            {revisiones.map((r) => (
+              <RevisionCard
+                key={r.id}
+                revision={r}
+                territorio={territorio}
+                planes={planes}
+              />
+            ))}
+          </div>
+        </TabsContent>
+
+        {/* ---------------- Diagnóstico por ciudad ---------------- */}
+        <TabsContent value="ciudades" className="space-y-4 pt-4">
+          <DiagnosticoCiudades
+            anio={anio}
+            territorio={territorio}
+            planes={planes}
+          />
+        </TabsContent>
+
+        {/* ---------------- Escenarios y metodología (R5.1.1) ---------------- */}
         <TabsContent value="escenarios" className="space-y-4 pt-4">
           <div className="grid gap-4 md:grid-cols-3">
             <EscenarioCard
@@ -425,160 +532,6 @@ export function PlanTerritorialClient({
             aportes={ens.aportes}
           />
         </TabsContent>
-
-        {/* ---------------- Diagnóstico por ciudad ---------------- */}
-        <TabsContent value="ciudades" className="space-y-4 pt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Costo y operación por ciudad · {anio} acumulado
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Ciudad</TableHead>
-                    <TableHead className="text-right">Km</TableHead>
-                    <TableHead className="text-right">PDV</TableHead>
-                    <TableHead className="text-right">HL</TableHead>
-                    <TableHead className="text-right">$/HL</TableHead>
-                    <TableHead className="text-right">Entregas</TableHead>
-                    <TableHead className="text-right">HL/entrega</TableHead>
-                    <TableHead className="text-right">Bultos/entrega</TableHead>
-                    <TableHead className="text-right">Entregas/PDV</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(territorio?.ciudades ?? []).map((c) => (
-                    <TableRow key={c.ciudad}>
-                      <TableCell className="font-medium">{c.ciudad}</TableCell>
-                      <TableCell className="text-right">
-                        {c.km == null ? "—" : num(c.km, 0)}
-                      </TableCell>
-                      <TableCell className="text-right">{c.pdv}</TableCell>
-                      <TableCell className="text-right">{num(c.hl, 0)}</TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {pesos(c.costo_x_hl)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {num(c.entregas, 0)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {num(c.hl_por_entrega)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {num(c.bultos_por_entrega)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {num(c.entregas_por_pdv, 1)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {territorio && (
-                    <TableRow className="border-t-2 font-semibold">
-                      <TableCell>Total</TableCell>
-                      <TableCell />
-                      <TableCell className="text-right">
-                        {territorio.total.pdv}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {num(territorio.total.hl, 0)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {pesos(territorio.total.costo_x_hl)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {num(territorio.total.entregas, 0)}
-                      </TableCell>
-                      <TableCell colSpan={3} />
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {(territorio?.ciudades ?? []).map((c) => (
-            <SerieCiudad key={c.ciudad} ciudad={c} planes={planes} />
-          ))}
-        </TabsContent>
-
-        {/* ---------------- Planes (R5.1.2 / R5.1.4) ---------------- */}
-        <TabsContent value="planes" className="space-y-4 pt-4">
-          {esEditor && (
-            <PlanDialog
-              ciudades={(territorio?.ciudades ?? []).map((c) => c.ciudad)}
-              perfiles={perfiles}
-              territorio={territorio}
-              trigger={
-                <Button>
-                  <Plus className="h-4 w-4" /> Nuevo plan territorial
-                </Button>
-              }
-            />
-          )}
-          {planes.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Todavía no hay planes territoriales cargados.
-            </p>
-          )}
-          {planes.map((p) => (
-            <PlanCard
-              key={p.id}
-              plan={p}
-              ciudad={territorio?.ciudades.find((c) => c.ciudad === p.ciudad)}
-              rutero={ruteros[p.ciudad] ?? null}
-              esEditor={esEditor}
-              ciudades={(territorio?.ciudades ?? []).map((c) => c.ciudad)}
-              perfiles={perfiles}
-              territorio={territorio}
-              archivos={archivos}
-            />
-          ))}
-        </TabsContent>
-
-        {/* ---------------- Revisiones (R5.1.3) ---------------- */}
-        <TabsContent value="revisiones" className="space-y-4 pt-4">
-          <Card className="border-slate-200">
-            <CardContent className="pt-6 text-sm text-muted-foreground">
-              El 5.1 pide que ventas y operaciones revisen el progreso{" "}
-              <strong>como mínimo una vez por mes</strong>. Cada registro de acá
-              es la evidencia de esa revisión.
-            </CardContent>
-          </Card>
-
-          {esEditor && (
-            <NuevaRevisionDialog anio={anio} vlcActual={vlcBase} />
-          )}
-
-          {revisiones.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Sin revisiones registradas en {anio}.
-            </p>
-          )}
-          <div className="space-y-3">
-            {revisiones.map((r) => (
-              <Card key={r.id}>
-                <CardContent className="space-y-1 pt-6">
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold text-slate-900">
-                      {MESES[r.mes]} {r.anio}
-                    </p>
-                    <Badge variant="secondary">{pesos(r.vlc_hl_mes)} /HL</Badge>
-                  </div>
-                  <p className="text-sm">
-                    <span className="text-muted-foreground">Participantes: </span>
-                    {r.participantes ?? "—"}
-                  </p>
-                  {r.conclusion && (
-                    <p className="whitespace-pre-wrap text-sm">{r.conclusion}</p>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
       </Tabs>
     </div>
   )
@@ -622,9 +575,15 @@ function EscenarioCard({
 function SerieCiudad({
   ciudad,
   planes,
+  meta,
+  compacta = false,
 }: {
   ciudad: CiudadResumen
   planes: PlanTerritorial[]
+  /** Meta de $/HL del plan: se dibuja como línea de referencia. */
+  meta?: number | null
+  /** Sin tarjeta ni título, más bajo: para embeber en otra tarjeta. */
+  compacta?: boolean
 }) {
   const datos = ciudad.serie.map((m) => ({
     mes: MESES[m.mes],
@@ -640,23 +599,33 @@ function SerieCiudad({
 
   if (datos.length < 2) return null
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">
-          {ciudad.ciudad} — $/HL mes a mes
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="h-56">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={datos}>
+  const grafico = (
+    <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={datos} margin={{ top: 12, right: 12, bottom: 0, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="mes" fontSize={12} />
-            <YAxis fontSize={12} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+            <YAxis
+              fontSize={12}
+              domain={["auto", "auto"]}
+              tickFormatter={(v) => `${Math.round(v / 1000)}k`}
+            />
             <RTooltip
               formatter={(v) => [pesos(Number(v)), "$/HL"]}
               labelClassName="text-xs"
             />
+            {meta != null && (
+              <ReferenceLine
+                y={Math.round(meta)}
+                stroke="#0d9488"
+                strokeDasharray="5 4"
+                label={{
+                  value: "meta",
+                  fontSize: 10,
+                  position: "insideBottomRight",
+                  fill: "#0d9488",
+                }}
+              />
+            )}
             {marcas.map((m, i) => (
               <ReferenceLine
                 key={`${m.mes}-${i}`}
@@ -675,7 +644,18 @@ function SerieCiudad({
             />
           </LineChart>
         </ResponsiveContainer>
-      </CardContent>
+  )
+
+  if (compacta) return <div className="h-48">{grafico}</div>
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          {ciudad.ciudad} — $/HL mes a mes
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="h-56">{grafico}</CardContent>
     </Card>
   )
 }
@@ -1009,11 +989,11 @@ function PlanCard({
             <p className="font-semibold">{pesos(plan.meta)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Hoy</p>
+            <p className="text-xs text-muted-foreground">Acumulado del año</p>
             <p className="font-semibold">{pesos(actual)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">vs base</p>
+            <p className="text-xs text-muted-foreground">Acumulado vs base</p>
             <p
               className={`font-semibold ${
                 delta == null
@@ -1049,6 +1029,15 @@ function PlanCard({
           </p>
         )}
 
+        {ciudad && (
+          <div className="border-t pt-3">
+            <p className="mb-1 text-xs font-semibold text-muted-foreground">
+              $/HL mes a mes · {plan.ciudad}
+            </p>
+            <SerieCiudad ciudad={ciudad} planes={[plan]} meta={plan.meta} compacta />
+          </div>
+        )}
+
         <RedisenoRutasSection
           plan={plan}
           ciudad={ciudad}
@@ -1058,10 +1047,12 @@ function PlanCard({
         />
 
         {plan.avances.length > 0 && (
-          <div className="space-y-2 border-t pt-3">
-            <p className="text-xs font-semibold text-muted-foreground">
-              Avances ({plan.avances.length})
-            </p>
+          <Accordion className="border-t">
+            <AccordionItem value="notas" className="border-b-0">
+              <AccordionTrigger className="py-2 text-xs font-semibold text-muted-foreground">
+                Notas del plan ({plan.avances.length})
+              </AccordionTrigger>
+              <AccordionContent className="space-y-2">
             {plan.avances.map((a) => (
               <div key={a.id} className="rounded-md bg-slate-50 p-2 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1086,7 +1077,9 @@ function PlanCard({
                 )}
               </div>
             ))}
-          </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         )}
 
         {esEditor && (
@@ -1405,11 +1398,11 @@ function NuevoAvanceDialog({
   return (
     <Dialog open={abierto} onOpenChange={setAbierto}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
-        Cargar avance ({plan.avances_count})
+        Agregar nota
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Avance — {plan.titulo}</DialogTitle>
+          <DialogTitle>Nota — {plan.titulo}</DialogTitle>
         </DialogHeader>
         <form action={onSubmit} className="space-y-3">
           <div>
@@ -1447,7 +1440,7 @@ function NuevoAvanceDialog({
           {error && <p className="text-sm text-red-600">{error}</p>}
           <DialogFooter>
             <Button type="submit" disabled={pendiente}>
-              {pendiente ? "Guardando…" : "Guardar avance"}
+              {pendiente ? "Guardando…" : "Guardar nota"}
             </Button>
           </DialogFooter>
         </form>
@@ -1545,5 +1538,504 @@ function NuevaRevisionDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ==================================================================
+// Resumen: lo que hay que ver en una pantalla
+// ==================================================================
+
+function fmtFechaCorta(iso: string | null): string {
+  if (!iso) return ""
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
+}
+
+function pctTexto(desde: number | null, hasta: number | null): string | null {
+  if (desde == null || hasta == null || !desde) return null
+  const p = (100 * (hasta - desde)) / desde
+  return `${p > 0 ? "+" : ""}${num(p, 1)}%`
+}
+
+/**
+ * $/HL de la ciudad desde una fecha (agregado sobre totales, nunca promedio de
+ * ratios). El mes de implementación cuenta si el cambio arrancó antes del 15.
+ */
+function costoDesde(
+  ciudad: CiudadResumen | undefined,
+  fecha: string | null,
+): { costo_x_hl: number | null; meses: number[] } {
+  if (!ciudad || !fecha) return { costo_x_hl: null, meses: [] }
+  const anio = Number(fecha.slice(0, 4))
+  const mes = Number(fecha.slice(5, 7))
+  const dia = Number(fecha.slice(8, 10))
+  const ms = ciudad.serie.filter((m) =>
+    m.anio !== anio ? m.anio > anio : m.mes !== mes ? m.mes > mes : dia <= 15,
+  )
+  const hl = ms.reduce((a, m) => a + m.hl, 0)
+  const costo = ms.reduce((a, m) => a + m.costo_total, 0)
+  return { costo_x_hl: hl ? costo / hl : null, meses: ms.map((m) => m.mes) }
+}
+
+/** Primera fecha de implementación del plan (etapa 1 o la general). */
+function primeraImplementacion(plan: PlanTerritorial): string | null {
+  const fechas = plan.etapas
+    .map((e) => e.fecha_implementacion)
+    .filter((f): f is string => !!f)
+    .sort()
+  return fechas[0] ?? plan.fecha_implementacion
+}
+
+function ResumenEscenarios({
+  anio,
+  meses,
+  base,
+  objetivo,
+  dream,
+  revisiones,
+}: {
+  anio: number
+  meses: number[]
+  base: number | null
+  objetivo: number | null
+  dream: number | null
+  revisiones: RevisionTerritorial[]
+}) {
+  const ultimoMes = meses.length ? meses[meses.length - 1] : null
+  const ultimaRev = revisiones.length
+    ? revisiones.reduce((a, r) => (r.mes > a.mes ? r : a))
+    : null
+  const proxima = ultimaRev
+    ? ultimaRev.mes >= 12
+      ? `Enero ${anio + 1}`
+      : `${MESES[ultimaRev.mes + 1]} ${anio}`
+    : null
+
+  const pObj = pctTexto(base, objetivo)
+  const pDream = pctTexto(base, dream)
+  const items: Array<{
+    label: string
+    valor: number | null
+    nota: string
+    color: string
+  }> = [
+    {
+      label: `VLC/HL red ${anio}`,
+      valor: base,
+      nota: ultimoMes ? `acumulado a ${MESES[ultimoMes]}` : "sin costo cargado",
+      color: "#334155",
+    },
+    {
+      label: "Objetivo",
+      valor: objetivo,
+      nota: pObj ? `${pObj} si los planes llegan a su meta` : "cargá planes con meta",
+      color: "#0d9488",
+    },
+    {
+      label: "Ensueño",
+      valor: dream,
+      nota: pDream
+        ? `${pDream} con toda la red reestructurada`
+        : "se extrapola de los planes",
+      color: PILAR_PLANEAMIENTO_COLOR,
+    },
+  ]
+
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 pt-6">
+        {items.map((it) => (
+          <div key={it.label} className="min-w-[150px]">
+            <p className="text-xs font-semibold" style={{ color: it.color }}>
+              {it.label}
+            </p>
+            <p className="text-2xl font-bold text-slate-900">{pesos(it.valor)}</p>
+            <p className="text-xs text-muted-foreground">{it.nota}</p>
+          </div>
+        ))}
+        <div className="ml-auto text-right text-xs text-muted-foreground">
+          <p className="flex items-center justify-end gap-1 font-semibold text-slate-700">
+            <CalendarCheck className="h-3.5 w-3.5" /> Revisión mensual
+          </p>
+          {ultimaRev ? (
+            <>
+              <p>
+                Última: {MESES[ultimaRev.mes]} {ultimaRev.anio}
+              </p>
+              <p>Próxima: {proxima}</p>
+            </>
+          ) : (
+            <p>Sin revisiones en {anio}</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * Tarjeta de una ciudad con plan: etapas, base → meta → cómo viene, y la serie
+ * con las marcas. Es la lectura de "¿cómo va Colón?" sin recorrer solapas.
+ */
+function ResumenCiudadCard({
+  plan,
+  ciudad,
+}: {
+  plan: PlanTerritorial
+  ciudad: CiudadResumen | undefined
+}) {
+  const ultimo = ciudad?.serie.length
+    ? ciudad.serie[ciudad.serie.length - 1]
+    : null
+  const anterior =
+    ciudad && ciudad.serie.length > 1
+      ? ciudad.serie[ciudad.serie.length - 2]
+      : null
+  const desde = costoDesde(ciudad, primeraImplementacion(plan))
+  const meta = plan.meta
+  const colorVsMeta = (v: number | null) =>
+    v == null || meta == null
+      ? "text-slate-900"
+      : v <= meta
+        ? "text-emerald-600"
+        : "text-red-600"
+  const rangoBase =
+    plan.linea_base_desde && plan.linea_base_hasta
+      ? ` (${MESES[Number(plan.linea_base_desde.slice(5, 7))]}–${MESES[Number(plan.linea_base_hasta.slice(5, 7))]})`
+      : ""
+  const rangoDesde = desde.meses.length
+    ? ` (${MESES[desde.meses[0]]}–${MESES[desde.meses[desde.meses.length - 1]]})`
+    : ""
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-lg">{plan.ciudad}</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {PALANCA_LABEL[plan.palanca]}
+            </p>
+          </div>
+          <Badge>{ESTADO_LABEL[plan.estado] ?? plan.estado}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {plan.etapas.length === 0 ? (
+          <p className="flex items-center gap-1 text-xs text-amber-700">
+            <AlertTriangle className="h-3 w-3" /> Sin reestructuración
+            documentada todavía.
+          </p>
+        ) : (
+          <ul className="space-y-1 text-sm">
+            {plan.etapas.map((e) => (
+              <li key={e.id} className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">Etapa {e.etapa}</Badge>
+                <span className="text-slate-800">
+                  {e.titulo ?? "Reestructuración de rutas"}
+                </span>
+                {e.fecha_implementacion ? (
+                  <span className="text-xs text-muted-foreground">
+                    desde el {fmtFechaCorta(e.fecha_implementacion)}
+                  </span>
+                ) : (
+                  <span className="text-xs text-amber-700">sin fecha</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Línea base{rangoBase}</p>
+            <p className="font-semibold">{pesos(plan.linea_base)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Meta</p>
+            <p className="font-semibold text-teal-700">{pesos(meta)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">
+              Último mes{ultimo ? ` (${MESES[ultimo.mes]})` : ""}
+            </p>
+            <p className={`font-semibold ${colorVsMeta(ultimo?.costo_x_hl ?? null)}`}>
+              {pesos(ultimo?.costo_x_hl)}
+              {anterior && ultimo && (
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  {pctTexto(anterior.costo_x_hl, ultimo.costo_x_hl)} vs{" "}
+                  {MESES[anterior.mes]}
+                </span>
+              )}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">
+              Desde la implementación{rangoDesde}
+            </p>
+            <p className={`font-semibold ${colorVsMeta(desde.costo_x_hl)}`}>
+              {pesos(desde.costo_x_hl)}
+              {desde.costo_x_hl != null && plan.linea_base != null && (
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  {pctTexto(plan.linea_base, desde.costo_x_hl)} vs base
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        {ciudad && (
+          <SerieCiudad ciudad={ciudad} planes={[plan]} meta={meta} compacta />
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ==================================================================
+// Revisión mensual con los números calculados
+// ==================================================================
+
+/**
+ * Una revisión hecha en el mes M lee el último mes cerrado con costo cargado
+ * anterior a M. Si todavía no hay ninguno, no muestra números.
+ */
+function mesLeido(territorio: Territorio | null, mesRevision: number): number | null {
+  if (!territorio) return null
+  const previos = territorio.meses.filter((m) => m < mesRevision)
+  return previos.length ? previos[previos.length - 1] : null
+}
+
+function RevisionCard({
+  revision: r,
+  territorio,
+  planes,
+}: {
+  revision: RevisionTerritorial
+  territorio: Territorio | null
+  planes: PlanTerritorial[]
+}) {
+  const mes = mesLeido(territorio, r.mes)
+  const red = serieRedTotal(territorio)
+  const redMes = mes != null ? (red.find((d) => d.mes === mes)?.vlc ?? null) : null
+  const redPrev = mes != null ? (red.find((d) => d.mes === mes - 1)?.vlc ?? null) : null
+
+  const ciudadesConPlan = [...new Set(planes.map((p) => p.ciudad))]
+  const filas = ciudadesConPlan.map((nombre) => {
+    const c = territorio?.ciudades.find((x) => x.ciudad === nombre)
+    const actual = mes != null ? (c?.serie.find((m) => m.mes === mes) ?? null) : null
+    const previo = mes != null ? (c?.serie.find((m) => m.mes === mes - 1) ?? null) : null
+    const metas = planes
+      .filter((p) => p.ciudad === nombre && p.meta != null)
+      .map((p) => p.meta as number)
+    const meta = metas.length ? Math.min(...metas) : null
+    return { nombre, actual, previo, meta }
+  })
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 pt-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-semibold text-slate-900">
+            {MESES[r.mes]} {r.anio}
+          </p>
+          <Badge variant="secondary">
+            {mes != null ? `lee ${MESES[mes]}` : `${pesos(r.vlc_hl_mes)} /HL`}
+          </Badge>
+        </div>
+
+        {mes != null && (
+          <div className="flex flex-wrap gap-2">
+            <Chip
+              label="Red"
+              valor={redMes}
+              delta={pctTexto(redPrev, redMes)}
+              deltaRef={mes > 1 ? MESES[mes - 1] : null}
+            />
+            {filas.map((f) => (
+              <Chip
+                key={f.nombre}
+                label={f.nombre}
+                valor={f.actual?.costo_x_hl ?? null}
+                delta={pctTexto(
+                  f.previo?.costo_x_hl ?? null,
+                  f.actual?.costo_x_hl ?? null,
+                )}
+                deltaRef={f.previo ? MESES[f.previo.mes] : null}
+                meta={f.meta}
+              />
+            ))}
+          </div>
+        )}
+
+        <p className="text-sm">
+          <span className="text-muted-foreground">Participantes: </span>
+          {r.participantes ?? "—"}
+        </p>
+        {r.conclusion && (
+          <p className="whitespace-pre-wrap text-sm">{r.conclusion}</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function Chip({
+  label,
+  valor,
+  delta,
+  deltaRef,
+  meta,
+}: {
+  label: string
+  valor: number | null
+  delta: string | null
+  deltaRef: string | null
+  meta?: number | null
+}) {
+  const vsMeta =
+    valor != null && meta != null ? (valor <= meta ? "ok" : "alto") : null
+  return (
+    <div
+      className={`rounded-md border px-3 py-1.5 text-sm ${
+        vsMeta === "ok"
+          ? "border-emerald-200 bg-emerald-50"
+          : vsMeta === "alto"
+            ? "border-red-200 bg-red-50"
+            : "border-slate-200 bg-slate-50"
+      }`}
+    >
+      <span className="text-xs text-muted-foreground">{label} </span>
+      <span className="font-semibold">{pesos(valor)}</span>
+      {delta && (
+        <span className="ml-1 text-xs text-muted-foreground">
+          {delta}
+          {deltaRef ? ` vs ${deltaRef}` : ""}
+        </span>
+      )}
+      {meta != null && (
+        <span className="ml-1 text-xs text-muted-foreground">
+          · meta {pesos(meta)}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ==================================================================
+// Diagnóstico por ciudad: tabla corta, gráficos al desplegar
+// ==================================================================
+
+function DiagnosticoCiudades({
+  anio,
+  territorio,
+  planes,
+}: {
+  anio: number
+  territorio: Territorio | null
+  planes: PlanTerritorial[]
+}) {
+  const conPlan = new Set(planes.map((p) => p.ciudad))
+  const ciudades = [...(territorio?.ciudades ?? [])].sort((a, b) => {
+    const pa = conPlan.has(a.ciudad) ? 0 : 1
+    const pb = conPlan.has(b.ciudad) ? 0 : 1
+    return pa - pb || b.costo_x_hl - a.costo_x_hl
+  })
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Costo y operación por ciudad · {anio} acumulado
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            El $/HL por ciudad es un reparto del costo de la red (almacén y
+            distribución por bultos y entregas, distancia por km desde el CD),
+            no un costo medido. Las ciudades con plan van primero.
+          </p>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ciudad</TableHead>
+                <TableHead className="text-right">$/HL</TableHead>
+                <TableHead className="text-right">HL</TableHead>
+                <TableHead className="text-right">Entregas</TableHead>
+                <TableHead className="text-right">Bultos/entrega</TableHead>
+                <TableHead className="text-right">Km</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {ciudades.map((c) => (
+                <TableRow key={c.ciudad}>
+                  <TableCell className="font-medium">
+                    {c.ciudad}
+                    {conPlan.has(c.ciudad) && (
+                      <Badge variant="outline" className="ml-2">
+                        plan
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold">
+                    {pesos(c.costo_x_hl)}
+                  </TableCell>
+                  <TableCell className="text-right">{num(c.hl, 0)}</TableCell>
+                  <TableCell className="text-right">{num(c.entregas, 0)}</TableCell>
+                  <TableCell className="text-right">
+                    {num(c.bultos_por_entrega)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {c.km == null ? "—" : num(c.km, 0)}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {territorio && (
+                <TableRow className="border-t-2 font-semibold">
+                  <TableCell>Total</TableCell>
+                  <TableCell className="text-right">
+                    {pesos(territorio.total.costo_x_hl)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {num(territorio.total.hl, 0)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {num(territorio.total.entregas, 0)}
+                  </TableCell>
+                  <TableCell colSpan={2} />
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {ciudades.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">$/HL mes a mes por ciudad</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Accordion>
+              {ciudades.map((c) => (
+                <AccordionItem key={c.ciudad} value={c.ciudad}>
+                  <AccordionTrigger className="text-sm">
+                    <span>
+                      {c.ciudad}
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        {pesos(c.costo_x_hl)} /HL acumulado
+                      </span>
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <SerieCiudad ciudad={c} planes={planes} compacta />
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </CardContent>
+        </Card>
+      )}
+    </>
   )
 }
