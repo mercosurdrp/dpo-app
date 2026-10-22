@@ -1,58 +1,74 @@
-"use client"
+"use client";
 
-import { useState, useTransition } from "react"
-import { ListTodo, Loader2, MessageSquareText, Pencil, Plus, Trash2, X } from "lucide-react"
-import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+import { useState, useTransition } from "react";
+import {
+  ListTodo,
+  Loader2,
+  MessageSquareText,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/ui/select";
 import {
   actualizarObservacionIndicador,
   crearObservacionIndicador,
   eliminarObservacionIndicador,
-} from "@/actions/reuniones-indicadores-observaciones"
-import { ActividadFormDialog } from "./actividad-form-dialog"
-import { ActionLogSeccion } from "./action-log-seccion"
+} from "@/actions/reuniones-indicadores-observaciones";
+import { ActividadFormDialog } from "./actividad-form-dialog";
+import { ActionLogSeccion } from "./action-log-seccion";
 import type {
   ReunionActividadConResponsable,
   ReunionIndicadorObservacionConAutor,
   S5SectorAlmacen,
   TipoReunion,
-} from "@/types/database"
+} from "@/types/database";
 
 /**
  * Sección de las actividades que nacen del Tablero de control. Quedan en su
  * propio Action Log debajo del tablero (no en el general de la Etapa 2) y en
  * el historial del indicador.
  */
-export const SECCION_TABLERO = "tablero"
+export const SECCION_TABLERO = "tablero";
 
 interface IndicadorOpt {
-  id: string
-  nombre: string
+  id: string;
+  nombre: string;
 }
 
 interface ResponsableOpt {
-  id: string
-  nombre: string
-  email: string
+  id: string;
+  nombre: string;
+  email: string;
 }
 
-function formatHora(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ""
-  return d.toLocaleTimeString("es-AR", {
+/** Fecha y hora de carga de la observación (dd/mm/aa hh:mm, hora Argentina). */
+function formatFechaHora(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const fecha = d.toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+  });
+  const hora = d.toLocaleTimeString("es-AR", {
     hour: "2-digit",
     minute: "2-digit",
     timeZone: "America/Argentina/Buenos_Aires",
-  })
+  });
+  return `${fecha} ${hora}`;
 }
 
 /**
@@ -76,40 +92,40 @@ export function TableroObservaciones({
   onChanged,
   onVerHistorial,
 }: {
-  reunionId: string
-  reunionTipo: TipoReunion
-  indicadores: IndicadorOpt[]
-  observaciones: ReunionIndicadorObservacionConAutor[]
+  reunionId: string;
+  reunionTipo: TipoReunion;
+  indicadores: IndicadorOpt[];
+  observaciones: ReunionIndicadorObservacionConAutor[];
   /** Actividades de la sección «tablero» (las que nacieron acá). */
-  actividades: ReunionActividadConResponsable[]
-  responsables: ResponsableOpt[]
-  sectoresAlmacen?: S5SectorAlmacen[]
-  vehiculos?: { id: string; dominio: string }[]
-  rubrosMantenimiento?: { id: string; nombre: string }[]
-  puedeEditar: boolean
-  onChanged: () => void
-  onVerHistorial: (indicadorId: string) => void
+  actividades: ReunionActividadConResponsable[];
+  responsables: ResponsableOpt[];
+  sectoresAlmacen?: S5SectorAlmacen[];
+  vehiculos?: { id: string; dominio: string }[];
+  rubrosMantenimiento?: { id: string; nombre: string }[];
+  puedeEditar: boolean;
+  onChanged: () => void;
+  onVerHistorial: (indicadorId: string) => void;
 }) {
-  const [indicadorId, setIndicadorId] = useState<string>("")
-  const [texto, setTexto] = useState("")
-  const [pending, startTransition] = useTransition()
-  const [openAccion, setOpenAccion] = useState(false)
-  const [editandoId, setEditandoId] = useState<string | null>(null)
-  const [editTexto, setEditTexto] = useState("")
-  const [borrandoId, setBorrandoId] = useState<string | null>(null)
+  const [indicadorId, setIndicadorId] = useState<string>("");
+  const [texto, setTexto] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [openAccion, setOpenAccion] = useState(false);
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [editTexto, setEditTexto] = useState("");
+  const [borrandoId, setBorrandoId] = useState<string | null>(null);
 
   // Si el indicador elegido desaparece del tablero (cambió la config), el
   // selector vuelve a "elegir" solo: se deriva, no se sincroniza.
-  const indicadorSel = indicadores.find((i) => i.id === indicadorId) ?? null
+  const indicadorSel = indicadores.find((i) => i.id === indicadorId) ?? null;
 
   function handleGuardar() {
     if (!indicadorSel) {
-      toast.error("Elegí a qué indicador corresponde la observación.")
-      return
+      toast.error("Elegí a qué indicador corresponde la observación.");
+      return;
     }
     if (!texto.trim()) {
-      toast.error("Escribí la observación.")
-      return
+      toast.error("Escribí la observación.");
+      return;
     }
     startTransition(async () => {
       const res = await crearObservacionIndicador({
@@ -117,31 +133,31 @@ export function TableroObservaciones({
         indicadorId: indicadorSel.id,
         indicadorNombre: indicadorSel.nombre,
         texto,
-      })
+      });
       if ("error" in res) {
-        toast.error(res.error)
-        return
+        toast.error(res.error);
+        return;
       }
-      setTexto("")
-      toast.success("Observación registrada.")
-      onChanged()
-    })
+      setTexto("");
+      toast.success("Observación registrada.");
+      onChanged();
+    });
   }
 
   function handleGuardarEdicion(id: string) {
     if (!editTexto.trim()) {
-      toast.error("Escribí la observación.")
-      return
+      toast.error("Escribí la observación.");
+      return;
     }
     startTransition(async () => {
-      const res = await actualizarObservacionIndicador(id, editTexto)
+      const res = await actualizarObservacionIndicador(id, editTexto);
       if ("error" in res) {
-        toast.error(res.error)
-        return
+        toast.error(res.error);
+        return;
       }
-      setEditandoId(null)
-      onChanged()
-    })
+      setEditandoId(null);
+      onChanged();
+    });
   }
 
   function handleBorrar(obs: ReunionIndicadorObservacionConAutor) {
@@ -152,17 +168,17 @@ export function TableroObservaciones({
         }"`,
       )
     )
-      return
-    setBorrandoId(obs.id)
+      return;
+    setBorrandoId(obs.id);
     startTransition(async () => {
-      const res = await eliminarObservacionIndicador(obs.id)
-      setBorrandoId(null)
+      const res = await eliminarObservacionIndicador(obs.id);
+      setBorrandoId(null);
       if ("error" in res) {
-        toast.error(res.error)
-        return
+        toast.error(res.error);
+        return;
       }
-      onChanged()
-    })
+      onChanged();
+    });
   }
 
   return (
@@ -178,9 +194,9 @@ export function TableroObservaciones({
       </div>
       <p className="mt-0.5 text-xs text-muted-foreground">
         Si un indicador no cumplió o pasó algo, dejalo acotado acá eligiendo el
-        indicador. Las acciones que salen del tablero quedan en el Action Log
-        de abajo. Haciendo clic en el nombre del indicador en el cuadro se ve
-        todo su historial.
+        indicador. Las acciones que salen del tablero quedan en el Action Log de
+        abajo. Haciendo clic en el nombre del indicador en el cuadro se ve todo
+        su historial.
       </p>
 
       {puedeEditar && (
@@ -305,7 +321,7 @@ export function TableroObservaciones({
                   </p>
                 )}
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {obs.autor_nombre ?? "—"} · {formatHora(obs.created_at)}
+                  {obs.autor_nombre ?? "—"} · {formatFechaHora(obs.created_at)}
                 </p>
               </div>
               {puedeEditar && editandoId !== obs.id && (
@@ -316,8 +332,8 @@ export function TableroObservaciones({
                     size="sm"
                     className="h-7 px-2"
                     onClick={() => {
-                      setEditandoId(obs.id)
-                      setEditTexto(obs.texto)
+                      setEditandoId(obs.id);
+                      setEditTexto(obs.texto);
                     }}
                     title="Editar"
                     disabled={pending}
@@ -378,5 +394,5 @@ export function TableroObservaciones({
         />
       )}
     </div>
-  )
+  );
 }
