@@ -112,7 +112,13 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // metas dicen 2025, necesito poner las metas 2026 que habíamos hablado"):
   // vuelve a mandar la fila 2026 de la tabla, TQI y FGLI 1.700 / 1.900. El
   // número del año anterior queda sólo como referencia en el detalle.
-  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 1700 },
+  // 2026-10-22: el tablero del depósito cambió la base del FGLI a roturas
+  // DESCARTADAS (#53) + vencidos + inventario, ya no el volumen afectado del
+  // TQI (por eso el FGLI puede dar MENOS que su hijo; Sebastián lo dio por
+  // bueno). Con esa base el real 2025 es 1.057 y 2026 cierra en ~610, así que
+  // la 1.700 quedó holgada: meta 750 / gatillo 1.050 (= real 2025), a
+  // propósito poco exigente este año. Ver 20261022120000_sueno_fgli_meta_750.sql.
+  { key: "fgli", label: "FGLI", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "PPM", mejorSi: "menor", metaDefault: 750 },
   { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.4 },
 
   // ---- Operacional ----

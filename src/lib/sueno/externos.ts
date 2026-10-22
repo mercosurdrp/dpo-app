@@ -167,7 +167,9 @@ export const KPI_EXTERNOS: Record<
       "FGLI (Finished Goods Loss Index, KPI 11 del Reporte DPO 2026, DC-K0030) " +
       "= (#6 diferencias de inventario + #53 roturas de almacén y entrega + #45 " +
       "obsolescencia) ÷ #28 HL despachados × 1.000.000 (PPM). Las roturas son " +
-      "las del TQI (volumen afectado); las diferencias son |faltantes| + " +
+      "las DESCARTADAS (lo que se tira: almacén + entrega), no el volumen " +
+      "afectado del TQI, por eso el FGLI puede dar menos que el TQI (base del " +
+      "tablero desde octubre 2026); las diferencias son |faltantes| + " +
       "|sobrantes| del cierre mensual cargado en la grilla DPO (si el mes no " +
       "está cargado, el neto del recuento); la obsolescencia son los HL de la " +
       "categoría Vencidos. NO incluye faltantes de entrega ni de acarreo (esos " +
@@ -175,8 +177,8 @@ export const KPI_EXTERNOS: Record<
       "muestra los HL perdidos de cada mes y cuánto de eso es inventario + " +
       "vencidos; el resto es rotura (TQI). Fuente: tablero del depósito " +
       "(deposito-esteban /indicadores, base del Reporte DPO). Meta 2026 = " +
-      "1.700 PPM (gatillo 1.900): exige sostener el ritmo de mayo-septiembre " +
-      "(el real 2025 fue 2.359). Como referencia, el detalle muestra el mismo " +
+      "750 PPM, gatillo 1.050 = real 2025 (a propósito poco exigente este " +
+      "año; 2027 se endurece). Como referencia, el detalle muestra el mismo " +
       "FGLI del año pasado sobre los mismos meses que ya tienen dato este año.",
     detalleLabel: "HL perdidos",
     detalle2Label: "Inventario + vencidos",
@@ -345,6 +347,9 @@ export async function fetchMermaFinalDelAnio(anio: number): Promise<(MermaFinalM
  * años cerrados, el mes en curso para el vigente); el acumulado anual se
  * recalcula como Σ HL ÷ Σ #28 y coincide con `indicadores.*.anual_acum`
  * (verificado 2026-09-17: 2026 TQI 1.555 / FGLI 1.723; 2025 1.866 / 2.359).
+ * 🚨 2026-10-22: el tablero pasó `fgli_hl` a roturas DESCARTADAS (#53 real,
+ * enero 20,7 HL) mientras `tqi_hl` sigue con volumen afectado (#8 + #9, 56,2
+ * HL): FGLI 2026 = 608 < TQI 1.556. Sebastián lo dio por bueno; meta 750.
  */
 interface DpoBaseMes {
   n6?: number | null

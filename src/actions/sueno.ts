@@ -225,8 +225,8 @@ async function computarArbolSueno(
         externoVal !== undefined && externoVal !== null
           ? externoVal
           : (mensualYtd ?? row?.valor_ytd ?? null)
-      // TQI y FGLI: la meta es la FIJA de 2026 cargada en la tabla (1.700 PPM,
-      // gatillo 1.900; Sebastián, 2026-09-23). Entre el 21 y el 23/09 la
+      // TQI y FGLI: la meta es la FIJA de 2026 cargada en la tabla (TQI 1.700 /
+      // 1.900, Sebastián 2026-09-23; FGLI 750 / 1.050 desde el 2026-10-22). Entre el 21 y el 23/09 la
       // pisaba el "mismo período del año anterior" del tablero; ese número
       // queda sólo como referencia en el detalle (referenciaLy), no manda el
       // semáforo.
