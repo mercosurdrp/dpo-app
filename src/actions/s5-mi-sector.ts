@@ -45,6 +45,11 @@ export interface TareaSector {
   evidencias: number
   /** Cuántas de esas tienen antes Y después. */
   completas: number
+  /**
+   * Sólo en el panel por sector: la tarea no es del mes que se está mirando
+   * (quedó abierta de un mes anterior). Es el periodo "YYYY-MM-01" de origen.
+   */
+  mes_origen?: string | null
 }
 
 export interface EvidenciaSector {
@@ -802,10 +807,21 @@ export async function getPanelSectores5S(
         .eq("periodo", periodo),
       supabase
         .from("s5_acciones")
-        .select("id, sector_numero, descripcion, estado, fecha_compromiso, cerrada_at, creado_por")
+        .select("id, sector_numero, descripcion, estado, fecha_compromiso, cerrada_at, creado_por, created_at")
         .eq("tipo", "almacen")
         .order("fecha_compromiso", { ascending: true, nullsFirst: false }),
     ])
+
+    // La pantalla se puede recorrer mes a mes. Una tarea pertenece al mes si
+    // la crearon, la comprometieron o la cerraron en él. En el mes en curso se
+    // suman además las que siguen abiertas de meses anteriores (marcadas con
+    // `mes_origen`), para que lo pendiente no desaparezca.
+    const esMesActual = periodo === periodoActual()
+    const ini = `${periodo}T00:00:00`
+    const finMes = finDeMes(periodo)
+    const fin = `${finMes}T23:59:59`
+    const enElMes = (v: string | null | undefined) => !!v && v >= ini && v <= fin
+    const mesDe = (v: string | null | undefined) => (v ? `${String(v).slice(0, 7)}-01` : null)
 
     const respPorSector = new Map<number, { nombre: string | null; profileId: string | null }>()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -816,7 +832,6 @@ export async function getPanelSectores5S(
       })
     }
 
-    const finMes = finDeMes(periodo)
     const data: SectorConEvidencias[] = []
 
     for (const s of sectoresRes.data ?? []) {
@@ -832,12 +847,13 @@ export async function getPanelSectores5S(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tareas: TareaSector[] = ((accionesRes.data ?? []) as any[])
         .filter((a) => a.sector_numero === s.numero)
-        .filter(
-          (a) =>
-            a.estado !== "cerrada" ||
-            (a.cerrada_at && a.cerrada_at >= `${periodo}T00:00:00` && a.cerrada_at <= `${finMes}T23:59:59`),
-        )
-        .map((a) => {
+        .map((a): TareaSector | null => {
+          const delMes =
+            enElMes(a.created_at) ||
+            enElMes(a.fecha_compromiso ? `${a.fecha_compromiso}T12:00:00` : null) ||
+            enElMes(a.cerrada_at)
+          const pendienteVieja = esMesActual && a.estado !== "cerrada" && !delMes
+          if (!delMes && !pendienteVieja) return null
           const evs = porAccion.get(a.id) ?? []
           return {
             id: a.id,
@@ -848,8 +864,10 @@ export async function getPanelSectores5S(
             es_mia: a.creado_por === profile.id,
             evidencias: evs.length,
             completas: evs.filter((e) => esCompleta(e.fotos)).length,
+            mes_origen: pendienteVieja ? mesDe(a.fecha_compromiso ?? a.created_at) : null,
           }
         })
+        .filter((t): t is TareaSector => t !== null)
 
       const resp = respPorSector.get(s.numero)
       data.push({
@@ -952,5 +970,25 @@ export async function borrarTareaSector(id: string): Promise<{ ok: true } | { er
     return { ok: true }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error borrando la tarea" }
+  }
+}
+
+/**
+ * Meses que se pueden recorrer en el panel por sector: todos los que tienen
+ * responsables sorteados, más el mes en curso. Del más nuevo al más viejo.
+ */
+export async function getPeriodosSectores5S(): Promise<string[]> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from("s5_sector_responsables")
+      .select("periodo")
+      .order("periodo", { ascending: false })
+    const set = new Set<string>([periodoActual()])
+    for (const r of (data ?? []) as { periodo: string }[]) set.add(String(r.periodo).slice(0, 10))
+    return [...set].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+  } catch {
+    return [periodoActual()]
   }
 }

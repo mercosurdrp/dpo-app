@@ -7,6 +7,9 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
   ArrowLeft,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   ImageIcon,
   Loader2,
   Plus,
@@ -18,6 +21,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   borrarTareaSector,
   crearTareaSector,
@@ -35,6 +45,12 @@ function formatMes(periodo: string) {
   return `${MESES[Number(m) - 1]} ${y}`
 }
 
+/** "Agosto" a secas, para la etiqueta de las tareas que vienen de otro mes. */
+function formatMesCorto(periodo: string) {
+  const [, m] = periodo.split("-")
+  return MESES[Number(m) - 1].toLowerCase()
+}
+
 function formatFechaHora(iso: string) {
   const d = new Date(iso)
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
@@ -43,14 +59,41 @@ function formatFechaHora(iso: string) {
 interface Props {
   sectores: SectorConEvidencias[]
   periodo: string
+  /** Meses que se pueden mirar, del más nuevo al más viejo. */
+  periodos: string[]
+  esMesActual: boolean
   puedeEditar: boolean
 }
 
-export function SectoresClient({ sectores, periodo, puedeEditar }: Props) {
+export function SectoresClient({
+  sectores,
+  periodo,
+  periodos,
+  esMesActual,
+  puedeEditar,
+}: Props) {
   const router = useRouter()
   const [nuevaTarea, setNuevaTarea] = useState<Record<number, string>>({})
   const [guardando, startGuardar] = useTransition()
+  const [cambiandoMes, startCambiarMes] = useTransition()
   const [verFoto, setVerFoto] = useState<string | null>(null)
+
+  // Las tareas nuevas se cargan sólo en el mes en curso; los meses anteriores
+  // se miran, no se corrigen.
+  const puedeCargar = puedeEditar && esMesActual
+
+  const idx = periodos.indexOf(periodo)
+  const mesSiguiente = idx > 0 ? periodos[idx - 1] : null
+  const mesAnterior = idx >= 0 && idx < periodos.length - 1 ? periodos[idx + 1] : null
+  const opcionesMes: Record<string, string> = {}
+  for (const p of periodos) opcionesMes[p] = formatMes(p)
+
+  function irAMes(p: string | null) {
+    if (!p || p === periodo) return
+    startCambiarMes(() => {
+      router.push(`/5s/sectores?periodo=${p.slice(0, 7)}`)
+    })
+  }
 
   async function abrirFoto(path: string) {
     const res = await getEvidenciaSectorUrl(path)
@@ -101,11 +144,63 @@ export function SectoresClient({ sectores, periodo, puedeEditar }: Props) {
           <ArrowLeft className="size-4" />
           Volver a 5S
         </Link>
-        <h1 className="text-2xl font-bold text-slate-900">Tareas y evidencia por sector</h1>
-        <p className="text-sm text-muted-foreground">
-          {formatMes(periodo)} — lo que carga cada responsable desde su celular. El bonus por
-          documentar se suma solo a la nota al finalizar la auditoría del sector.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Tareas y evidencia por sector</h1>
+            <p className="text-sm text-muted-foreground">
+              {formatMes(periodo)} — quién fue responsable de cada sector ese mes y lo que cargó
+              desde su celular. El bonus por documentar se suma solo a la nota al finalizar la
+              auditoría del sector.
+            </p>
+          </div>
+
+          {/* Selector de mes: se recorre con las flechas o eligiendo de la lista */}
+          <div className="flex items-center gap-1.5">
+            {cambiandoMes && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => irAMes(mesAnterior)}
+              disabled={cambiandoMes || !mesAnterior}
+              aria-label="Mes anterior"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Select
+              value={periodo}
+              onValueChange={(v) => irAMes(v)}
+              disabled={cambiandoMes}
+              items={opcionesMes}
+            >
+              <SelectTrigger className="min-w-[170px]">
+                <CalendarDays className="size-4 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {periodos.map((p) => (
+                  <SelectItem key={p} value={p} label={formatMes(p)}>
+                    {formatMes(p)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => irAMes(mesSiguiente)}
+              disabled={cambiandoMes || !mesSiguiente}
+              aria-label="Mes siguiente"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+        {!esMesActual && (
+          <p className="mt-2 text-xs text-amber-700">
+            Estás mirando un mes cerrado: se ve quién era responsable, las tareas de ese mes y lo
+            que cargó. Las tareas nuevas se agregan en el mes en curso.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -173,14 +268,26 @@ export function SectoresClient({ sectores, periodo, puedeEditar }: Props) {
                           key={t.id}
                           className="flex items-center gap-2 rounded-md border border-slate-100 bg-slate-50 px-3 py-2"
                         >
-                          <span className="flex-1 text-sm text-slate-800">{t.descripcion}</span>
+                          <span className="flex-1 text-sm text-slate-800">
+                            {t.descripcion}
+                            {t.mes_origen && (
+                              <span className="ml-1.5 text-[11px] text-amber-700">
+                                pendiente de {formatMesCorto(t.mes_origen)}
+                              </span>
+                            )}
+                          </span>
+                          {t.estado === "cerrada" && (
+                            <Badge variant="outline" className="border-slate-300 text-slate-500">
+                              cerrada
+                            </Badge>
+                          )}
                           {t.completas > 0 && (
                             <Badge className="bg-amber-600">{t.completas} A/D</Badge>
                           )}
                           {t.evidencias > 0 && (
                             <Badge className="bg-emerald-600">{t.evidencias} 📸</Badge>
                           )}
-                          {puedeEditar && (
+                          {puedeCargar && (
                             <button
                               type="button"
                               onClick={() => handleBorrar(t.id)}
@@ -195,7 +302,7 @@ export function SectoresClient({ sectores, periodo, puedeEditar }: Props) {
                   </div>
                 )}
 
-                {puedeEditar && (
+                {puedeCargar && (
                   <div className="mt-2 flex gap-2">
                     <Input
                       value={nuevaTarea[s.sector_numero] ?? ""}
