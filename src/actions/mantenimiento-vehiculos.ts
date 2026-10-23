@@ -18,6 +18,7 @@ import {
   type LecturaSugerida,
 } from "@/lib/vehiculos/lecturas"
 import { validarLectura } from "@/lib/vehiculos/validar-lectura"
+import { bajaDeUnidad, type UnidadCatalogo } from "@/lib/vehiculos/unidad-de-baja"
 import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
 import { esFocoDeMantenimiento } from "@/lib/vehiculos/focos-checklist"
 import { TAREAS_CIL } from "@/lib/flota/cil-tareas"
@@ -195,6 +196,18 @@ export async function getTableroOperativo(): Promise<
       catNombre.set(c.id, c.nombre)
     }
 
+    // Catálogo completo (activas + de baja): el papel de una unidad que ya no
+    // está en el parque no tiene que pedir renovación. Ver unidad-de-baja.
+    const catalogoUnidades: UnidadCatalogo[] = [
+      ...((vehRes.data || []) as Array<{ dominio: string }>).map((v) => ({
+        dominio: v.dominio,
+        active: true,
+      })),
+      ...((bajasRes.data || []) as Array<{ dominio: string; descripcion: string | null }>).map(
+        (v) => ({ dominio: v.dominio, active: false, descripcion: v.descripcion })
+      ),
+    ]
+
     // --- Documentos: detalle de vehículos + buckets por tipo ---
     const documentos: DocumentoVencimiento[] = []
     const docsVehiculos = triVacio()
@@ -210,6 +223,9 @@ export async function getTableroOperativo(): Promise<
       const dias = venc >= hoy ? daysBetween(hoy, venc) : -daysBetween(venc, hoy)
       const tipo = catTipo.get(r.categoria_id)
       if (tipo === "vehiculo") {
+        // Unidad vendida o transferida (AF469UR a Misiones): el papel queda
+        // cargado como historia, pero sale del aviso de fuera de servicio.
+        if (bajaDeUnidad(catalogoUnidades, r.nombre)) continue
         clasificarDias(docsVehiculos, dias)
         documentos.push({
           id: r.id,
