@@ -7,6 +7,8 @@
 // Parámetros:
 //   ?dry=1          no manda WhatsApp ni guarda planes (sí guarda la corrida)
 //   ?bot=entrega    corre un solo bot
+//   ?excluir=a,b    corre todos menos esos (Entrega sale antes, 06:45, para
+//                   llegar a la matinal de distribución de las 07:00)
 //   ?fecha=YYYY-MM-DD  "hoy" de referencia (para probar con otro día)
 //
 // Corrida manual:
@@ -38,7 +40,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const bots = await cargarBots(sp.get("bot") ?? undefined)
+    const excluir = (sp.get("excluir") ?? "").split(",").map((k) => k.trim()).filter(Boolean)
+    const bots = await cargarBots(sp.get("bot") ?? undefined, excluir)
     const resultados = []
     for (const bot of bots) {
       try {

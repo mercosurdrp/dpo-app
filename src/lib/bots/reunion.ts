@@ -9,6 +9,7 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { sendText } from "@/lib/wa-bot/evolution"
 import { hoyArgentina } from "@/lib/warehouse/auto-indicadores"
+import { planesPrevios, seguridadOperacion } from "./bloques"
 import { armarContexto, type ContextoPilar } from "./contexto"
 import { generarJson, modeloBots } from "./llm"
 import { lineasPlanes, proximoNumero } from "./planes"
@@ -367,10 +368,24 @@ export async function correrReunion(
     bot_key: duenoDelPlan(p, ps),
   }))
 
+  // Mismo temario que la reunión de Logística: seguridad, planes previos,
+  // KPIs de cada pilar y planes. Los dos primeros los arma el código.
+  const errores: string[] = []
+  const bloque = (b: Promise<string[]>, que: string) =>
+    b.catch((e) => {
+      errores.push(`${que}: ${e instanceof Error ? e.message : String(e)}`)
+      return [] as string[]
+    })
+  const [seguridad, previos] = await Promise.all([
+    bloque(seguridadOperacion(hoy), "Bloque de seguridad"),
+    bloque(planesPrevios(hoy, bots), "Bloque de planes previos"),
+  ])
   const lineas = [
     `🤝 *Reunión de bots · ${fechaCorta(hoy)}*`,
     `_Participaron ${nombres(ps)}_`,
+    ...[seguridad, previos].filter((b) => b.length > 0).flatMap((b) => ["", ...b]),
     "",
+    "📊 *KPIs por pilar*",
     ...intervenciones.map((i) => {
       const b = ps.find((p) => p.bot.key === i.bot)!.bot
       return `${b.emoji} *${b.nombre}:* ${i.texto}`
@@ -388,7 +403,6 @@ export async function correrReunion(
   // El acta va a todos los encargados (sin repetir: en calibración es uno solo).
   const destinos = [...new Set(ps.flatMap((p) => destinosDe(p.bot)))]
   let enviado = false
-  const errores: string[] = []
   if (modo === "plantilla" && nota) errores.push(`IA descartada en el acta: ${nota}`)
   const plantillas = intervenciones.filter((i) => i.modo === "plantilla").map((i) => i.bot)
   if (plantillas.length) errores.push(`Intervención con plantilla: ${plantillas.join(", ")}`)

@@ -12,6 +12,11 @@ export interface BotPilar {
   telefono: string | null
   prompt_extra: string | null
   activo: boolean
+  /**
+   * Si la ronda lleva el action log del encargado. Apagado mientras el
+   * encargado cargado no sea quien recibe el mensaje.
+   */
+  action_log?: boolean
 }
 
 export interface PlanPropuesto {

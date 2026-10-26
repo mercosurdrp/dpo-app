@@ -6,6 +6,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin"
 import { sendText } from "@/lib/wa-bot/evolution"
+import { bloqueActionLog, bloqueSeguridad } from "./bloques"
 import { armarContexto, type ContextoPilar, type IndicadorContexto } from "./contexto"
 import { generarJson, modeloBots } from "./llm"
 import { lineasPlanes, proximoNumero } from "./planes"
@@ -376,10 +377,11 @@ export function destinosDe(bot: BotPilar): string[] {
   return [...new Set(lista.split(",").map((t) => t.replace(/\D/g, "")).filter(Boolean))]
 }
 
-export async function cargarBots(key?: string): Promise<BotPilar[]> {
+export async function cargarBots(key?: string, excluir: string[] = []): Promise<BotPilar[]> {
   const supabase = createAdminClient()
   let q = supabase.from("bots_pilar").select("*").eq("activo", true)
   if (key) q = q.eq("key", key)
+  if (excluir.length) q = q.not("key", "in", `(${excluir.join(",")})`)
   const { data, error } = await q.order("key")
   if (error) throw new Error(`bots_pilar: ${error.message}`)
   return (data ?? []) as BotPilar[]
@@ -392,6 +394,18 @@ export async function correrRonda(
   const supabase = createAdminClient()
   const ctx = await armarContexto(bot, opts.hoy)
   const { salida, cuerpo, modo, nota } = await redactar(bot, ctx)
+  // El orden del temario de las reuniones (TOR): seguridad, action log y
+  // recién después los resultados. Si un bloque falla, la ronda sale igual.
+  const errores: string[] = modo === "plantilla" && nota ? [`IA descartada: ${nota}`] : []
+  const bloque = (b: Promise<string[]>, que: string) =>
+    b.catch((e) => {
+      errores.push(`${que}: ${e instanceof Error ? e.message : String(e)}`)
+      return [] as string[]
+    })
+  const [seguridad, actionLog] = await Promise.all([
+    bloque(bloqueSeguridad(bot, ctx.hoy), "Bloque de seguridad"),
+    bloque(bloqueActionLog(bot, ctx.hoy), "Bloque de action log"),
+  ])
   // Los cierres con conteos los arma el código: el modelo no cuenta bien.
   // Los planes van numerados (los números se reinician cada día) para poder
   // aprobarlos respondiendo «sí 3» por WhatsApp.
@@ -401,13 +415,21 @@ export async function correrRonda(
   const verdesLinea = modo === "ia" && verdes > 0 ? [`✅ ${verdes} indicadores en verde.`] : []
   const novedades = ctx.novedades?.length ? ["", ...ctx.novedades] : []
   const cierre = modo === "ia" ? lineasPlanes(planes) : []
-  const mensaje = [encabezado(bot, ctx.hoy), cuerpo, ...verdesLinea, ...novedades, ...cierre].join("\n")
+  const previos = [seguridad, actionLog].filter((b) => b.length > 0)
+  const mensaje = [
+    encabezado(bot, ctx.hoy),
+    ...previos.flatMap((b) => ["", ...b]),
+    ...(previos.length ? ["", "📊 *Resultados*"] : []),
+    cuerpo,
+    ...verdesLinea,
+    ...novedades,
+    ...cierre,
+  ].join("\n")
 
   const destinos = destinosDe(bot)
   const destino = destinos.join(", ") || null
 
   let enviado = false
-  const errores: string[] = modo === "plantilla" && nota ? [`IA descartada: ${nota}`] : []
   if (!opts.dry) {
     if (destinos.length === 0) errores.push("Sin teléfono de destino")
     for (const d of destinos) {
@@ -428,7 +450,7 @@ export async function correrRonda(
       bot_key: bot.key,
       fecha: ctx.hoy,
       tipo: "ronda",
-      contexto: ctx,
+      contexto: { ...ctx, bloques: { seguridad, action_log: actionLog } },
       salida,
       mensaje,
       modo,

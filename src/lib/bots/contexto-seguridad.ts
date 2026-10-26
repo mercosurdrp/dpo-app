@@ -18,6 +18,30 @@ const DIAS_SEMANA = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]
 const META_DIAS_DEFAULT = 300
 const VENTANA_SIF_DIAS = 30
 
+const TIPO_PLURAL: Record<string, string> = {
+  accidente: "accidentes",
+  incidente: "incidentes",
+  acto_inseguro: "actos inseguros",
+  acto_seguro: "actos seguros",
+  ruta_riesgo: "rutas de riesgo",
+}
+
+const AREA: Record<string, string> = {
+  deposito: "depósito",
+  distribucion: "distribución",
+  ventas: "ventas",
+  administracion: "administración",
+}
+
+/** «1 acto inseguro», «3 actos inseguros». */
+export function cuantosReportes(n: number, tipo: string): string {
+  return `${n} ${(n === 1 ? TIPO[tipo] : TIPO_PLURAL[tipo]) ?? tipo}`
+}
+
+export function areaLabel(area: string | null): string {
+  return area ? (AREA[area] ?? area) : "sin área"
+}
+
 const TIPO: Record<string, string> = {
   accidente: "accidente",
   incidente: "incidente",
@@ -32,18 +56,18 @@ const corto = (s: string, n = 70) => {
   return t.length > n ? `${t.slice(0, n - 1)}…` : t
 }
 
-function sumarDias(iso: string, dias: number): string {
+export function sumarDias(iso: string, dias: number): string {
   const d = new Date(iso + "T12:00:00")
   d.setDate(d.getDate() + dias)
   return d.toISOString().slice(0, 10)
 }
 
-function diasEntre(desde: string, hasta: string): number {
+export function diasEntre(desde: string, hasta: string): number {
   return Math.round((Date.parse(hasta + "T12:00:00Z") - Date.parse(desde + "T12:00:00Z")) / 86_400_000)
 }
 
 /** Último día con operación antes de hoy: sin domingos ni feriados. */
-function ultimoOperativo(hoy: string): string {
+export function ultimoOperativo(hoy: string): string {
   let d = sumarDias(hoy, -1)
   while (new Date(d + "T12:00:00").getDay() === 0 || esFeriado(d)) d = sumarDias(d, -1)
   return d
@@ -80,7 +104,39 @@ function indicador(
   }
 }
 
-interface Reporte {
+/** «lun 27/10» */
+export function diaCorto(iso: string): string {
+  return `${DIAS_SEMANA[new Date(iso + "T12:00:00").getDay()]} ${ddmm(iso)}`
+}
+
+/**
+ * Una línea por reporte. Mismo texto cargado varias veces (pasa con los
+ * reportes del chofer): uno solo. `conPlan` marca los que no tienen acción.
+ */
+export function lineasReportes(
+  reportes: Reporte[],
+  opts: { max: number; conPlan?: Set<string>; conArea?: boolean; sangria?: string },
+): string[] {
+  const vistos = new Set<string>()
+  return reportes
+    .filter((r) => {
+      const k = `${r.tipo}|${r.descripcion.trim().toLowerCase()}`
+      if (vistos.has(k)) return false
+      vistos.add(k)
+      return true
+    })
+    .slice(0, opts.max)
+    .map((r) => {
+      const sif = r.sif ? " SIF" : ""
+      const area = opts.conArea && r.area ? ` en ${areaLabel(r.area)}` : ""
+      const plan = opts.conPlan && !opts.conPlan.has(r.id) ? " (sin plan)" : ""
+      const tipo = TIPO[r.tipo] ?? r.tipo
+      const que = tipo.charAt(0).toUpperCase() + tipo.slice(1)
+      return `${opts.sangria ?? ""}• ${que}${sif}${area}: «${corto(r.descripcion)}»${plan}`
+    })
+}
+
+export interface Reporte {
   id: string
   fecha: string
   tipo: string
@@ -146,24 +202,8 @@ export async function armarContextoSeguridad(bot: BotPilar, hoy: string): Promis
   // Reportes cargados desde el último día operativo (en un lunes, el sábado).
   const nuevos = reportes.filter((r) => r.fecha.slice(0, 10) >= ayer)
   if (nuevos.length > 0) {
-    const dia = `${DIAS_SEMANA[new Date(ayer + "T12:00:00").getDay()]} ${ddmm(ayer)}`
-    // Mismo texto cargado varias veces (pasa con los reportes del chofer): uno solo.
-    const vistos = new Set<string>()
-    const lineas = nuevos
-      .filter((r) => {
-        const k = `${r.tipo}|${r.descripcion.trim().toLowerCase()}`
-        if (vistos.has(k)) return false
-        vistos.add(k)
-        return true
-      })
-      .slice(0, 5)
-      .map((r) => {
-        const sif = r.sif ? " SIF" : ""
-        const area = r.area ? ` en ${r.area}` : ""
-        const plan = conPlan.has(r.id) ? "" : " (sin plan)"
-        return `• ${TIPO[r.tipo] ?? r.tipo}${sif}${area}: «${corto(r.descripcion)}»${plan}`
-      })
-    novedades.push(`🆕 *Reportes desde el ${dia}:*`, ...lineas)
+    const lineas = lineasReportes(nuevos, { max: 5, conPlan, conArea: true })
+    novedades.push(`🆕 *Reportes desde el ${diaCorto(ayer)}:*`, ...lineas)
   }
   if (vencidos.length > 0) {
     novedades.push(

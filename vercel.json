@@ -7,7 +7,11 @@
       "schedule": "40 6 * * *"
     },
     {
-      "path": "/api/bots/cron-ronda",
+      "path": "/api/bots/cron-ronda?bot=entrega",
+      "schedule": "45 9 * * 1-6"
+    },
+    {
+      "path": "/api/bots/cron-ronda?excluir=entrega",
       "schedule": "30 10 * * 1-6"
     },
     {
