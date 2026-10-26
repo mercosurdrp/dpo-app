@@ -28,7 +28,7 @@ const DEPOSITO_API_BASE = "https://deposito-regionpampeana.vercel.app"
 // Objetivo de venta mensual (HL) por categoría — denominador del target WQI.
 // Alias estable del team (mismo que consume Acarreo-RDF para planificador).
 const CHESS_DASHBOARD_BASE = "https://chess-dashboard-mercosurdrps-projects.vercel.app"
-const SHEET_URL =
+export const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1K7zWrhFFx7SBoTxZ6Dk93ZrgO05kULlGvxL6ahmUYTA/gviz/tq?tqx=out:csv&sheet=Errores%20picking"
 /**
  * Bultos despachados por día — el DENOMINADOR de la precisión de picking.
@@ -593,7 +593,7 @@ function buildAperturaFromSnapshot(
 // el pusher se cayó. Mantiene la app funcional sin depender del snapshot.)
 // ────────────────────────────────────────────────────────────────────
 
-function parseCsvRow(line: string): string[] {
+export function parseCsvRow(line: string): string[] {
   const cells: string[] = []
   let cur = ""
   let inQuote = false
@@ -627,7 +627,7 @@ function parseCsvRow(line: string): string[] {
  * de la medición y hacía que meses SIN errores cargados mostraran 100% de
  * precisión en vez de "—" (mismo filtro que `_dmy` en deposito-esteban).
  */
-function parseFechaSheet(raw: string): string | null {
+export function parseFechaSheet(raw: string): string | null {
   const s = raw.trim()
   const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
   const ymd = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
@@ -643,7 +643,7 @@ function parseFechaSheet(raw: string): string | null {
   return `${y}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`
 }
 
-function parseDecimalEs(s: string): number {
+export function parseDecimalEs(s: string): number {
   const n = parseFloat(s.replace(",", "."))
   return Number.isFinite(n) ? n : 0
 }

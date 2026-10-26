@@ -6,6 +6,7 @@
 
 import { useRouter } from "next/navigation"
 import {
+  AlertTriangle,
   Boxes,
   ChevronLeft,
   ChevronRight,
@@ -19,6 +20,7 @@ import type {
   DiaMinutos,
   DiaPicking,
   MiProductividad,
+  ResumenErrores,
   ResumenTramo,
 } from "@/actions/mi-productividad"
 
@@ -117,7 +119,14 @@ export function MiProductividadClient({ data }: { data: MiProductividad }) {
         </Card>
       )}
 
-      {picking && <BloquePicking dias={picking.dias} promedio={picking.promedio} mejor={picking.mejor} />}
+      {picking && (
+        <BloquePicking
+          dias={picking.dias}
+          promedio={picking.promedio}
+          mejor={picking.mejor}
+          errores={picking.errores}
+        />
+      )}
       {carga && <BloqueTramo titulo="Carga de camiones" icono={Truck} resumen={carga} />}
       {descarga && <BloqueTramo titulo="Descarga de camiones" icono={Forklift} resumen={descarga} />}
       {envases && <BloqueEnvases envases={envases} />}
@@ -131,12 +140,37 @@ function BloquePicking({
   dias,
   promedio,
   mejor,
+  errores,
 }: {
   dias: DiaPicking[]
   promedio: number
   mejor: DiaPicking | null
+  errores: ResumenErrores | null
 }) {
   const tope = Math.max(...dias.map((d) => d.bul_hh), 1)
+  // Errores anotados en días en los que la productividad no tiene fila (por
+  // ejemplo, un día con pocas horas): no se ven en la lista, se avisan abajo.
+  const fechasConFila = new Set(dias.map((d) => d.fecha))
+  const erroresFueraDeLista = errores
+    ? Object.entries(errores.porDia)
+        .filter(([fecha]) => !fechasConFila.has(fecha))
+        .reduce((s, [, e]) => s + e.errores, 0)
+    : 0
+
+  function chipErrores(fecha: string): ChipDia | null {
+    if (!errores) return null
+    const e = errores.porDia[fecha]
+    if (!e) return { texto: "sin errores", tono: "ok" }
+    const partes: string[] = []
+    if (e.faltantes) partes.push(`${e.faltantes} falt.`)
+    if (e.sobrantes) partes.push(`${e.sobrantes} sobr.`)
+    const detalle = partes.length ? ` (${partes.join(", ")})` : ""
+    return {
+      texto: `${e.errores} ${e.errores === 1 ? "error" : "errores"}${detalle}`,
+      tono: e.cliente > 0 ? "grave" : "mal",
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -151,6 +185,35 @@ function BloquePicking({
           <Dato valor={fmt(dias.length)} unidad={dias.length === 1 ? "día" : "días"} etiqueta="Trabajados" />
           <Dato valor={mejor ? fmt(mejor.bul_hh) : "—"} unidad="bultos/hora" etiqueta="Tu mejor día" />
         </div>
+        {errores && (
+          <div
+            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+              errores.total === 0 ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"
+            }`}
+          >
+            <AlertTriangle className="size-4 shrink-0" />
+            <p>
+              {errores.total === 0 ? (
+                <>
+                  <strong>Sin errores de picking</strong> en el mes.
+                </>
+              ) : (
+                <>
+                  <strong>
+                    {fmt(errores.total)} {errores.total === 1 ? "error" : "errores"} de picking
+                  </strong>{" "}
+                  en el mes
+                  {errores.cliente > 0 && (
+                    <>
+                      , {errores.cliente} {errores.cliente === 1 ? "llegó" : "llegaron"} al cliente
+                    </>
+                  )}
+                  .
+                </>
+              )}
+            </p>
+          </div>
+        )}
         <ListaDias
           filas={dias.map((d) => ({
             fecha: d.fecha,
@@ -158,9 +221,16 @@ function BloquePicking({
             texto: `${fmt(d.bul_hh)} bul/h`,
             pct: (d.bul_hh / tope) * 100,
             detalle: d.grupo,
+            chip: chipErrores(d.fecha),
           }))}
           color="bg-blue-500"
         />
+        {erroresFueraDeLista > 0 && (
+          <p className="text-[11px] text-slate-400">
+            {erroresFueraDeLista} {erroresFueraDeLista === 1 ? "error cargado" : "errores cargados"} en días
+            que no figuran arriba.
+          </p>
+        )}
       </CardContent>
     </Card>
   )
@@ -279,15 +349,29 @@ function Dato({
   )
 }
 
+/** Etiqueta chica al lado del valor del día (hoy: errores de picking). */
+interface ChipDia {
+  texto: string
+  tono: "ok" | "mal" | "grave"
+}
+
+const CHIP_TONO: Record<ChipDia["tono"], string> = {
+  ok: "bg-emerald-50 text-emerald-700",
+  mal: "bg-red-50 text-red-700",
+  grave: "bg-red-600 text-white",
+}
+
 interface FilaDia {
   fecha: string
   valor: number
   texto: string
   pct: number
   detalle?: string | null
+  chip?: ChipDia | null
 }
 
 function ListaDias({ filas, color }: { filas: FilaDia[]; color: string }) {
+  const conChip = filas.some((f) => f.chip)
   return (
     <div className="space-y-1.5">
       <p className="text-xs font-medium text-slate-500">Día por día</p>
@@ -303,6 +387,16 @@ function ListaDias({ filas, color }: { filas: FilaDia[]; color: string }) {
           <span className="w-20 shrink-0 text-right text-xs font-medium tabular-nums text-slate-700">
             {f.texto}
           </span>
+          {conChip && (
+            <span
+              className={`w-[5.5rem] shrink-0 truncate rounded px-1.5 py-0.5 text-center text-[10px] font-medium ${
+                f.chip ? CHIP_TONO[f.chip.tono] : "text-transparent"
+              }`}
+              title={f.chip?.texto}
+            >
+              {f.chip?.texto ?? "·"}
+            </span>
+          )}
         </div>
       ))}
       {filas.some((f) => f.detalle) && (

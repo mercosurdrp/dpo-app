@@ -2,13 +2,18 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
-import { esDelOperario, resolverOperarioWms } from "@/lib/deposito/operario-wms"
+import { esDelOperario, resolverOperarioWms, tokensDeNombre } from "@/lib/deposito/operario-wms"
 import {
   agregarProductividad,
   type ClasificacionEnvaseRow,
   type ProductividadDia,
   type ProductividadTotales,
 } from "@/lib/clasificacion-envases"
+import {
+  SHEET_URL as ERRORES_PICKING_CSV,
+  parseCsvRow,
+  parseFechaSheet,
+} from "@/lib/warehouse/auto-indicadores"
 
 // Fuentes de depósito. Las tres viven en deposito-esteban salvo envases, que
 // es tabla propia de este mismo portal.
@@ -29,11 +34,33 @@ export interface DiaPicking {
   grupo: string | null
 }
 
+export interface ErroresDia {
+  /** Filas de la planilla "Errores picking" de ese día: cada fila es 1 error. */
+  errores: number
+  faltantes: number
+  sobrantes: number
+  /** Cuántos de esos errores los detectó el cliente (col "DETECTADO EN"). */
+  cliente: number
+}
+
+export interface ResumenErrores {
+  /** Por fecha de pickeo, sólo los días con al menos un error. */
+  porDia: Record<string, ErroresDia>
+  total: number
+  cliente: number
+}
+
 export interface ResumenPicking {
   dias: DiaPicking[]
   /** Promedio simple de los días trabajados: es el bul/HH típico de la persona. */
   promedio: number
   mejor: DiaPicking | null
+  /**
+   * Errores de picking del mes (planilla "Errores picking", sin los de
+   * SISTEMA). null si la planilla no respondió: la pantalla no muestra ceros
+   * que no sabe.
+   */
+  errores: ResumenErrores | null
 }
 
 export interface DiaMinutos {
@@ -141,7 +168,11 @@ async function leerPicking(
   }
 }
 
-function resumirPicking(filas: FilaPickingApi[], operario: string): ResumenPicking | null {
+function resumirPicking(
+  filas: FilaPickingApi[],
+  operario: string,
+  errores: ResumenErrores | null,
+): ResumenPicking | null {
   const dias: DiaPicking[] = []
   for (const f of filas) {
     if (!esDelOperario(String(f.operario ?? ""), operario)) continue
@@ -153,7 +184,73 @@ function resumirPicking(filas: FilaPickingApi[], operario: string): ResumenPicki
   dias.sort((a, b) => a.fecha.localeCompare(b.fecha))
   const suma = dias.reduce((s, d) => s + d.bul_hh, 0)
   const mejor = dias.reduce((best, d) => (!best || d.bul_hh > best.bul_hh ? d : best), null as DiaPicking | null)
-  return { dias, promedio: Math.round(suma / dias.length), mejor }
+  return { dias, promedio: Math.round(suma / dias.length), mejor, errores }
+}
+
+// ── Errores de picking (planilla "Errores picking") ────────────────────────
+
+/**
+ * ¿La fila de la planilla es de este operario? La planilla se tipea a mano
+ * ("GÁLVEZ"/"GALVEZ", a veces apellido primero), así que se comparan las
+ * palabras del nombre sin tildes y sin orden, no el texto exacto.
+ */
+function mismoNombre(filaOperario: string, operario: string): boolean {
+  const a = tokensDeNombre(filaOperario)
+  const b = new Set(tokensDeNombre(operario))
+  return a.length >= 2 && a.length === b.size && a.every((t) => b.has(t))
+}
+
+/**
+ * Errores del mes de una persona, leídos del mismo Sheet que alimenta la
+ * precisión de picking del portal. Misma regla que allá: cada fila es 1
+ * error, y los de TIPO DE ERROR = SISTEMA no cuentan porque no son del
+ * operario. La fecha de la planilla ya es la de PICKEO, igual que la de la
+ * productividad, así que se cruzan directo.
+ */
+async function leerErroresPicking(mes: string, operario: string): Promise<ResumenErrores | null> {
+  let csv: string
+  try {
+    const res = await fetch(ERRORES_PICKING_CSV, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    })
+    if (!res.ok) return null
+    csv = await res.text()
+  } catch {
+    return null
+  }
+  const lines = csv.split(/\r?\n/).filter((l) => l.trim())
+  if (lines.length < 2) return null
+
+  const porDia: Record<string, ErroresDia> = {}
+  let total = 0
+  let cliente = 0
+  // Header: FECHA | OPERARIO | CANTIDAD DE BULTOS | FALTANTE/SOBRANTES | TIPO DE ERROR | DETECTADO EN
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseCsvRow(lines[i])
+    if (cells.length < 2 || !cells[0]?.trim()) continue
+    const fecha = parseFechaSheet(cells[0])
+    if (!fecha || !fecha.startsWith(mes)) continue
+    if ((cells[4] ?? "").trim().toUpperCase() === "SISTEMA") continue
+    if (!mismoNombre(cells[1] ?? "", operario)) continue
+
+    const dia = porDia[fecha] ?? { errores: 0, faltantes: 0, sobrantes: 0, cliente: 0 }
+    dia.errores += 1
+    const clase = (cells[3] ?? "").trim().toUpperCase()
+    if (clase.startsWith("FALTANTE")) dia.faltantes += 1
+    else if (clase.startsWith("SOBRANTE")) dia.sobrantes += 1
+    // Misma regla que `llegoAlCliente` en auto-indicadores: la columna se
+    // tipea a mano (DISTRIBUCIÓN, CLIENTE, REPARTO, CALLE); vacío o ALMACEN es
+    // "se corrigió en el depósito".
+    const detectado = (cells[5] ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase()
+    if (/DISTRIB|CLIENTE|REPARTO|CALLE/.test(detectado)) {
+      dia.cliente += 1
+      cliente += 1
+    }
+    porDia[fecha] = dia
+    total += 1
+  }
+  return { porDia, total, cliente }
 }
 
 // ── Maquinistas (minutos por camión) ───────────────────────────────────────
@@ -278,20 +375,27 @@ export async function getMiProductividad(ym?: string): Promise<Result<MiProducti
 
     // Los tramos se releen sólo si hay operario resuelto (la primera pasada era
     // para juntar nombres). Es la misma URL, así que sale del cache de fetch.
-    const [carga, descarga] = operario
-      ? await Promise.all([leerTramo("carga", mes, operario), leerTramo("descarga", mes, operario)])
-      : [null, null]
+    const [carga, descarga, errores] = operario
+      ? await Promise.all([
+          leerTramo("carga", mes, operario),
+          leerTramo("descarga", mes, operario),
+          leerErroresPicking(mes, operario),
+        ])
+      : [null, null, null]
+
+    const resumenPicking = operario && picking ? resumirPicking(picking.filas, operario, errores) : null
 
     return {
       data: {
         nombre,
         operario,
         mes,
-        picking: operario && picking ? resumirPicking(picking.filas, operario) : null,
+        picking: resumenPicking,
         carga: carga?.resumen ?? null,
         descarga: descarga?.resumen ?? null,
         envases,
-        parcial: !picking || !cargaRaw || !descargaRaw,
+        // La planilla de errores sólo cuenta como fuente si la persona pickea.
+        parcial: !picking || !cargaRaw || !descargaRaw || (resumenPicking !== null && errores === null),
       },
     }
   } catch (err) {
