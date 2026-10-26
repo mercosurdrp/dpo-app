@@ -51,6 +51,19 @@ function estadoRelevante(i: IndicadorContexto) {
   return i.umbral_mensual ? i.estado_mtd : (i.ultimo?.estado ?? "sin_dato")
 }
 
+/**
+ * Tendencia del último día operativo contra el anterior, según la polaridad.
+ * La calcula el código: el modelo la confundía ("mejoró" con una caída).
+ */
+function tendencia(i: IndicadorContexto): string | null {
+  const vals = i.serie.map((p) => p.valor).filter((v): v is number => v != null)
+  if (vals.length < 2 || !i.mejor_si) return null
+  const [ant, ult] = vals.slice(-2)
+  if (Math.abs(ult - ant) <= Math.max(Math.abs(ant) * 0.02, 0.01)) return "igual que el día anterior"
+  const mejoro = i.mejor_si === "menor" ? ult < ant : ult > ant
+  return mejoro ? "mejoró vs. el día anterior" : "empeoró vs. el día anterior"
+}
+
 /** Indicadores con los que el bot puede proponer un plan. */
 function ameritaPlan(i: IndicadorContexto): boolean {
   return estadoRelevante(i) === "rojo" || i.racha_fuera >= 3
@@ -90,6 +103,7 @@ function compacto(ctx: ContextoPilar) {
       estado_acumulado_mes: i.estado_mtd,
       dias_seguidos_fuera_de_meta: i.racha_fuera,
       fuera_de_meta_toda_la_semana: i.racha_toda_la_serie,
+      tendencia: tendencia(i),
       puede_proponer_plan: ameritaPlan(i),
     })),
   }
@@ -237,7 +251,7 @@ function promptSistema(bot: BotPilar): string {
     "- Los valores ya vienen formateados con su unidad: copialos tal cual.",
     "- mensaje_whatsapp: sin saludo ni encabezado (ya va arriba). Una línea por indicador en rojo o amarillo, primero los rojos, con este formato exacto:",
     "  🔴 *<nombre>*: <valor del último día> (meta <meta>) · <comentario corto>",
-    "  El comentario dice la racha («3 días seguidos», o «toda la semana» si fuera_de_meta_toda_la_semana) o la tendencia («viene subiendo», «mejoró vs. ayer»). Si es de umbral mensual, usá el acumulado del mes en vez del último día.",
+    "  El comentario dice la racha («3 días seguidos», o «toda la semana» si fuera_de_meta_toda_la_semana) o, si no hay racha de 2 o más días, el campo tendencia tal cual viene. NUNCA deduzcas vos si mejoró o empeoró: usá solo el campo tendencia. Si es de umbral mensual, usá el acumulado del mes en vez del último día.",
     "  NO agregues líneas de resumen, conteos de verdes ni avisos de planes: eso lo agrega el sistema. Máximo 10 líneas.",
     "- hallazgos: uno por indicador en rojo o amarillo, con una lectura corta de la tendencia de los últimos días.",
     "- planes_propuestos: SOLO para indicadores con puede_proponer_plan=true, como máximo 3. La causa_probable es una hipótesis a verificar (decí «posible…»), la acción es concreta, operativa y verificable en una semana (qué se mira, con quién, dónde) — nada genérico como «capacitar» o «revisar estrategias» sin decir qué, responsable_sugerido es un rol (ej. «Supervisor de Distribución»), fecha_objetivo en formato YYYY-MM-DD entre 7 y 21 días después de hoy.",
@@ -290,13 +304,20 @@ async function redactar(
       })
       const inventados = numerosInventados(salida.mensaje_whatsapp, ctx)
       const omitidos = indicadoresOmitidos(salida.mensaje_whatsapp, ctx)
-      if (inventados.length === 0 && omitidos.length === 0) {
+      // Tendencias inventadas por el modelo (las válidas vienen del campo tendencia).
+      const tendenciaPropia = /subiendo|bajando|cayendo|creciendo|repunt|viene (mejor|peor)/i.test(
+        salida.mensaje_whatsapp,
+      )
+      if (inventados.length === 0 && omitidos.length === 0 && !tendenciaPropia) {
         salida.planes_propuestos = sanearPlanes(salida.planes_propuestos, ctx)
-        return { salida, cuerpo: salida.mensaje_whatsapp.trim(), modo: "ia", nota: null }
+        // El modelo a veces usa 🟠 en vez de 🟡.
+        const cuerpo = salida.mensaje_whatsapp.trim().replaceAll("🟠", "🟡")
+        return { salida, cuerpo, modo: "ia", nota: null }
       }
       nota = [
         inventados.length ? `números que no están en el JSON: ${inventados.join(", ")}` : null,
         omitidos.length ? `faltan indicadores fuera de meta: ${omitidos.join(", ")}` : null,
+        tendenciaPropia ? "describiste tendencias que no están en el campo tendencia" : null,
       ]
         .filter(Boolean)
         .join("; ")
