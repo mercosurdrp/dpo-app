@@ -31,6 +31,8 @@ export const CARGA_EXCEPCIONES_A_TIEMPO: Record<string, Set<number>> = {
  *   • 2026-07-01: los viajes marcados tarde (carga ~07:25–07:31, a segundos unos
  *     de otros) fueron despachos ficticios (regularización) que salieron al día
  *     siguiente; el reparto real del día cumplió.
+ *   • 2026-10-24: el único viaje tarde (TMS 2471, carga 10:23) fue una venta
+ *     mostrador, no un camión de reparto; los 7 camiones del día cargaron a tiempo.
  *
  * Las entradas provisorias del 2026-08-07 y 2026-08-12 se borraron el
  * 22-08-2026: el pusher ya distingue solo los camiones que tenían que salir esa
@@ -40,6 +42,8 @@ export const CARGA_EXCEPCIONES_A_TIEMPO: Record<string, Set<number>> = {
 export const CARGA_EXCEPCIONES_DIA_CUMPLE: Record<string, string> = {
   "2026-07-01":
     "Cumplido por revisión manual: los viajes tarde fueron despachos ficticios (regularización) que salieron al día siguiente.",
+  "2026-10-24":
+    "Cumplido por revisión manual: el viaje TMS 2471 (carga 10:23) fue una venta mostrador, no un camión de reparto.",
 }
 
 /**
