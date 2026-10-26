@@ -12,6 +12,7 @@ import { lineasPlanes, proximoNumero } from "./planes"
 import type { BotPilar, PlanPropuesto, SalidaRonda } from "./tipos"
 
 const DIAS_SEMANA = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]
+const NL = "\n"
 
 export interface ResultadoRonda {
   bot: string
@@ -19,6 +20,7 @@ export interface ResultadoRonda {
   mensaje: string
   modo: "ia" | "plantilla"
   enviado: boolean
+  /** Teléfonos separados por coma (un bot puede tener varios encargados). */
   destino: string | null
   planes: number
   error: string | null
@@ -57,6 +59,7 @@ export function estadoRelevante(i: IndicadorContexto) {
  * La calcula el código: el modelo la confundía ("mejoró" con una caída).
  */
 function tendencia(i: IndicadorContexto): string | null {
+  if (i.foto) return null
   // Los mensuales se leen por el acumulado: comparar dos días sueltos no dice nada.
   if (i.umbral_mensual) return "acumulado del mes"
   const vals = i.serie.map((p) => p.valor).filter((v): v is number => v != null)
@@ -124,6 +127,7 @@ function numerosPermitidos(ctx: ContextoPilar): number[] {
     out.add(Math.abs(n))
   }
   for (const i of ctx.indicadores) {
+    for (const m of i.nombre.match(/\d+(?:[.,]\d+)?/g) ?? []) add(Number(m.replace(",", ".")))
     add(i.meta)
     add(i.gatillo)
     add(i.mtd)
@@ -273,7 +277,7 @@ function promptSistema(bot: BotPilar): string {
     "- Los valores ya vienen formateados con su unidad: copialos tal cual.",
     "- mensaje_whatsapp: sin saludo ni encabezado (ya va arriba). Una línea por indicador con estado rojo o amarillo (usá el campo estado, no la racha), primero los rojos, con este formato exacto:",
     "  🔴 *<nombre>*: <valor del último día> (meta <meta>) · <comentario corto>",
-    "  El comentario dice la racha («3 días seguidos», o «toda la semana» si fuera_de_meta_toda_la_semana) o, si no hay racha de 2 o más días, el campo tendencia tal cual viene. NUNCA deduzcas vos si mejoró o empeoró: usá solo el campo tendencia. Si es de umbral mensual, usá el acumulado del mes en vez del último día.",
+    "  El comentario dice la racha («3 días seguidos», o «toda la semana» si fuera_de_meta_toda_la_semana) o, si no hay racha de 2 o más días, el campo tendencia tal cual viene; si tendencia es null, la novedad del día que lo explica, en pocas palabras. NUNCA deduzcas vos si mejoró o empeoró: usá solo el campo tendencia. Si es de umbral mensual, usá el acumulado del mes en vez del último día.",
     "  NO agregues líneas de resumen, conteos de verdes ni avisos de planes: eso lo agrega el sistema. Máximo 10 líneas.",
     "- hallazgos: uno por indicador en rojo o amarillo, con una lectura corta de la tendencia de los últimos días.",
     "- planes_propuestos: SOLO para indicadores con puede_proponer_plan=true, como máximo 3. La causa_probable es una hipótesis a verificar (decí «posible…»), la acción es concreta, operativa y verificable en una semana (qué se mira, con quién, dónde) — nada genérico como «capacitar» o «revisar estrategias» sin decir qué, responsable_sugerido es un rol (ej. «Supervisor de Distribución»), fecha_objetivo en formato YYYY-MM-DD entre 7 y 21 días después de hoy.",
@@ -334,8 +338,15 @@ async function redactar(
       const tendenciaPropia = TENDENCIA_PROPIA.test(salida.mensaje_whatsapp)
       if (inventados.length === 0 && omitidos.length === 0 && deMas.length === 0 && !tendenciaPropia) {
         salida.planes_propuestos = sanearPlanes(salida.planes_propuestos, ctx)
-        // El modelo a veces usa 🟠 en vez de 🟡.
-        const cuerpo = salida.mensaje_whatsapp.trim().replaceAll("🟠", "🟡")
+        // El modelo a veces usa 🟠 en vez de 🟡. En los indicadores foto el
+        // comentario es relleno («sin novedad»): lo explican las novedades.
+        const fotos = ctx.indicadores.filter((i) => i.foto).map((i) => `*${i.nombre.trim().toLowerCase()}*`)
+        const cuerpo = salida.mensaje_whatsapp
+          .trim()
+          .replaceAll("🟠", "🟡")
+          .split(NL)
+          .map((l) => (fotos.some((f) => l.toLowerCase().includes(f)) ? l.split(" · ")[0] : l))
+          .join(NL)
         return { salida, cuerpo, modo: "ia", nota: null }
       }
       nota = [
@@ -355,10 +366,14 @@ async function redactar(
 
 // ---------- ronda ----------
 
-/** A quién le escribe el bot: el override de calibración o su encargado. */
-export function destinoDe(bot: BotPilar): string | null {
+/**
+ * A quién le escribe el bot: el override de calibración o sus encargados
+ * (`telefono` admite varios separados por coma).
+ */
+export function destinosDe(bot: BotPilar): string[] {
   const override = (process.env.BOTS_DESTINO_OVERRIDE ?? "").trim()
-  return override || bot.telefono?.trim() || null
+  const lista = override || bot.telefono || ""
+  return [...new Set(lista.split(",").map((t) => t.replace(/\D/g, "")).filter(Boolean))]
 }
 
 export async function cargarBots(key?: string): Promise<BotPilar[]> {
@@ -388,23 +403,24 @@ export async function correrRonda(
   const cierre = modo === "ia" ? lineasPlanes(planes) : []
   const mensaje = [encabezado(bot, ctx.hoy), cuerpo, ...verdesLinea, ...novedades, ...cierre].join("\n")
 
-  const destino = destinoDe(bot)
+  const destinos = destinosDe(bot)
+  const destino = destinos.join(", ") || null
 
   let enviado = false
-  let error: string | null = modo === "plantilla" && nota ? `IA descartada: ${nota}` : null
+  const errores: string[] = modo === "plantilla" && nota ? [`IA descartada: ${nota}`] : []
   if (!opts.dry) {
-    if (!destino) {
-      error = [error, "Sin teléfono de destino"].filter(Boolean).join(" · ")
-    } else {
+    if (destinos.length === 0) errores.push("Sin teléfono de destino")
+    for (const d of destinos) {
       try {
-        const r = await sendText(destino, mensaje)
-        enviado = r.ok
-        if (!r.ok) error = [error, `Evolution ${r.status}`].filter(Boolean).join(" · ")
+        const r = await sendText(d, mensaje)
+        if (r.ok) enviado = true
+        else errores.push(`Evolution ${r.status} (${d})`)
       } catch (e) {
-        error = [error, e instanceof Error ? e.message : String(e)].filter(Boolean).join(" · ")
+        errores.push(e instanceof Error ? e.message : String(e))
       }
     }
   }
+  const error = errores.length ? errores.join(" · ") : null
 
   const { data: corrida, error: errIns } = await supabase
     .from("bots_corridas")

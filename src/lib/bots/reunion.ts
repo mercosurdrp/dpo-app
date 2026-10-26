@@ -15,7 +15,7 @@ import { lineasPlanes, proximoNumero } from "./planes"
 import {
   ameritaPlan,
   compacto,
-  destinoDe,
+  destinosDe,
   estadoRelevante,
   fechaCorta,
   numerosInventados,
@@ -386,7 +386,7 @@ export async function correrReunion(
   const mensaje = lineas.join("\n")
 
   // El acta va a todos los encargados (sin repetir: en calibración es uno solo).
-  const destinos = [...new Set(ps.map((p) => destinoDe(p.bot)).filter((d): d is string => !!d))]
+  const destinos = [...new Set(ps.flatMap((p) => destinosDe(p.bot)))]
   let enviado = false
   const errores: string[] = []
   if (modo === "plantilla" && nota) errores.push(`IA descartada en el acta: ${nota}`)

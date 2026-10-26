@@ -7,7 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { sendText } from "@/lib/wa-bot/evolution"
 import { hoyArgentina } from "@/lib/warehouse/auto-indicadores"
 import { aprobarPropuesta, descartarPropuesta } from "./planes"
-import { cargarBots, destinoDe, sumarDias } from "./ronda"
+import { cargarBots, destinosDe, sumarDias } from "./ronda"
 import type { BotPlanPropuesto } from "./tipos"
 
 type Admin = ReturnType<typeof createAdminClient>
@@ -56,10 +56,9 @@ export async function procesarRespuestaBots(
   const orden = interpretar(texto)
   if (!orden) return null
 
-  const bots = (await cargarBots()).filter((b) => {
-    const d = destinoDe(b)
-    return d != null && ultimos10(d) === ultimos10(phone)
-  })
+  const bots = (await cargarBots()).filter((b) =>
+    destinosDe(b).some((d) => ultimos10(d) === ultimos10(phone)),
+  )
   if (bots.length === 0) return null
 
   const { data, error } = await supabase

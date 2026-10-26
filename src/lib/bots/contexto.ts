@@ -15,6 +15,8 @@ import {
 import type { ReunionIndicadoresMes } from "@/types/database"
 import type { BotPilar } from "./tipos"
 import { armarContextoFlota } from "./contexto-flota"
+import { armarContextoPlaneamiento } from "./contexto-planeamiento"
+import { armarContextoSeguridad } from "./contexto-seguridad"
 
 const DIAS_SERIE = 7
 
@@ -45,6 +47,11 @@ export interface IndicadorContexto {
   racha_toda_la_serie: boolean
   /** Para los de umbral mensual el estado relevante es el del MTD. */
   umbral_mensual: boolean
+  /**
+   * Foto del día (stock, planes abiertos): no hay acumulado ni tendencia; el
+   * comentario sale de las novedades.
+   */
+  foto?: boolean
 }
 
 export interface ContextoPilar {
@@ -84,8 +91,10 @@ function coincide(ind: Indicador, filtro: string[]): boolean {
 }
 
 export async function armarContexto(bot: BotPilar, hoy = hoyArgentina()): Promise<ContextoPilar> {
-  // Flota no tiene grilla de reunión: lee el bloque de Flota y Ruteo.
+  // Pilares sin grilla de reunión: cada uno lee la action de su pantalla.
   if (bot.reunion_tipo === "flota") return armarContextoFlota(bot, hoy)
+  if (bot.reunion_tipo === "seguridad") return armarContextoSeguridad(bot, hoy)
+  if (bot.reunion_tipo === "planeamiento") return armarContextoPlaneamiento(bot, hoy)
 
   const reunion = await reunionHasta(bot.reunion_tipo, hoy, false)
   if (!reunion) throw new Error(`No hay reuniones de tipo ${bot.reunion_tipo}`)
