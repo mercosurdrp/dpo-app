@@ -38,7 +38,8 @@ export type EstadoPlanPropuesto = "propuesto" | "aprobado" | "descartado"
 
 export interface BotCorrida {
   id: string
-  bot_key: string
+  /** null en la reunión de bots (tipo 'reunion'). */
+  bot_key: string | null
   fecha: string
   tipo: "ronda" | "reunion"
   contexto: unknown
@@ -58,6 +59,9 @@ export interface BotPlanPropuesto extends PlanPropuesto {
   bot_key: string
   estado: EstadoPlanPropuesto
   plan_accion_id: string | null
+  /** Día de la propuesta y su número de ese día (para «sí 3» por WhatsApp). */
+  fecha: string | null
+  numero: number | null
   resuelto_por: string | null
   resuelto_at: string | null
   created_at: string

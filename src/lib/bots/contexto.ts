@@ -121,8 +121,11 @@ export async function armarContexto(bot: BotPilar, hoy = hoyArgentina()): Promis
       .filter((p) => p.valor != null || p.texto != null)
       .slice(-DIAS_SERIE)
 
+    // Los de umbral mensual se juzgan por el acumulado: que un día suelto no
+    // llegue a la meta del mes no es una racha (SHO: 1 reporte vs. meta 20).
+    const mensual = SEMAFORO_MENSUAL.has(ind.id)
     let racha = 0
-    for (let i = serie.length - 1; i >= 0; i--) {
+    for (let i = serie.length - 1; i >= 0 && !mensual; i--) {
       if (serie[i].estado === "rojo" || serie[i].estado === "amarillo") racha++
       else break
     }
@@ -141,7 +144,7 @@ export async function armarContexto(bot: BotPilar, hoy = hoyArgentina()): Promis
       estado_mtd: estadoIndicador(ind, ind.mtd),
       racha_fuera: racha,
       racha_toda_la_serie: racha > 0 && racha === serie.length,
-      umbral_mensual: SEMAFORO_MENSUAL.has(ind.id),
+      umbral_mensual: mensual,
     })
   }
 

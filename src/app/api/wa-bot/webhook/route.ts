@@ -14,6 +14,8 @@
  *   1) Validar apikey
  *   2) Si event != "messages.upsert" o el msg es propio (fromMe) → ignorar
  *   3) Extraer texto + número del remitente
+ *   3·) Si es el encargado de un bot de pilar respondiendo «sí 3» / «no 3»,
+ *       se aprueba o descarta ese plan propuesto (lib/bots/whatsapp.ts)
  *   3a) Número compartido entre empresas: si el remitente no es del equipo
  *       de este deploy y hay WA_WEBHOOK_REENVIO_URL, se reenvía ahí
  *   3c) Si es un chofer (mensajes del cliente al chofer), «Recibido» y listo
@@ -26,6 +28,8 @@
  */
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { procesarRespuestaBots } from "@/lib/bots/whatsapp"
+import { IS_MISIONES } from "@/lib/empresa"
 import { chessLogin } from "@/lib/wa-bot/chess"
 import { procesarRespuesta } from "@/lib/foxtrot-alertas/seguimiento"
 import { esChofer } from "@/lib/notas-chofer/notas"
@@ -104,6 +108,27 @@ export async function POST(request: NextRequest) {
     phone_number: phone,
     mensaje_in: text || null,
     source: "webhook" as const,
+  }
+
+  // 3·) Respuesta a un bot de pilar: va antes del reenvío porque el encargado
+  // no es vendedor ni chofer. Si falla, sigue el flujo normal.
+  if (!IS_MISIONES && text) {
+    try {
+      const bots = await procesarRespuestaBots(admin, phone, text)
+      if (bots) {
+        await admin.from("bot_conversaciones_log").insert({
+          ...baseLog,
+          mensaje_in: `[bots] ${text}`,
+          mensaje_out: bots.respuesta,
+          duration_ms: Date.now() - t0,
+        })
+        return NextResponse.json({ ok: true, action: `bots_${bots.accion}` })
+      }
+    } catch (err) {
+      console.error(
+        `[wa-bot:webhook] bots phone=${phone}: ${err instanceof Error ? err.message : err}`,
+      )
+    }
   }
 
   // 3a) ¿Es de la otra empresa? Se busca sin filtrar por activo: un vendedor

@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { sendText } from "@/lib/wa-bot/evolution"
 import { armarContexto, type ContextoPilar, type IndicadorContexto } from "./contexto"
 import { generarJson, modeloBots } from "./llm"
+import { lineasPlanes, proximoNumero } from "./planes"
 import type { BotPilar, PlanPropuesto, SalidaRonda } from "./tipos"
 
 const DIAS_SEMANA = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]
@@ -31,7 +32,7 @@ function num(n: number | null | undefined): string {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(n)
 }
 
-function fechaCorta(iso: string): string {
+export function fechaCorta(iso: string): string {
   const d = new Date(iso + "T12:00:00")
   return `${DIAS_SEMANA[d.getDay()]} ${iso.slice(8, 10)}/${iso.slice(5, 7)}`
 }
@@ -40,14 +41,14 @@ function encabezado(bot: BotPilar, hoy: string): string {
   return `${bot.emoji} *${bot.nombre} · ${fechaCorta(hoy)}*`
 }
 
-function sumarDias(iso: string, dias: number): string {
+export function sumarDias(iso: string, dias: number): string {
   const d = new Date(iso + "T12:00:00")
   d.setDate(d.getDate() + dias)
   return d.toISOString().slice(0, 10)
 }
 
 /** Estado que manda para el aviso: el del día, o el del MTD si es mensual. */
-function estadoRelevante(i: IndicadorContexto) {
+export function estadoRelevante(i: IndicadorContexto) {
   return i.umbral_mensual ? i.estado_mtd : (i.ultimo?.estado ?? "sin_dato")
 }
 
@@ -65,7 +66,7 @@ function tendencia(i: IndicadorContexto): string | null {
 }
 
 /** Indicadores con los que el bot puede proponer un plan. */
-function ameritaPlan(i: IndicadorContexto): boolean {
+export function ameritaPlan(i: IndicadorContexto): boolean {
   return estadoRelevante(i) === "rojo" || i.racha_fuera >= 3
 }
 
@@ -79,7 +80,7 @@ function conUnidad(n: number | string | null | undefined, unidad: string | null)
   return `${num(n)}${u}`
 }
 
-function compacto(ctx: ContextoPilar) {
+export function compacto(ctx: ContextoPilar) {
   return {
     pilar: ctx.pilar,
     hoy: ctx.hoy,
@@ -176,6 +177,21 @@ export function indicadoresOmitidos(texto: string, ctx: ContextoPilar): string[]
     .filter((n) => !t.includes(n.trim().toLowerCase()))
 }
 
+/** Tendencias inventadas por el modelo (las válidas vienen del campo tendencia). */
+export const TENDENCIA_PROPIA = /subiendo|bajando|cayendo|creciendo|repunt|viene (mejor|peor)/i
+
+/** Indicadores que no están en rojo/amarillo pero el mensaje pinta como tales. */
+export function indicadoresDeMas(texto: string, ctx: ContextoPilar): string[] {
+  const lineas = texto.split("\n").filter((l) => /^\s*(🔴|🟡|🟠)/u.test(l))
+  return ctx.indicadores
+    .filter((i) => {
+      const e = estadoRelevante(i)
+      return e !== "rojo" && e !== "amarillo"
+    })
+    .map((i) => i.nombre)
+    .filter((n) => lineas.some((l) => l.toLowerCase().includes(`*${n.trim().toLowerCase()}*`)))
+}
+
 // ---------- plantilla sin IA (fallback) ----------
 
 const ICONO = { rojo: "🔴", amarillo: "🟡", verde: "✅", neutro: "▫️", sin_dato: "▫️" } as const
@@ -249,7 +265,7 @@ function promptSistema(bot: BotPilar): string {
     "- Escribí en español rioplatense (vos), directo y breve, como un jefe de pilar que conoce la operación.",
     "- Usá SOLO los números que aparecen en el JSON, escritos tal cual (coma decimal). No calcules diferencias, promedios ni porcentajes nuevos. No inventes camiones, choferes, clientes ni causas como si fueran hechos.",
     "- Los valores ya vienen formateados con su unidad: copialos tal cual.",
-    "- mensaje_whatsapp: sin saludo ni encabezado (ya va arriba). Una línea por indicador en rojo o amarillo, primero los rojos, con este formato exacto:",
+    "- mensaje_whatsapp: sin saludo ni encabezado (ya va arriba). Una línea por indicador con estado rojo o amarillo (usá el campo estado, no la racha), primero los rojos, con este formato exacto:",
     "  🔴 *<nombre>*: <valor del último día> (meta <meta>) · <comentario corto>",
     "  El comentario dice la racha («3 días seguidos», o «toda la semana» si fuera_de_meta_toda_la_semana) o, si no hay racha de 2 o más días, el campo tendencia tal cual viene. NUNCA deduzcas vos si mejoró o empeoró: usá solo el campo tendencia. Si es de umbral mensual, usá el acumulado del mes en vez del último día.",
     "  NO agregues líneas de resumen, conteos de verdes ni avisos de planes: eso lo agrega el sistema. Máximo 10 líneas.",
@@ -259,7 +275,11 @@ function promptSistema(bot: BotPilar): string {
   ].join("\n")
 }
 
-function sanearPlanes(planes: PlanPropuesto[], ctx: ContextoPilar): PlanPropuesto[] {
+export function sanearPlanes(
+  planes: PlanPropuesto[],
+  ctx: ContextoPilar,
+  maximoPlanes = 3,
+): PlanPropuesto[] {
   const habilitados = new Map(
     ctx.indicadores.filter(ameritaPlan).map((i) => [i.nombre.trim().toLowerCase(), i.nombre]),
   )
@@ -267,7 +287,7 @@ function sanearPlanes(planes: PlanPropuesto[], ctx: ContextoPilar): PlanPropuest
   const maximo = sumarDias(ctx.hoy, 45)
   return planes
     .filter((p) => habilitados.has(p.indicador.trim().toLowerCase()))
-    .slice(0, 3)
+    .slice(0, maximoPlanes)
     .map((p) => {
       const fechaOk = /^\d{4}-\d{2}-\d{2}$/.test(p.fecha_objetivo) &&
         p.fecha_objetivo >= minimo && p.fecha_objetivo <= maximo
@@ -304,11 +324,9 @@ async function redactar(
       })
       const inventados = numerosInventados(salida.mensaje_whatsapp, ctx)
       const omitidos = indicadoresOmitidos(salida.mensaje_whatsapp, ctx)
-      // Tendencias inventadas por el modelo (las válidas vienen del campo tendencia).
-      const tendenciaPropia = /subiendo|bajando|cayendo|creciendo|repunt|viene (mejor|peor)/i.test(
-        salida.mensaje_whatsapp,
-      )
-      if (inventados.length === 0 && omitidos.length === 0 && !tendenciaPropia) {
+      const deMas = indicadoresDeMas(salida.mensaje_whatsapp, ctx)
+      const tendenciaPropia = TENDENCIA_PROPIA.test(salida.mensaje_whatsapp)
+      if (inventados.length === 0 && omitidos.length === 0 && deMas.length === 0 && !tendenciaPropia) {
         salida.planes_propuestos = sanearPlanes(salida.planes_propuestos, ctx)
         // El modelo a veces usa 🟠 en vez de 🟡.
         const cuerpo = salida.mensaje_whatsapp.trim().replaceAll("🟠", "🟡")
@@ -317,6 +335,7 @@ async function redactar(
       nota = [
         inventados.length ? `números que no están en el JSON: ${inventados.join(", ")}` : null,
         omitidos.length ? `faltan indicadores fuera de meta: ${omitidos.join(", ")}` : null,
+        deMas.length ? `estos están en verde (mirá el campo estado), no los pongas: ${deMas.join(", ")}` : null,
         tendenciaPropia ? "describiste tendencias que no están en el campo tendencia" : null,
       ]
         .filter(Boolean)
@@ -329,6 +348,12 @@ async function redactar(
 }
 
 // ---------- ronda ----------
+
+/** A quién le escribe el bot: el override de calibración o su encargado. */
+export function destinoDe(bot: BotPilar): string | null {
+  const override = (process.env.BOTS_DESTINO_OVERRIDE ?? "").trim()
+  return override || bot.telefono?.trim() || null
+}
 
 export async function cargarBots(key?: string): Promise<BotPilar[]> {
   const supabase = createAdminClient()
@@ -347,20 +372,19 @@ export async function correrRonda(
   const ctx = await armarContexto(bot, opts.hoy)
   const { salida, cuerpo, modo, nota } = await redactar(bot, ctx)
   // Los cierres con conteos los arma el código: el modelo no cuenta bien.
+  // Los planes van numerados (los números se reinician cada día) para poder
+  // aprobarlos respondiendo «sí 3» por WhatsApp.
   const verdes = ctx.indicadores.filter((i) => estadoRelevante(i) === "verde").length
-  const nPlanes = salida?.planes_propuestos.length ?? 0
+  const desde = salida?.planes_propuestos.length ? await proximoNumero(supabase, ctx.hoy) : 1
+  const planes = (salida?.planes_propuestos ?? []).map((p, i) => ({ ...p, numero: desde + i }))
   const cierre = modo === "ia"
-    ? [
-        verdes > 0 ? `✅ ${verdes} indicadores en verde.` : null,
-        nPlanes > 0
-          ? `📝 Te dejé ${nPlanes === 1 ? "1 plan propuesto" : `${nPlanes} planes propuestos`} para revisar en la app (/bots).`
-          : null,
-      ].filter(Boolean)
+    ? [verdes > 0 ? `✅ ${verdes} indicadores en verde.` : null, ...lineasPlanes(planes)].filter(
+        (l) => l != null,
+      )
     : []
   const mensaje = [encabezado(bot, ctx.hoy), cuerpo, ...cierre].join("\n")
 
-  const override = (process.env.BOTS_DESTINO_OVERRIDE ?? "").trim()
-  const destino = override || bot.telefono?.trim() || null
+  const destino = destinoDe(bot)
 
   let enviado = false
   let error: string | null = modo === "plantilla" && nota ? `IA descartada: ${nota}` : null
@@ -399,11 +423,10 @@ export async function correrRonda(
   if (errIns) throw new Error(`bots_corridas: ${errIns.message}`)
   const corridaId = (corrida as { id: string }).id
 
-  const planes = salida?.planes_propuestos ?? []
   // En modo prueba no se guardan propuestas: quedan solo en `salida`.
   if (planes.length > 0 && !opts.dry) {
     const { error: errPlanes } = await supabase.from("bots_planes_propuestos").insert(
-      planes.map((p) => ({ ...p, corrida_id: corridaId, bot_key: bot.key })),
+      planes.map((p) => ({ ...p, corrida_id: corridaId, bot_key: bot.key, fecha: ctx.hoy })),
     )
     if (errPlanes) throw new Error(`bots_planes_propuestos: ${errPlanes.message}`)
   }

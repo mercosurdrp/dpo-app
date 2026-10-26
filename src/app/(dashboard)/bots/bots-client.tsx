@@ -1,14 +1,15 @@
 "use client"
 /**
  * /bots: bots por pilar. Tres bloques:
- *  1) Bots: a quién le escribe cada uno + ronda de prueba (no manda nada).
+ *  1) Bots: a quién le escribe cada uno + ronda de prueba (no manda nada), y
+ *     la reunión de bots de prueba.
  *  2) Planes propuestos: aprobar (crea el plan en /planes) o descartar.
  *  3) Últimas corridas: el mensaje tal cual salió y qué indicadores vio.
  */
 import { Fragment, useState, useTransition } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { Bot, Check, ChevronDown, ChevronRight, Play, X } from "lucide-react"
+import { Bot, Check, ChevronDown, ChevronRight, Play, Users, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils"
 import {
   aprobarPlanPropuesto,
   descartarPlanPropuesto,
+  probarReunion,
   probarRonda,
   type BotsData,
 } from "@/actions/bots"
@@ -106,7 +108,8 @@ function TablaContexto({ ctx }: { ctx: ContextoPilar }) {
 
 function CorridaCard({ c, nombreBot }: { c: BotCorrida; nombreBot: string }) {
   const [abierta, setAbierta] = useState(false)
-  const ctx = c.contexto as ContextoPilar | null
+  // En la reunión de bots el contexto no es el de un pilar: no hay tabla.
+  const ctx = c.tipo === "ronda" ? (c.contexto as ContextoPilar | null) : null
   return (
     <Card>
       <CardContent className="space-y-3 p-4">
@@ -164,6 +167,9 @@ function PlanCard({ p, nombreBot }: { p: BotPlanPropuesto; nombreBot: string }) 
     <Card>
       <CardContent className="space-y-2 p-4">
         <div className="flex flex-wrap items-center gap-2">
+          {p.numero != null && p.estado === "propuesto" && (
+            <span className="text-sm font-semibold text-slate-500">#{p.numero}</span>
+          )}
           <Badge variant="outline">{nombreBot}</Badge>
           <Badge className="bg-red-50 text-red-700 hover:bg-red-50">{p.indicador}</Badge>
           {p.fecha_objetivo && (
@@ -210,6 +216,7 @@ export function BotsClient({ data }: { data: BotsData }) {
   const [pending, start] = useTransition()
   const [prueba, setPrueba] = useState<{ bot: string; mensaje: string } | null>(null)
   const nombre = new Map(data.bots.map((b) => [b.key, `${b.emoji} ${b.nombre}`]))
+  const activos = data.bots.filter((b) => b.activo).length
   const pendientes = data.planes.filter((p) => p.estado === "propuesto")
   const resueltos = data.planes.filter((p) => p.estado !== "propuesto").slice(0, 10)
 
@@ -218,6 +225,13 @@ export function BotsClient({ data }: { data: BotsData }) {
       const r = await probarRonda(key)
       if ("error" in r) toast.error(r.error)
       else setPrueba({ bot: key, mensaje: r.data.mensaje })
+    })
+
+  const probarLaReunion = () =>
+    start(async () => {
+      const r = await probarReunion()
+      if ("error" in r) toast.error(r.error)
+      else setPrueba({ bot: "reunion", mensaje: r.data.mensaje })
     })
 
   return (
@@ -252,6 +266,24 @@ export function BotsClient({ data }: { data: BotsData }) {
               </CardContent>
             </Card>
           ))}
+          <Card>
+            <CardContent className="space-y-2 p-4">
+              <span className="text-base font-semibold text-slate-900">🤝 Reunión de bots</span>
+              <p className="text-xs text-muted-foreground">
+                A las 8:00, con lo que vio cada bot en su ronda: conexiones entre pilares, prioridades
+                del día y planes conjuntos. Los planes se aprueban respondiendo «sí N» por WhatsApp.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={probarLaReunion}
+                disabled={pending || activos < 2}
+              >
+                <Users className="mr-1 size-4" />
+                {pending ? "Corriendo…" : "Probar reunión (no manda nada)"}
+              </Button>
+            </CardContent>
+          </Card>
         </div>
         {prueba && (
           <div className="max-w-xl space-y-2">
@@ -297,7 +329,13 @@ export function BotsClient({ data }: { data: BotsData }) {
         ) : (
           <div className="grid max-w-3xl gap-3">
             {data.corridas.map((c) => (
-              <CorridaCard key={c.id} c={c} nombreBot={nombre.get(c.bot_key) ?? c.bot_key} />
+              <CorridaCard
+                key={c.id}
+                c={c}
+                nombreBot={
+                  c.bot_key ? (nombre.get(c.bot_key) ?? c.bot_key) : "🤝 Reunión de bots"
+                }
+              />
             ))}
           </div>
         )}
