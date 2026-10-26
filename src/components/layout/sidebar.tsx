@@ -302,7 +302,10 @@ const navItemsFlat: NavItem[] = [
     label: "Mis Capacitaciones",
     href: "/mis-capacitaciones",
     icon: <GraduationCap className="size-5" />,
-    roles: ["auditor"],
+    // Cualquiera con ficha de empleado puede tener capacitaciones asignadas;
+    // hasta el 26-10-2026 solo lo veía el auditor y admin/supervisor quedaban
+    // sin link a su propio examen.
+    roles: ["admin", "supervisor", "admin_rrhh", "auditor"],
   },
   {
     label: "Trivia",
