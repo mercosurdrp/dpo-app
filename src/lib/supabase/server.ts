@@ -1,9 +1,18 @@
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { createAdminClient } from "@/lib/supabase/admin"
+import { isSystem } from "@/lib/system-context"
 
 export async function createClient() {
-  const cookieStore = await cookies()
+  // Cron en contexto de sistema (ver system-context.ts): no hay cookies,
+  // lee con service role.
+  if (isSystem()) {
+    return createAdminClient() as unknown as ReturnType<typeof clienteConCookies>
+  }
+  return clienteConCookies(await cookies())
+}
 
+function clienteConCookies(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

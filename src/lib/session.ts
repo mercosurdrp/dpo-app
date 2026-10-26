@@ -2,7 +2,21 @@ import { cache } from "react"
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { isSystem } from "@/lib/system-context"
 import type { Empleado, Profile, UserRole } from "@/types/database"
+
+/** Perfil con el que corren las actions adentro de `runAsSystem` (crons). */
+const PERFIL_SISTEMA: Profile = {
+  id: "00000000-0000-0000-0000-000000000000",
+  email: "bot@dpo.local",
+  nombre: "Bot DPO",
+  role: "admin",
+  active: true,
+  puede_asignar_tareas: false,
+  created_at: "2026-10-26T00:00:00Z",
+  updated_at: "2026-10-26T00:00:00Z",
+  empleado_id: null,
+}
 
 /**
  * Get the current user's profile. Returns null if not authenticated.
@@ -13,6 +27,7 @@ import type { Empleado, Profile, UserRole } from "@/types/database"
  * está en otra región). Ahora el primer llamado paga y el resto lo reusa.
  */
 export const getProfile = cache(async function getProfile(): Promise<Profile | null> {
+  if (isSystem()) return PERFIL_SISTEMA
   const supabase = await createClient()
 
   const userId = await getUserId(supabase)

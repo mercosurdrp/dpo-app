@@ -104,6 +104,7 @@ export async function middleware(request: NextRequest) {
     // acá, así que Vercel recibía un 307 al login y nunca corrían
     // (el respaldo de TLP/WNP/FGLI/TQI quedó en null desde julio 2026).
     pathname === "/api/sueno/cron-fallback-kpis" ||
+    pathname === "/api/bots/cron-ronda" ||
     pathname === "/api/tareas/cron-vencimientos" ||
     // Alertas de almacén: la consume el backend Python de deposito-esteban.
     // No lleva sesión; se autentica con Bearer ALERTAS_ALMACEN_TOKEN.

@@ -55,6 +55,7 @@ import {
   Thermometer,
   Leaf,
   PackageOpen,
+  Bot,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -129,6 +130,15 @@ const navItemsFlat: NavItem[] = [
     label: "Planes",
     href: "/planes",
     icon: <ClipboardList className="size-5" />,
+  },
+  {
+    // Bots por pilar: ronda de la mañana por WhatsApp + planes propuestos.
+    label: "Bots",
+    href: "/bots",
+    icon: <Bot className="size-5" />,
+    roles: ["admin", "supervisor"],
+    pampeanaOnly: true,
+    hideForEmpleado: true,
   },
   {
     label: "Herramientas de Gestión",
@@ -420,6 +430,7 @@ export const navSections: NavGroup[] = [
     "/arbol-kpi",
     "/devolucion",
     "/planes",
+    "/bots",
     "/indicadores",
     "/buenas-practicas",
   ]),

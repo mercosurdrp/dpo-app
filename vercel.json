@@ -7,6 +7,10 @@
       "schedule": "40 6 * * *"
     },
     {
+      "path": "/api/bots/cron-ronda",
+      "schedule": "30 10 * * 1-6"
+    },
+    {
       "path": "/api/requisitos-legales/cron-alertas",
       "schedule": "0 12 * * *"
     },
