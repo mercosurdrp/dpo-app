@@ -57,6 +57,8 @@ export function estadoRelevante(i: IndicadorContexto) {
  * La calcula el código: el modelo la confundía ("mejoró" con una caída).
  */
 function tendencia(i: IndicadorContexto): string | null {
+  // Los mensuales se leen por el acumulado: comparar dos días sueltos no dice nada.
+  if (i.umbral_mensual) return "acumulado del mes"
   const vals = i.serie.map((p) => p.valor).filter((v): v is number => v != null)
   if (vals.length < 2 || !i.mejor_si) return null
   const [ant, ult] = vals.slice(-2)
@@ -84,6 +86,7 @@ export function compacto(ctx: ContextoPilar) {
   return {
     pilar: ctx.pilar,
     hoy: ctx.hoy,
+    novedades_del_dia: ctx.novedades ?? [],
     indicadores: ctx.indicadores.map((i) => ({
       nombre: i.nombre,
       unidad: i.unidad,
@@ -132,6 +135,9 @@ function numerosPermitidos(ctx: ContextoPilar): number[] {
       add(Number(p.fecha.slice(5, 7)))
     }
     for (const m of (i.mtd_texto ?? "").match(/\d+(?:[.,]\d+)?/g) ?? []) add(Number(m.replace(",", ".")))
+  }
+  for (const nov of ctx.novedades ?? []) {
+    for (const m of nov.match(/\d[\d.,]*\d|\d/g) ?? []) for (const v of lecturas(m)) add(v)
   }
   add(Number(ctx.hoy.slice(8, 10)))
   add(Number(ctx.hoy.slice(5, 7)))
@@ -377,12 +383,10 @@ export async function correrRonda(
   const verdes = ctx.indicadores.filter((i) => estadoRelevante(i) === "verde").length
   const desde = salida?.planes_propuestos.length ? await proximoNumero(supabase, ctx.hoy) : 1
   const planes = (salida?.planes_propuestos ?? []).map((p, i) => ({ ...p, numero: desde + i }))
-  const cierre = modo === "ia"
-    ? [verdes > 0 ? `✅ ${verdes} indicadores en verde.` : null, ...lineasPlanes(planes)].filter(
-        (l) => l != null,
-      )
-    : []
-  const mensaje = [encabezado(bot, ctx.hoy), cuerpo, ...cierre].join("\n")
+  const verdesLinea = modo === "ia" && verdes > 0 ? [`✅ ${verdes} indicadores en verde.`] : []
+  const novedades = ctx.novedades?.length ? ["", ...ctx.novedades] : []
+  const cierre = modo === "ia" ? lineasPlanes(planes) : []
+  const mensaje = [encabezado(bot, ctx.hoy), cuerpo, ...verdesLinea, ...novedades, ...cierre].join("\n")
 
   const destino = destinoDe(bot)
 

@@ -14,6 +14,7 @@ import {
 } from "@/lib/reuniones/semaforo"
 import type { ReunionIndicadoresMes } from "@/types/database"
 import type { BotPilar } from "./tipos"
+import { armarContextoFlota } from "./contexto-flota"
 
 const DIAS_SERIE = 7
 
@@ -52,6 +53,11 @@ export interface ContextoPilar {
   hoy: string
   reunion_tipo: string
   indicadores: IndicadorContexto[]
+  /**
+   * Hechos del día que no son un indicador (unidades paradas, services
+   * próximos...). Los arma el código y van tal cual al final del mensaje.
+   */
+  novedades?: string[]
 }
 
 type Indicador = ReunionIndicadoresMes["indicadores"][number]
@@ -78,6 +84,9 @@ function coincide(ind: Indicador, filtro: string[]): boolean {
 }
 
 export async function armarContexto(bot: BotPilar, hoy = hoyArgentina()): Promise<ContextoPilar> {
+  // Flota no tiene grilla de reunión: lee el bloque de Flota y Ruteo.
+  if (bot.reunion_tipo === "flota") return armarContextoFlota(bot, hoy)
+
   const reunion = await reunionHasta(bot.reunion_tipo, hoy, false)
   if (!reunion) throw new Error(`No hay reuniones de tipo ${bot.reunion_tipo}`)
   const actual = await indicadoresDe(reunion.id)

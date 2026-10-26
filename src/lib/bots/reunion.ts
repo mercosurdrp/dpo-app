@@ -102,6 +102,7 @@ function datosReunion(ps: Participante[]) {
         pilar: p.bot.nombre,
         fuera_de_meta: c.indicadores.filter((i) => i.estado === "rojo" || i.estado === "amarillo"),
         en_verde: c.indicadores.filter((i) => i.estado === "verde").map((i) => i.nombre),
+        novedades_del_dia: p.ctx.novedades ?? [],
         planes_ya_propuestos: p.planesRonda,
         contexto_del_pilar: p.bot.prompt_extra,
       }
@@ -117,6 +118,7 @@ function unido(ps: Participante[]): ContextoPilar {
     hoy: ps[0].ctx.hoy,
     reunion_tipo: "",
     indicadores: ps.flatMap((p) => p.ctx.indicadores),
+    novedades: ps.flatMap((p) => p.ctx.novedades ?? []),
   }
 }
 
