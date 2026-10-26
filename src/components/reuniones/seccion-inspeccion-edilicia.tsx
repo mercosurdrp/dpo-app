@@ -36,6 +36,7 @@ import {
   obtenerAnomaliasInspeccion,
   obtenerEstadoInspeccion,
   periodoDeReunion,
+  sincronizarCompromisosInspeccion,
   type AnomaliaInspeccion,
   type AnomaliasInspeccion,
   type DestinoDecision,
@@ -110,12 +111,49 @@ export function SeccionInspeccionEdilicia({
   const [cargandoAnomalias, setCargandoAnomalias] = useState(false)
   const [decidiendo, setDecidiendo] = useState<AnomaliaInspeccion | null>(null)
 
-  const cargarAnomalias = useCallback(async (revisionId: number) => {
-    setCargandoAnomalias(true)
-    const a = await obtenerAnomaliasInspeccion(revisionId)
-    setAnomalias(a)
-    setCargandoAnomalias(false)
-  }, [])
+  // Los planes decididos en la app de mantenimiento (sin pasar por acá)
+  // también tienen que quedar en el Action Log. Después de cargar los "No" se
+  // sincroniza: crea los compromisos que faltan y cierra los ya ejecutados.
+  const sincronizar = useCallback(
+    async (p: string, a: AnomaliasInspeccion | null) => {
+      if (!puedeEditar || !a || a.items.length === 0) return
+      const res = await sincronizarCompromisosInspeccion({
+        reunionId,
+        periodo: p,
+        anomalias: a,
+      })
+      if ("error" in res) return
+      const { creados, cerrados, aviso } = res.data
+      if (creados.length || cerrados.length) {
+        const partes: string[] = []
+        if (creados.length) {
+          partes.push(
+            `${creados.length} compromiso${creados.length === 1 ? "" : "s"} nuevo${creados.length === 1 ? "" : "s"} (${creados.join(", ")})`,
+          )
+        }
+        if (cerrados.length) {
+          partes.push(
+            `${cerrados.length} cerrado${cerrados.length === 1 ? "" : "s"} por ejecutado (${cerrados.join(", ")})`,
+          )
+        }
+        toast.success(`Action Log sincronizado con mantenimiento: ${partes.join(" · ")}`)
+        onCompromisoCreado?.()
+      }
+      if (aviso) toast.warning(aviso)
+    },
+    [puedeEditar, reunionId, onCompromisoCreado],
+  )
+
+  const cargarAnomalias = useCallback(
+    async (revisionId: number) => {
+      setCargandoAnomalias(true)
+      const a = await obtenerAnomaliasInspeccion(revisionId)
+      setAnomalias(a)
+      setCargandoAnomalias(false)
+      void sincronizar(periodo, a)
+    },
+    [periodo, sincronizar],
+  )
 
   useEffect(() => {
     let vivo = true
@@ -130,11 +168,13 @@ export function SeccionInspeccionEdilicia({
         const a = await obtenerAnomaliasInspeccion(e.revision_id)
         if (!vivo) return
         setAnomalias(a)
+        void sincronizar(p, a)
       }
     })()
     return () => {
       vivo = false
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fechaReunion])
 
   const badge = ESTADO[estado?.estado ?? "no_generada"] ?? ESTADO.no_generada
