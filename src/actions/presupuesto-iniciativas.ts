@@ -11,7 +11,6 @@ import type {
   TipoIniciativaAhorro,
 } from "@/types/database"
 
-const BUCKET = "presupuestos"
 const REVALIDATE_PATH = "/presupuesto"
 
 type Result<T> = { data: T } | { error: string }
@@ -251,20 +250,6 @@ export async function eliminarIniciativa(
   try {
     await requireEditor()
     const supabase = await createClient()
-
-    // Evidencias de los avances trimestrales viejos (la tabla sigue existiendo
-    // y sus filas caen por CASCADE): sacarlas del storage.
-    const { data: segs } = await supabase
-      .from("presupuestos_iniciativas_seguimiento")
-      .select("evidencia_url")
-      .eq("iniciativa_id", id)
-
-    const paths = (segs ?? [])
-      .map((s: { evidencia_url: string | null }) => s.evidencia_url)
-      .filter((p): p is string => !!p)
-    if (paths.length > 0) {
-      await supabase.storage.from(BUCKET).remove(paths)
-    }
 
     const { error } = await supabase
       .from("presupuestos_iniciativas")

@@ -1160,11 +1160,15 @@ function esperadoPorDias(
   return (comprometidoAnual * diasCorridos) / diasVigencia
 }
 
-/** Trimestres ya CERRADOS del año, a hoy. Fallback cuando no hay EERR. */
-function trimestresCerrados(anio: number, hoy = new Date()): number {
-  if (anio < hoy.getFullYear()) return 4
+/**
+ * Meses ya CERRADOS del año, a hoy. Fallback cuando no hay EERR. Las
+ * iniciativas se miran por mes (los avances trimestrales Q1-Q4 se sacaron el
+ * 16/09/2026 y el resto de la cuenta por trimestre el 27/10/2026).
+ */
+function mesesCerrados(anio: number, hoy = new Date()): number {
+  if (anio < hoy.getFullYear()) return 12
   if (anio > hoy.getFullYear()) return 0
-  return Math.floor(hoy.getMonth() / 3) // ene-mar → 0 cerrados; jul → 2
+  return hoy.getMonth() // enero → 0 cerrados; julio → 6
 }
 
 /**
@@ -1523,11 +1527,11 @@ export function IniciativasAhorroSection({
                 : null
             // Ritmo: lo acumulado contra lo que debería llevar a esta altura,
             // no contra el compromiso anual entero. La ventana son los meses que
-            // el EERR tiene cerrados (o los trimestres del calendario si el
-            // ahorro es manual).
-            const qCerrados = trimestresCerrados(ini.anio)
+            // el EERR tiene cerrados (o los meses del calendario si el ahorro
+            // es manual).
+            const mCerrados = mesesCerrados(ini.anio)
             const mesesTranscurridos =
-              mesesEerr ?? Math.max(0, qCerrados * 3 - (mesInicio - 1))
+              mesesEerr ?? Math.max(0, mCerrados - (mesInicio - 1))
             const esperado = ahorroComb
               ? esperadoPorDias(
                   ini.ahorro_comprometido_anual,
@@ -1805,7 +1809,7 @@ export function IniciativasAhorroSection({
                       )}
                       {ahorroFrac !== null &&
                         ` · ${Math.round(ahorroFrac * 100)}% del año cubierto`}
-                      {qCerrados === 0 && " · el año todavía no cerró un trimestre"}
+                      {mCerrados === 0 && " · el año todavía no cerró un mes"}
                     </p>
                   </div>
 
