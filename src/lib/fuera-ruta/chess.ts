@@ -53,8 +53,14 @@ function redondear(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+/** Chess contesta en 1-3 s; si se cuelga, la pantalla no espera más que esto. */
+const CHESS_TIMEOUT_MS = 25_000
+
 function headers(sessionId: string) {
-  return { headers: { Accept: "application/json", Cookie: sessionId } }
+  return {
+    headers: { Accept: "application/json", Cookie: sessionId },
+    signal: AbortSignal.timeout(CHESS_TIMEOUT_MS),
+  }
 }
 
 interface Base {

@@ -54,6 +54,13 @@ export interface FueraRutaDia {
   dias_pactados_en: string | null
   /** Fuente Chess: 'ruteo' = la fecha todavía no se entregó · 'entregado' = ya se facturó. */
   foto: "ruteo" | "entregado" | null
+  /**
+   * Foto 'entregado': cuántos pedidos estaban en el ruteo fuera de día y al final
+   * NO se entregaron fuera de ruta. No están en `filas` ni suman: un fuera de
+   * ruta es sólo el que efectivamente se cumplió (definición de Sebastián,
+   * 27/10/2026). Se informa el número para saber que el ruteo tenía más.
+   */
+  no_salieron: number
 }
 
 const COLUMNAS =
@@ -105,15 +112,19 @@ export async function getFueraRuta(fecha: string): Promise<Result<FueraRutaDia>>
 
   const hoy = hoyArg()
   let filas = (data ?? []) as FueraRutaRegistro[]
+  let noSalieron = 0
   if (fuente === "sheet") {
     filas = await enriquecerMedidas(fecha, filas)
     for (const f of filas) f.estado = null
   } else {
     for (const f of filas) f.estado = estadoChess(f, hoy)
+    // Un día ya entregado muestra SÓLO lo que efectivamente salió fuera de
+    // ruta. Lo que estaba en el ruteo y no salió no es un fuera de ruta: se
+    // cuenta aparte y no se lista.
+    noSalieron = filas.filter((f) => f.estado === "no_salio").length
+    filas = filas.filter((f) => f.estado !== "no_salio")
   }
-  // Los totales son de lo que efectivamente salió (o está por salir): lo que
-  // quedó en el ruteo y no se entregó fuera de ruta se lista, pero no suma.
-  const suman = filas.filter((f) => f.estado !== "no_salio")
+  const suman = filas
 
   return {
     data: {
@@ -126,6 +137,7 @@ export async function getFueraRuta(fecha: string): Promise<Result<FueraRutaDia>>
       fuente_ok: fuenteOk,
       dias_pactados_en: diasPactadosEn,
       foto: fuente === "chess" ? (fecha >= hoy ? "ruteo" : "entregado") : null,
+      no_salieron: noSalieron,
     },
   }
 }

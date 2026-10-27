@@ -46,7 +46,7 @@ export default async function PriorizacionEntregaPage({
       ? {
           fecha: fechaEntrega, filas: [], total_monto: 0, total_bultos: 0, total_hl: 0,
           fuente: fechaEntrega >= FUERA_RUTA_CHESS_DESDE ? "chess" as const : "sheet" as const,
-          fuente_ok: false, dias_pactados_en: null, foto: null,
+          fuente_ok: false, dias_pactados_en: null, foto: null, no_salieron: 0,
         }
       : fueraRutaRes.data
   const fueraRutaMensual = "error" in frMensualRes ? [] : frMensualRes.data

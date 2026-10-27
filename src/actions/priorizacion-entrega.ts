@@ -23,6 +23,7 @@ import type { ClusterId } from "./clusterizacion-tipos"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
+import { hoyArg } from "@/lib/fuera-ruta/sync-chess"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -221,6 +222,20 @@ export async function getPriorizacionEntrega(
 ): Promise<Result<PriorizacionData>> {
   await requireAuth()
   if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+
+  // Una fecha ya entregada no se prioriza: Chess sigue devolviendo en /pedidos/
+  // los pedidos facturados de días pasados, y armar un ranking con eso mostraba
+  // un día viejo como si estuviera pendiente. Lo que queda de un día pasado es
+  // lo que efectivamente pasó: los cortes registrados y los fuera de ruta
+  // entregados, que la página muestra sin pasar por acá.
+  if (fechaEntrega < hoyArg()) {
+    const [a, m, d] = fechaEntrega.split("-")
+    return {
+      error:
+        `El ${d}/${m}/${a} ya se entregó: el ranking se arma sólo con pedidos pendientes. ` +
+        "Acá queda lo que efectivamente pasó ese día: los cortes registrados y los pedidos entregados fuera de ruta.",
+    }
+  }
 
   try {
     const hasta = restarDias(fechaEntrega, 1)          // el comportamiento se mide hasta ayer

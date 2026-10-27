@@ -983,7 +983,7 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
   const entregadoFoto = fueraRuta.foto === "entregado"
   const nEntregados = filas.filter((f) => f.estado === "entregado" || f.estado === "entregado_sin_ruteo").length
   const nSinRuteo = filas.filter((f) => f.estado === "entregado_sin_ruteo").length
-  const nNoSalio = filas.filter((f) => f.estado === "no_salio").length
+  const nNoSalio = fueraRuta.no_salieron
   const diasPactadosTxt = fueraRuta.dias_pactados_en
     ? ` · días pactados bajados el ${new Date(fueraRuta.dias_pactados_en).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" })}`
     : ""
@@ -993,7 +993,9 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {esChess
-            ? "No se pudo consultar Chess: se muestra el último registro guardado, que puede estar desactualizado para esta fecha."
+            ? (entregadoFoto
+                ? "Chess no contestó al actualizar esta fecha: se muestra lo que dejó registrado el cierre diario de las 07:30."
+                : "No se pudo consultar Chess: se muestra el último ruteo guardado, que puede estar desactualizado para esta fecha.")
             : "No se pudo leer el sheet de Novedades Logísticas: se muestra el último registro guardado, que puede estar incompleto."}
         </div>
       )}
@@ -1005,7 +1007,7 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
               {" "}· {nEntregados} {nEntregados === 1 ? "entregado" : "entregados"} fuera de ruta
               {nSinRuteo > 0 && <> ({nSinRuteo} sin figurar en el ruteo)</>}
               {nNoSalio > 0 && (
-                <> · <span className="text-slate-500">{nNoSalio} {nNoSalio === 1 ? "quedó" : "quedaron"} en el ruteo y no {nNoSalio === 1 ? "salió" : "salieron"}</span></>
+                <> · <span className="text-slate-500" title="Estaban en el ruteo fuera de su día pactado y al final no se entregaron fuera de ruta. No cuentan como fuera de ruta.">{nNoSalio} más {nNoSalio === 1 ? "estaba" : "estaban"} en el ruteo y no {nNoSalio === 1 ? "salió" : "salieron"} (no cuenta{nNoSalio === 1 ? "" : "n"})</span></>
               )}
             </>
           ) : (
@@ -1055,7 +1057,7 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
               const otroCliente =
                 f.cod_cliente_entregado != null && f.cod_cliente_entregado !== f.cod_cliente
               return (
-                <TableRow key={f.clave} className={f.estado === "no_salio" ? "text-muted-foreground opacity-70" : undefined}>
+                <TableRow key={f.clave}>
                   <TableCell>
                     <div className="max-w-[200px] truncate font-medium" title={f.cliente ?? undefined}>
                       {f.cliente ?? "—"}
