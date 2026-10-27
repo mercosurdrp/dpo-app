@@ -1,5 +1,8 @@
 /**
- * Aviso de las 07:00 del Radar de Rechazos por WhatsApp.
+ * Aviso de las 15:00 del Radar de Rechazos por WhatsApp, el DÍA ANTERIOR a la
+ * entrega (Fausto 27/10/2026: a las 07:00 del mismo día ya era tarde; a la
+ * tarde el vendedor llama y, si el cliente no va a tener la plata, se
+ * reprograma antes de cargar el camión).
  *
  * Toma la foto del radar del PRÓXIMO día de reparto (la armó el cron de ayer a
  * 2 días vista), se queda con los clientes CRÍTICOS (criterio único de
@@ -19,7 +22,8 @@
  *   ?dry=1          arma los mensajes y los devuelve, no envía ni registra
  *   ?fecha=YYYY-MM-DD  foto a usar (default: próximo día de reparto)
  *   ?solo=549...    manda TODO a ese número (prueba), sin registrar
- * Domingos y feriados no corre: el día anterior ya avisó por el siguiente.
+ * Domingos y feriados no corre: el día hábil anterior ya avisó por la entrega
+ * que sigue (el sábado avisa por el lunes).
  */
 import { NextRequest, NextResponse } from "next/server"
 import { IS_MISIONES } from "@/lib/empresa"

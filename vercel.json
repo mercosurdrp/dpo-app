@@ -80,7 +80,7 @@
     },
     {
       "path": "/api/radar-rechazos/cron-vendedores",
-      "schedule": "0 10 * * 1-6"
+      "schedule": "0 18 * * 1-6"
     },
     {
       "path": "/api/radar-rechazos/cron",

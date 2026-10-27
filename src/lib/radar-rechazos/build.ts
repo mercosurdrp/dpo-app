@@ -121,7 +121,7 @@ export function hayReparto(fecha: string): boolean {
  */
 /**
  * Próximo día CON reparto después de `desde` (sin contarlo). Es la foto que el
- * aviso de las 07:00 les manda a los vendedores: la armó el cron de ayer a 2
+ * aviso de las 15:00 les manda a los vendedores: la armó el cron de ayer a 2
  * días vista, así que hoy queda a 1 (el sábado apunta al lunes).
  */
 export function proximoDiaRepartoART(desde: string = hoyART()): string {

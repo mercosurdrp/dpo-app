@@ -1,5 +1,6 @@
 /**
- * Aviso por WhatsApp del Radar de Rechazos: arma los mensajes de las 07:00.
+ * Aviso por WhatsApp del Radar de Rechazos: arma los mensajes de las 15:00
+ * del día anterior a la entrega.
  *
  * Al vendedor le llegan SUS clientes críticos (criterio único de `criterio.ts`)
  * con entrega el próximo día de reparto, para que los llame antes de que salga
