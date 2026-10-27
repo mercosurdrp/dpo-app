@@ -14,7 +14,10 @@
  *   2. Los períodos de foco definidos por el equipo (el largo plazo).
  *   3. Las conclusiones de la revisión del mes (pc_revisiones_mensuales, con
  *      la reunión y quién la registró): ésa es la evidencia que se audita.
- *   4. Un action log con los compromisos que surgieron.
+ *   4. Un action log con los compromisos que surgieron. Como esta caja se ve
+ *      una sola vez al mes, esos compromisos se listan TAMBIÉN en el Action
+ *      Log general de la reunión (igual que los de Dimensionamiento), así se
+ *      siguen todas las semanas hasta cerrarlos.
  *
  * Hasta el 27/10/2026 había una segunda caja «evidencia y compromisos» con
  * galería de fotos + action log (SeccionGaleriaFotos). Sebastián la sacó: la
@@ -630,7 +633,7 @@ export function SeccionPeriodosCriticos({
             responsables={responsables}
             puedeEditar={puedeEditar}
             onChanged={onActividadesChanged}
-            vacioTexto="Sin compromisos de períodos críticos. Si de la revisión sale una acción, cargala con «Compromiso»."
+            vacioTexto="Sin compromisos de períodos críticos. Si de la revisión sale una acción, cargala con «Compromiso»: se sigue también en el Action Log general de cada semana."
           />
         </CardContent>
     </Card>
