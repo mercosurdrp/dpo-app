@@ -92,6 +92,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/vehiculos/cil-alertas" ||
     pathname === "/api/planeamiento/periodos-criticos/volumen/cron-sync" ||
     pathname === "/api/radar-rechazos/cron" ||
+    pathname === "/api/radar-rechazos/cron-vendedores" ||
     pathname === "/api/radar-rechazos/feed" ||
     pathname === "/api/rmd/cron-abrir-planes" ||
     pathname === "/api/wa-bot/sync-clientes" ||

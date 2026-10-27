@@ -119,6 +119,17 @@ export function hayReparto(fecha: string): boolean {
  * Con feriado de por medio corre igual: el viernes 14-08-2026 —con San Martín el
  * lunes 17— apunta al martes 18, y el sábado 15 al miércoles 19.
  */
+/**
+ * Próximo día CON reparto después de `desde` (sin contarlo). Es la foto que el
+ * aviso de las 07:00 les manda a los vendedores: la armó el cron de ayer a 2
+ * días vista, así que hoy queda a 1 (el sábado apunta al lunes).
+ */
+export function proximoDiaRepartoART(desde: string = hoyART()): string {
+  let fecha = sumarDias(desde, 1)
+  while (!hayReparto(fecha)) fecha = sumarDias(fecha, 1)
+  return fecha
+}
+
 export function fechaObjetivoART(desde: string = hoyART()): string {
   let fecha = desde
   let dias = 0
