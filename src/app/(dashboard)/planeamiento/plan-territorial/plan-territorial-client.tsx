@@ -275,6 +275,15 @@ export function PlanTerritorialClient({
 }: Props) {
   const esEditor = ["admin", "supervisor", "admin_rrhh"].includes(rol)
 
+  // Solapa Planes: una pestaña por ciudad, en el orden en que vienen los
+  // planes (más nuevo primero), para no tener que bajar por todas las
+  // tarjetas. Con los planes de Colón y Ramallo la página ya era larga.
+  const ciudadesConPlan = Array.from(new Set(planes.map((p) => p.ciudad)))
+  const [ciudadPlanes, setCiudadPlanes] = useState<string>("")
+  const ciudadActiva = ciudadesConPlan.includes(ciudadPlanes)
+    ? ciudadPlanes
+    : (ciudadesConPlan[0] ?? "")
+
   const base = escenarios.find((e) => e.tipo === "base")
   const objetivo = escenarios.find((e) => e.tipo === "objetivo")
   const dream = escenarios.find((e) => e.tipo === "dream")
@@ -393,19 +402,44 @@ export function PlanTerritorialClient({
               Todavía no hay planes territoriales cargados.
             </p>
           )}
-          {planes.map((p) => (
-            <PlanCard
-              key={p.id}
-              plan={p}
-              ciudad={territorio?.ciudades.find((c) => c.ciudad === p.ciudad)}
-              rutero={ruteros[p.ciudad] ?? null}
-              esEditor={esEditor}
-              ciudades={(territorio?.ciudades ?? []).map((c) => c.ciudad)}
-              perfiles={perfiles}
-              territorio={territorio}
-              archivos={archivos}
-            />
-          ))}
+          {planes.length > 0 && (
+            <Tabs
+              value={ciudadActiva}
+              onValueChange={setCiudadPlanes}
+              className="space-y-4"
+            >
+              <TabsList>
+                {ciudadesConPlan.map((c) => (
+                  <TabsTrigger key={c} value={c}>
+                    {c}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {ciudadesConPlan.map((c) => (
+                <TabsContent key={c} value={c} className="space-y-4">
+                  {planes
+                    .filter((p) => p.ciudad === c)
+                    .map((p) => (
+                      <PlanCard
+                        key={p.id}
+                        plan={p}
+                        ciudad={territorio?.ciudades.find(
+                          (x) => x.ciudad === p.ciudad,
+                        )}
+                        rutero={ruteros[p.ciudad] ?? null}
+                        esEditor={esEditor}
+                        ciudades={(territorio?.ciudades ?? []).map(
+                          (x) => x.ciudad,
+                        )}
+                        perfiles={perfiles}
+                        territorio={territorio}
+                        archivos={archivos}
+                      />
+                    ))}
+                </TabsContent>
+              ))}
+            </Tabs>
+          )}
         </TabsContent>
 
         {/* ---------------- Revisiones (R5.1.3) ---------------- */}
