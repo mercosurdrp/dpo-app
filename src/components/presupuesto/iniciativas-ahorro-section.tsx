@@ -648,7 +648,11 @@ function KpiCombustibleBlock({
                   <>
                     <FilaDetalle
                       etiqueta="Viajes en el mes"
-                      valor={String(detalleMes.viajes ?? 0)}
+                      valor={
+                        detalleMes.viajesChess
+                          ? `${detalleMes.viajes ?? 0} (${detalleMes.viajesChess} por Chess)`
+                          : String(detalleMes.viajes ?? 0)
+                      }
                     />
                     <FilaDetalle
                       etiqueta="Semanas hábiles"
@@ -680,7 +684,7 @@ function KpiCombustibleBlock({
               </div>
               <p className="text-xs text-muted-foreground">
                 {esViajes
-                  ? "Viajes = rutas de Foxtrot con reparto en la localidad, la haga la ruta que la haga. Semanas = días hábiles ÷ 5."
+                  ? "Viajes = rutas de Foxtrot con reparto en la localidad, la haga la ruta que la haga. Si un día Foxtrot no registró paradas y Chess muestra el reparto, el viaje cuenta por Chess. Semanas = días hábiles ÷ 5."
                   : "Razón de sumas (Σ km ÷ Σ litros), sólo gasoil; se descartan las cargas con odómetro salteado o tanque incompleto."}
               </p>
             </div>
@@ -691,8 +695,8 @@ function KpiCombustibleBlock({
         {esViajes && kpi.viajes && (
           <>
             Rutas de Foxtrot con reparto en {kpi.viajes.localidad}, la haga la
-            ruta que la haga · {kpi.viajes.kmViaje} km por viaje · semanas =
-            días hábiles ÷ 5
+            ruta que la haga (y Chess cuando Foxtrot no registró el día) ·{" "}
+            {kpi.viajes.kmViaje} km por viaje · semanas = días hábiles ÷ 5
           </>
         )}
         {kpi.dominios.join(" · ")}

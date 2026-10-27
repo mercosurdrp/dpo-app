@@ -164,6 +164,11 @@ export interface KpiCombustibleMes {
   /** Modo viajes: viajes contados y semanas hábiles computadas del mes. */
   viajes?: number
   semanas?: number
+  /**
+   * Modo viajes: de esos viajes, los que Foxtrot no registró (día sin
+   * paradas completadas en la localidad) y se tomaron del reparto de Chess.
+   */
+  viajesChess?: number
   /** km/l de los camiones ya intervenidos. null si no hay dato ese mes. */
   intervenidos: number | null
   /** km/l de los camiones sin intervenir (grupo de control). */
@@ -495,12 +500,17 @@ async function calcularKpiCombustibleResult(
   for (const [kpi, cfg] of Object.entries(VIAJES_POR_KPI)) {
     const serie = await serieViajes(supabase, anio, cfg)
     if ("error" in serie) return { error: serie.error }
-    const { viajesPorDia, desdeDatos, hastaDatos } = serie.data
+    const { viajesPorDia, chessPorDia, desdeDatos, hastaDatos } = serie.data
     if (!desdeDatos || !hastaDatos) continue
 
     const viajesEntre = (d1: string, d2: string) => {
       let n = 0
       for (const [f, v] of viajesPorDia) if (f >= d1 && f <= d2) n += v
+      return n
+    }
+    const chessEntre = (d1: string, d2: string) => {
+      let n = 0
+      for (const [f, v] of chessPorDia) if (f >= d1 && f <= d2) n += v
       return n
     }
 
@@ -525,6 +535,7 @@ async function calcularKpiCombustibleResult(
         real: Math.round((viajes / semanas) * 100) / 100,
         viajes,
         semanas: Math.round(semanas * 10) / 10,
+        viajesChess: chessEntre(d1, d2),
         intervenidos: null,
         control: null,
         km: viajes * cfg.kmViaje,
@@ -644,6 +655,8 @@ async function serieViajes(
 ): Promise<
   Result<{
     viajesPorDia: Map<string, number>
+    /** Días en que el viaje salió de Chess porque Foxtrot no tenía paradas. */
+    chessPorDia: Map<string, number>
     desdeDatos: string | null
     hastaDatos: string | null
   }>
@@ -709,10 +722,66 @@ async function serieViajes(
     viajesPorDia.set(fecha, (viajesPorDia.get(fecha) ?? 0) + 1)
   }
 
+  // Respaldo con Chess. Hay días en que el camión repartió en la localidad y
+  // Foxtrot no tiene ninguna parada completada (el 15/09 y el 23/09/2026 en
+  // Colón: 42 y 34 entregas en Chess, cero paradas). Sin esto el día cuenta
+  // como viaje evitado y el ahorro se infla. Sólo para días SIN viaje en
+  // Foxtrot: si Foxtrot vio algo ese día, manda Foxtrot. Un viaje de Chess
+  // es un camión (patente) con al menos `minParadas` clientes de la
+  // localidad ese día, misma regla que para las rutas de Foxtrot.
+  const chessPorDia = new Map<string, number>()
+  const desdeDatos = (primera.data as { fecha: string } | null)?.fecha ?? null
+  if (desdeDatos && hastaDatos) {
+    const { data: clientes, error: errCli } = await supabase
+      .from("bot_clientes_cache")
+      .select("id_cliente")
+      .eq("localidad", cfg.localidad)
+    if (errCli) return { error: `No se pudieron leer los clientes: ${errCli.message}` }
+    const ids = ((clientes ?? []) as { id_cliente: string | number }[])
+      .map((c) => Number(c.id_cliente))
+      .filter((n) => Number.isFinite(n))
+    if (ids.length > 0) {
+      const clientesPorCamion = new Map<string, Set<number>>()
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from("ventas_diarias_cliente")
+          .select("fecha, patente, id_cliente")
+          .in("origen", ["chess", "gestion"])
+          .in("id_cliente", ids)
+          .gte("fecha", desdeDatos)
+          .lte("fecha", hastaDatos)
+          .range(from, from + PAGE - 1)
+        if (error) return { error: `No se pudo leer el reparto de Chess: ${error.message}` }
+        for (const r of (data ?? []) as {
+          fecha: string
+          patente: string | null
+          id_cliente: number
+        }[]) {
+          const patente = (r.patente ?? "").trim()
+          if (!patente || viajesPorDia.has(r.fecha)) continue
+          const k = `${r.fecha}|${patente}`
+          const set = clientesPorCamion.get(k) ?? new Set<number>()
+          set.add(r.id_cliente)
+          clientesPorCamion.set(k, set)
+        }
+        if (!data || data.length < PAGE) break
+      }
+      for (const [k, set] of clientesPorCamion) {
+        if (set.size < cfg.minParadas) continue
+        const fecha = k.slice(0, 10)
+        chessPorDia.set(fecha, (chessPorDia.get(fecha) ?? 0) + 1)
+      }
+      for (const [fecha, v] of chessPorDia) {
+        viajesPorDia.set(fecha, (viajesPorDia.get(fecha) ?? 0) + v)
+      }
+    }
+  }
+
   return {
     data: {
       viajesPorDia,
-      desdeDatos: (primera.data as { fecha: string } | null)?.fecha ?? null,
+      chessPorDia,
+      desdeDatos,
       hastaDatos,
     },
   }
