@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
-import { Gauge, Loader2 } from "lucide-react"
+import { useEffect, useMemo, useState, useTransition } from "react"
+import { Gauge, History, Loader2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -13,6 +13,15 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { getSlas, getCumplimientoRango, getDetalleDiaSla } from "@/actions/sla"
+import {
+  getObservacionesSlaSeccion,
+  type IndicadorHistorialResumen,
+} from "@/actions/reuniones-indicadores-observaciones"
+import {
+  codigoSlaDe,
+  esIndicadorSla,
+  slaIndicadorId,
+} from "@/lib/reuniones-sla-observaciones"
 import { SlaDetalleDiaBody } from "@/components/sla/sla-cumplimientos"
 import type {
   CumplimientoRango,
@@ -21,8 +30,15 @@ import type {
   EstadoCumplimiento,
 } from "@/lib/sla-cumplimiento"
 import { ActionLogSeccion } from "./action-log-seccion"
+import { SlaObservaciones } from "./sla-observaciones"
+import {
+  IndicadorHistorialDialog,
+  type IndicadorHistorialRef,
+} from "./indicador-historial-dialog"
 import type {
   ReunionActividadConResponsable,
+  ReunionIndicadorObservacionConAutor,
+  S5SectorAlmacen,
   TipoReunion,
 } from "@/types/database"
 
@@ -126,6 +142,9 @@ export function SeccionSla({
   codigos,
   actividades,
   responsables,
+  sectoresAlmacen,
+  vehiculos,
+  rubrosMantenimiento,
   puedeEditar,
   onActividadesChanged,
 }: {
@@ -135,8 +154,16 @@ export function SeccionSla({
   titulo?: string
   /** Si está presente, solo se muestran los SLA con estos códigos (y en este orden). */
   codigos?: string[]
+  /**
+   * Actividades de la sección 'sla' (las de esta reunión y, si vienen atadas a
+   * un SLA, las de las otras reuniones que lo revisan). Acá se filtran a los
+   * SLA visibles.
+   */
   actividades: ReunionActividadConResponsable[]
   responsables: ResponsableOpt[]
+  sectoresAlmacen?: S5SectorAlmacen[]
+  vehiculos?: { id: string; dominio: string }[]
+  rubrosMantenimiento?: { id: string; nombre: string }[]
   puedeEditar: boolean
   onActividadesChanged: () => void
 }) {
@@ -146,6 +173,20 @@ export function SeccionSla({
   const [slas, setSlas] = useState<SlaLite[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Observaciones de SLA (compartidas entre reuniones) y conteo por SLA para
+  // marcar en el cuadro los que tienen historial. Se recargan con el rango y
+  // cada vez que se carga/edita algo (refreshObs).
+  const [observaciones, setObservaciones] = useState<
+    ReunionIndicadorObservacionConAutor[]
+  >([])
+  const [resumenSla, setResumenSla] = useState<
+    Record<string, IndicadorHistorialResumen>
+  >({})
+  const [refreshObs, setRefreshObs] = useState(0)
+  const [slaHistorial, setSlaHistorial] = useState<IndicadorHistorialRef | null>(
+    null,
+  )
 
   // Modal de detalle del día (mismo cuerpo que el tablero /sla).
   const [detalleOpen, setDetalleOpen] = useState(false)
@@ -176,6 +217,10 @@ export function SeccionSla({
     setHasta(nv)
     if (nv < desde) setDesde(nv)
   }
+
+  // Clave estable de los códigos para los efectos (la prop suele ser una
+  // constante del módulo, pero no dependemos de su identidad).
+  const codigosKey = codigos?.join(",") ?? ""
 
   useEffect(() => {
     let cancel = false
@@ -211,6 +256,32 @@ export function SeccionSla({
     }
   }, [desde, hasta])
 
+  // Observaciones de SLA del rango + resumen por SLA. Sin filtro de códigos
+  // (no pasa hoy) se piden las de todos los SLA cargados.
+  const slasKey = codigos ? "" : slas.map((s) => s.codigo).join(",")
+  useEffect(() => {
+    let cancel = false
+    const cods = codigos ?? slasKey.split(",").filter(Boolean)
+    if (cods.length === 0) return
+    void getObservacionesSlaSeccion({ reunionId, codigos: cods, desde, hasta }).then(
+      (res) => {
+        if (cancel) return
+        if ("error" in res) return
+        setObservaciones(res.data.observaciones)
+        setResumenSla(res.data.resumen)
+      },
+    )
+    return () => {
+      cancel = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reunionId, codigosKey, slasKey, desde, hasta, refreshObs])
+
+  function onObservacionesChanged() {
+    setRefreshObs((n) => n + 1)
+    onActividadesChanged()
+  }
+
   // Con filtro de códigos se muestran solo esos SLA, en el orden pedido.
   const filasVisibles: CumplimientoRangoFila[] = codigos
     ? codigos
@@ -220,6 +291,44 @@ export function SeccionSla({
   const slasVisibles = codigos
     ? slas.filter((s) => codigos.includes(s.codigo))
     : slas
+
+  // SLA elegibles para una observación o acción: los de la matriz (con su
+  // nombre corto) y, si alguno no es medible, el del acuerdo cargado.
+  const slasParaObservar = useMemo(() => {
+    const out: { codigo: string; nombre: string }[] = []
+    const vistos = new Set<string>()
+    for (const f of filasVisibles) {
+      out.push({ codigo: f.codigo, nombre: f.nombre })
+      vistos.add(f.codigo)
+    }
+    for (const s of slasVisibles) {
+      if (!vistos.has(s.codigo)) out.push({ codigo: s.codigo, nombre: s.nombre })
+    }
+    return out
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cumpl, slas, codigosKey])
+
+  // Acciones de la sección: las propias sin SLA y las atadas a un SLA visible
+  // (vengan de esta reunión o de otra que revise el mismo SLA).
+  const actividadesVisibles = useMemo(() => {
+    const visibles = new Set(slasParaObservar.map((s) => slaIndicadorId(s.codigo)))
+    return actividades.filter(
+      (a) => !esIndicadorSla(a.indicador_id) || visibles.has(a.indicador_id!),
+    )
+  }, [actividades, slasParaObservar])
+
+  function abrirHistorialSla(indicadorId: string) {
+    const codigo = codigoSlaDe(indicadorId)
+    const fila = filasVisibles.find((f) => f.codigo === codigo)
+    const sla = slas.find((s) => s.codigo === codigo)
+    const obs = observaciones.find((o) => o.indicador_id === indicadorId)
+    setSlaHistorial({
+      id: indicadorId,
+      nombre: fila?.nombre ?? sla?.nombre ?? obs?.indicador_nombre ?? "SLA",
+      unidad: fila ? "%" : null,
+      meta: fila?.target ?? null,
+    })
+  }
 
   // Fechas que encabezan las columnas. Todas las filas comparten el mismo rango;
   // tomamos la fila con más días por robustez.
@@ -308,13 +417,43 @@ export function SeccionSla({
                     {filasVisibles.map((f) => {
                       const cumple =
                         f.porcentaje != null && f.porcentaje >= f.target
+                      const h = resumenSla[slaIndicadorId(f.codigo)]
+                      const totalHist = h ? h.observaciones + h.acciones : 0
                       return (
                         <tr key={f.codigo}>
                           <td className="sticky left-0 z-10 min-w-[12rem] border-t border-r border-slate-200 bg-white px-3 py-1.5 align-middle">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-sm font-semibold text-slate-800">
-                                {f.nombre}
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  abrirHistorialSla(slaIndicadorId(f.codigo))
+                                }
+                                className="flex min-w-0 items-center gap-1 text-left text-sm font-semibold text-slate-800 hover:text-violet-700 hover:underline"
+                                title={
+                                  totalHist > 0
+                                    ? `Ver historial: ${h!.observaciones} observaciones, ${h!.acciones} acciones${
+                                        h!.acciones_abiertas > 0
+                                          ? ` (${h!.acciones_abiertas} abiertas)`
+                                          : ""
+                                      }`
+                                    : "Ver historial de observaciones y acciones"
+                                }
+                              >
+                                <span className="min-w-0 truncate">{f.nombre}</span>
+                                {totalHist > 0 && (
+                                  <span
+                                    className={cn(
+                                      "inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 text-[10px] font-semibold leading-4",
+                                      h!.acciones_abiertas > 0
+                                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                                        : "border-violet-200 bg-violet-50 text-violet-800",
+                                    )}
+                                  >
+                                    <History className="size-3" />
+                                    {totalHist}
+                                  </span>
+                                )}
+                              </button>
                               <Badge
                                 className={cn(
                                   "shrink-0 tabular-nums",
@@ -422,20 +561,54 @@ export function SeccionSla({
               </div>
             </div>
 
-            {/* Action Log de la sección */}
+            {/* Observaciones por SLA (compartidas entre las reuniones que
+                revisan el mismo SLA). Desde acá también nace una acción. */}
+            <SlaObservaciones
+              reunionId={reunionId}
+              reunionTipo={reunionTipo}
+              slas={slasParaObservar}
+              observaciones={observaciones}
+              responsables={responsables}
+              sectoresAlmacen={sectoresAlmacen}
+              vehiculos={vehiculos}
+              rubrosMantenimiento={rubrosMantenimiento}
+              puedeEditar={puedeEditar}
+              seccion={SECCION_SLA}
+              onChanged={onObservacionesChanged}
+              onVerHistorial={abrirHistorialSla}
+            />
+
+            {/* Action Log de la sección: las acciones se crean eligiendo el
+                SLA arriba («Crear acción»), así quedan atadas y se comparten. */}
             <ActionLogSeccion
               reunionId={reunionId}
               reunionTipo={reunionTipo}
               seccion={SECCION_SLA}
               titulo="SLA"
-              actividades={actividades}
+              actividades={actividadesVisibles}
               responsables={responsables}
               puedeEditar={puedeEditar}
-              onChanged={onActividadesChanged}
+              onChanged={onObservacionesChanged}
+              ocultarNuevo
+              onVerIndicador={abrirHistorialSla}
+              vacioTexto="Sin acciones de SLA. Elegí un SLA arriba y tocá «Crear acción»."
             />
           </>
         )}
       </CardContent>
+
+      {/* Historial de un SLA: observaciones y acciones de TODAS las reuniones
+          que lo revisan (Logística, Ventas-Logística, Warehouse). */}
+      <IndicadorHistorialDialog
+        open={slaHistorial !== null}
+        onOpenChange={(o) => {
+          if (!o) setSlaHistorial(null)
+        }}
+        reunionTipo={reunionTipo}
+        reunionId={reunionId}
+        indicador={slaHistorial}
+        todasLasReuniones
+      />
 
       {/* Modal de detalle del día (qué pasó: horarios, motivo, desglose) */}
       <Dialog open={detalleOpen} onOpenChange={setDetalleOpen}>

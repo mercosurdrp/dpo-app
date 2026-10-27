@@ -1646,6 +1646,9 @@ export function ReunionDetallePageClient({
           codigos={SLA_CODIGOS_REUNION_VENTAS_LOGISTICA}
           actividades={actividadesSla}
           responsables={responsables}
+          sectoresAlmacen={sectoresAlmacen}
+          vehiculos={vehiculos}
+          rubrosMantenimiento={rubrosMantenimiento}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
         />
@@ -2574,6 +2577,9 @@ export function ReunionDetallePageClient({
           codigos={SLA_CODIGOS_REUNION_OPERATIVA}
           actividades={actividadesSla}
           responsables={responsables}
+          sectoresAlmacen={sectoresAlmacen}
+          vehiculos={vehiculos}
+          rubrosMantenimiento={rubrosMantenimiento}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
         />
@@ -2590,6 +2596,9 @@ export function ReunionDetallePageClient({
           codigos={SLA_CODIGOS_REUNION_WAREHOUSE}
           actividades={actividadesSla}
           responsables={responsables}
+          sectoresAlmacen={sectoresAlmacen}
+          vehiculos={vehiculos}
+          rubrosMantenimiento={rubrosMantenimiento}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
         />

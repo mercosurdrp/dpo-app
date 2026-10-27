@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import {
+  SLA_INDICADOR_LIKE,
+  slaIndicadorId,
+} from "@/lib/reuniones-sla-observaciones"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -59,6 +63,7 @@ function mapObservacion(r: Record<string, any>): ReunionIndicadorObservacionConA
     updated_at: r.updated_at,
     autor_nombre: r.autor?.nombre ?? null,
     reunion_fecha: r.reunion?.fecha ?? "",
+    reunion_tipo: (r.reunion?.tipo as TipoReunion | undefined) ?? undefined,
   }
 }
 
@@ -89,6 +94,7 @@ function mapActividad(r: Record<string, any>): ReunionActividadConResponsable {
     responsable_nombre: r.responsable?.nombre ?? null,
     reunion_origen_id: r.reunion_origen?.id ?? r.reunion_id,
     reunion_origen_fecha: r.reunion_origen?.fecha ?? "",
+    reunion_origen_tipo: (r.reunion_origen?.tipo as TipoReunion | undefined) ?? undefined,
   }
 }
 
@@ -98,7 +104,10 @@ const SELECT_OBS =
 const SELECT_ACT =
   "*, responsable:profiles!reuniones_actividades_responsable_id_fkey(id, nombre), reunion_origen:reuniones!reuniones_actividades_reunion_id_fkey!inner(id, fecha, tipo)"
 
-/** Observaciones cargadas en una reunión (las que se listan debajo del tablero). */
+/**
+ * Observaciones del tablero cargadas en una reunión (las que se listan debajo
+ * del cuadro). Las de SLA (indicador sla_*) van aparte, en la sección de SLA.
+ */
 export async function listObservacionesReunion(
   reunionId: string,
 ): Promise<Result<ReunionIndicadorObservacionConAutor[]>> {
@@ -109,6 +118,7 @@ export async function listObservacionesReunion(
       .from("reuniones_indicadores_observaciones")
       .select(SELECT_OBS)
       .eq("reunion_id", reunionId)
+      .not("indicador_id", "like", SLA_INDICADOR_LIKE)
       .order("created_at", { ascending: false })
     if (error) return { error: error.message }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,27 +176,31 @@ export async function getResumenHistorialIndicadores(
 /**
  * Historial completo de un indicador: observaciones y actividades atadas a él
  * en todas las reuniones del mismo tipo, de la más nueva a la más vieja.
+ * Con `todasLasReuniones` no filtra por tipo: es el caso de los SLA, que se
+ * revisan en Logística, Ventas-Logística y Warehouse y comparten historial.
  */
 export async function getHistorialIndicador(
   tipo: TipoReunion,
   indicadorId: string,
+  opts?: { todasLasReuniones?: boolean },
 ): Promise<Result<IndicadorHistorial>> {
   try {
     await requireAuth()
     const supabase = await createClient()
+    const todas = !!opts?.todasLasReuniones
+    let qObs = supabase
+      .from("reuniones_indicadores_observaciones")
+      .select(SELECT_OBS.replace("(id, fecha, tipo)", "!inner(id, fecha, tipo)"))
+      .eq("indicador_id", indicadorId)
+    if (!todas) qObs = qObs.eq("reunion.tipo", tipo)
+    let qAct = supabase
+      .from("reuniones_actividades")
+      .select(SELECT_ACT)
+      .eq("indicador_id", indicadorId)
+    if (!todas) qAct = qAct.eq("reunion_origen.tipo", tipo)
     const [obsRes, actRes] = await Promise.all([
-      supabase
-        .from("reuniones_indicadores_observaciones")
-        .select(SELECT_OBS.replace("(id, fecha, tipo)", "!inner(id, fecha, tipo)"))
-        .eq("indicador_id", indicadorId)
-        .eq("reunion.tipo", tipo)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("reuniones_actividades")
-        .select(SELECT_ACT)
-        .eq("indicador_id", indicadorId)
-        .eq("reunion_origen.tipo", tipo)
-        .order("created_at", { ascending: false }),
+      qObs.order("created_at", { ascending: false }),
+      qAct.order("created_at", { ascending: false }),
     ])
     if (obsRes.error) return { error: obsRes.error.message }
     if (actRes.error) return { error: actRes.error.message }
@@ -210,6 +224,88 @@ export async function getHistorialIndicador(
     return { data: { observaciones, actividades } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error cargando historial" }
+  }
+}
+
+/** Lo que muestra la sección "Cumplimiento de SLA" de una reunión. */
+export interface ObservacionesSlaSeccion {
+  /** Observaciones de esta reunión + las de otras reuniones (de cualquier
+   *  tipo) cuya fecha cae en el rango de la sección, sólo de los SLA pedidos. */
+  observaciones: ReunionIndicadorObservacionConAutor[]
+  /** Conteo por id de indicador (sla_<codigo>) en TODAS las reuniones. */
+  resumen: Record<string, IndicadorHistorialResumen>
+}
+
+/**
+ * Observaciones de SLA para la sección de una reunión. Se comparten entre las
+ * reuniones que revisan SLA: las de esta reunión siempre, más las de cualquier
+ * otra reunión con fecha entre `desde` y `hasta` (el rango de la matriz).
+ */
+export async function getObservacionesSlaSeccion(input: {
+  reunionId: string
+  codigos: string[]
+  desde: string
+  hasta: string
+}): Promise<Result<ObservacionesSlaSeccion>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const ids = input.codigos.map(slaIndicadorId)
+    if (ids.length === 0) return { data: { observaciones: [], resumen: {} } }
+
+    const [propiasRes, rangoRes, resumenObsRes, resumenActRes] = await Promise.all([
+      supabase
+        .from("reuniones_indicadores_observaciones")
+        .select(SELECT_OBS)
+        .eq("reunion_id", input.reunionId)
+        .in("indicador_id", ids),
+      supabase
+        .from("reuniones_indicadores_observaciones")
+        .select(SELECT_OBS.replace("(id, fecha, tipo)", "!inner(id, fecha, tipo)"))
+        .in("indicador_id", ids)
+        .neq("reunion_id", input.reunionId)
+        .gte("reunion.fecha", input.desde)
+        .lte("reunion.fecha", input.hasta),
+      supabase
+        .from("reuniones_indicadores_observaciones")
+        .select("indicador_id")
+        .like("indicador_id", SLA_INDICADOR_LIKE),
+      supabase
+        .from("reuniones_actividades")
+        .select("indicador_id, estado")
+        .like("indicador_id", SLA_INDICADOR_LIKE),
+    ])
+    if (propiasRes.error) return { error: propiasRes.error.message }
+    if (rangoRes.error) return { error: rangoRes.error.message }
+    if (resumenObsRes.error) return { error: resumenObsRes.error.message }
+    if (resumenActRes.error) return { error: resumenActRes.error.message }
+
+    const observaciones = [...(propiasRes.data ?? []), ...(rangoRes.data ?? [])]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((r) => mapObservacion(r as any))
+      .sort((a, b) =>
+        a.reunion_fecha === b.reunion_fecha
+          ? b.created_at.localeCompare(a.created_at)
+          : b.reunion_fecha.localeCompare(a.reunion_fecha),
+      )
+
+    const resumen: Record<string, IndicadorHistorialResumen> = {}
+    const get = (id: string) =>
+      (resumen[id] ??= { observaciones: 0, acciones_abiertas: 0, acciones: 0 })
+    for (const r of (resumenObsRes.data ?? []) as Array<{ indicador_id: string }>) {
+      get(r.indicador_id).observaciones += 1
+    }
+    for (const r of (resumenActRes.data ?? []) as Array<{
+      indicador_id: string
+      estado: EstadoReunionActividad
+    }>) {
+      const c = get(r.indicador_id)
+      c.acciones += 1
+      if (r.estado !== "cerrada") c.acciones_abiertas += 1
+    }
+    return { data: { observaciones, resumen } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando observaciones de SLA" }
   }
 }
 

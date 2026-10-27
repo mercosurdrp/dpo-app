@@ -54,7 +54,7 @@ interface ResponsableOpt {
 }
 
 /** Fecha y hora de carga de la observación (dd/mm/aa hh:mm, hora Argentina). */
-function formatFechaHora(iso: string): string {
+export function formatFechaHora(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   const fecha = d.toLocaleDateString("es-AR", {

@@ -3857,12 +3857,16 @@ export interface ReunionIndicadorObservacionConAutor
   extends ReunionIndicadorObservacion {
   autor_nombre: string | null
   reunion_fecha: string
+  /** Tipo de la reunión donde se cargó (viene cuando el historial cruza tipos, ej. SLA). */
+  reunion_tipo?: TipoReunion
 }
 
 export interface ReunionActividadConResponsable extends ReunionActividad {
   responsable_nombre: string | null
   reunion_origen_fecha: string
   reunion_origen_id: string
+  /** Tipo de la reunión donde nació (sirve cuando se muestra en otra, ej. SLA). */
+  reunion_origen_tipo?: TipoReunion
 }
 
 // Entrada del historial de avances de una actividad del Action Log.

@@ -21,6 +21,7 @@ import {
   getHistorialIndicador,
   type IndicadorHistorial,
 } from "@/actions/reuniones-indicadores-observaciones";
+import { TIPO_REUNION_LABEL } from "@/lib/reuniones-sla-observaciones";
 import type { EstadoReunionActividad, TipoReunion } from "@/types/database";
 
 export interface IndicadorHistorialRef {
@@ -67,6 +68,7 @@ export function IndicadorHistorialDialog({
   reunionTipo,
   reunionId,
   indicador,
+  todasLasReuniones,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -74,6 +76,11 @@ export function IndicadorHistorialDialog({
   /** Reunión desde la que se abre (sus filas no llevan link). */
   reunionId: string;
   indicador: IndicadorHistorialRef | null;
+  /**
+   * Junta lo cargado en reuniones de CUALQUIER tipo (los SLA se revisan en
+   * Logística, Ventas-Logística y Warehouse). Por defecto, sólo el tipo actual.
+   */
+  todasLasReuniones?: boolean;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -105,7 +112,8 @@ export function IndicadorHistorialDialog({
               </>
             ) : null}
             Observaciones y acciones registradas para este indicador en todas
-            las reuniones.
+            las reuniones
+            {todasLasReuniones ? " que lo revisan" : ""}.
           </DialogDescription>
         </DialogHeader>
 
@@ -115,6 +123,7 @@ export function IndicadorHistorialDialog({
             reunionTipo={reunionTipo}
             reunionId={reunionId}
             indicadorId={indicador.id}
+            todasLasReuniones={!!todasLasReuniones}
           />
         )}
       </DialogContent>
@@ -131,25 +140,33 @@ function HistorialContenido({
   reunionTipo,
   reunionId,
   indicadorId,
+  todasLasReuniones,
 }: {
   reunionTipo: TipoReunion;
   reunionId: string;
   indicadorId: string;
+  todasLasReuniones: boolean;
 }) {
   const [data, setData] = useState<IndicadorHistorial | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
-    getHistorialIndicador(reunionTipo, indicadorId).then((res) => {
-      if (!vivo) return;
-      if ("error" in res) setError(res.error);
-      else setData(res.data);
-    });
+    getHistorialIndicador(reunionTipo, indicadorId, { todasLasReuniones }).then(
+      (res) => {
+        if (!vivo) return;
+        if ("error" in res) setError(res.error);
+        else setData(res.data);
+      },
+    );
     return () => {
       vivo = false;
     };
-  }, [reunionTipo, indicadorId]);
+  }, [reunionTipo, indicadorId, todasLasReuniones]);
+
+  // Con varios tipos de reunión mezclados, cada fila dice de cuál viene.
+  const etiquetaTipo = (tipo: TipoReunion | undefined) =>
+    todasLasReuniones && tipo ? TIPO_REUNION_LABEL[tipo] : null;
 
   const cargando = data === null && error === null;
   const obs = data?.observaciones ?? [];
@@ -187,6 +204,9 @@ function HistorialContenido({
                   <li key={o.id} className="px-3 py-2">
                     <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                       <span className="font-semibold text-slate-700">
+                        {etiquetaTipo(o.reunion_tipo)
+                          ? `${etiquetaTipo(o.reunion_tipo)} `
+                          : ""}
                         {formatFecha(o.reunion_fecha)}
                       </span>
                       <span>· {o.autor_nombre ?? "—"}</span>
@@ -222,7 +242,7 @@ function HistorialContenido({
             {acts.length === 0 ? (
               <p className="mt-1 text-sm text-muted-foreground">
                 Sin acciones del Action Log atadas a este indicador. Se crean
-                desde «Crear acción» debajo del tablero.
+                desde «Crear acción» debajo del {todasLasReuniones ? "cuadro de SLA" : "tablero"}.
               </p>
             ) : (
               <ul className="mt-2 divide-y rounded-md border">
@@ -242,7 +262,11 @@ function HistorialContenido({
                         </p>
                         <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                           <span>
-                            Reunión {formatFecha(a.reunion_origen_fecha)}
+                            Reunión{" "}
+                            {etiquetaTipo(a.reunion_origen_tipo)
+                              ? `${etiquetaTipo(a.reunion_origen_tipo)} `
+                              : ""}
+                            {formatFecha(a.reunion_origen_fecha)}
                           </span>
                           <span>
                             {a.responsable_nombre

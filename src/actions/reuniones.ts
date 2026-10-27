@@ -41,6 +41,7 @@ import { buildPampeanaFoxtrotSerie } from "@/lib/foxtrot/auto-indicadores-pampea
 import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
 import { OBJETIVO_PCT, obPct } from "@/lib/ocupacion-bodega"
+import { esIndicadorSla, reunionVeSla } from "@/lib/reuniones-sla-observaciones"
 import { getMetaSueno } from "@/lib/sueno/meta"
 import { getDqiDiarioMes, getDqiPpmMes } from "@/actions/dqi"
 import { getAusentismoSerieEventos } from "@/actions/ausentismo"
@@ -588,7 +589,15 @@ export async function getReunionDetalle(
     >).filter((a) => {
       const origen = a.reunion_origen
       if (!origen) return false
-      if (origen.tipo !== reunionTipo) return false
+      // Las acciones atadas a un SLA (seccion 'sla' + indicador sla_*) se
+      // comparten entre todas las reuniones que revisan SLA: lo que se crea en
+      // Logística se ve también en Ventas-Logística y Warehouse (y viceversa).
+      const compartidaSla =
+        a.seccion === "sla" &&
+        esIndicadorSla(a.indicador_id) &&
+        reunionVeSla(reunionTipo) &&
+        reunionVeSla(origen.tipo)
+      if (origen.tipo !== reunionTipo && !compartidaSla) return false
       // No creadas en el futuro respecto a la reunión actual
       if (origen.fecha > reunionFecha) return false
       // Vivas: siempre visibles (mientras origen.fecha <= reunionFecha)
@@ -636,6 +645,7 @@ export async function getReunionDetalle(
           responsable_nombre: r.responsable?.nombre ?? null,
           reunion_origen_id: r.reunion_origen?.id ?? r.reunion_id,
           reunion_origen_fecha: r.reunion_origen?.fecha ?? "",
+          reunion_origen_tipo: (r.reunion_origen?.tipo as TipoReunion) ?? reunionTipo,
         }
       },
     )
