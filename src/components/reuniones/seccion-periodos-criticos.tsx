@@ -5,26 +5,37 @@
  *
  * El manual DPO 2026 (3.4) pide que el plan de períodos críticos se revise
  * MENSUALMENTE en la reunión de ventas y logística. Esta sección aparece sólo
- * en la reunión del último martes del mes y deja cuatro cosas registradas:
+ * en la reunión del último martes del mes y deja cuatro cosas registradas,
+ * todas en una sola caja:
  *
  *   1. El calendario del MES SIGUIENTE, día por día, con lo observado en la
  *      misma fecha del año anterior (las P de volumen, rechazo y ausentismo)
  *      y los feriados: cómo afrontamos el mes que viene.
  *   2. Los períodos de foco definidos por el equipo (el largo plazo).
- *   3. Una foto como evidencia de que se revisaron.
+ *   3. Las conclusiones de la revisión del mes (pc_revisiones_mensuales, con
+ *      la reunión y quién la registró): ésa es la evidencia que se audita.
  *   4. Un action log con los compromisos que surgieron.
  *
- * La foto y el action log reusan `SeccionGaleriaFotos`, el mismo componente que
- * ya usan RMD y NPS en esta reunión: para el equipo es un bloque más de los que
- * ya conoce, y no hay tablas nuevas.
+ * Hasta el 27/10/2026 había una segunda caja «evidencia y compromisos» con
+ * galería de fotos + action log (SeccionGaleriaFotos). Sebastián la sacó: la
+ * revisión registrada ya es la evidencia y el action log va en la misma caja.
  */
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { toast } from "sonner"
-import { CalendarRange, Check, ClipboardList, Copy, Save, Star } from "lucide-react"
+import {
+  CalendarRange,
+  Check,
+  ClipboardList,
+  Copy,
+  ExternalLink,
+  Save,
+  Star,
+} from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Tooltip,
@@ -32,8 +43,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { SeccionGaleriaFotos } from "./seccion-galeria-fotos"
-import type { ReunionActividadConResponsable } from "@/types/database"
+import { ActionLogSeccion } from "./action-log-seccion"
+import type {
+  ReunionActividadConResponsable,
+  TipoReunion,
+} from "@/types/database"
 import type {
   DiaMesSiguiente,
   DiaObservado,
@@ -45,7 +59,7 @@ import {
   type Intensidad,
 } from "@/app/(dashboard)/planeamiento/periodos-criticos/_lib/intensidad"
 
-/** Mismo shape que espera SeccionGaleriaFotos para el selector de responsable. */
+/** Mismo shape que espera ActionLogSeccion para el selector de responsable. */
 interface ResponsableOpt {
   id: string
   nombre: string
@@ -377,6 +391,7 @@ function CeldaDia({ d }: { d: DiaMesSiguiente | null }) {
 
 export function SeccionPeriodosCriticos({
   reunionId,
+  reunionTipo,
   fecha,
   actividades,
   responsables,
@@ -384,6 +399,7 @@ export function SeccionPeriodosCriticos({
   onActividadesChanged,
 }: {
   reunionId: string
+  reunionTipo: TipoReunion
   /** Fecha de la reunión (ISO). De acá salen el año y el mes de la revisión. */
   fecha: string
   actividades: ReunionActividadConResponsable[]
@@ -477,22 +493,30 @@ export function SeccionPeriodosCriticos({
   }
 
   return (
-    <div className="space-y-3">
-      <Card className="border-amber-200 bg-amber-50/30">
+    <Card className="border-amber-200 bg-amber-50/30">
         <CardHeader className="pb-2">
-          <CardTitle className="flex flex-wrap items-center gap-2 text-lg font-bold text-amber-900">
-            <CalendarRange className="size-5" />
-            Períodos críticos — revisión mensual
-            {registrada && (
-              <Badge className="gap-1 bg-emerald-600 text-[10px]">
-                <Check className="size-3" /> Registrada
-              </Badge>
-            )}
-          </CardTitle>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-lg font-bold text-amber-900">
+              <CalendarRange className="size-5" />
+              Períodos críticos — revisión mensual
+              {registrada && (
+                <Badge className="gap-1 bg-emerald-600 text-[10px]">
+                  <Check className="size-3" /> Registrada
+                </Badge>
+              )}
+            </CardTitle>
+            <Link
+              href="/planeamiento/periodos-criticos"
+              className={buttonVariants({ size: "sm", variant: "outline" }) + " h-8 text-xs"}
+            >
+              <ExternalLink className="mr-1 size-3.5" />
+              Ver calendario completo
+            </Link>
+          </div>
           <p className="text-xs text-amber-800">
             Revisión mensual del plan de períodos críticos (DPO 3.4). Repasar cómo
-            viene el mes siguiente y el estado de cada período de foco, dejar la
-            foto como registro y cargar los compromisos en el action log.
+            viene el mes siguiente y el estado de cada período de foco, registrar
+            las conclusiones y cargar los compromisos en el action log de abajo.
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -595,24 +619,21 @@ export function SeccionPeriodosCriticos({
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
 
-      <SeccionGaleriaFotos
-        reunionId={reunionId}
-        seccion={SECCION_PERIODOS_CRITICOS}
-        titulo="Períodos críticos — evidencia y compromisos"
-        icono={CalendarRange}
-        tema="rose"
-        emptyHint="Sin fotos cargadas. Subí la captura del calendario de períodos críticos para dejar registro de la revisión del mes."
-        actividades={actividades}
-        responsables={responsables}
-        puedeEditar={puedeEditar}
-        onActividadesChanged={onActividadesChanged}
-        verMasHref="/planeamiento/periodos-criticos"
-        verMasLabel="Ver calendario completo"
-      />
-    </div>
+          {/* 4. Compromisos que surgieron de la revisión (misma caja). */}
+          <ActionLogSeccion
+            reunionId={reunionId}
+            reunionTipo={reunionTipo}
+            seccion={SECCION_PERIODOS_CRITICOS}
+            titulo="Períodos críticos"
+            actividades={actividades}
+            responsables={responsables}
+            puedeEditar={puedeEditar}
+            onChanged={onActividadesChanged}
+            vacioTexto="Sin compromisos de períodos críticos. Si de la revisión sale una acción, cargala con «Compromiso»."
+          />
+        </CardContent>
+    </Card>
   )
 }
 
