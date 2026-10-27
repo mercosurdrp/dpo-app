@@ -3,14 +3,17 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, getProfile } from "@/lib/session"
+import { cleanFileName } from "@/lib/adjuntos-avance"
 import type {
   Profile,
   DireccionKpiIniciativa,
   EstadoIniciativaAhorro,
   IniciativaAhorroConDetalle,
+  IniciativaEvidencia,
   TipoIniciativaAhorro,
 } from "@/types/database"
 
+const BUCKET = "presupuestos"
 const REVALIDATE_PATH = "/presupuesto"
 
 type Result<T> = { data: T } | { error: string }
@@ -85,6 +88,24 @@ export async function listIniciativas(
 
     if (error) return { error: error.message }
 
+    // Evidencias de cada iniciativa (archivos que respaldan la iniciativa
+    // entera), en una sola consulta para todas.
+    const ids = (data ?? []).map((r) => (r as { id: string }).id)
+    const evidPorIni = new Map<string, IniciativaEvidencia[]>()
+    if (ids.length > 0) {
+      const { data: evid, error: errEvid } = await supabase
+        .from("presupuestos_iniciativas_evidencias")
+        .select("*")
+        .in("iniciativa_id", ids)
+        .order("created_at", { ascending: true })
+      if (errEvid) return { error: errEvid.message }
+      for (const e of (evid ?? []) as IniciativaEvidencia[]) {
+        const lista = evidPorIni.get(e.iniciativa_id) ?? []
+        lista.push(e)
+        evidPorIni.set(e.iniciativa_id, lista)
+      }
+    }
+
     const enriched: IniciativaAhorroConDetalle[] = (data ?? []).map((row) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const r = row as any
@@ -122,6 +143,7 @@ export async function listIniciativas(
         updated_at: r.updated_at,
         responsable_nombre: r.responsable?.nombre ?? null,
         responsable_email: r.responsable?.email ?? null,
+        evidencias: evidPorIni.get(r.id) ?? [],
       }
     })
 
@@ -251,18 +273,115 @@ export async function eliminarIniciativa(
     await requireEditor()
     const supabase = await createClient()
 
+    // Las filas de evidencias caen por CASCADE; los archivos del storage no.
+    const { data: evid } = await supabase
+      .from("presupuestos_iniciativas_evidencias")
+      .select("archivo_url")
+      .eq("iniciativa_id", id)
+    const paths = ((evid ?? []) as { archivo_url: string }[]).map(
+      (e) => e.archivo_url,
+    )
+
     const { error } = await supabase
       .from("presupuestos_iniciativas")
       .delete()
       .eq("id", id)
 
     if (error) return { error: error.message }
+    if (paths.length > 0) {
+      await supabase.storage.from(BUCKET).remove(paths)
+    }
 
     revalidatePath(REVALIDATE_PATH)
     return { data: { ok: true } }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error eliminando iniciativa",
+    }
+  }
+}
+
+// =============================================
+// Evidencias de la iniciativa
+// =============================================
+//
+// Respaldan la iniciativa ENTERA (el resumen de Axion con el precio del
+// gasoil, la cotización, el acta con Ventas), no un mes ni un trimestre: las
+// iniciativas se miran por mes y el mes se calcula solo, así que no hay
+// "avance" al que colgarle un archivo.
+
+export async function subirEvidenciaIniciativa(
+  iniciativaId: string,
+  formData: FormData,
+): Promise<Result<{ id: string }>> {
+  try {
+    const profile = await requireEditor()
+    const supabase = await createClient()
+
+    const file = formData.get("evidencia") as File | null
+    if (!file || !(file instanceof File) || file.size === 0) {
+      return { error: "Elegí un archivo" }
+    }
+    const path = `iniciativas/${iniciativaId}/${Date.now()}-${cleanFileName(file.name)}`
+    const { error: upErr } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, await file.arrayBuffer(), {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      })
+    if (upErr) return { error: `Subiendo evidencia: ${upErr.message}` }
+
+    const { data, error } = await supabase
+      .from("presupuestos_iniciativas_evidencias")
+      .insert({
+        iniciativa_id: iniciativaId,
+        archivo_url: path,
+        nombre: file.name,
+        created_by: profile.id,
+      })
+      .select("id")
+      .single()
+    if (error || !data) {
+      await supabase.storage.from(BUCKET).remove([path])
+      return { error: error?.message ?? "No se pudo guardar la evidencia" }
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: { id: (data as { id: string }).id } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error subiendo evidencia",
+    }
+  }
+}
+
+export async function eliminarEvidenciaIniciativa(
+  id: string,
+): Promise<Result<{ ok: true }>> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+
+    const { data: actual } = await supabase
+      .from("presupuestos_iniciativas_evidencias")
+      .select("archivo_url")
+      .eq("id", id)
+      .maybeSingle()
+
+    const { error } = await supabase
+      .from("presupuestos_iniciativas_evidencias")
+      .delete()
+      .eq("id", id)
+    if (error) return { error: error.message }
+
+    const path = (actual as { archivo_url: string } | null)?.archivo_url
+    if (path) await supabase.storage.from(BUCKET).remove([path])
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: { ok: true } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error eliminando evidencia",
     }
   }
 }

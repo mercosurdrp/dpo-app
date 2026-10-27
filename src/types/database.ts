@@ -3443,9 +3443,21 @@ export interface IniciativaAhorro {
   updated_at: string
 }
 
+/** Archivo que respalda la iniciativa entera (no un mes ni un trimestre). */
+export interface IniciativaEvidencia {
+  id: string
+  iniciativa_id: string
+  /** Path dentro del bucket 'presupuestos'. */
+  archivo_url: string
+  nombre: string
+  created_by: string | null
+  created_at: string
+}
+
 export interface IniciativaAhorroConDetalle extends IniciativaAhorro {
   responsable_nombre: string | null
   responsable_email: string | null
+  evidencias: IniciativaEvidencia[]
 }
 
 // =============================================

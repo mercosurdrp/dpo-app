@@ -1,11 +1,21 @@
 "use client"
 
-import { type ReactNode, useMemo, useState, useTransition } from "react"
+import {
+  type ChangeEvent,
+  type ReactNode,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react"
 import { useRouter } from "next/navigation"
 import {
   Plus,
   Pencil,
   Trash2,
+  Paperclip,
+  Upload,
+  X,
   Target,
   Wallet,
   CheckCircle2,
@@ -31,7 +41,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { eliminarIniciativa } from "@/actions/presupuesto-iniciativas"
+import {
+  eliminarEvidenciaIniciativa,
+  eliminarIniciativa,
+  subirEvidenciaIniciativa,
+} from "@/actions/presupuesto-iniciativas"
+import { getSignedUrl } from "@/actions/presupuesto"
+import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import type { EjecucionRubro } from "@/actions/presupuesto-generador"
 import type { KpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
 import type {
@@ -39,7 +55,10 @@ import type {
   KpiCombustible,
 } from "@/actions/presupuesto-combustible-kpi"
 import type { CostoHlMes } from "@/actions/presupuesto-costo-hl"
-import type { IniciativaAhorroConDetalle } from "@/types/database"
+import type {
+  IniciativaAhorroConDetalle,
+  IniciativaEvidencia,
+} from "@/types/database"
 import {
   ESTADO_BADGE_CLASS,
   ESTADO_LABEL,
@@ -1277,9 +1296,58 @@ export function IniciativasAhorroSection({
   const [openForm, setOpenForm] = useState(false)
   const [editando, setEditando] =
     useState<IniciativaAhorroConDetalle | null>(null)
+  // Evidencias: un solo <input type=file> oculto para todas las tarjetas; acá
+  // queda a qué iniciativa va el archivo que se elija.
+  const inputEvidencia = useRef<HTMLInputElement | null>(null)
+  const [subiendoPara, setSubiendoPara] = useState<string | null>(null)
 
   function refrescar() {
     router.refresh()
+  }
+
+  async function abrirArchivo(url: string) {
+    const result = await getSignedUrl(url)
+    if ("error" in result) {
+      alert(`Error abriendo archivo: ${result.error}`)
+      return
+    }
+    abrirArchivoEnVisor(result.data.url)
+  }
+
+  function pedirEvidencia(ini: IniciativaAhorroConDetalle) {
+    setSubiendoPara(ini.id)
+    inputEvidencia.current?.click()
+  }
+
+  function handleArchivoEvidencia(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    const iniciativaId = subiendoPara
+    e.target.value = ""
+    if (!file || !iniciativaId) return
+    const fd = new FormData()
+    fd.set("evidencia", file)
+    startTransition(async () => {
+      const result = await subirEvidenciaIniciativa(iniciativaId, fd)
+      if ("error" in result) {
+        alert(`Error: ${result.error}`)
+        return
+      }
+      refrescar()
+    })
+  }
+
+  function handleEliminarEvidencia(ev: IniciativaEvidencia) {
+    if (!confirm(`¿Quitar la evidencia "${ev.nombre}"? No se puede deshacer.`)) {
+      return
+    }
+    startTransition(async () => {
+      const result = await eliminarEvidenciaIniciativa(ev.id)
+      if ("error" in result) {
+        alert(`Error: ${result.error}`)
+        return
+      }
+      refrescar()
+    })
   }
 
   function handleEliminar(ini: IniciativaAhorroConDetalle) {
@@ -1880,6 +1948,71 @@ export function IniciativasAhorroSection({
                       {ini.observaciones}
                     </p>
                   )}
+
+                  {/* Evidencias de la iniciativa ENTERA (el resumen de Axion,
+                      la cotización, el acta con Ventas). Antes se colgaban de
+                      un trimestre; el mes se calcula solo y no tiene avance. */}
+                  {(ini.evidencias.length > 0 || puedeEditar) && (
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1 text-muted-foreground">
+                          <Paperclip className="size-3.5" />
+                          Evidencias
+                        </span>
+                        {puedeEditar && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => pedirEvidencia(ini)}
+                            title="Subir un archivo que respalde la iniciativa"
+                          >
+                            <Upload className="mr-1 size-3.5" />
+                            Subir
+                          </Button>
+                        )}
+                      </div>
+                      {ini.evidencias.length === 0 ? (
+                        <p className="text-muted-foreground">
+                          Sin evidencias todavía.
+                        </p>
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {ini.evidencias.map((ev) => (
+                            <li
+                              key={ev.id}
+                              className="flex items-center justify-between gap-2"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => abrirArchivo(ev.archivo_url)}
+                                className="truncate text-left text-blue-700 hover:underline"
+                                title={ev.nombre}
+                              >
+                                {ev.nombre}
+                              </button>
+                              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
+                                {new Date(ev.created_at).toLocaleDateString(
+                                  "es-AR",
+                                )}
+                                {puedeEditar && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEliminarEvidencia(ev)}
+                                    title="Quitar evidencia"
+                                    className="text-red-600 hover:text-red-700"
+                                  >
+                                    <X className="size-3.5" />
+                                  </button>
+                                )}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )
@@ -1888,6 +2021,15 @@ export function IniciativasAhorroSection({
       )}
 
       {/* Diálogos */}
+      {puedeEditar && (
+        <input
+          ref={inputEvidencia}
+          type="file"
+          className="hidden"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.docx,.doc,.pptx,.csv"
+          onChange={handleArchivoEvidencia}
+        />
+      )}
       {puedeEditar && (
         <IniciativaFormDialog
           open={openForm}
