@@ -7,7 +7,7 @@
  *   - /api/indicadores/serie-diaria        → WQI (PPM), FGLI (HL), SCL ($)
  *   - /api/shared/load?module=ocupacion    → Capacidad utilizada por día
  *   - /api/shared/load?module=productividad-picking → bul/HH por operario
- *   - Google Sheet "Errores picking"        → errores por operario
+ *   - «Errores picking» de control-stay (/api/errores: histórico de la hoja + controles del stay) → errores por operario
  * y computa por día apertura por operador (Troli/Galvez/Ovejero/Selenzo).
  *
  * Esto reemplaza al esquema anterior que hacía 4 fetches en cada apertura
@@ -29,7 +29,7 @@ const DEPOSITO_API_BASE = "https://deposito-regionpampeana.vercel.app"
 // Alias estable del team (mismo que consume Acarreo-RDF para planificador).
 const CHESS_DASHBOARD_BASE = "https://chess-dashboard-mercosurdrps-projects.vercel.app"
 export const SHEET_URL =
-  "https://docs.google.com/spreadsheets/d/1K7zWrhFFx7SBoTxZ6Dk93ZrgO05kULlGvxL6ahmUYTA/gviz/tq?tqx=out:csv&sheet=Errores%20picking"
+  "https://control-stay.vercel.app/api/errores"
 /**
  * Bultos despachados por día — el DENOMINADOR de la precisión de picking.
  *

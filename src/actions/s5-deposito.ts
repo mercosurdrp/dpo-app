@@ -21,7 +21,7 @@ const PAGE_PATH = "/5s/ayudantes"
 // la planilla dice PROPIO (nunca dijo HUMANO; hasta el 7/9/26 este filtro
 // buscaba HUMANO y el ranking veía 0 errores para todos).
 const ERRORES_SHEET_URL =
-  "https://docs.google.com/spreadsheets/d/1K7zWrhFFx7SBoTxZ6Dk93ZrgO05kULlGvxL6ahmUYTA/gviz/tq?tqx=out:csv&sheet=Errores%20picking"
+  "https://control-stay.vercel.app/api/errores"
 
 // Productividad por operario (bul/HH) — deposito-esteban. Solo tasas.
 const PRODUCTIVIDAD_URL =
