@@ -496,8 +496,8 @@ export function NeumaticosModule({
         {/* El diagrama va primero: es la pantalla desde la que se trabaja a
             diario (ver posiciones, montar, desmontar, abrir la OT). El click
             en la ronda de medicion -mas abajo- tambien trae hasta aca, pero esa
-            ronda lista solo camiones: el selector queda para llegar a cualquier
-            otra unidad de la flota. */}
+            ronda lista solo camiones y autoelevadores: el selector queda para
+            llegar a cualquier otra unidad de la flota. */}
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-3">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">

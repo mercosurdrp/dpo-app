@@ -850,10 +850,11 @@ export async function getFlotaKpiSeriesExtra(): Promise<
      *    estándar (¿cómo está la flota?) — le corresponde a mantenimiento.
      *
      * 🚨 El universo es el del control mensual (`TIPOS_NEUMATICOS_OBLIGATORIOS`:
-     * camiones activos), no todas las cubiertas cargadas: el
+     * camiones y autoelevadores activos), no todas las cubiertas cargadas: el
      * acoplado y las camionetas se ven en el módulo de Neumáticos pero la
      * rutina mensual no las exige, y meterlas en el denominador es el mismo
-     * error que se está corrigiendo. Son 85 cubiertas, no 108.
+     * error que se está corrigiendo. Son 93 cubiertas (85 de camiones + 8 de
+     * los dos autoelevadores, que volvieron al alcance el 28/10/2026), no 108.
      */
     const dominiosNeumaticos = new Set(
       ((vehRes.data || []) as Array<{

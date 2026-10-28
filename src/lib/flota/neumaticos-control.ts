@@ -91,20 +91,29 @@ export const PRESION_MAX_PSI = 120
 /**
  * Alcance del control mensual, por `catalogo_vehiculos.tipo`.
  *
- * **Sólo camiones.** Las camionetas, el acoplado y los autoelevadores se ven en
- * el módulo de Neumáticos del supervisor, pero no entran en el porcentaje
- * mensual del chofer.
+ * **Camiones y autoelevadores.** Las camionetas y el acoplado se ven en el
+ * módulo de Neumáticos del supervisor, pero no entran en el porcentaje mensual
+ * del chofer.
  *
- * 🚨 Los autoelevadores salieron el 16/09/2026 por decisión de él: los dos HELI
- * son los únicos activos (las tres Toyota están de baja), andan con ruedas
- * macizas de depósito y medirles profundidad y presión todos los meses no dice
- * nada. Sumarlos al denominador sólo hacía bajar el cumplimiento de la ronda.
+ * 🚨 Los autoelevadores entraron, salieron y volvieron a entrar:
+ *  - hasta el 16/09/2026 estaban dentro (la última ronda cargada es la del
+ *    26/08/2026, 8 cubiertas con profundidad y presión);
+ *  - el 16/09/2026 salieron por decisión de él: iban a pasar a ruedas macizas
+ *    de depósito y medirles profundidad todos los meses no iba a decir nada.
+ *    Sumarlos al denominador sólo bajaba el cumplimiento de la ronda;
+ *  - el 28/10/2026 **volvieron al alcance**, también por decisión de él: las
+ *    macizas no se colocaron y la auditoría del DPO pide el registro de los
+ *    autoelevadores (R1.2.5 — telemetría de reparto, acarreo y autoelevadores).
+ *    Son los dos HELI, 8 cubiertas; las tres Toyota están de baja.
+ *
+ * Mientras estuvieron afuera quedaron **septiembre y octubre/2026 sin medición**:
+ * ese hueco es real y no se tapa desde el código.
  *
  * 🚨 Ya NO coincide con el alcance del CIL: ahí las camionetas entraron el
  * 11/08/2026 y acá quedaron afuera. Si alguna vez tienen que volver a ir
  * juntas, es una decisión explícita, no un descuido de este comentario.
  */
-export const TIPOS_NEUMATICOS_OBLIGATORIOS = ["camion"] as const
+export const TIPOS_NEUMATICOS_OBLIGATORIOS = ["camion", "autoelevador"] as const
 
 /** Una medición sirve si trae al menos uno de los dos valores. */
 export function medicionCompleta(
