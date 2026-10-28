@@ -4515,6 +4515,9 @@ async function getIndicadoresMesCore(
         agregacion: "suma" | "promedio",
         meta: number | null,
         mejorSi: "menor" | "mayor" | undefined,
+        // Nota por día (ej. la precisión de picking explica con qué bultos
+        // se calculó). Sale como tooltip de la celda.
+        porFechaObs?: Record<string, string | null>,
       ): ReunionIndicadoresMes["indicadores"][number] {
         const valoresPorFecha: Record<
           string,
@@ -4526,7 +4529,7 @@ async function getIndicadoresMesCore(
           valoresPorFecha[f] = {
             reunion_id: "auto",
             valor: v,
-            observacion: null,
+            observacion: porFechaObs?.[f] ?? null,
           }
           if (v !== null && Number.isFinite(v) && f <= fecha) {
             numericos.push(v)
@@ -4579,6 +4582,32 @@ async function getIndicadoresMesCore(
               : v
         }
         return out
+      }
+
+      // Precisión de picking: la celda explica de dónde sale el número. La
+      // precisión se calcula sobre BULTOS errados, no sobre cantidad de
+      // errores: un solo error de 10 bultos en un día de 3.770 da 99,73 y en
+      // la reunión eso se leía como "¿27 errores?". El texto sale como tooltip
+      // de la celda; el clic abre la apertura del día con el mismo total.
+      const precisionObsDia: Record<string, string | null> = {}
+      for (const f of fechas) {
+        const d = serie.precision_detalle_dia?.[f] ?? null
+        if (!d) {
+          precisionObsDia[f] = null
+          continue
+        }
+        const num = (n: number, dec = 0) =>
+          n.toLocaleString("es-AR", {
+            minimumFractionDigits: dec,
+            maximumFractionDigits: dec,
+          })
+        const erradosTxt = Number.isInteger(d.errados)
+          ? num(d.errados)
+          : num(d.errados, 2)
+        precisionObsDia[f] =
+          `${num(d.bultos)} bultos pickeados · ${erradosTxt} bultos errados en ${d.errores} ${
+            d.errores === 1 ? "error" : "errores"
+          } → (${num(d.bultos)} − ${erradosTxt}) / ${num(d.bultos)} = ${num(d.precision, 2)} %`
       }
 
       // Métricas acumuladas día por día (MTD progresivo: cada celda ya tiene
@@ -4799,6 +4828,7 @@ async function getIndicadoresMesCore(
             "promedio",
             99.8,
             "mayor",
+            precisionObsDia,
           ),
           buildSerieRow(
             "auto_errores_picking",
@@ -4937,6 +4967,7 @@ async function getIndicadoresMesCore(
             "promedio",
             99.8,
             "mayor",
+            precisionObsDia,
           ),
           buildDiarioConMtdRow(
             "auto_roturas",

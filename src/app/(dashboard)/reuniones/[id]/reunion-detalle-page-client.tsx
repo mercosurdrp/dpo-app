@@ -2355,9 +2355,12 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_checklist_ae"
                           const esKm = ind.id === "auto_km_recorridos"
                           const esHorasCalle = ind.id === "auto_horas_calle"
+                          // Precisión incluida: el drill muestra el total del
+                          // día (bultos pickeados / errados) que explica el %.
                           const esAperturaPicking =
                             ind.id === "auto_productividad_picking" ||
-                            ind.id === "auto_errores_picking"
+                            ind.id === "auto_errores_picking" ||
+                            ind.id === "auto_precision_picking"
                           const tramoMaquinistas: MaquinistasTramo | null =
                             ind.id === "auto_maquinistas_carga"
                               ? "carga"
@@ -2461,7 +2464,11 @@ export function ReunionDetallePageClient({
                           // porque el reloj no registró a alguien). El texto
                           // completo sale al pasar el mouse y en el popover.
                           const obs = muestra ? (cell?.observacion ?? null) : null
-                          const marcaObs = obs ? (
+                          // La precisión de picking trae observación TODOS los
+                          // días (explica el cálculo): no es un aviso, así que
+                          // no lleva asterisco; queda el tooltip y el clic.
+                          const esObsInformativa = ind.id === "auto_precision_picking"
+                          const marcaObs = obs && !esObsInformativa ? (
                             <span aria-hidden className="ml-0.5 align-super text-[0.7em] font-bold text-amber-500">
                               *
                             </span>

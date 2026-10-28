@@ -94,6 +94,27 @@ export interface AperturaPickingDelDia {
   productividad_promedio_bul_hh: number | null
   /** Promedio de las 3 precisiones. null si no hay datos. */
   precision_promedio: number | null
+  /** Total del depósito del día según las dos planillas (el mismo número que
+   *  muestra la celda "Precision picking" del tablero). null si alguna
+   *  planilla no respondió o el día no tiene bultos. */
+  total_dia: PrecisionPickingDetalleDia | null
+}
+
+/**
+ * Lo que hay detrás de la precisión de un día: sirve para explicar el número
+ * en la reunión ("99,73 no son 27 errores, es UN error de 10 bultos sobre
+ * 3.770"). La precisión se calcula sobre BULTOS errados, no sobre cantidad
+ * de errores.
+ */
+export interface PrecisionPickingDetalleDia {
+  /** Bultos pickeados ese día (planilla de bultos, re-fechada por día de pickeo). */
+  bultos: number
+  /** Bultos involucrados en errores (col "CANTIDAD DE BULTOS" del Sheet, sin SISTEMA). */
+  errados: number
+  /** Cantidad de errores = filas del Sheet (sin SISTEMA). */
+  errores: number
+  /** (bultos − errados) / bultos × 100, redondeada a 2 decimales y topeada en 99,9 si hubo errores. */
+  precision: number
 }
 
 /** Targets mensuales: HL para fgli/roturas/faltantes; PPM para wqi; $ para scl. */
@@ -156,6 +177,9 @@ export interface WarehouseSerieDiaria extends WarehouseSerieBase {
   wnp_dia: Record<string, number | null>
   /** Errores por operador por día (para el drill-down). { fecha: { Troli/Galvez/Ovejero/Selenzo: count } } */
   errores_por_operador_dia: Record<string, Record<string, number>>
+  /** Detalle de la precisión del día (bultos pickeados / errados / errores),
+   *  para el tooltip y el drill de la celda. null = día no cerrado o sin planilla. */
+  precision_detalle_dia: Record<string, PrecisionPickingDetalleDia | null>
   /** Targets mensuales del mes consultado. */
   targets: WarehouseTargets
 }
@@ -335,6 +359,7 @@ export async function buildWarehouseSerieDiaria(
       faltantes_dia: {},
       wnp_dia: {},
       errores_por_operador_dia: {},
+      precision_detalle_dia: {},
       targets: sinTargets,
     }
   }
@@ -444,6 +469,7 @@ export async function buildAperturaPickingDelDia(
   // Conteo de errores por operador (= filas del Sheet). Se enriquece
   // sobre la apertura, que el snapshot expone con bultos errados.
   const erroresPorOpPromise = fetchErroresCountPorOperador(fecha)
+  const totalDiaPromise = fetchPrecisionDetalleDia(fecha)
   const [snap, pickingPorFecha] = await Promise.all([
     fetchSnapshot(),
     fetchPickingBulHhPorFechaOperador(),
@@ -467,7 +493,24 @@ export async function buildAperturaPickingDelDia(
       fila.errores_cliente = typeof k === "number" ? k : 0
     }
   }
+  base.total_dia = await totalDiaPromise
   return base
+}
+
+/** Detalle de la precisión de UN día (total del depósito, de las planillas).
+ *  Misma lectura y misma fórmula que la celda del tablero. */
+async function fetchPrecisionDetalleDia(
+  fecha: string,
+): Promise<PrecisionPickingDetalleDia | null> {
+  const partes = fecha.split("-").map((s) => parseInt(s, 10))
+  const year = partes[0]
+  const month = partes[1]
+  if (!year || !month) return null
+  const [erroresSheet, csvBultos] = await Promise.all([
+    fetchErroresCountDelSheet(year, month),
+    fetchTextSafe(SHEET_BULTOS_URL),
+  ])
+  return computePrecisionDelSheet(year, month, erroresSheet, csvBultos)?.[fecha] ?? null
 }
 
 /** Trae { Troli, Galvez, Ovejero, Selenzo } con la cantidad de errores (= filas
@@ -584,6 +627,7 @@ function buildAperturaFromSnapshot(
     filas,
     precision_promedio: dia.precision ?? null,
     productividad_promedio_bul_hh,
+    total_dia: null,
   }
 }
 
@@ -782,7 +826,7 @@ function computePrecisionDelSheet(
   month: number,
   erroresSheet: Awaited<ReturnType<typeof fetchErroresCountDelSheet>>,
   csv: string | null,
-): Record<string, number> | null {
+): Record<string, PrecisionPickingDetalleDia> | null {
   if (!erroresSheet?.inicioMedicion || !csv) return null
 
   const lines = csv.split(/\r?\n/).filter((l) => l.trim())
@@ -805,10 +849,11 @@ function computePrecisionDelSheet(
     bultosPorPickeo[pickeo] = (bultosPorPickeo[pickeo] ?? 0) + bultos
   }
 
-  const precision: Record<string, number> = {}
+  const precision: Record<string, PrecisionPickingDetalleDia> = {}
   for (const [fecha, bultos] of Object.entries(bultosPorPickeo)) {
     if (fecha < erroresSheet.inicioMedicion) continue
     const errados = erroresSheet.bultosErradosPorDia[fecha] ?? 0
+    const errores = erroresSheet.porDia[fecha] ?? 0
     const cruda = ((bultos - errados) / bultos) * 100
     const redondeada = Math.round(cruda * 100) / 100
     // 🚨 Un día CON errores nunca puede quedar en 100,00: con errores chicos
@@ -817,7 +862,12 @@ function computePrecisionDelSheet(
     // precisión 100 ⇒ celda vacía") borraba la celda de la reunión. Se topea
     // acá en 99,9 (mismo criterio que capPrecision en actions/reuniones.ts,
     // que llegaba tarde porque ya recibía el 100 redondeado).
-    precision[fecha] = errados > 0 && redondeada >= 100 ? 99.9 : redondeada
+    precision[fecha] = {
+      bultos,
+      errados,
+      errores,
+      precision: errados > 0 && redondeada >= 100 ? 99.9 : redondeada,
+    }
   }
   return Object.keys(precision).length > 0 ? precision : null
 }
@@ -1157,6 +1207,7 @@ async function fetchSerieExtra(
   faltantes_dia: Record<string, number | null>
   wnp_dia: Record<string, number | null>
   precision: Record<string, number | null>
+  precision_detalle_dia: Record<string, PrecisionPickingDetalleDia | null>
   errores_dia: Record<string, number | null>
   errores_por_operador_dia: Record<string, Record<string, number>>
   targets: WarehouseTargets
@@ -1206,6 +1257,7 @@ async function fetchSerieExtra(
   const faltantes_dia: Record<string, number | null> = {}
   const wnp_dia: Record<string, number | null> = {}
   const precision: Record<string, number | null> = {}
+  const precision_detalle_dia: Record<string, PrecisionPickingDetalleDia | null> = {}
   const errores_dia: Record<string, number | null> = {}
   const errores_por_operador_dia: Record<string, Record<string, number>> = {}
   const hoy = hoyArgentina()
@@ -1235,8 +1287,11 @@ async function fetchSerieExtra(
     // al valor de serie-diaria, que puede venir de un cache anterior a la carga
     // de los errores del día.
     precision[f] = cerrado
-      ? (precisionSheet?.[f] ?? res?.precision?.[f] ?? null)
+      ? (precisionSheet?.[f]?.precision ?? res?.precision?.[f] ?? null)
       : null
+    // El detalle sólo existe cuando la precisión salió de las planillas; con
+    // el respaldo de serie-diaria no hay bultos para mostrar.
+    precision_detalle_dia[f] = cerrado ? (precisionSheet?.[f] ?? null) : null
     if (cerrado) {
       const cnt = contarErroresDelDia(f, erroresSheet, res)
       errores_dia[f] = cnt
@@ -1291,6 +1346,7 @@ async function fetchSerieExtra(
     faltantes_dia,
     wnp_dia,
     precision,
+    precision_detalle_dia,
     errores_dia,
     errores_por_operador_dia,
     targets: {
@@ -1420,6 +1476,7 @@ function computeAperturaLegacy(
     filas,
     precision_promedio: null,
     productividad_promedio_bul_hh,
+    total_dia: null,
   }
 }
 
