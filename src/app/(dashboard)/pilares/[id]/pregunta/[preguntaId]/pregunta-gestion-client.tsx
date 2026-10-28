@@ -93,11 +93,11 @@ import {
   updatePlanAccion,
   deletePlanAccion,
   createEvidencia,
-  deleteEvidencia,
 } from "@/actions/gestion"
 import { getDownloadUrl } from "@/actions/dpo-evidencia"
 import {
   listarArchivosDeRespuestas,
+  eliminarArchivoDelPunto,
   type ArchivoRespuesta,
 } from "@/actions/plan-avances"
 import {
@@ -812,13 +812,7 @@ function PlanesTab({
 
 // ==================== EVIDENCIAS TAB (historial de archivos de respuestas) ====================
 
-function EvidenciasTab({
-  preguntaId,
-  isAdmin = false,
-}: {
-  preguntaId: string
-  isAdmin?: boolean
-}) {
+function EvidenciasTab({ preguntaId }: { preguntaId: string }) {
   const [archivos, setArchivos] = useState<ArchivoRespuesta[]>([])
   const [loading, setLoading] = useState(true)
   const [lightbox, setLightbox] = useState<{ url: string; titulo: string } | null>(
@@ -948,10 +942,8 @@ function EvidenciasTab({
 
   async function handleDeleteEvidencia() {
     if (!aEliminar) return
-    // el id del ítem manual viene como `ev-<uuid>` desde listarArchivosDeRespuestas
-    const evidenciaId = aEliminar.id.replace(/^ev-/, "")
     setEliminando(true)
-    const res = await deleteEvidencia(evidenciaId)
+    const res = await eliminarArchivoDelPunto(aEliminar.id)
     setEliminando(false)
     if ("error" in res) {
       toast.error(res.error)
@@ -1172,7 +1164,7 @@ function EvidenciasTab({
                       <FileDown className="h-4 w-4" />
                     </Button>
                   )}
-                  {isAdmin && a.fuente === "manual" && (
+                  {a.puede_borrar && (
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -1204,6 +1196,12 @@ function EvidenciasTab({
             </span>
             . No se puede deshacer.
           </p>
+          {aEliminar?.fuente === "respuesta" && (
+            <p className="text-sm text-muted-foreground">
+              Se quita de la respuesta de la tarea «{aEliminar.plan_titulo}»; el
+              comentario de la respuesta se conserva.
+            </p>
+          )}
           <DialogFooter>
             <Button
               variant="outline"
@@ -1712,7 +1710,7 @@ export function PreguntaGestionClient({
           />
         </TabsContent>
         <TabsContent value="evidencias">
-          <EvidenciasTab preguntaId={pregunta.id} isAdmin={isAdmin} />
+          <EvidenciasTab preguntaId={pregunta.id} />
         </TabsContent>
         <TabsContent value="capacitaciones">
           <CapacitacionesTab capacitaciones={capacitaciones} />

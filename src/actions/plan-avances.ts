@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth } from "@/lib/session"
 import {
   archivosDeFila,
@@ -136,18 +137,24 @@ export interface ArchivoRespuesta {
   fuente: "respuesta" | "manual"
   plan_id: string | null
   plan_titulo: string
+  /** El usuario actual puede borrarlo (quien lo subió o admin/supervisor/admin_rrhh). */
+  puede_borrar: boolean
 }
+
+// Mismos roles que la política de borrado de planes_accion_avances.
+const ROLES_BORRAN_EVIDENCIA = ["admin", "supervisor", "admin_rrhh"]
 
 /**
  * Historial de archivos de un punto del manual: archivos subidos en las
  * respuestas (avances) de las tareas de esa pregunta + evidencias cargadas
- * manualmente para el punto (tabla `evidencias`). Read-only.
+ * manualmente para el punto (tabla `evidencias`).
  */
 export async function listarArchivosDeRespuestas(
   preguntaId: string,
 ): Promise<Result<ArchivoRespuesta[]>> {
   try {
-    await requireAuth()
+    const profile = await requireAuth()
+    const esGestor = ROLES_BORRAN_EVIDENCIA.includes(profile.role)
     const supabase = await createClient()
     if (!preguntaId) return { error: "ID de pregunta inválido" }
 
@@ -261,6 +268,7 @@ export async function listarArchivosDeRespuestas(
         fuente: "respuesta",
         plan_id: a.plan_id,
         plan_titulo: planMap.get(a.plan_id) ?? "",
+        puede_borrar: esGestor || a.autor_id === profile.id,
       }),
     )
 
@@ -283,6 +291,7 @@ export async function listarArchivosDeRespuestas(
         fuente: "manual",
         plan_id: null,
         plan_titulo: "Evidencia cargada manualmente",
+        puede_borrar: esGestor || e.created_by === profile.id,
       }
     })
 
@@ -294,6 +303,84 @@ export async function listarArchivosDeRespuestas(
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error listando archivos",
+    }
+  }
+}
+
+/**
+ * Borra un archivo del historial de evidencias del punto (id `ev-<id>` o
+ * `av-<id>-<n>`, como lo devuelve listarArchivosDeRespuestas). Puede quien lo
+ * subió o admin/supervisor/admin_rrhh; se valida acá y se borra con el
+ * cliente admin porque la RLS de `evidencias` sólo deja borrar a admin.
+ * - Evidencia manual: se borra la fila y el archivo del bucket.
+ * - Archivo de una respuesta: se quita ese adjunto y se conserva la respuesta
+ *   (comentario, otros adjuntos y cambio de estado siguen en la tarea).
+ */
+export async function eliminarArchivoDelPunto(
+  itemId: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const esGestor = ROLES_BORRAN_EVIDENCIA.includes(profile.role)
+    const admin = createAdminClient()
+
+    if (itemId.startsWith("ev-")) {
+      const id = itemId.slice(3)
+      const { data: ev, error } = await admin
+        .from("evidencias")
+        .select("id, created_by, file_path")
+        .eq("id", id)
+        .maybeSingle()
+      if (error) return { error: error.message }
+      if (!ev) return { error: "La evidencia ya no existe" }
+      if (!esGestor && ev.created_by !== profile.id) {
+        return { error: "Sólo quien la cargó o un supervisor puede borrarla" }
+      }
+      const { error: errDel } = await admin.from("evidencias").delete().eq("id", id)
+      if (errDel) return { error: errDel.message }
+      if (ev.file_path) {
+        await admin.storage.from("evidencias").remove([ev.file_path as string])
+      }
+      return { success: true }
+    }
+
+    const m = /^av-(.+)-(\d+)$/.exec(itemId)
+    if (m) {
+      const [, id, idx] = m
+      const { data: av, error } = await admin
+        .from("planes_accion_avances")
+        .select(
+          "id, plan_id, autor_id, comentario, archivos, archivo_path, archivo_nombre, archivo_mime, archivo_bytes",
+        )
+        .eq("id", id)
+        .maybeSingle()
+      if (error) return { error: error.message }
+      const archivos = av ? archivosDeFila(av) : []
+      const quitar = archivos[Number(idx)]
+      if (!av || !quitar) return { error: "El archivo ya no existe" }
+      if (!esGestor && av.autor_id !== profile.id) {
+        return { error: "Sólo quien lo subió o un supervisor puede borrarlo" }
+      }
+      const restantes = archivos.filter((_, i) => i !== Number(idx))
+      // La respuesta tiene que quedar con comentario o archivo (CHECK de la tabla).
+      const comentario =
+        restantes.length > 0 || (av.comentario as string | null)?.trim()
+          ? av.comentario
+          : `Archivo eliminado por ${profile.nombre}`
+      const { error: errUpd } = await admin
+        .from("planes_accion_avances")
+        .update({ ...columnasArchivos(restantes), comentario })
+        .eq("id", id)
+      if (errUpd) return { error: errUpd.message }
+      await admin.storage.from(BUCKET).remove([quitar.path])
+      revalidatePath(`/planes/${av.plan_id}`)
+      return { success: true }
+    }
+
+    return { error: "Archivo inválido" }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error eliminando el archivo",
     }
   }
 }

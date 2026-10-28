@@ -1,6 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth } from "@/lib/session"
 import { registerActivity } from "@/lib/dpo-activity"
 import type {
@@ -756,9 +757,6 @@ export async function deleteArchivo(
 ): Promise<{ success: true } | { error: string }> {
   try {
     const profile = await requireAuth()
-    if (profile.role !== "admin") {
-      return { error: "Solo admin puede eliminar archivos definitivamente" }
-    }
     const supabase = await createClient()
 
     const { data: archivo, error: errEx } = await supabase
@@ -768,7 +766,16 @@ export async function deleteArchivo(
       .single()
     if (errEx) return { error: errEx.message }
 
-    const { data: versiones, error: errVers } = await supabase
+    // Puede quien lo subió o admin/supervisor/admin_rrhh. La RLS de
+    // dpo_archivos sólo deja borrar a admin ⇒ el borrado va con el cliente
+    // admin una vez validado el permiso acá.
+    const esGestor = ["admin", "supervisor", "admin_rrhh"].includes(profile.role)
+    if (!esGestor && (archivo as DpoArchivo).uploaded_by !== profile.id) {
+      return { error: "Sólo quien subió el archivo o un supervisor puede eliminarlo" }
+    }
+    const admin = createAdminClient()
+
+    const { data: versiones, error: errVers } = await admin
       .from("dpo_archivo_versiones")
       .select("file_path")
       .eq("archivo_id", id)
@@ -776,11 +783,11 @@ export async function deleteArchivo(
 
     const paths = (versiones || []).map((v) => v.file_path as string)
     if (paths.length > 0) {
-      await supabase.storage.from(BUCKET).remove(paths)
+      await admin.storage.from(BUCKET).remove(paths)
     }
 
-    await supabase.from("dpo_archivo_versiones").delete().eq("archivo_id", id)
-    const { error: errDel } = await supabase.from("dpo_archivos").delete().eq("id", id)
+    await admin.from("dpo_archivo_versiones").delete().eq("archivo_id", id)
+    const { error: errDel } = await admin.from("dpo_archivos").delete().eq("id", id)
     if (errDel) return { error: errDel.message }
 
     const arch = archivo as DpoArchivo
