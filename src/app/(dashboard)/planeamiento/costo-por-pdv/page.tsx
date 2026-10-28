@@ -14,6 +14,9 @@ import {
 import { CostoPdvClient } from "./costo-pdv-client"
 
 export const dynamic = "force-dynamic"
+// Guardar el costo del mes también arma las fotos del mapa (RPC del mes + acumulado,
+// hasta ~60 s): las acciones corren con el límite de la página.
+export const maxDuration = 120
 
 export default async function CostoPorPdvPage() {
   // Indicador exclusivo de Pampeana.

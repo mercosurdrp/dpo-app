@@ -5,15 +5,10 @@ import "leaflet/dist/leaflet.css"
 import type * as Leaflet from "leaflet"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, MapPin, Info } from "lucide-react"
-import {
-  getCostoPorPdv,
-  getCostoPorPdvYtd,
-  type CostoMensual,
-  type CostoPorPdvRow,
-  type KmCiudad,
-} from "@/actions/costo-pdv"
-import { getCoordenadasPdv, type CoordenadaPdv } from "@/actions/costo-pdv-mapa"
+import { Loader2, MapPin, Info, RefreshCw } from "lucide-react"
+import type { CostoMensual, KmCiudad } from "@/actions/costo-pdv"
+import { getMapaCosto, renovarMapaCosto, type MapaCostoResultado, type PdvMapa } from "@/actions/costo-pdv-mapa"
+import type { PeriodoMapaCosto } from "@/lib/fotos"
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
@@ -50,7 +45,7 @@ interface Cortes {
   p90: number
 }
 
-function clasificar(f: CostoPorPdvRow, c: Cortes): (typeof BANDAS)[number] {
+function clasificar(f: PdvMapa, c: Cortes): (typeof BANDAS)[number] {
   if (f.hl <= 0 || f.hl < c.floorHl) return BANDAS[3]
   if (f.costo_x_hl >= c.p90) return BANDAS[0]
   if (f.costo_x_hl >= c.p70) return BANDAS[1]
@@ -58,11 +53,11 @@ function clasificar(f: CostoPorPdvRow, c: Cortes): (typeof BANDAS)[number] {
 }
 
 /** Período que muestra el mapa: un mes cargado o el acumulado del año. */
-type Periodo = { tipo: "mes"; anio: number; mes: number } | { tipo: "ytd"; anio: number }
+type Periodo = PeriodoMapaCosto
 const clavePeriodo = (p: Periodo) => (p.tipo === "mes" ? `${p.anio}-${p.mes}` : `${p.anio}-ytd`)
 
 interface Punto {
-  f: CostoPorPdvRow
+  f: PdvMapa
   lat: number
   lng: number
   banda: (typeof BANDAS)[number]
@@ -88,20 +83,23 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => ESC[ch] ?? ch)
 interface Props {
   costos: CostoMensual[]
   sel: { anio: number; mes: number } | null
-  /** Filas del mes seleccionado en Detalle: se reutilizan si el mapa mira ese mismo mes. */
-  filasMes: CostoPorPdvRow[]
   kmCiudades: KmCiudad[]
+  canEdit: boolean
 }
 
-export function MapaTab({ costos, sel, filasMes, kmCiudades }: Props) {
+const fmtFecha = (iso: string) =>
+  new Date(iso).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+
+export function MapaTab({ costos, sel, kmCiudades, canEdit }: Props) {
   const anios = useMemo(() => [...new Set(costos.map((c) => c.anio))].sort((a, b) => b - a), [costos])
   const [periodo, setPeriodo] = useState<Periodo | null>(
     sel ? { tipo: "mes", anio: sel.anio, mes: sel.mes } : anios[0] ? { tipo: "ytd", anio: anios[0] } : null,
   )
-  const [cache, setCache] = useState<Record<string, CostoPorPdvRow[]>>({})
-  const [coords, setCoords] = useState<Map<number, CoordenadaPdv> | null>(null)
+  // Una foto por período, cacheada en memoria mientras la solapa está abierta.
+  const [fotos, setFotos] = useState<Record<string, MapaCostoResultado>>({})
   const [errorCarga, setErrorCarga] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [renovando, setRenovando] = useState(false)
   const [bandasActivas, setBandasActivas] = useState<Set<BandaKey>>(new Set(BANDAS.map((b) => b.key)))
   const [ciudadSel, setCiudadSel] = useState<string | null>(null)
 
@@ -111,47 +109,36 @@ export function MapaTab({ costos, sel, filasMes, kmCiudades }: Props) {
     return m
   }, [kmCiudades])
 
-  // Coordenadas: una sola vez, no cambian con el período.
-  useEffect(() => {
-    let cancel = false
-    ;(async () => {
-      const res = await getCoordenadasPdv()
-      if (cancel) return
-      if ("error" in res) {
-        setErrorCarga(res.error)
-        setCoords(new Map())
-        return
-      }
-      const m = new Map<number, CoordenadaPdv>()
-      for (const c of res.data) m.set(c.id_cliente, c)
-      setCoords(m)
-    })()
-    return () => {
-      cancel = true
-    }
-  }, [])
+  const foto = periodo ? (fotos[clavePeriodo(periodo)] ?? null) : null
+  const filas = useMemo<PdvMapa[] | null>(() => (periodo ? (foto?.datos.puntos ?? null) : []), [periodo, foto])
 
-  // Filas del período: las del mes de Detalle si coincide; si no, se consultan y cachean.
-  const filas = useMemo<CostoPorPdvRow[] | null>(() => {
-    if (!periodo) return []
-    if (periodo.tipo === "mes" && sel && sel.anio === periodo.anio && sel.mes === periodo.mes) return filasMes
-    return cache[clavePeriodo(periodo)] ?? null
-  }, [periodo, sel, filasMes, cache])
-
+  // Lee la foto del período (si no existe, el servidor la calcula y la guarda).
   useEffect(() => {
-    if (!periodo || filas !== null) return
+    if (!periodo || foto) return
     const clave = clavePeriodo(periodo)
     startTransition(async () => {
-      const res =
-        periodo.tipo === "mes" ? await getCostoPorPdv(periodo.anio, periodo.mes) : await getCostoPorPdvYtd(periodo.anio)
+      const res = await getMapaCosto(periodo)
       if ("error" in res) {
         setErrorCarga(res.error)
-        setCache((c) => ({ ...c, [clave]: [] }))
         return
       }
-      setCache((c) => ({ ...c, [clave]: res.data }))
+      setErrorCarga(null)
+      setFotos((c) => ({ ...c, [clave]: res.data }))
     })
-  }, [periodo, filas])
+  }, [periodo, foto])
+
+  async function renovar() {
+    if (!periodo || renovando) return
+    setRenovando(true)
+    const res = await renovarMapaCosto(periodo)
+    setRenovando(false)
+    if ("error" in res) {
+      setErrorCarga(res.error)
+      return
+    }
+    setErrorCarga(null)
+    setFotos((c) => ({ ...c, [clavePeriodo(periodo)]: res.data }))
+  }
 
   const cortes = useMemo<Cortes>(() => {
     const conHl = (filas ?? []).filter((f) => f.hl > 0)
@@ -168,22 +155,20 @@ export function MapaTab({ costos, sel, filasMes, kmCiudades }: Props) {
   const { puntos, sinGeo } = useMemo(() => {
     const out: Punto[] = []
     let sinGeo = 0
-    if (!coords) return { puntos: out, sinGeo }
     const rank = new Map<number, number>()
     ;(filas ?? [])
       .filter((f) => clasificar(f, cortes).key !== "bajo")
       .sort((a, b) => b.costo_x_hl - a.costo_x_hl)
-      .forEach((f, i) => rank.set(f.id_cliente, i + 1))
+      .forEach((f, i) => rank.set(f.id, i + 1))
     for (const f of filas ?? []) {
-      const c = coords.get(f.id_cliente)
-      if (!c) {
+      if (f.lat == null || f.lng == null) {
         sinGeo++
         continue
       }
-      out.push({ f, lat: c.lat, lng: c.lng, banda: clasificar(f, cortes), puesto: rank.get(f.id_cliente) ?? null })
+      out.push({ f, lat: f.lat, lng: f.lng, banda: clasificar(f, cortes), puesto: rank.get(f.id) ?? null })
     }
     return { puntos: out, sinGeo }
-  }, [filas, coords, cortes])
+  }, [filas, cortes])
 
   const resumenCiudades = useMemo<ResumenCiudad[]>(() => {
     const m = new Map<string, ResumenCiudad>()
@@ -195,13 +180,13 @@ export function MapaTab({ costos, sel, filasMes, kmCiudades }: Props) {
       r[clasificar(f, cortes).key]++
       r.hl += f.hl
       r.costo += f.costo_total
-      if (coords?.has(f.id_cliente)) r.geo++
+      if (f.lat != null) r.geo++
       m.set(f.ciudad, r)
     }
     return [...m.values()]
       .map((r) => ({ ...r, pctCaro: r.pdv - r.bajo > 0 ? (r.caro / (r.pdv - r.bajo)) * 100 : 0 }))
       .sort((a, b) => b.hl - a.hl)
-  }, [filas, cortes, coords])
+  }, [filas, cortes])
 
   const visibles = useMemo(
     () => puntos.filter((p) => bandasActivas.has(p.banda.key) && (!ciudadSel || p.f.ciudad === ciudadSel)),
@@ -264,7 +249,7 @@ export function MapaTab({ costos, sel, filasMes, kmCiudades }: Props) {
       const drop = p.f.comprobantes ? p.f.bultos / p.f.comprobantes : 0
       cm.bindTooltip(
         `<div style="font-size:12px;line-height:1.35">` +
-          `<div style="font-weight:600">${esc(p.f.nombre_cliente)} <span style="color:#64748b">· ${p.f.id_cliente}</span></div>` +
+          `<div style="font-weight:600">${esc(p.f.nombre)} <span style="color:#64748b">· ${p.f.id}</span></div>` +
           `<div style="color:#64748b">${esc(p.f.ciudad)}</div>` +
           `<div><span style="display:inline-block;width:8px;height:8px;border-radius:9999px;background:${p.banda.color};margin-right:4px"></span>${p.banda.label}${p.puesto ? ` · puesto ${p.puesto}` : ""}</div>` +
           `<div>Costo/HL <b>${fmtMoney(p.f.costo_x_hl)}</b> · HL ${fmtNum(p.f.hl, 1)}</div>` +
@@ -301,7 +286,7 @@ export function MapaTab({ costos, sel, filasMes, kmCiudades }: Props) {
     })
   }
 
-  const cargando = filas === null || coords === null || isPending
+  const cargando = filas === null || isPending || renovando
   const totales = useMemo(() => {
     const t = { caro: 0, atencion: 0, ok: 0, bajo: 0 }
     for (const p of puntos) t[p.banda.key]++
@@ -412,6 +397,22 @@ export function MapaTab({ costos, sel, filasMes, kmCiudades }: Props) {
             </span>
             {sinGeo > 0 && <span>{fmtNum(sinGeo)} PDV con costo pero sin coordenadas en Chess</span>}
             <span>El tamaño del punto es el volumen (HL); el color, el costo por HL.</span>
+            {foto && (
+              <span className="ml-auto inline-flex items-center gap-2">
+                Foto del {fmtFecha(foto.generadoEn)}
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={renovar}
+                    disabled={renovando}
+                    title="Vuelve a calcular el mapa de este período con el costo y las coordenadas actuales"
+                    className="inline-flex items-center gap-1 rounded border bg-white px-2 py-0.5 text-xs font-medium hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${renovando ? "animate-spin" : ""}`} /> Renovar
+                  </button>
+                )}
+              </span>
+            )}
           </CardContent>
         </Card>
 
@@ -483,7 +484,7 @@ export function MapaTab({ costos, sel, filasMes, kmCiudades }: Props) {
         El modelo reparte el costo de distancia por ciudad (km desde el CD) y el resto por bultos y paradas, así que
         entre ciudades pesa la distancia y dentro de una ciudad pesan el drop size y el volumen de cada PDV. Los
         percentiles se calculan sobre el período elegido: en el acumulado un PDV puede cambiar de color respecto de
-        un mes suelto.
+        un mes suelto. El mapa queda fijo como foto y se vuelve a armar solo al cargar el costo de un mes.
       </p>
     </div>
   )

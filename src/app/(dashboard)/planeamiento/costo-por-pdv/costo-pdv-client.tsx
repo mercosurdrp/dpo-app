@@ -325,7 +325,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       ) : tab === "acumulado" ? (
         <AcumuladoTab costos={costos} kmCiudades={kmCiudades} anioInicial={sel?.anio ?? null} />
       ) : tab === "mapa" ? (
-        <MapaTab costos={costos} sel={sel} filasMes={filas} kmCiudades={kmCiudades} />
+        <MapaTab costos={costos} sel={sel} kmCiudades={kmCiudades} canEdit={canEdit} />
       ) : (
         <>
       {/* Selector de mes */}

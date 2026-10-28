@@ -349,6 +349,12 @@ export async function guardarCostoMensual(input: {
   // para que el inicio no espere al cron diario. Best-effort: si la RPC falla,
   // el guardado del costo igual queda hecho.
   await supabase.rpc("sueno_kpi_refresh", { p_anio: input.anio })
+  // Con el costo del mes cargado se arma el mapa de Costo por PDV: la foto de ese
+  // mes y la del acumulado del año (que con el mes nuevo quedó vieja). Tarda
+  // unos segundos; la página tiene maxDuration para cubrirlo. Import dinámico
+  // porque el módulo del mapa importa de acá (evita el ciclo).
+  const { generarFotosMapaMes } = await import("@/lib/costo-pdv-mapa")
+  await generarFotosMapaMes(input.anio, input.mes, profile.id)
   revalidatePath("/planeamiento/costo-por-pdv")
   revalidatePath("/")
   return { ok: true }
