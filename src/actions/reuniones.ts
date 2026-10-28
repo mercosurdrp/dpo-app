@@ -2827,10 +2827,11 @@ export async function getIndicadoresMes(
         meta: c.meta ?? null,
       })
     }
-    // Matinal de Distribución: el tablero se ajusta desde la config (metas y
-    // gatillos acordados con la operación, 28/10/2026), así que lo cargado
-    // ahí le gana a lo que trae el código. Una fila de config vacía no pisa.
-    const configManda = tipo === "matinal-distribucion"
+    // Matinal de Distribución y Logística: el tablero se ajusta desde la
+    // config (metas y gatillos acordados con la operación, 28/10/2026), así
+    // que lo cargado ahí le gana a lo que trae el código. Una fila de config
+    // vacía no pisa.
+    const configManda = tipo === "matinal-distribucion" || tipo === "logistica"
     // Solo Pampeana: en Misiones la matinal reusa el set de Foxtrot y sus
     // filas desactivadas son manuales viejas que no deben ocultar las auto.
     const ocultarDesactivados = configManda && !IS_MISIONES

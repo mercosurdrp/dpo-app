@@ -1044,10 +1044,16 @@ export function ReunionDetallePageClient({
   // logística. Fuerza el recálculo en deposito-esteban (roturas, faltantes y
   // errores de picking cargados después de que el cache quedó armado).
   const muestraActualizarDatos = !IS_MISIONES && detalle.tipo === "logistica"
-  const esMatinalPampeana = !IS_MISIONES && detalle.tipo === "matinal-distribucion"
-  // MTD de la Matinal: sólo las filas que se promedian (o que muestran X/Y) se
-  // comparan contra la meta; las que suman el mes (bultos, HL, SHO) tienen
-  // meta diaria y su acumulado no es comparable.
+  // Matinal de Distribución y Logística (Pampeana): semáforo de 3 zonas con
+  // los umbrales de la config. En Logística el SHO tiene meta MENSUAL (20/15):
+  // se compara el acumulado y los días quedan neutros.
+  const esMatinalPampeana =
+    !IS_MISIONES &&
+    (detalle.tipo === "matinal-distribucion" || detalle.tipo === "logistica")
+  const shoMensual = detalle.tipo === "logistica"
+  // MTD: sólo las filas que se promedian (o que muestran X/Y) se comparan
+  // contra la meta; las que suman el mes (bultos, HL, SHO de la Matinal)
+  // tienen meta diaria y su acumulado no es comparable.
   const mtdMatinalClase = (ind: {
     id: string
     mtd: number | null
@@ -1059,7 +1065,7 @@ export function ReunionDetallePageClient({
   }): string | null => {
     const comparable = MATINAL_PCT_DE_TEXTO.has(ind.id)
       ? pctDeTexto(ind.mtd_texto)
-      : ind.agregacion === "promedio"
+      : ind.agregacion === "promedio" || (shoMensual && ind.id === "auto_sho")
         ? ind.mtd
         : null
     const zona = zonaMatinal(comparable, ind.meta, ind.gatillo, ind.mejor_si)
@@ -2433,7 +2439,7 @@ export function ReunionDetallePageClient({
                           // (meta diaria); un domingo sin reportes queda neutro.
                           if (esMatinalPampeana && valor != null) {
                             const domingo = new Date(`${f}T12:00:00Z`).getUTCDay() === 0
-                            const neutroSho = esSho && valor === 0 && domingo
+                            const neutroSho = esSho && (shoMensual || (valor === 0 && domingo))
                             const comparable = MATINAL_PCT_DE_TEXTO.has(ind.id)
                               ? pctDeTexto(cell?.texto)
                               : valor
