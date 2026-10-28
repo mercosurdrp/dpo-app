@@ -402,6 +402,51 @@ function semaforoMensualMtd(ind: {
   return peorQueGatillo ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"
 }
 
+const CLASE_ZONA = {
+  verde: "bg-emerald-50 font-semibold text-emerald-700",
+  amarillo: "bg-amber-50 font-semibold text-amber-700",
+  rojo: "bg-red-50 font-semibold text-red-700",
+} as const
+
+/**
+ * Semáforo de la Matinal de Distribución: amarillo ENTRE la meta y el gatillo,
+ * verde del lado bueno, rojo del lado malo. No importa cuál de los dos números
+ * es el mayor — en los "menos es mejor" la operación carga el gatillo como
+ * aviso antes de la meta (Rechazos 1,7 meta / 1,5 gatillo) y en los "más es
+ * mejor" por debajo (OB 45 / 40); en ambos casos la franja del medio avisa.
+ * Sin gatillo: verde o rojo contra la meta. Sin meta o sin polaridad: null.
+ */
+function zonaMatinal(
+  valor: number | null,
+  meta: number | null,
+  gatillo: number | null | undefined,
+  mejorSi: "menor" | "mayor" | undefined,
+): keyof typeof CLASE_ZONA | null {
+  if (valor == null || !Number.isFinite(valor) || meta == null || !mejorSi) return null
+  const g = gatillo ?? meta
+  const menor = mejorSi === "menor"
+  const bueno = menor ? Math.min(meta, g) : Math.max(meta, g)
+  const malo = menor ? Math.max(meta, g) : Math.min(meta, g)
+  if (menor ? valor <= bueno : valor >= bueno) return "verde"
+  if (menor ? valor > malo : valor < malo) return "rojo"
+  return "amarillo"
+}
+
+/** "8/10" → 80. Para las filas que guardan el conteo y muestran X/Y. */
+function pctDeTexto(texto: string | null | undefined): number | null {
+  const m = (texto ?? "").match(/^(\d+)\/(\d+)$/)
+  if (!m || Number(m[2]) === 0) return null
+  return (100 * Number(m[1])) / Number(m[2])
+}
+
+// Filas de la Matinal que guardan un conteo y se comparan en % (meta 100 /
+// gatillo 90 = 100% / 90% de aprobados o de camiones con salida + retorno).
+const MATINAL_PCT_DE_TEXTO = new Set([
+  "auto_checklist",
+  "auto_checklist_ae",
+  "auto_adherencia_checklist",
+])
+
 function EstadoActividadBadge({
   estado,
 }: {
@@ -992,6 +1037,27 @@ export function ReunionDetallePageClient({
   // logística. Fuerza el recálculo en deposito-esteban (roturas, faltantes y
   // errores de picking cargados después de que el cache quedó armado).
   const muestraActualizarDatos = !IS_MISIONES && detalle.tipo === "logistica"
+  const esMatinalPampeana = !IS_MISIONES && detalle.tipo === "matinal-distribucion"
+  // MTD de la Matinal: sólo las filas que se promedian (o que muestran X/Y) se
+  // comparan contra la meta; las que suman el mes (bultos, HL, SHO) tienen
+  // meta diaria y su acumulado no es comparable.
+  const mtdMatinalClase = (ind: {
+    id: string
+    mtd: number | null
+    mtd_texto?: string | null
+    meta: number | null
+    gatillo?: number | null
+    mejor_si?: "menor" | "mayor"
+    agregacion?: string
+  }): string | null => {
+    const comparable = MATINAL_PCT_DE_TEXTO.has(ind.id)
+      ? pctDeTexto(ind.mtd_texto)
+      : ind.agregacion === "promedio"
+        ? ind.mtd
+        : null
+    const zona = zonaMatinal(comparable, ind.meta, ind.gatillo, ind.mejor_si)
+    return zona ? CLASE_ZONA[zona] : null
+  }
   const [actualizandoDatos, setActualizandoDatos] = useState(false)
   const [actualizarMsg, setActualizarMsg] = useState<string | null>(null)
   const actualizarDatosDeposito = async () => {
@@ -2170,10 +2236,11 @@ export function ReunionDetallePageClient({
                       <td
                         className={cn(
                           "sticky left-[340px] w-[70px] min-w-[70px] max-w-[70px] border-r px-2 py-2 text-right align-middle text-sm font-bold tabular-nums",
-                          semaforoMensualMtd(ind) ?? "bg-white text-blue-700",
+                          (esMatinalPampeana ? mtdMatinalClase(ind) : semaforoMensualMtd(ind)) ??
+                            "bg-white text-blue-700",
                         )}
                         title={
-                          semaforoMensualMtd(ind)
+                          !esMatinalPampeana && semaforoMensualMtd(ind)
                             ? `Acumulado del mes contra el target mensual (${ind.meta}) y el gatillo (${ind.gatillo})`
                             : undefined
                         }
@@ -2345,6 +2412,21 @@ export function ReunionDetallePageClient({
                               : m[1] === m[2]
                                 ? "bg-emerald-50 font-semibold text-emerald-700"
                                 : "bg-amber-50 font-semibold text-amber-700"
+                          }
+                          // Matinal de Distribución (Pampeana): un solo criterio
+                          // para todas las filas con meta + polaridad, con la
+                          // franja amarilla entre meta y gatillo. SHO va por día
+                          // (meta diaria); un domingo sin reportes queda neutro.
+                          if (esMatinalPampeana && valor != null) {
+                            const domingo = new Date(`${f}T12:00:00Z`).getUTCDay() === 0
+                            const neutroSho = esSho && valor === 0 && domingo
+                            const comparable = MATINAL_PCT_DE_TEXTO.has(ind.id)
+                              ? pctDeTexto(cell?.texto)
+                              : valor
+                            const zona = neutroSho
+                              ? null
+                              : zonaMatinal(comparable, ind.meta, ind.gatillo, ind.mejor_si)
+                            if (zona) colorClass = CLASE_ZONA[zona]
                           }
                           const esRechazosPct = ind.id === "auto_rechazos_pct"
                           const esBultosVendidos = ind.id === "auto_bultos_vendidos"

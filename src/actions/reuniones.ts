@@ -2817,9 +2817,21 @@ export async function getIndicadoresMes(
         meta: c.meta ?? null,
       })
     }
+    // Matinal de Distribución: el tablero se ajusta desde la config (metas y
+    // gatillos acordados con la operación, 28/10/2026), así que lo cargado
+    // ahí le gana a lo que trae el código. Una fila de config vacía no pisa.
+    const configManda = tipo === "matinal-distribucion"
     const indicadores = base.data.indicadores.map((ind) => {
       const c = porNombre.get(ind.nombre.trim().toLowerCase())
       if (!c) return ind
+      if (configManda) {
+        return {
+          ...ind,
+          gatillo: c.gatillo ?? ind.gatillo,
+          meta: c.meta ?? ind.meta ?? null,
+          mejor_si: c.mejor_si ?? ind.mejor_si ?? undefined,
+        }
+      }
       return {
         ...ind,
         // El gatillo del código tiene prioridad, igual que meta y mejor_si:
@@ -3062,7 +3074,7 @@ async function getIndicadoresMesCore(
     const qCatalogoVehiculos = () =>
       supabase
         .from("catalogo_vehiculos")
-        .select("dominio, tipo")
+        .select("dominio, tipo, active, sector")
         .then((r) => r)
     // Días en que cada camión REPARTIÓ de verdad (sale de las entregas). Es el
     // denominador de la adherencia: contra los checklists cargados, el camión
@@ -3807,6 +3819,19 @@ async function getIndicadoresMesCore(
         }
         const esAutoelevador = (dom: string) =>
           tipoPorDominio.get(dom) === "autoelevador"
+        // Flota de reparto = camiones activos de distribución. Denominador de
+        // "Cantidad de camiones" en la Matinal de Distribución.
+        const flotaReparto = new Set(
+          ((catRaw ?? []) as Array<{
+            dominio: string | null
+            tipo: string | null
+            active?: boolean | null
+            sector?: string | null
+          }>)
+            .filter((v) => v.tipo === "camion" && v.active !== false && v.sector === "distribucion")
+            .map((v) => (v.dominio ?? "").trim().toUpperCase())
+            .filter(Boolean),
+        )
 
         const totalPorFecha: Record<string, number> = {}
         const aprobPorFecha: Record<string, number> = {}
@@ -3894,9 +3919,47 @@ async function getIndicadoresMesCore(
         for (const f of Object.keys(dominiosPorFecha)) {
           camionesPorFecha[f] = dominiosPorFecha[f].size
         }
-        indicadoresAuto.push(
-          buildAutoRow("auto_camiones_calle", "Cantidad de camiones", camionesPorFecha),
-        )
+        if (tipo === "matinal-distribucion" && flotaReparto.size > 0) {
+          // Matinal: % de la flota de reparto que salió (target/gatillo en %,
+          // desde la config). Texto "8/10" en la celda; MTD = ΣA/ΣT.
+          const valores: ReunionIndicadoresMes["indicadores"][number]["valores"] = {}
+          let sumSalieron = 0
+          let sumFlota = 0
+          for (const f of fechas) {
+            const doms = dominiosPorFecha[f]
+            const salieron = doms ? [...doms].filter((d) => flotaReparto.has(d)).length : 0
+            if (!doms || salieron === 0) {
+              valores[f] = null
+              continue
+            }
+            valores[f] = {
+              reunion_id: "auto",
+              valor: Math.round((1000 * salieron) / flotaReparto.size) / 10,
+              observacion: null,
+              texto: `${salieron}/${flotaReparto.size}`,
+            }
+            if (f <= fecha) {
+              sumSalieron += salieron
+              sumFlota += flotaReparto.size
+            }
+          }
+          indicadoresAuto.push({
+            id: "auto_camiones_calle",
+            nombre: "Cantidad de camiones",
+            unidad: "%",
+            meta: null,
+            orden: -1,
+            agregacion: "promedio",
+            valores,
+            mtd: sumFlota > 0 ? Math.round((1000 * sumSalieron) / sumFlota) / 10 : null,
+            mtd_texto: sumFlota > 0 ? `${Math.round((100 * sumSalieron) / sumFlota)}%` : null,
+            auto: true,
+          })
+        } else {
+          indicadoresAuto.push(
+            buildAutoRow("auto_camiones_calle", "Cantidad de camiones", camionesPorFecha),
+          )
+        }
 
         // Filas "Checklist": texto "aprobados/total" por día; MTD = ΣA/ΣT.
         // Van separadas camiones / autoelevadores — mezclarlas escondía los
@@ -4113,7 +4176,10 @@ async function getIndicadoresMesCore(
         }
         indicadoresAuto.push({
           id: "auto_horas_calle",
-          nombre: "Tiempo en ruta",
+          // En la Matinal convive con el "Tiempo en ruta" de Foxtrot (en
+          // minutos): con el mismo nombre se pisaban la meta y el gatillo de
+          // la config, que se asignan por nombre.
+          nombre: tipo === "matinal-distribucion" ? "Horas en la calle" : "Tiempo en ruta",
           unidad: "hs",
           meta: null,
           orden: -1,
