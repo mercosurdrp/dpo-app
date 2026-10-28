@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/table"
 import { getAlertas } from "@/actions/foxtrot-alertas"
 import { modulacionPorDia, resumirModulacion } from "@/lib/foxtrot-alertas/modulacion"
+import { ModulacionDetalleDiaDialog } from "@/components/reuniones/modulacion-detalle-dia-dialog"
 import type {
   AlertaRechazo,
   AlertasConfig,
@@ -112,6 +113,7 @@ export function AlertasRechazoClient({
   const [fPromotor, setFPromotor] = useState("todos")
   const [fOutcome, setFOutcome] = useState("todos")
   const [expandida, setExpandida] = useState<string | null>(null)
+  const [modulacionFecha, setModulacionFecha] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const promotores = useMemo(() => {
@@ -244,7 +246,7 @@ export function AlertasRechazoClient({
             <CardTitle className="text-sm">Modulación de rechazos</CardTitle>
             <p className="text-[11px] text-muted-foreground">
               Modulado = el vendedor respondió el seguimiento del bot. Exitoso = se
-              entregó el mismo día.
+              entregó el mismo día. Tocá un día para ver los clientes.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -318,7 +320,11 @@ export function AlertasRechazoClient({
                 </TableHeader>
                 <TableBody>
                   {modulacion.dias.map((d) => (
-                    <TableRow key={d.fecha}>
+                    <TableRow
+                      key={d.fecha}
+                      className="cursor-pointer"
+                      onClick={() => setModulacionFecha(d.fecha)}
+                    >
                       <TableCell className="text-xs whitespace-nowrap">{fmtFecha(d.fecha)}</TableCell>
                       <TableCell className="text-right text-xs">{d.rechazos}</TableCell>
                       <TableCell className="text-right text-xs">{d.modulados}</TableCell>
@@ -338,6 +344,14 @@ export function AlertasRechazoClient({
           </CardContent>
         </Card>
       )}
+
+      <ModulacionDetalleDiaDialog
+        open={modulacionFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setModulacionFecha(null)
+        }}
+        fecha={modulacionFecha}
+      />
 
       {/* Evolución semanal */}
       {porSemana.length > 1 && (

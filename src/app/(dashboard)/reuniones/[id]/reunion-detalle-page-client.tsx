@@ -134,6 +134,10 @@ import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorrid
 import { DqiPatentesDialog } from "@/components/reuniones/dqi-patentes-dialog"
 import { FoxtrotKpiDetalleDiaDialog } from "@/components/reuniones/foxtrot-kpi-detalle-dia-dialog"
 import type { FoxtrotKpiId } from "@/lib/foxtrot/matinal-kpi-types"
+import {
+  ModulacionDetalleDiaDialog,
+  type FiltroModulacion,
+} from "@/components/reuniones/modulacion-detalle-dia-dialog"
 import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-detalle-dia-dialog"
 import {
   WarehousePerdidasDetalleDiaDialog,
@@ -1094,6 +1098,13 @@ export function ReunionDetallePageClient({
   const [fxKpiDetalle, setFxKpiDetalle] = useState<{
     fecha: string
     kpiId: FoxtrotKpiId
+  } | null>(null)
+
+  // Detalle del día de la modulación de rechazos (matinal Pampeana): clientes
+  // que rechazaron, qué respondió el vendedor y si se entregó ese día.
+  const [modulacionDetalle, setModulacionDetalle] = useState<{
+    fecha: string
+    filtro: FiltroModulacion
   } | null>(null)
 
   // Detalle del día al hacer click en la celda del indicador Horas en la
@@ -2372,6 +2383,7 @@ export function ReunionDetallePageClient({
                           // KPIs de Foxtrot (matinal Pampeana): drill por día con
                           // detalle por patente. Todos los id arrancan con auto_fx_.
                           const esFoxtrotKpi = ind.id.startsWith("auto_fx_")
+                          const esModulacion = ind.id.startsWith("auto_rech_modulacion")
                           // SHO: sólo tiene sentido abrir los días con reporte;
                           // el 0 no tiene nada que mostrar.
                           const esShoConReporte = esSho && (valor ?? 0) > 0
@@ -2391,7 +2403,8 @@ export function ReunionDetallePageClient({
                               esWqiPerdidas ||
                               esWnp ||
                               esShoConReporte ||
-                              esFoxtrotKpi) &&
+                              esFoxtrotKpi ||
+                              esModulacion) &&
                             muestra
                           const onCellClick = () => {
                             if (esRechazosPct) setRechazosDetalleFecha(f)
@@ -2430,6 +2443,11 @@ export function ReunionDetallePageClient({
                               setShoDetalleRango({ desde: f, hasta: f })
                             else if (esFoxtrotKpi)
                               setFxKpiDetalle({ fecha: f, kpiId: ind.id as FoxtrotKpiId })
+                            else if (esModulacion)
+                              setModulacionDetalle({
+                                fecha: f,
+                                filtro: ind.id === "auto_rech_modulacion_exito" ? "modulados" : "todos",
+                              })
                           }
                           const contenido = muestra
                             ? cell?.texto != null
@@ -2838,6 +2856,15 @@ export function ReunionDetallePageClient({
         }}
         fecha={fxKpiDetalle?.fecha ?? null}
         kpiId={fxKpiDetalle?.kpiId ?? null}
+      />
+
+      <ModulacionDetalleDiaDialog
+        open={modulacionDetalle !== null}
+        onOpenChange={(o) => {
+          if (!o) setModulacionDetalle(null)
+        }}
+        fecha={modulacionDetalle?.fecha ?? null}
+        filtroInicial={modulacionDetalle?.filtro}
       />
 
       <HorasCalleDetalleDiaDialog

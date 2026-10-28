@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth, requireRole } from "@/lib/session"
+import { CATEGORIAS } from "@/lib/foxtrot-alertas/seguimiento"
 import type {
   AlertaRechazo,
   AlertasConfig,
@@ -42,6 +43,36 @@ export async function getAlertas(filtro: AlertasFiltro = {}): Promise<Result<Ale
     const { data, error } = await query
     if (error) return { error: error.message }
     return { data: (data ?? []) as AlertaRechazo[] }
+  } catch {
+    return { error: "No autorizado" }
+  }
+}
+
+// Detalle de la modulación de un día (drill de la Matinal y de la página de
+// alertas): las alertas del día con la categoría del "cómo" ya traducida.
+export type AlertaModulacionDetalle = AlertaRechazo & { categoria_label: string | null }
+
+export async function getModulacionDia(
+  fecha: string,
+): Promise<Result<AlertaModulacionDetalle[]>> {
+  try {
+    await requireAuth()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { error: "Fecha inválida" }
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("foxtrot_alertas_rechazo")
+      .select("*")
+      .eq("fecha", fecha)
+      .order("rechazo_ts", { ascending: true })
+    if (error) return { error: error.message }
+    return {
+      data: ((data ?? []) as AlertaRechazo[]).map((a) => ({
+        ...a,
+        categoria_label: a.seguimiento_categoria
+          ? (CATEGORIAS[a.seguimiento_categoria] ?? a.seguimiento_categoria)
+          : null,
+      })),
+    }
   } catch {
     return { error: "No autorizado" }
   }
