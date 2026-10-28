@@ -208,11 +208,11 @@ export function MapaTab({ costos, sel, kmCiudades, canEdit }: Props) {
       if (cancelled || !mapRef.current || mapObj.current) return
       Lref.current = L
       const m = L.map(mapRef.current, { preferCanvas: true, attributionControl: false }).setView([-33.6, -60.3], 9)
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-        subdomains: "abcd",
-        maxZoom: 19,
-      }).addTo(m)
-      L.control.attribution({ prefix: false }).addAttribution("© OpenStreetMap, © CARTO").addTo(m)
+      // OpenStreetMap directo: los basemaps de CARTO devuelven "API key required"
+      // cuando el pedido viene de producción (dominio vercel.app), aunque desde
+      // local respondan. OSM no pide clave, sólo atribución.
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(m)
+      L.control.attribution({ prefix: false }).addAttribution("© OpenStreetMap contributors").addTo(m)
       capa.current = L.layerGroup().addTo(m)
       mapObj.current = m
       setMapaListo(true)
