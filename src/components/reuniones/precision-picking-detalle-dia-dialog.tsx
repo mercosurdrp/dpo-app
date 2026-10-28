@@ -66,19 +66,11 @@ export function PrecisionPickingDetalleDiaDialog({
               <dd className="text-right tabular-nums">{num(detalle.bultos)}</dd>
               <dt className="text-muted-foreground">Bultos errados</dt>
               <dd className="text-right tabular-nums">{errados}</dd>
-              <dt className="text-muted-foreground">
-                Errores (filas de la planilla)
-              </dt>
-              <dd className="text-right tabular-nums">{num(detalle.errores)}</dd>
               <dt className="font-medium">Precisión</dt>
               <dd className="text-right font-semibold tabular-nums">
                 {num(detalle.precision, 2)}%
               </dd>
             </dl>
-            <p className="rounded-md bg-slate-50 px-3 py-2 tabular-nums">
-              ({num(detalle.bultos)} − {errados}) / {num(detalle.bultos)} ={" "}
-              {num(detalle.precision, 2)}%
-            </p>
             <p className="text-[11px] text-muted-foreground">
               Se mide en bultos errados, no en cantidad de errores: un error de
               muchos bultos pesa más que varios de un bulto. Los bultos
