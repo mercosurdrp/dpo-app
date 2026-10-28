@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { ExternalLink, Truck } from "lucide-react"
+import { ExternalLink, Truck, Lightbulb, MessageSquareText } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import type { CostoLogisticoReunionData } from "@/actions/reuniones-costo-logistico"
@@ -235,6 +235,49 @@ export function SeccionCostoLogistico({
                 </tbody>
               </table>
             </div>
+            {(data.lectura.length > 0 || data.conclusionMapa) && (
+              <div className="grid gap-3 md:grid-cols-2">
+                {data.lectura.length > 0 && (
+                  <div className="rounded-md border bg-slate-50 p-3">
+                    <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      <Lightbulb className="size-3.5 text-amber-500" /> Lectura del mapa de Costo por PDV
+                    </p>
+                    <ul className="space-y-1 text-sm">
+                      {data.lectura.map((h, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span
+                            className="mt-1.5 inline-block size-2 shrink-0 rounded-full"
+                            style={{
+                              background:
+                                h.tono === "mal" ? "#dc2626" : h.tono === "atencion" ? "#f59e0b" : h.tono === "bien" ? "#16a34a" : "#94a3b8",
+                            }}
+                          />
+                          <span>{h.texto}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div className="rounded-md border p-3">
+                  <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <MessageSquareText className="size-3.5 text-slate-500" /> Conclusión del mes
+                  </p>
+                  {data.conclusionMapa ? (
+                    <>
+                      <p className="whitespace-pre-wrap text-sm">{data.conclusionMapa.texto}</p>
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        {data.conclusionMapa.autorNombre ? `${data.conclusionMapa.autorNombre} · ` : ""}
+                        {new Date(data.conclusionMapa.actualizadoEn).toLocaleDateString("es-AR")}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-slate-500">
+                      Sin conclusión escrita para {nombreMes}. Se escribe en Costo por PDV → Mapa y aparece acá.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
             <p className="text-xs text-slate-500">
               El $/HL del mes es Distribución + Almacén ÷ HL vendidos (PDV más
               venta por depósito), el mismo VLC/HL del Árbol del Sueño. El peso

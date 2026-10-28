@@ -5,10 +5,21 @@ import "leaflet/dist/leaflet.css"
 import type * as Leaflet from "leaflet"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, MapPin, Info, RefreshCw } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { Loader2, MapPin, Info, RefreshCw, Lightbulb, MessageSquareText, Pencil } from "lucide-react"
 import type { CostoMensual, KmCiudad } from "@/actions/costo-pdv"
-import { getMapaCosto, renovarMapaCosto, type MapaCostoResultado, type PdvMapa } from "@/actions/costo-pdv-mapa"
+import {
+  getMapaCosto,
+  renovarMapaCosto,
+  getConclusionMapa,
+  guardarConclusionMapa,
+  type ConclusionMapa,
+  type MapaCostoResultado,
+  type PdvMapa,
+} from "@/actions/costo-pdv-mapa"
 import type { PeriodoMapaCosto } from "@/lib/fotos"
+import { armarLectura, bandaDe, calcularCortes, type BandaKey, type Cortes } from "@/lib/costo-pdv-lectura"
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
@@ -27,29 +38,11 @@ const BANDAS = [
   { key: "ok", label: "Normal", hint: "por debajo del p70 de costo/HL", color: "#16a34a", text: "text-green-700", bg: "bg-green-50" },
   { key: "bajo", label: "Bajo volumen", hint: "HL por debajo del p10: costo/HL no representativo", color: "#94a3b8", text: "text-slate-600", bg: "bg-slate-100" },
 ] as const
-type BandaKey = (typeof BANDAS)[number]["key"]
+type Banda = (typeof BANDAS)[number]
+const bandaPorKey = (k: BandaKey): Banda => BANDAS.find((b) => b.key === k) ?? BANDAS[2]
 
-function quantile(sorted: number[], q: number) {
-  if (sorted.length === 0) return 0
-  if (sorted.length === 1) return sorted[0]
-  const pos = (sorted.length - 1) * q
-  const base = Math.floor(pos)
-  const rest = pos - base
-  const next = sorted[base + 1]
-  return next !== undefined ? sorted[base] + rest * (next - sorted[base]) : sorted[base]
-}
-
-interface Cortes {
-  floorHl: number
-  p70: number
-  p90: number
-}
-
-function clasificar(f: PdvMapa, c: Cortes): (typeof BANDAS)[number] {
-  if (f.hl <= 0 || f.hl < c.floorHl) return BANDAS[3]
-  if (f.costo_x_hl >= c.p90) return BANDAS[0]
-  if (f.costo_x_hl >= c.p70) return BANDAS[1]
-  return BANDAS[2]
+function clasificar(f: PdvMapa, c: Cortes): Banda {
+  return bandaPorKey(bandaDe(f, c))
 }
 
 /** Período que muestra el mapa: un mes cargado o el acumulado del año. */
@@ -60,7 +53,7 @@ interface Punto {
   f: PdvMapa
   lat: number
   lng: number
-  banda: (typeof BANDAS)[number]
+  banda: Banda
   puesto: number | null
 }
 
@@ -140,16 +133,96 @@ export function MapaTab({ costos, sel, kmCiudades, canEdit }: Props) {
     setFotos((c) => ({ ...c, [clavePeriodo(periodo)]: res.data }))
   }
 
-  const cortes = useMemo<Cortes>(() => {
-    const conHl = (filas ?? []).filter((f) => f.hl > 0)
-    const hlSorted = conHl.map((f) => f.hl).sort((a, b) => a - b)
-    const floorHl = quantile(hlSorted, 0.1)
-    const chl = conHl
-      .filter((f) => f.hl >= floorHl)
-      .map((f) => f.costo_x_hl)
-      .sort((a, b) => a - b)
-    return { floorHl, p70: quantile(chl, 0.7), p90: quantile(chl, 0.9) }
-  }, [filas])
+  const cortes = useMemo<Cortes>(() => calcularCortes(filas ?? []), [filas])
+
+  // Período anterior (sólo para un mes): el mes cargado inmediatamente previo, para
+  // el movimiento de rojos de la lectura. Se lee de su foto (ya existe).
+  const periodoPrevio = useMemo<Periodo | null>(() => {
+    if (!periodo || periodo.tipo !== "mes") return null
+    const i = costos.findIndex((c) => c.anio === periodo.anio && c.mes === periodo.mes)
+    const prev = i >= 0 ? costos[i + 1] : undefined // costos viene del más reciente al más viejo
+    return prev ? { tipo: "mes", anio: prev.anio, mes: prev.mes } : null
+  }, [periodo, costos])
+  const fotoPrevia = periodoPrevio ? (fotos[clavePeriodo(periodoPrevio)] ?? null) : null
+
+  useEffect(() => {
+    if (!periodoPrevio || fotoPrevia) return
+    const clave = clavePeriodo(periodoPrevio)
+    let cancel = false
+    ;(async () => {
+      const res = await getMapaCosto(periodoPrevio)
+      if (cancel || "error" in res) return
+      setFotos((c) => ({ ...c, [clave]: res.data }))
+    })()
+    return () => {
+      cancel = true
+    }
+  }, [periodoPrevio, fotoPrevia])
+
+  const lectura = useMemo(
+    () =>
+      filas && filas.length > 0
+        ? armarLectura(
+            filas,
+            kmPorCiudad,
+            fotoPrevia?.datos.puntos ?? null,
+            periodoPrevio?.tipo === "mes" ? `${MESES[periodoPrevio.mes - 1]} ${periodoPrevio.anio}` : null,
+          )
+        : null,
+    [filas, kmPorCiudad, fotoPrevia, periodoPrevio],
+  )
+  const nuevosRojos = useMemo(() => new Set(lectura?.nuevosRojos ?? []), [lectura])
+  const [soloNuevos, setSoloNuevos] = useState(false)
+
+  // Conclusión escrita del período.
+  const [conclusiones, setConclusiones] = useState<Record<string, ConclusionMapa | null>>({})
+  const [errorConclusion, setErrorConclusion] = useState<string | null>(null)
+  const [editando, setEditando] = useState(false)
+  const [borrador, setBorrador] = useState("")
+  const [guardando, setGuardando] = useState(false)
+  const claveActual = periodo ? clavePeriodo(periodo) : null
+  const conclusion = claveActual ? (conclusiones[claveActual] ?? null) : null
+  const conclusionCargada = claveActual ? claveActual in conclusiones : false
+
+  useEffect(() => {
+    if (!periodo || conclusionCargada) return
+    const clave = clavePeriodo(periodo)
+    let cancel = false
+    ;(async () => {
+      const res = await getConclusionMapa(periodo)
+      if (cancel) return
+      if ("error" in res) {
+        setErrorConclusion(res.error)
+        setConclusiones((c) => ({ ...c, [clave]: null }))
+        return
+      }
+      setErrorConclusion(null)
+      setConclusiones((c) => ({ ...c, [clave]: res.data }))
+    })()
+    return () => {
+      cancel = true
+    }
+  }, [periodo, conclusionCargada])
+
+  // Al cambiar de período se cierra la edición.
+  useEffect(() => {
+    setEditando(false)
+    setSoloNuevos(false)
+  }, [claveActual])
+
+  async function guardarConclusion() {
+    if (!periodo) return
+    setGuardando(true)
+    const res = await guardarConclusionMapa(periodo, borrador)
+    setGuardando(false)
+    if ("error" in res) {
+      setErrorConclusion(res.error)
+      return
+    }
+    setErrorConclusion(null)
+    setConclusiones((c) => ({ ...c, [clavePeriodo(periodo)]: res.data }))
+    setEditando(false)
+  }
 
   // Puntos del mapa: filas con coordenada. Guarda también el puesto del ranking de costo/HL.
   const { puntos, sinGeo } = useMemo(() => {
@@ -189,8 +262,14 @@ export function MapaTab({ costos, sel, kmCiudades, canEdit }: Props) {
   }, [filas, cortes])
 
   const visibles = useMemo(
-    () => puntos.filter((p) => bandasActivas.has(p.banda.key) && (!ciudadSel || p.f.ciudad === ciudadSel)),
-    [puntos, bandasActivas, ciudadSel],
+    () =>
+      puntos.filter(
+        (p) =>
+          bandasActivas.has(p.banda.key) &&
+          (!ciudadSel || p.f.ciudad === ciudadSel) &&
+          (!soloNuevos || nuevosRojos.has(p.f.id)),
+      ),
+    [puntos, bandasActivas, ciudadSel, soloNuevos, nuevosRojos],
   )
 
   // ── Leaflet ──────────────────────────────────────────────────────────────
@@ -370,6 +449,48 @@ export function MapaTab({ costos, sel, kmCiudades, canEdit }: Props) {
         </span>
       </div>
 
+      {/* Lectura automática del período */}
+      {lectura && lectura.hallazgos.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              <Lightbulb className="h-4 w-4 text-amber-500" />
+              Lectura del período
+              <span className="text-xs font-normal text-muted-foreground">
+                La arma la app con la foto; la conclusión de gestión va abajo.
+              </span>
+              {nuevosRojos.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSoloNuevos((v) => !v)}
+                  className={`ml-auto rounded-full border px-3 py-0.5 text-xs font-medium transition-colors ${
+                    soloNuevos ? "border-red-600 bg-red-600 text-white" : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                  }`}
+                >
+                  {soloNuevos ? "Ver todos" : `Ver sólo los ${nuevosRojos.size} nuevos en rojo`}
+                </button>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ul className="space-y-1.5 text-sm">
+              {lectura.hallazgos.map((h, i) => (
+                <li key={i} className="flex gap-2">
+                  <span
+                    className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full"
+                    style={{
+                      background:
+                        h.tono === "mal" ? "#dc2626" : h.tono === "atencion" ? "#f59e0b" : h.tono === "bien" ? "#16a34a" : "#94a3b8",
+                    }}
+                  />
+                  <span>{h.texto}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
         {/* Mapa */}
         <Card className="overflow-hidden">
@@ -479,6 +600,66 @@ export function MapaTab({ costos, sel, kmCiudades, canEdit }: Props) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Conclusión de gestión del período */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+            <MessageSquareText className="h-4 w-4 text-slate-500" />
+            Conclusión {periodo?.tipo === "ytd" ? `del acumulado ${periodo.anio}` : periodo ? `de ${MESES[periodo.mes - 1]} ${periodo.anio}` : ""}
+            {conclusion && !editando && (
+              <span className="text-xs font-normal text-muted-foreground">
+                {conclusion.autorNombre ? `${conclusion.autorNombre} · ` : ""}
+                {fmtFecha(conclusion.actualizadoEn)}
+              </span>
+            )}
+            {canEdit && !editando && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto"
+                onClick={() => {
+                  setBorrador(conclusion?.texto ?? "")
+                  setEditando(true)
+                }}
+              >
+                <Pencil className="h-3.5 w-3.5" /> {conclusion ? "Editar" : "Escribir conclusión"}
+              </Button>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 pt-0">
+          {errorConclusion && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">{errorConclusion}</p>
+          )}
+          {editando ? (
+            <>
+              <Textarea
+                value={borrador}
+                onChange={(e) => setBorrador(e.target.value)}
+                rows={4}
+                placeholder="Qué dice el mapa este período y qué se decide: ciudad o grupo de PDV a trabajar, con qué herramienta (ruta, orden mínima, frecuencia) y quién lo lleva."
+                className="text-sm"
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={guardarConclusion} disabled={guardando || !borrador.trim()}>
+                  {guardando && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Guardar
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditando(false)} disabled={guardando}>
+                  Cancelar
+                </Button>
+              </div>
+            </>
+          ) : conclusion ? (
+            <p className="whitespace-pre-wrap text-sm">{conclusion.texto}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Todavía no hay conclusión para este período.
+              {canEdit ? " Escribila con lo que dice la lectura y la decisión que se toma: queda como evidencia y se ve en la Reunión de Presupuesto." : ""}
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <p className="text-xs text-muted-foreground">
         El modelo reparte el costo de distancia por ciudad (km desde el CD) y el resto por bultos y paradas, así que

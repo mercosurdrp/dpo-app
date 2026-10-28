@@ -9,6 +9,13 @@ import {
   getKmCiudades,
   type CostoPorPdvRow,
 } from "@/actions/costo-pdv"
+import { armarLectura, type Hallazgo, type PdvLectura } from "@/lib/costo-pdv-lectura"
+import { claveMapaCosto } from "@/lib/fotos"
+
+const MESES_LARGOS = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
 
 /**
  * Costo logístico del mes para la Reunión de Presupuesto (1er encuentro):
@@ -58,6 +65,10 @@ export interface CostoLogisticoReunionData {
   /** VLC/HL YTD del Árbol del Sueño (sueno_kpi_valores, kpi vlc_hl). */
   ytd: { valor: number | null; meta: number | null; gatillo: number | null }
   ciudades: CostoCiudadReunion[]
+  /** Lectura automática del mapa de Costo por PDV (mismas frases que la solapa Mapa). */
+  lectura: Hallazgo[]
+  /** Conclusión escrita en la solapa Mapa para este mes, si la hay. */
+  conclusionMapa: { texto: string; autorNombre: string | null; actualizadoEn: string } | null
   /** Venta que se retira por depósito: consume almacén, no camión. */
   bolsa: { hl: number; costo: number; costoXHl: number } | null
 }
@@ -144,6 +155,32 @@ export async function getCostoLogisticoReunion(
 
     const kmPorCiudad = new Map(km.map((k) => [k.ciudad, k.km]))
     const prevPorCiudad = agruparPorCiudad(filasPrev)
+
+    // Lectura del mapa (ciudad más cara, concentración, drop vs distancia, rojos
+    // nuevos) y conclusión escrita en la solapa Mapa. Si la tabla de conclusiones
+    // no está (migración 20261028120000 sin aplicar), la sección sigue sin ella.
+    const aLectura = (f: CostoPorPdvRow): PdvLectura => ({
+      id: f.id_cliente, nombre: f.nombre_cliente, ciudad: f.ciudad, bultos: f.bultos,
+      comprobantes: f.comprobantes, hl: f.hl, costo_total: f.costo_total, costo_x_hl: f.costo_x_hl,
+    })
+    const lectura = pool
+      ? armarLectura(
+          filas.map(aLectura),
+          kmPorCiudad,
+          costoPrev ? filasPrev.map(aLectura) : null,
+          costoPrev ? `${MESES_LARGOS[prev.mes - 1]} ${prev.anio}` : null,
+        ).hallazgos
+      : []
+    let conclusionMapa: CostoLogisticoReunionData["conclusionMapa"] = null
+    {
+      const { data: c } = await supabase
+        .from("costo_pdv_mapa_conclusiones")
+        .select("texto, autor_nombre, updated_at")
+        .eq("clave", claveMapaCosto({ tipo: "mes", anio, mes }))
+        .maybeSingle()
+      const r = c as { texto: string; autor_nombre: string | null; updated_at: string } | null
+      if (r) conclusionMapa = { texto: r.texto, autorNombre: r.autor_nombre, actualizadoEn: r.updated_at }
+    }
     const ciudades: CostoCiudadReunion[] = [...agruparPorCiudad(filas).entries()]
       .map(([ciudad, d]) => {
         const p = costoPrev ? prevPorCiudad.get(ciudad) : undefined
@@ -186,6 +223,8 @@ export async function getCostoLogisticoReunion(
           gatillo: ytdRow?.gatillo != null ? Number(ytdRow.gatillo) : null,
         },
         ciudades,
+        lectura,
+        conclusionMapa,
         bolsa:
           bolsa && bolsa.hl > 0
             ? {
