@@ -38,6 +38,12 @@ import {
   type MisionesSucursal,
 } from "@/lib/foxtrot/auto-indicadores-misiones"
 import { buildPampeanaFoxtrotSerie } from "@/lib/foxtrot/auto-indicadores-pampeana"
+import {
+  modulacionPorDia,
+  resumirModulacion,
+  type AlertaModulacion,
+  type ModulacionResumen,
+} from "@/lib/foxtrot-alertas/modulacion"
 import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
 import { OBJETIVO_PCT, obPct } from "@/lib/ocupacion-bodega"
@@ -5016,6 +5022,59 @@ async function getIndicadoresMesCore(
         // se sigue calculando en buildPampeanaFoxtrotSerie por si se reactivan.
       } catch {
         // si Foxtrot/DB falla, la matinal sigue con el resto de los indicadores
+      }
+
+      // Modulación de rechazos (bot de alertas de Foxtrot): % de rechazos que
+      // el vendedor gestionó y % de esos que se entregaron el mismo día.
+      // Definiciones en lib/foxtrot-alertas/modulacion. El día en curso se
+      // enmascara: los vendedores contestan una hora después y el outcome se
+      // resuelve con la ruta. MTD ponderado por rechazos, no promedio de días.
+      try {
+        const { data: alertasRaw, error: alertasErr } = await supabase
+          .from("foxtrot_alertas_rechazo")
+          .select("fecha, outcome, seguimiento_resultado")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+        if (alertasErr) throw alertasErr
+        const alertas = (alertasRaw ?? []) as AlertaModulacion[]
+        const porDia = new Map(modulacionPorDia(alertas).map((d) => [d.fecha, d]))
+        const mtdBase = resumirModulacion(alertas.filter((a) => cerrado(a.fecha) && a.fecha <= fecha))
+        const modRow = (
+          id: string,
+          nombre: string,
+          valorDe: (d: ModulacionResumen) => number | null,
+          textoDe: (d: ModulacionResumen) => string,
+        ): ReunionIndicadoresMes["indicadores"][number] => {
+          const valores: ReunionIndicadoresMes["indicadores"][number]["valores"] = {}
+          for (const f of fechas) {
+            const d = cerrado(f) ? porDia.get(f) : undefined
+            valores[f] = {
+              reunion_id: "auto",
+              valor: d ? valorDe(d) : null,
+              observacion: d ? textoDe(d) : null,
+            }
+          }
+          return {
+            id, nombre, unidad: "%", meta: null, orden: -1, agregacion: "promedio",
+            valores, mtd: valorDe(mtdBase), auto: true, mostrar_cero: true, mejor_si: "mayor",
+          }
+        }
+        indicadoresAuto.push(
+          modRow(
+            "auto_rech_modulacion",
+            "Modulación de rechazos",
+            (d) => d.pct_modulacion,
+            (d) => `${d.modulados} modulados de ${d.rechazos} rechazos`,
+          ),
+          modRow(
+            "auto_rech_modulacion_exito",
+            "Éxito de la modulación",
+            (d) => d.pct_exito,
+            (d) => `${d.exitosos} entregados y ${d.rechazados} rechazados de ${d.modulados} modulados`,
+          ),
+        )
+      } catch {
+        // si falla, la matinal sigue con el resto de los indicadores
       }
     }
 

@@ -35,6 +35,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { getAlertas } from "@/actions/foxtrot-alertas"
+import { modulacionPorDia, resumirModulacion } from "@/lib/foxtrot-alertas/modulacion"
 import type {
   AlertaRechazo,
   AlertasConfig,
@@ -156,6 +157,13 @@ export function AlertasRechazoClient({
     }
   }, [filtradas])
 
+  // Modulación: sólo respeta el filtro de promotor. Filtrar por resultado
+  // vaciaría el denominador (los rechazos del día).
+  const modulacion = useMemo(() => {
+    const base = alertas.filter((a) => fPromotor === "todos" || a.id_promotor === fPromotor)
+    return { total: resumirModulacion(base), dias: modulacionPorDia(base) }
+  }, [alertas, fPromotor])
+
   const porSemana = useMemo(() => {
     const map = new Map<string, Record<string, number>>()
     for (const a of filtradas) {
@@ -228,6 +236,108 @@ export function AlertasRechazoClient({
           </Card>
         ))}
       </div>
+
+      {/* Modulación de rechazos */}
+      {modulacion.total.rechazos > 0 && (
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm">Modulación de rechazos</CardTitle>
+            <p className="text-[11px] text-muted-foreground">
+              Modulado = el vendedor respondió el seguimiento del bot. Exitoso = se
+              entregó el mismo día.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              {[
+                { label: "Rechazos", n: modulacion.total.rechazos, pct: null, color: "bg-slate-400" },
+                {
+                  label: "Modulados",
+                  n: modulacion.total.modulados,
+                  pct: modulacion.total.pct_modulacion,
+                  sobre: "de los rechazos",
+                  color: "bg-sky-500",
+                },
+                {
+                  label: "Exitosos",
+                  n: modulacion.total.exitosos,
+                  pct: modulacion.total.pct_exito,
+                  sobre: "de los modulados",
+                  color: "bg-emerald-500",
+                },
+                {
+                  label: "Rechazados",
+                  n: modulacion.total.rechazados,
+                  pct:
+                    modulacion.total.pct_exito === null
+                      ? null
+                      : Math.round((100 - modulacion.total.pct_exito) * 10) / 10,
+                  sobre: "de los modulados",
+                  color: "bg-red-500",
+                },
+              ].map((p) => (
+                <div key={p.label} className="flex items-center gap-2 text-xs">
+                  <div className="w-24 shrink-0 text-slate-700">{p.label}</div>
+                  <div className="flex-1 h-5 rounded bg-slate-100 overflow-hidden">
+                    <div
+                      className={`h-full ${p.color}`}
+                      style={{ width: `${(100 * p.n) / modulacion.total.rechazos}%` }}
+                    />
+                  </div>
+                  <div className="w-44 shrink-0 text-right">
+                    <span className="font-semibold text-slate-900">{p.n}</span>
+                    {p.pct !== null && (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · {p.pct}% {p.sobre}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {modulacion.total.sin_gestion > 0 && (
+                <div className="text-[11px] text-muted-foreground pl-26">
+                  {modulacion.total.sin_gestion} sin gestión (el vendedor no respondió o
+                  todavía no le preguntaron)
+                </div>
+              )}
+            </div>
+
+            <div className="overflow-x-auto max-h-72">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead className="text-right">Rechazos</TableHead>
+                    <TableHead className="text-right">Modulados</TableHead>
+                    <TableHead className="text-right">% Modulación</TableHead>
+                    <TableHead className="text-right">Exitosos</TableHead>
+                    <TableHead className="text-right">Rechazados</TableHead>
+                    <TableHead className="text-right">% Éxito</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {modulacion.dias.map((d) => (
+                    <TableRow key={d.fecha}>
+                      <TableCell className="text-xs whitespace-nowrap">{fmtFecha(d.fecha)}</TableCell>
+                      <TableCell className="text-right text-xs">{d.rechazos}</TableCell>
+                      <TableCell className="text-right text-xs">{d.modulados}</TableCell>
+                      <TableCell className="text-right text-xs font-semibold">
+                        {d.pct_modulacion === null ? "—" : `${d.pct_modulacion}%`}
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-emerald-700">{d.exitosos}</TableCell>
+                      <TableCell className="text-right text-xs text-red-700">{d.rechazados}</TableCell>
+                      <TableCell className="text-right text-xs font-semibold">
+                        {d.pct_exito === null ? "—" : `${d.pct_exito}%`}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Evolución semanal */}
       {porSemana.length > 1 && (
