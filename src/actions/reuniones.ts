@@ -29,6 +29,7 @@ import {
   refreshSerieDiariaDeposito,
   OPERADORES_APERTURA,
   type AperturaPickingDelDia,
+  type PrecisionPickingDetalleDia,
   type AperturaMinutosCamionDelDia,
   type MaquinistasTramo,
   type OperadorApertura,
@@ -4584,6 +4585,9 @@ async function getIndicadoresMesCore(
         // Nota por día (ej. la precisión de picking explica con qué bultos
         // se calculó). Sale como tooltip de la celda.
         porFechaObs?: Record<string, string | null>,
+        // Detalle estructurado por día (precisión de picking): lo muestra el
+        // popover al hacer clic en la celda.
+        porFechaDetalle?: Record<string, PrecisionPickingDetalleDia | null>,
       ): ReunionIndicadoresMes["indicadores"][number] {
         const valoresPorFecha: Record<
           string,
@@ -4596,6 +4600,9 @@ async function getIndicadoresMesCore(
             reunion_id: "auto",
             valor: v,
             observacion: porFechaObs?.[f] ?? null,
+            ...(porFechaDetalle
+              ? { detalle_precision: porFechaDetalle[f] ?? null }
+              : {}),
           }
           if (v !== null && Number.isFinite(v) && f <= fecha) {
             numericos.push(v)
@@ -4654,7 +4661,7 @@ async function getIndicadoresMesCore(
       // precisión se calcula sobre BULTOS errados, no sobre cantidad de
       // errores: un solo error de 10 bultos en un día de 3.770 da 99,73 y en
       // la reunión eso se leía como "¿27 errores?". El texto sale como tooltip
-      // de la celda; el clic abre la apertura del día con el mismo total.
+      // de la celda; el clic abre un popover propio con los mismos números.
       const precisionObsDia: Record<string, string | null> = {}
       for (const f of fechas) {
         const d = serie.precision_detalle_dia?.[f] ?? null
@@ -4895,6 +4902,7 @@ async function getIndicadoresMesCore(
             99.8,
             "mayor",
             precisionObsDia,
+            serie.precision_detalle_dia,
           ),
           buildSerieRow(
             "auto_errores_picking",
@@ -5034,6 +5042,7 @@ async function getIndicadoresMesCore(
             99.8,
             "mayor",
             precisionObsDia,
+            serie.precision_detalle_dia,
           ),
           buildDiarioConMtdRow(
             "auto_roturas",

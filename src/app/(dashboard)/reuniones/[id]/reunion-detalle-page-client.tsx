@@ -87,6 +87,7 @@ import {
 } from "@/components/reuniones/seccion-sla"
 import { TlpDetalleDiaDialog } from "@/components/reuniones/tlp-detalle-dia-dialog"
 import { WnpDetalleDiaDialog } from "@/components/reuniones/wnp-detalle-dia-dialog"
+import { PrecisionPickingDetalleDiaDialog } from "@/components/reuniones/precision-picking-detalle-dia-dialog"
 import {
   ShoDetalleDiaDialog,
   type ShoDetalleRango,
@@ -166,6 +167,12 @@ interface IndicadorMesCellData {
   valor: number | null
   observacion: string | null
   texto?: string | null
+  detalle_precision?: {
+    bultos: number
+    errados: number
+    errores: number
+    precision: number
+  } | null
 }
 
 interface IndicadorMesItem {
@@ -1131,6 +1138,13 @@ export function ReunionDetallePageClient({
   const [aperturaPickingFecha, setAperturaPickingFecha] = useState<string | null>(
     null,
   )
+  // Precisión de picking: popover propio con bultos pickeados / errados y la
+  // cuenta del día. No repite la apertura por operador (ya se ve desde
+  // "Errores de picking").
+  const [precisionDetalle, setPrecisionDetalle] = useState<{
+    fecha: string
+    detalle: IndicadorMesCellData["detalle_precision"] | null
+  } | null>(null)
 
   // Detalle del día al hacer click en las celdas de minutos por camión (solo
   // warehouse): abre el sub-cuadro por maquinista del tramo clickeado —
@@ -2437,11 +2451,11 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_checklist_ae"
                           const esKm = ind.id === "auto_km_recorridos"
                           const esHorasCalle = ind.id === "auto_horas_calle"
-                          // Precisión incluida: el drill muestra el total del
-                          // día (bultos pickeados / errados) que explica el %.
                           const esAperturaPicking =
                             ind.id === "auto_productividad_picking" ||
-                            ind.id === "auto_errores_picking" ||
+                            ind.id === "auto_errores_picking"
+                          // Precisión: popover propio con los bultos del cálculo.
+                          const esPrecisionPicking =
                             ind.id === "auto_precision_picking"
                           const tramoMaquinistas: MaquinistasTramo | null =
                             ind.id === "auto_maquinistas_carga"
@@ -2481,6 +2495,7 @@ export function ReunionDetallePageClient({
                               esKm ||
                               esHorasCalle ||
                               esAperturaPicking ||
+                              esPrecisionPicking ||
                               tramoMaquinistas !== null ||
                               esAusentismo ||
                               esOB ||
@@ -2507,6 +2522,11 @@ export function ReunionDetallePageClient({
                             else if (esKm) setKmDetalleFecha(f)
                             else if (esHorasCalle) setHorasCalleFecha(f)
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
+                            else if (esPrecisionPicking)
+                              setPrecisionDetalle({
+                                fecha: f,
+                                detalle: cell?.detalle_precision ?? null,
+                              })
                             else if (tramoMaquinistas)
                               setMaqMinutosDetalle({
                                 fecha: f,
@@ -2881,6 +2901,15 @@ export function ReunionDetallePageClient({
           if (!o) setWnpDetalleFecha(null)
         }}
         fecha={wnpDetalleFecha}
+      />
+
+      <PrecisionPickingDetalleDiaDialog
+        open={precisionDetalle !== null}
+        onOpenChange={(o) => {
+          if (!o) setPrecisionDetalle(null)
+        }}
+        fecha={precisionDetalle?.fecha ?? null}
+        detalle={precisionDetalle?.detalle ?? null}
       />
 
       <AperturaPickingDetalleDiaDialog

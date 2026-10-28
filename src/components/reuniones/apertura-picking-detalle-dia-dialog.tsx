@@ -170,33 +170,6 @@ export function AperturaPickingDetalleDiaDialog({
           </p>
         )}
 
-        {!loading && data && data.total_dia && (
-          <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <span className="font-medium">Total del depósito (planillas)</span>
-              <span className="tabular-nums">
-                {formatNum(data.total_dia.bultos)} bultos pickeados ·{" "}
-                {formatNum(
-                  data.total_dia.errados,
-                  Number.isInteger(data.total_dia.errados) ? 0 : 2,
-                )}{" "}
-                bultos errados en {formatNum(data.total_dia.errores)}{" "}
-                {data.total_dia.errores === 1 ? "error" : "errores"} ·{" "}
-                <span className="font-semibold">
-                  precisión {formatNum(data.total_dia.precision, 2)}%
-                </span>
-              </span>
-            </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Precisión = (bultos pickeados − bultos errados) / bultos pickeados.
-              Se mide en bultos, no en cantidad de errores: un error de muchos
-              bultos pesa más que varios de uno. Es el número de la celda del
-              tablero. Los bultos por operador de abajo salen del WMS y no
-              suman igual que la planilla.
-            </p>
-          </div>
-        )}
-
         {!loading && data && (
           <Table>
             <TableHeader>

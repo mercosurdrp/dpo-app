@@ -3930,6 +3930,13 @@ export interface ReunionIndicadoresMes {
         observacion: string | null
         /** Texto a mostrar en la celda en vez del número (ej. "8/8" del indicador Checklist). */
         texto?: string | null
+        /** Precisión de picking: de dónde sale el % del día (lo muestra el popover de la celda). */
+        detalle_precision?: {
+          bultos: number
+          errados: number
+          errores: number
+          precision: number
+        } | null
       } | null
     >
     mtd: number | null

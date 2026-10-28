@@ -94,10 +94,6 @@ export interface AperturaPickingDelDia {
   productividad_promedio_bul_hh: number | null
   /** Promedio de las 3 precisiones. null si no hay datos. */
   precision_promedio: number | null
-  /** Total del depósito del día según las dos planillas (el mismo número que
-   *  muestra la celda "Precision picking" del tablero). null si alguna
-   *  planilla no respondió o el día no tiene bultos. */
-  total_dia: PrecisionPickingDetalleDia | null
 }
 
 /**
@@ -469,7 +465,6 @@ export async function buildAperturaPickingDelDia(
   // Conteo de errores por operador (= filas del Sheet). Se enriquece
   // sobre la apertura, que el snapshot expone con bultos errados.
   const erroresPorOpPromise = fetchErroresCountPorOperador(fecha)
-  const totalDiaPromise = fetchPrecisionDetalleDia(fecha)
   const [snap, pickingPorFecha] = await Promise.all([
     fetchSnapshot(),
     fetchPickingBulHhPorFechaOperador(),
@@ -493,24 +488,7 @@ export async function buildAperturaPickingDelDia(
       fila.errores_cliente = typeof k === "number" ? k : 0
     }
   }
-  base.total_dia = await totalDiaPromise
   return base
-}
-
-/** Detalle de la precisión de UN día (total del depósito, de las planillas).
- *  Misma lectura y misma fórmula que la celda del tablero. */
-async function fetchPrecisionDetalleDia(
-  fecha: string,
-): Promise<PrecisionPickingDetalleDia | null> {
-  const partes = fecha.split("-").map((s) => parseInt(s, 10))
-  const year = partes[0]
-  const month = partes[1]
-  if (!year || !month) return null
-  const [erroresSheet, csvBultos] = await Promise.all([
-    fetchErroresCountDelSheet(year, month),
-    fetchTextSafe(SHEET_BULTOS_URL),
-  ])
-  return computePrecisionDelSheet(year, month, erroresSheet, csvBultos)?.[fecha] ?? null
 }
 
 /** Trae { Troli, Galvez, Ovejero, Selenzo } con la cantidad de errores (= filas
@@ -627,7 +605,6 @@ function buildAperturaFromSnapshot(
     filas,
     precision_promedio: dia.precision ?? null,
     productividad_promedio_bul_hh,
-    total_dia: null,
   }
 }
 
@@ -1476,7 +1453,6 @@ function computeAperturaLegacy(
     filas,
     precision_promedio: null,
     productividad_promedio_bul_hh,
-    total_dia: null,
   }
 }
 
