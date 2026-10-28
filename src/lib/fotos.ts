@@ -14,6 +14,11 @@ import { createAdminClient } from "@/lib/supabase/admin"
 export const CLAVE_CUADRO_MENSUAL = "cuadro-mensual"
 export const claveKpiCombustible = (anio: number) => `kpi-combustible-${anio}`
 
+/** Mapa de Costo por PDV: una foto por período (mes cargado o acumulado del año). */
+export type PeriodoMapaCosto = { tipo: "mes"; anio: number; mes: number } | { tipo: "ytd"; anio: number }
+export const claveMapaCosto = (p: PeriodoMapaCosto) =>
+  p.tipo === "mes" ? `costo-pdv-mapa-${p.anio}-${String(p.mes).padStart(2, "0")}` : `costo-pdv-mapa-${p.anio}-ytd`
+
 /** Edad a partir de la cual una foto se considera vencida (los syncs son 1×día). */
 export const FOTO_MAX_EDAD_MS = 3 * 60 * 60 * 1000
 
@@ -123,4 +128,15 @@ export async function renovarFoto<T>(
   const datos = await calcular()
   await guardarFoto(clave, datos, Date.now() - t0, generadoPor)
   return datos
+}
+
+/** Borra fotos (p. ej. cuando cambia el dato de origen): la próxima lectura recalcula. */
+export async function borrarFotos(claves: string[]): Promise<void> {
+  if (claves.length === 0) return
+  try {
+    const admin = createAdminClient()
+    await admin.from("indicadores_fotos").delete().in("clave", claves)
+  } catch (err) {
+    console.error(`[fotos] no se pudieron borrar ${claves.join(", ")}:`, err)
+  }
 }
