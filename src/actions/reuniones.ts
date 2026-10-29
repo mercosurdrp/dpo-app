@@ -2795,7 +2795,7 @@ export async function getIndicadoresMes(
     if (!tipo) return base
     const { data: cfg, error } = await supabase
       .from("reuniones_indicadores_config")
-      .select("nombre, gatillo, mejor_si, meta")
+      .select("nombre, gatillo, mejor_si, meta, activo")
       .eq("tipo", tipo)
     if (error || !cfg) return base
     const porNombre = new Map<
@@ -2806,12 +2806,21 @@ export async function getIndicadoresMes(
         meta: number | null
       }
     >()
+    // Filas auto que la operación sacó del tablero: su fila de config homónima
+    // quedó con activo = false (29/10/2026, ej. Km recorridos, Rutas
+    // finalizadas). Las auto salen del código, por eso hay que filtrarlas acá.
+    const desactivados = new Set<string>()
     for (const c of cfg as Array<{
       nombre: string
       gatillo: number | null
       mejor_si: "mayor" | "menor" | null
       meta: number | null
+      activo: boolean
     }>) {
+      if (c.activo === false) {
+        desactivados.add(c.nombre.trim().toLowerCase())
+        continue
+      }
       porNombre.set(c.nombre.trim().toLowerCase(), {
         gatillo: c.gatillo ?? null,
         mejor_si: c.mejor_si ?? null,
@@ -2822,7 +2831,16 @@ export async function getIndicadoresMes(
     // gatillos acordados con la operación, 28/10/2026), así que lo cargado
     // ahí le gana a lo que trae el código. Una fila de config vacía no pisa.
     const configManda = tipo === "matinal-distribucion"
-    const indicadores = base.data.indicadores.map((ind) => {
+    // Solo Pampeana: en Misiones la matinal reusa el set de Foxtrot y sus
+    // filas desactivadas son manuales viejas que no deben ocultar las auto.
+    const ocultarDesactivados = configManda && !IS_MISIONES
+    const indicadores = base.data.indicadores
+      .filter(
+        (ind) =>
+          !ocultarDesactivados ||
+          !desactivados.has(ind.nombre.trim().toLowerCase()),
+      )
+      .map((ind) => {
       const c = porNombre.get(ind.nombre.trim().toLowerCase())
       if (!c) return ind
       if (configManda) {
