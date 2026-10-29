@@ -259,6 +259,9 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
   const [fEstado, setFEstado] = useState<"todos" | "pasa" | "no_pasa">("todos")
   const [fSalud, setFSalud] = useState<"todos" | "sano" | "atencion">("todos")
   const [fBaja, setFBaja] = useState<"todos" | "bajaron" | "sin_baja">("todos")
+  // Caro de servir = $/HL del semestre por encima de la mediana (mismo corte que la
+  // matriz Valor × Costo). Sirve para ver de un vistazo qué Ganadores cuestan caro.
+  const [fCosto, setFCosto] = useState<"todos" | "caro" | "barato">("todos")
   const [incluirMostrador, setIncluirMostrador] = useState(false)
   const [planes, setPlanes] = useState<ClusterPlan[]>(planesIniciales)
   const [planCliente, setPlanCliente] = useState<ClienteClusterizado | null>(null)
@@ -293,6 +296,7 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
       .filter((c) => fEstado === "todos" || c.estado === fEstado)
       .filter((c) => fSalud === "todos" || c.salud === fSalud)
       .filter((c) => fBaja === "todos" || (fBaja === "bajaron" ? c.degradado : !c.degradado))
+      .filter((c) => fCosto === "todos" || (fCosto === "caro" ? c.costo_alto === true : c.costo_alto === false))
       .filter(
         (c) =>
           incluirMostrador ||
@@ -308,7 +312,19 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
           (c.promotor ?? "").toLowerCase().includes(q),
       )
       .sort((a, b) => b.ingresos_actual - a.ingresos_actual)
-  }, [clientes, filtroCluster, busqueda, fLocalidad, fPromotor, fSupervisor, fEstado, fSalud, fBaja, incluirMostrador])
+  }, [clientes, filtroCluster, busqueda, fLocalidad, fPromotor, fSupervisor, fEstado, fSalud, fBaja, fCosto, incluirMostrador])
+
+  // Caros de servir por clúster (sobre los PDV con costo cargado).
+  const carosPorCluster = useMemo(() => {
+    const m: Record<string, { caros: number; conCosto: number }> = {}
+    for (const c of clientes) {
+      if (!c.cluster || c.costo_alto == null) continue
+      const r = (m[c.cluster] ??= { caros: 0, conCosto: 0 })
+      r.conCosto++
+      if (c.costo_alto) r.caros++
+    }
+    return m
+  }, [clientes])
 
   const visibles = filtrados.slice(0, MAX_FILAS)
   const resumenById = (cl: ClusterId) => resumen.find((r) => r.cluster === cl)
@@ -374,6 +390,31 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                   {r?.rmd_prom != null ? `${fmtNum(r.rmd_prom, 2)} ★` : "—"}
                 </span>
               </div>
+              {(carosPorCluster[cl]?.conCosto ?? 0) > 0 && (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  title={`$/HL del semestre por encima de la mediana (${fmtMoneda(data.umbral_costo)}). Clic para ver sólo estos.`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const yaActivo = filtroCluster === cl && fCosto === "caro"
+                    setFiltroCluster(yaActivo ? "todos" : cl)
+                    setFCosto(yaActivo ? "todos" : "caro")
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") (e.currentTarget as HTMLElement).click()
+                  }}
+                  className={`-mx-1 flex justify-between rounded px-1 hover:bg-white/70 ${
+                    filtroCluster === cl && fCosto === "caro" ? "bg-white/80 ring-1 ring-amber-400" : ""
+                  }`}
+                >
+                  <span>Caros de servir</span>
+                  <span className={`font-medium ${(carosPorCluster[cl]?.caros ?? 0) > 0 ? "text-amber-700" : ""}`}>
+                    {fmtNum(carosPorCluster[cl]?.caros ?? 0)}
+                    <span className="font-normal text-slate-400"> / {fmtNum(carosPorCluster[cl]?.conCosto ?? 0)}</span>
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between border-t pt-1">
                 <span>No pasa / Atención</span>
                 <span className="font-medium">
@@ -579,6 +620,18 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                     <option value="todos">Todos</option>
                     <option value="bajaron">Solo los que bajaron</option>
                     <option value="sin_baja">Sin baja</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-foreground">Costo de servir</label>
+                  <select
+                    value={fCosto}
+                    onChange={(e) => setFCosto(e.target.value as "todos" | "caro" | "barato")}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="caro">Caros (arriba de la mediana $/HL)</option>
+                    <option value="barato">Baratos</option>
                   </select>
                 </div>
                 <label className="flex items-end gap-2 pb-2 text-sm text-slate-700">
@@ -788,7 +841,11 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                             )}
                           </TableCell>
                           <TableCell className="text-right text-sm tabular-nums">
-                            {c.costo_x_hl_ytd != null ? fmtMoneda(c.costo_x_hl_ytd) : "—"}
+                            {c.costo_x_hl_ytd != null ? (
+                              <span className={c.costo_alto ? "font-medium text-amber-700" : ""} title={c.costo_alto ? "Caro de servir: arriba de la mediana $/HL del semestre" : undefined}>
+                                {fmtMoneda(c.costo_x_hl_ytd)}
+                              </span>
+                            ) : "—"}
                           </TableCell>
                           <TableCell className="text-right">
                             <Button variant="outline" size="sm" onClick={() => setPlanCliente(c)}>
