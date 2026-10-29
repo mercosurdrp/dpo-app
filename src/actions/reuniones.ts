@@ -50,6 +50,11 @@ import { IS_MISIONES } from "@/lib/empresa"
 import { OBJETIVO_PCT, obPct } from "@/lib/ocupacion-bodega"
 import { esIndicadorSla, reunionVeSla } from "@/lib/reuniones-sla-observaciones"
 import { getMetaSueno } from "@/lib/sueno/meta"
+import {
+  targetAcumulado,
+  targetsDiarios,
+  type TargetDia,
+} from "@/lib/reuniones/target-volumen"
 import { getDqiDiarioMes, getDqiPpmMes } from "@/actions/dqi"
 import { getAusentismoSerieEventos } from "@/actions/ausentismo"
 import type {
@@ -2847,8 +2852,10 @@ export async function getIndicadoresMes(
       if (configManda) {
         return {
           ...ind,
-          gatillo: c.gatillo ?? ind.gatillo,
-          meta: c.meta ?? ind.meta ?? null,
+          // Con target por día (Bultos/HL vendidos) la config no pisa los
+          // umbrales: sólo aporta la polaridad.
+          gatillo: ind.metas_dia ? ind.gatillo : c.gatillo ?? ind.gatillo,
+          meta: ind.metas_dia ? ind.meta : c.meta ?? ind.meta ?? null,
           mejor_si: c.mejor_si ?? ind.mejor_si ?? undefined,
         }
       }
@@ -3497,6 +3504,8 @@ async function getIndicadoresMesCore(
         // Promedios diarios mes anterior (bultos y HL por separado)
         let metaBultos: number | null = null
         let metaHl: number | null = null
+        let sumBultosPrev = 0
+        let sumHlPrev = 0
         if (ventPrevRaw) {
           const porFechaBultosPrev: Record<string, number> = {}
           const porFechaHlPrev: Record<string, number> = {}
@@ -3519,12 +3528,76 @@ async function getIndicadoresMesCore(
             let sum = 0
             for (const b of Object.values(porFechaBultosPrev)) sum += b
             metaBultos = Math.round(sum / diasBultos)
+            sumBultosPrev = sum
           }
           const diasHl = Object.keys(porFechaHlPrev).length
           if (diasHl > 0) {
             let sum = 0
             for (const h of Object.values(porFechaHlPrev)) sum += h
             metaHl = Math.round((sum / diasHl) * 10) / 10
+            sumHlPrev = sum
+          }
+        }
+
+        // Target diario de volumen (Matinal de Distribución y Logística,
+        // Pampeana): el proyectado DISTRIBUIDO del mes de Dimensionamiento
+        // (HL × pct_distribuido, el mismo "a distribuir" de esa pantalla)
+        // repartido por el peso de cada día (ver lib/reuniones/target-volumen).
+        // Los bultos salen de los HL con la relación bultos/HL del mes
+        // anterior. Sin proyectado cargado queda el promedio del mes anterior.
+        let targetsHl: Record<string, TargetDia> | null = null
+        let targetsBultos: Record<string, TargetDia> | null = null
+        if (
+          !IS_MISIONES &&
+          (tipo === "matinal-distribucion" || tipo === "logistica")
+        ) {
+          const [{ data: proy }, { data: dimCfg }] = await Promise.all([
+            supabase
+              .from("dim_volumen_proyectado")
+              .select("hl, ajuste_pct")
+              .eq("anio", anio)
+              .eq("mes", mes)
+              .maybeSingle(),
+            supabase
+              .from("dim_config")
+              .select("pct_distribuido")
+              .eq("id", 1)
+              .maybeSingle(),
+          ])
+          const p = proy as { hl: number | null; ajuste_pct: number | null } | null
+          // Mismo default y rango que Dimensionamiento (0,8; entre 0,05 y 1,5).
+          const pd = Number((dimCfg as { pct_distribuido?: number } | null)?.pct_distribuido)
+          const pctDistribuido = Number.isFinite(pd) && pd > 0 && pd <= 1.5 ? pd : 0.8
+          const hlMes =
+            Number(p?.hl ?? 0) *
+            (1 + Number(p?.ajuste_pct ?? 0) / 100) *
+            pctDistribuido
+          if (hlMes > 0) {
+            targetsHl = targetsDiarios(fechas, hlMes, 1)
+            if (sumHlPrev > 0 && sumBultosPrev > 0) {
+              targetsBultos = targetsDiarios(
+                fechas,
+                (hlMes * sumBultosPrev) / sumHlPrev,
+                0,
+              )
+            }
+          }
+        }
+        // La fila muestra el target del día de la reunión; cada celda se pinta
+        // contra el suyo (metas_dia) y el MTD contra el acumulado.
+        const conTarget = (
+          metaPlana: number | null,
+          targets: Record<string, TargetDia> | null,
+        ) => {
+          if (!targets) return { meta: metaPlana }
+          const delDia = targets[fecha] ?? null
+          const acum = targetAcumulado(targets, fecha)
+          return {
+            meta: delDia?.meta ?? null,
+            gatillo: delDia?.gatillo ?? null,
+            metas_dia: targets,
+            meta_mtd: acum?.meta ?? null,
+            gatillo_mtd: acum?.gatillo ?? null,
           }
         }
 
@@ -3566,7 +3639,7 @@ async function getIndicadoresMesCore(
             id: "auto_bultos_vendidos",
             nombre: "Bultos vendidos",
             unidad: "bultos",
-            meta: metaBultos,
+            ...conTarget(metaBultos, targetsBultos),
             orden: -1,
             agregacion: "suma",
             valores: valoresPorFecha,
@@ -3598,7 +3671,7 @@ async function getIndicadoresMesCore(
             id: "auto_hl_vendidos",
             nombre: "HL vendidos",
             unidad: "HL",
-            meta: metaHl,
+            ...conTarget(metaHl, targetsHl),
             orden: -1,
             agregacion: "suma",
             valores: valoresPorFecha,

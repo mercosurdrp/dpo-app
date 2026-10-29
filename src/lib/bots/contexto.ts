@@ -134,7 +134,7 @@ export async function armarContexto(bot: BotPilar, hoy = hoyArgentina()): Promis
       .map((f) => {
         const c = celdas[f]
         const valor = c?.valor ?? null
-        return { fecha: f, valor, texto: c?.texto ?? null, estado: estadoIndicador(ind, valor) }
+        return { fecha: f, valor, texto: c?.texto ?? null, estado: estadoIndicador(ind, valor, f) }
       })
       .filter((p) => p.valor != null || p.texto != null)
       .slice(-DIAS_SERIE)
@@ -159,7 +159,7 @@ export async function armarContexto(bot: BotPilar, hoy = hoyArgentina()): Promis
       serie,
       mtd: ind.mtd,
       mtd_texto: ind.mtd_texto ?? null,
-      estado_mtd: estadoIndicador(ind, ind.mtd),
+      estado_mtd: estadoIndicador(ind, ind.mtd, "mtd"),
       racha_fuera: racha,
       racha_toda_la_serie: racha > 0 && racha === serie.length,
       umbral_mensual: mensual,

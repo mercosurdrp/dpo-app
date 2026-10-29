@@ -3948,6 +3948,11 @@ export interface ReunionIndicadoresMes {
     mostrar_cero?: boolean
     /** Para filas auto con meta: define la polaridad del cumplimiento. "menor" = mejor cuando valor ≤ meta (ej. Rechazos %); "mayor" = mejor cuando valor ≥ meta (ej. Bultos vendidos). */
     mejor_si?: "menor" | "mayor"
+    /** Target y gatillo propios de cada día (Bultos/HL vendidos: proyectado del mes × peso del día). Si está, manda sobre `meta`/`gatillo` en las celdas. */
+    metas_dia?: Record<string, { meta: number; gatillo: number }>
+    /** Target y gatillo acumulados hasta la fecha de la reunión, para pintar el MTD de las filas con `metas_dia`. */
+    meta_mtd?: number | null
+    gatillo_mtd?: number | null
   }>
 }
 

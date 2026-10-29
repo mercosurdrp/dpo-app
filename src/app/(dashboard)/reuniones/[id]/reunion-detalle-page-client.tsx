@@ -189,6 +189,9 @@ interface IndicadorMesItem {
   auto?: boolean
   mostrar_cero?: boolean
   mejor_si?: "menor" | "mayor"
+  metas_dia?: Record<string, { meta: number; gatillo: number }>
+  meta_mtd?: number | null
+  gatillo_mtd?: number | null
 }
 
 interface IndicadoresMesData {
@@ -1062,7 +1065,15 @@ export function ReunionDetallePageClient({
     gatillo?: number | null
     mejor_si?: "menor" | "mayor"
     agregacion?: string
+    meta_mtd?: number | null
+    gatillo_mtd?: number | null
   }): string | null => {
+    // Bultos/HL con target por día: el acumulado se compara contra la suma de
+    // los targets de los días transcurridos.
+    if (ind.meta_mtd != null) {
+      const zona = zonaMatinal(ind.mtd, ind.meta_mtd, ind.gatillo_mtd, ind.mejor_si)
+      return zona ? CLASE_ZONA[zona] : null
+    }
     const comparable = MATINAL_PCT_DE_TEXTO.has(ind.id)
       ? pctDeTexto(ind.mtd_texto)
       : ind.agregacion === "promedio" || (shoMensual && ind.id === "auto_sho")
@@ -2443,9 +2454,14 @@ export function ReunionDetallePageClient({
                             const comparable = MATINAL_PCT_DE_TEXTO.has(ind.id)
                               ? pctDeTexto(cell?.texto)
                               : valor
+                            // Bultos/HL: cada día contra su propio target
+                            // (sin target —domingo, feriado— queda neutro).
+                            const delDia = ind.metas_dia
+                              ? ind.metas_dia[f] ?? { meta: null, gatillo: null }
+                              : { meta: ind.meta, gatillo: ind.gatillo }
                             const zona = neutroSho
                               ? null
-                              : zonaMatinal(comparable, ind.meta, ind.gatillo, ind.mejor_si)
+                              : zonaMatinal(comparable, delDia.meta, delDia.gatillo, ind.mejor_si)
                             if (zona) colorClass = CLASE_ZONA[zona]
                           }
                           const esRechazosPct = ind.id === "auto_rechazos_pct"

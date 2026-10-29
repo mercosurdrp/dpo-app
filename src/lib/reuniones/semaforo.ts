@@ -31,14 +31,35 @@ export interface IndicadorSemaforo {
   meta: number | null
   gatillo?: number | null
   mejor_si?: "menor" | "mayor"
+  metas_dia?: Record<string, { meta: number; gatillo: number }>
+  meta_mtd?: number | null
+  gatillo_mtd?: number | null
 }
 
+/**
+ * `fecha`: día de la celda (o "mtd" para el acumulado). Las filas con target
+ * por día (Bultos/HL vendidos) se juzgan contra el de ese día, en 3 zonas;
+ * sin `fecha` se usa el target de la fila (el del día de la reunión).
+ */
 export function estadoIndicador(
   ind: IndicadorSemaforo,
   valor: number | null | undefined,
+  fecha?: string,
 ): EstadoSemaforo {
   if (valor == null || !Number.isFinite(valor)) return "sin_dato"
   if (NEUTROS.has(ind.id)) return "neutro"
+  if (ind.metas_dia && fecha && ind.mejor_si) {
+    const t =
+      fecha === "mtd"
+        ? ind.meta_mtd != null
+          ? { meta: ind.meta_mtd, gatillo: ind.gatillo_mtd ?? ind.meta_mtd }
+          : null
+        : ind.metas_dia[fecha] ?? null
+    if (!t) return "neutro"
+    const menor = ind.mejor_si === "menor"
+    if (menor ? valor <= t.meta : valor >= t.meta) return "verde"
+    return (menor ? valor > t.gatillo : valor < t.gatillo) ? "rojo" : "amarillo"
+  }
   if (!ind.mejor_si || ind.meta == null) return "neutro"
   const cumple = ind.mejor_si === "menor" ? valor <= ind.meta : valor >= ind.meta
   if (cumple) return "verde"
