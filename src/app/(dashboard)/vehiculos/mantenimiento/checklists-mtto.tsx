@@ -811,6 +811,23 @@ export function ChecklistsMtto({
     return ids.length > 0 ? ids : [i.id]
   }
 
+  /**
+   * El grupo que se ve, pero con los ids del episodio ENTERO.
+   *
+   * El filtro de período recorta las filas visibles, no el problema: si el plan
+   * se marcara sólo sobre lo que entra en el mes, las marcas del mes anterior
+   * del mismo defecto quedarían sin plan y el foco seguiría pidiendo gestión en
+   * la tarjeta de arrastre. «Se repitió» también se cuenta sobre el episodio
+   * completo, que es la pregunta real: cuántas veces lo reportó el chofer.
+   */
+  function conEpisodioCompleto(g: GrupoFoco): GrupoFoco {
+    return {
+      ...g,
+      ids: idsDelEpisodio(g.origen),
+      repeticiones: g.origen.episodioReportes || g.repeticiones,
+    }
+  }
+
   function pedirBorrado(items: ChecklistItemNoOk[]) {
     setDelError(null)
     setDelSerie(items)
@@ -885,7 +902,11 @@ export function ChecklistsMtto({
 
   // El arrastre se lista por FOCO, no por checklist: ver 16 veces la misma
   // pérdida de fluidos no es ver 16 problemas.
-  const grupos = useMemo(() => agruparFocos(arrastre), [arrastre])
+  const grupos = useMemo(
+    () => agruparFocos(arrastre).map(conEpisodioCompleto),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [arrastre, itemsNoOk]
+  )
 
   /**
    * Lo mismo para el período elegido: una fila por problema.
@@ -896,7 +917,11 @@ export function ChecklistsMtto({
    * episodio hay un foco, un plan, una OT y un tiempo. El detalle marca por
    * marca sigue a un click, para ver qué chofer lo reportó cada día.
    */
-  const gruposPeriodo = useMemo(() => agruparFocos(items), [items])
+  const gruposPeriodo = useMemo(
+    () => agruparFocos(items).map(conEpisodioCompleto),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, itemsNoOk]
+  )
   const [verDetalle, setVerDetalle] = useState(false)
 
   /**
