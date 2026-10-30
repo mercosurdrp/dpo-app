@@ -21,6 +21,7 @@ import { validarLectura } from "@/lib/vehiculos/validar-lectura"
 import { bajaDeUnidad, type UnidadCatalogo } from "@/lib/vehiculos/unidad-de-baja"
 import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
 import { esFocoDeMantenimiento } from "@/lib/vehiculos/focos-checklist"
+import { marcarEpisodios } from "@/lib/vehiculos/episodios-foco"
 import { TAREAS_CIL } from "@/lib/flota/cil-tareas"
 import type {
   CostosMantenimiento,
@@ -1646,6 +1647,30 @@ export interface ChecklistItemNoOk {
    * null = esta fila es el primer reporte del foco.
    */
   repeticionDe: string | null
+  /**
+   * Episodio al que pertenece esta marca: el id del primer reporte del problema.
+   *
+   * Es la clave con la que la pantalla lista focos en vez de marcas, cierra toda
+   * la serie con UN plan y no deja crear una segunda OT por el mismo defecto.
+   * Ver `lib/vehiculos/episodios-foco`.
+   */
+  episodioId: string
+  /** Cuántas veces se reportó este mismo problema. */
+  episodioReportes: number
+  /** Primera detección del problema (arranque del tiempo de respuesta). */
+  episodioDesde: string
+  /** Timestamp de esa primera detección, para el reloj de lo que sigue abierto. */
+  episodioHora: string | null
+  /** Cierre del problema; null = sigue vivo por más que alguna fila diga OK. */
+  episodioCierre: string | null
+  /** true = lo cerró un plan de mantenimiento; false = la vuelta a OK del chofer. */
+  episodioCierreFirme: boolean
+  /**
+   * EL tiempo de respuesta del problema: de la primera detección al cierre.
+   * null = todavía abierto. Es el único número que hay que mirar: las
+   * repeticiones no tienen el suyo.
+   */
+  horasEpisodio: number | null
 }
 
 /**
@@ -1889,30 +1914,40 @@ export async function getChecklistsMtto(): Promise<
     })
 
     /**
-     * Episodios: reportes del mismo ítem en la misma unidad que terminaron en el
-     * MISMO momento son el mismo foco reportado varias veces mientras seguía
-     * abierto (el cierre es la prueba —plan cerrado o vuelta a OK—, y es común a
-     * todos los reportes de la racha). Se marca como repetición todo lo que no
-     * sea el primer reporte.
+     * Episodios: un defecto que el chofer vuelve a marcar todos los días hasta
+     * que se arregla es UN problema con UN tiempo de respuesta. El episodio
+     * arranca en el primer reporte y se corta cuando hay prueba de que el
+     * defecto se fue (plan cerrado o vuelta a OK del ítem); todo lo que caiga
+     * mientras sigue abierto es repetición. Ver `lib/vehiculos/episodios-foco`.
      */
-    const primeroDelFoco = new Map<string, { id: string; fecha: string; hora: string }>()
-    const claveFoco = (i: (typeof conTiempos)[number]) =>
-      `${i.dominio}|${i.itemId}|${i.plan?.resueltoAt ?? i.volvioOkAt ?? "abierto"}`
-    for (const i of conTiempos) {
-      if (!i.hora) continue
-      const k = claveFoco(i)
-      const previo = primeroDelFoco.get(k)
-      if (!previo || i.hora < previo.hora) {
-        primeroDelFoco.set(k, { id: i.id, fecha: i.fecha, hora: i.hora })
-      }
-    }
+    const marcas = marcarEpisodios(
+      conTiempos.map((i) => ({
+        id: i.id,
+        dominio: i.dominio,
+        itemId: i.itemId,
+        hora: i.hora,
+        fecha: i.fecha,
+        // El plan cerrado es la prueba firme; la vuelta a OK vale si se
+        // sostiene (el HELI1 carga dos checklists por día y se contradicen).
+        cierre: i.plan?.resueltoAt ?? i.volvioOkAt ?? null,
+        cierreFirme: i.plan?.resueltoAt != null,
+      }))
+    )
 
     const itemsNoOk: ChecklistItemNoOk[] = conTiempos
       .map((i) => {
-        const primero = i.hora ? primeroDelFoco.get(claveFoco(i)) : undefined
+        const marca = marcas.get(i.id)
+        const desde = marca?.primeraHora ?? i.hora
         return {
           ...i,
-          repeticionDe: primero && primero.id !== i.id ? primero.fecha : null,
+          repeticionDe: marca?.repeticionDe ?? null,
+          episodioId: marca?.episodioId ?? i.id,
+          episodioReportes: marca?.reportes ?? 1,
+          episodioDesde: marca?.primeraFecha ?? i.fecha,
+          episodioHora: desde,
+          episodioCierre: marca?.cierre ?? null,
+          episodioCierreFirme: marca?.cierreFirme ?? false,
+          horasEpisodio: horasEntre(desde, marca?.cierre ?? null),
         }
       })
       .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0))
@@ -2197,6 +2232,95 @@ export async function upsertPlanChecklist(
     const plan = mapPlanRow(row)
     await completarOtDePlanes(supabase, [plan])
     return { data: plan }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/** Descripción por defecto del plan cuando se marca la gestión en curso. */
+const DESC_EN_CURSO = "Plan de acción en curso: reparación en gestión."
+/** Descripciones que no dicen nada y se pueden reemplazar sin perder información. */
+const DESC_VACIAS = new Set(["", "-", ".", "pendiente", "en proceso", "en curso", "sin datos"])
+
+/**
+ * Marca que el plan de acción de un foco YA ESTÁ EN CURSO, para todo el episodio.
+ *
+ * Un desperfecto que tarda en resolverse lo vuelve a reportar el chofer en cada
+ * checklist. Antes eso obligaba a cargar un plan por día —los frenos del HELI1
+ * tenían tres planes "pendiente" cargados a mano en tres días— y cada fila
+ * seguía ofreciendo crear SU propia OT por el mismo defecto. Con un click acá
+ * todos los reportes del episodio pasan a **en proceso** con la misma
+ * descripción y la misma OT: un problema, un plan, un tiempo de respuesta.
+ *
+ * Reglas:
+ *  - Un plan ya **resuelto NO se reabre**: el cierre es evidencia y no se pisa.
+ *    Si el episodio tiene un cierre, lo que vino después es otro episodio.
+ *  - La OT se toma de la serie: si alguno de los reportes ya deriva en una OT,
+ *    el resto la recibe en vez de habilitar una segunda orden por lo mismo.
+ *  - La descripción se unifica: la que pase el llamador o la más completa que ya
+ *    tenga la serie (un "pendiente" no tapa un "se pidió turno al taller").
+ */
+export async function marcarGestionEnCursoChecklist(input: {
+  /** Reportes del episodio: el primero y todas sus repeticiones. */
+  respuestaIds: string[]
+  /** Qué se está gestionando. Opcional: si no viene, se conserva lo cargado. */
+  descripcion?: string
+}): Promise<{ data: { planes: number; otId: string | null } } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+
+    const ids = [...new Set((input.respuestaIds ?? []).filter(Boolean))]
+    if (ids.length === 0) return { error: "Falta el ítem del checklist" }
+
+    // Misma sonda que el upsert: si la migración del vínculo con la OT no está
+    // aplicada, la gestión se marca igual y el plan simplemente no la referencia.
+    const sondaOt = await supabase.from("checklist_planes_accion").select("ot_id").limit(1)
+    let hayOt = true
+    if (sondaOt.error) {
+      if (sondaOt.error.code !== "42703") return { error: sondaOt.error.message }
+      hayOt = false
+    }
+
+    const planes = (await leerPlanesChecklist(supabase, ids)).map(mapPlanRow)
+    const porRespuesta = new Map(planes.map((p) => [p.respuestaId, p]))
+
+    const esVacia = (d: string | null | undefined) =>
+      DESC_VACIAS.has((d ?? "").trim().toLowerCase())
+    const descripcion =
+      input.descripcion?.trim() ||
+      planes
+        .map((p) => p.descripcion ?? "")
+        .filter((d) => !esVacia(d))
+        .sort((a, b) => b.length - a.length)[0] ||
+      DESC_EN_CURSO
+    const tipo = planes.find((p) => p.tipo)?.tipo ?? "correctivo"
+    const otId = planes.map((p) => p.otId).find((id) => !!id) ?? null
+
+    let tocados = 0
+    for (const id of ids) {
+      const plan = porRespuesta.get(id)
+      // El plan cerrado no se reabre nunca.
+      if (plan?.estado === "resuelto") continue
+      const comunes = {
+        tipo,
+        estado: "en_proceso" as const,
+        descripcion,
+        ...(hayOt ? { ot_id: otId } : {}),
+        updated_at: new Date().toISOString(),
+      }
+      const { error } = plan
+        ? await supabase.from("checklist_planes_accion").update(comunes).eq("id", plan.id)
+        : await supabase
+            .from("checklist_planes_accion")
+            .insert({ respuesta_id: id, ...comunes, created_by: profile.id })
+      if (error) return { error: error.message }
+      tocados++
+    }
+
+    if (tocados === 0)
+      return { error: "El plan de este foco ya está cerrado: no hay nada que poner en curso" }
+    return { data: { planes: tocados, otId } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

@@ -42,6 +42,7 @@ import {
   Loader2,
   Trash2,
   Wrench,
+  PlayCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from "recharts"
@@ -66,6 +67,7 @@ import {
   eliminarPlanChecklist,
   getOtsDeUnidad,
   getRepuestosPanol,
+  marcarGestionEnCursoChecklist,
   upsertPlanChecklist,
   type ChecklistComentario,
   type ChecklistItemNoOk,
@@ -242,10 +244,13 @@ function TablaItemsNoOk({
 /**
  * Un defecto que dura tres semanas no es deuda nueva cada día: el chofer lo
  * vuelve a marcar en cada checklist. La pérdida de fluidos del HELI1 dejó 16
- * filas en julio. En el arrastre se agrupan por unidad + ítem, de modo que el
- * listado muestre focos y no repeticiones, y que un solo plan cierre la serie.
+ * filas en julio y los frenos del HELI1, tres en tres días de octubre. Las
+ * marcas se agrupan por EPISODIO —el problema, de la primera detección hasta
+ * que hay prueba de que se fue (`lib/vehiculos/episodios-foco`)— para que el
+ * listado muestre focos y no repeticiones, un solo plan cierre la serie y no
+ * haya una segunda OT por el mismo defecto.
  */
-interface GrupoArrastre {
+interface GrupoFoco {
   clave: string
   /** El más viejo: desde cuándo viene la deuda. */
   origen: ChecklistItemNoOk
@@ -255,12 +260,20 @@ interface GrupoArrastre {
   ids: string[]
   repeticiones: number
   ultimaFecha: string
+  /** Estado de la gestión del episodio: el más avanzado de sus planes. */
+  estadoGestion: ChecklistPlanEstado | null
+  /** Desde cuándo quedó declarada en curso, para mostrarlo en la fila. */
+  enCursoDesde: string | null
+  /** La OT en la que se repara, si alguno de los reportes ya la tiene. */
+  otId: string | null
 }
 
-function agruparArrastre(items: ChecklistItemNoOk[]): GrupoArrastre[] {
+function agruparFocos(items: ChecklistItemNoOk[]): GrupoFoco[] {
   const porClave = new Map<string, ChecklistItemNoOk[]>()
   for (const i of items) {
-    const clave = `${i.dominio}|${i.categoria}|${i.item}`
+    // El episodio lo calcula el servidor sobre TODO el histórico, así que un
+    // filtro de período no puede partir una serie en dos focos.
+    const clave = i.episodioId || `${i.dominio}|${i.categoria}|${i.item}`
     const previos = porClave.get(clave)
     if (previos) previos.push(i)
     else porClave.set(clave, [i])
@@ -268,13 +281,34 @@ function agruparArrastre(items: ChecklistItemNoOk[]): GrupoArrastre[] {
   return Array.from(porClave, ([clave, filas]) => {
     const orden = [...filas].sort((a, b) => a.fecha.localeCompare(b.fecha))
     const origen = orden[0]
+    const planes = orden.map((f) => f.plan).filter((p): p is NonNullable<typeof p> => !!p)
+    const estadoGestion: ChecklistPlanEstado | null = planes.some((p) => p.estado === "resuelto")
+      ? "resuelto"
+      : planes.some((p) => p.estado === "en_proceso")
+        ? "en_proceso"
+        : planes.length > 0
+          ? "pendiente"
+          : null
+    const enCurso = planes
+      .filter((p) => p.estado === "en_proceso")
+      .map((p) => p.createdAt)
+      .sort()
     return {
       clave,
       origen,
-      principal: orden.find((f) => f.plan) ?? origen,
+      // La fila que se edita es la que ya lleva la gestión: la resuelta primero,
+      // después la que está en curso, y si no hay ninguna, el primer reporte.
+      principal:
+        orden.find((f) => f.plan?.estado === "resuelto") ??
+        orden.find((f) => f.plan?.estado === "en_proceso") ??
+        orden.find((f) => f.plan) ??
+        origen,
       ids: orden.map((f) => f.id),
       repeticiones: orden.length,
       ultimaFecha: orden[orden.length - 1].fecha,
+      estadoGestion,
+      enCursoDesde: enCurso[0] ?? null,
+      otId: planes.map((p) => p.otId).find((id) => !!id) ?? null,
     }
   }).sort((a, b) => a.origen.fecha.localeCompare(b.origen.fecha))
 }
@@ -288,28 +322,30 @@ function agruparArrastre(items: ChecklistItemNoOk[]): GrupoArrastre[] {
  * estuvo abierta. Mismo vicio de denominador que la adherencia auto-reportada.
  */
 function duracionesPorFoco(items: ChecklistItemNoOk[]): number[] {
-  const focos = new Map<string, { desdeMs: number; hastaMs: number }>()
+  // Un tiempo por episodio, el que calculó el servidor sobre el histórico
+  // completo: el cierre vale venga del plan de mantenimiento o de la vuelta a OK
+  // del chofer (dejar afuera los que nadie cerró en la app sesgaba el promedio
+  // hacia los focos que alguien se acordó de cerrar).
+  const porEpisodio = new Map<string, number>()
   for (const i of items) {
-    // El cierre es el plan si se cerró y, si no, la vuelta a OK del ítem: un
-    // foco que nadie cerró en la app pero que el chofer ya reportó bien también
-    // tuvo un tiempo de respuesta, y dejarlo afuera sesgaba el promedio hacia
-    // los focos que alguien se acordó de cerrar.
-    const cierre =
-      i.plan?.estado === "resuelto" ? i.plan.resueltoAt : (i.volvioOkAt ?? null)
-    if (!cierre || !i.hora) continue
-    const desdeMs = new Date(i.hora).getTime()
-    const hastaMs = new Date(cierre).getTime()
-    if (Number.isNaN(desdeMs) || Number.isNaN(hastaMs) || hastaMs < desdeMs) continue
-    const clave = `${i.dominio}|${i.categoria}|${i.item}|${cierre.slice(0, 10)}`
-    const previo = focos.get(clave)
-    if (previo) {
-      previo.desdeMs = Math.min(previo.desdeMs, desdeMs)
-      previo.hastaMs = Math.max(previo.hastaMs, hastaMs)
-    } else {
-      focos.set(clave, { desdeMs, hastaMs })
-    }
+    if (i.horasEpisodio == null) continue
+    porEpisodio.set(i.episodioId || i.id, i.horasEpisodio)
   }
-  return Array.from(focos.values(), (f) => (f.hastaMs - f.desdeMs) / 3_600_000)
+  return Array.from(porEpisodio.values())
+}
+
+/**
+ * Una fila por foco para las listas de KPI: el primer reporte del episodio, con
+ * el plan que lleva la gestión y el tiempo medido de punta a punta (primera
+ * detección → cierre), no el de la marca que casualmente tenga el plan cargado.
+ */
+function filaDeFoco(g: GrupoFoco): ChecklistItemNoOk {
+  return {
+    ...g.origen,
+    plan: g.principal.plan,
+    // El tiempo del episodio, no el de la marca que casualmente lleva el plan.
+    horasResolucion: g.origen.horasEpisodio,
+  }
 }
 
 /** Lista detrás de cada KPI de arriba: qué observaciones forman el número. */
@@ -425,21 +461,90 @@ function DetalleKpiDialog({
 }
 
 /**
- * Arrastre agrupado: una fila por foco, con desde cuándo viene y en cuántos
- * checklists se repitió.
+ * Botón de un click: «el plan de acción ya está en curso».
+ *
+ * Es la respuesta al defecto que tarda en resolverse. El chofer lo sigue
+ * marcando todos los días y antes había que cargar un plan por reporte —y cada
+ * fila ofrecía crear SU propia OT—. Acá se declara la gestión una vez, para todo
+ * el episodio: el foco deja de pedir plan en cada checklist nuevo, el tiempo de
+ * respuesta sigue siendo uno solo (corre desde la primera detección) y la OT,
+ * si hay, es la misma para toda la serie.
  */
-function TablaArrastre({
+function BotonEnCurso({
+  grupo,
+  onListo,
+}: {
+  grupo: GrupoFoco
+  onListo: () => void
+}) {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  if (grupo.estadoGestion === "resuelto") return null
+  if (grupo.estadoGestion === "en_proceso") {
+    return (
+      <span className="flex flex-col text-[11px] text-amber-600 dark:text-amber-400">
+        <span className="flex items-center gap-1 font-medium">
+          <PlayCircle className="size-3" /> gestión en curso
+        </span>
+        {grupo.enCursoDesde && <span>declarada {fmtFecha(grupo.enCursoDesde)}</span>}
+      </span>
+    )
+  }
+  return (
+    <span className="flex flex-col gap-1">
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 gap-1 whitespace-nowrap text-xs"
+        disabled={pending}
+        title={
+          grupo.repeticiones > 1
+            ? `Marca la gestión en curso en los ${grupo.repeticiones} reportes de este defecto: no se abre un plan ni una OT por checklist`
+            : "Marca que el plan de acción de este defecto ya está en curso"
+        }
+        onClick={() => {
+          setError(null)
+          setPending(true)
+          marcarGestionEnCursoChecklist({ respuestaIds: grupo.ids }).then((res) => {
+            setPending(false)
+            if ("error" in res) {
+              setError(res.error)
+              return
+            }
+            onListo()
+          })
+        }}
+      >
+        {pending ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <PlayCircle className="size-3.5" />
+        )}
+        Plan en curso
+      </Button>
+      {error && <span className="text-[11px] text-destructive">{error}</span>}
+    </span>
+  )
+}
+
+/**
+ * Focos agrupados: una fila por problema, con desde cuándo viene y en cuántos
+ * checklists se repitió. Se usa para el arrastre y para el período elegido.
+ */
+function TablaFocos({
   grupos,
   puedeEditar,
   ahoraMs,
   onEditarPlan,
   onEliminar,
+  onRefrescar,
 }: {
-  grupos: GrupoArrastre[]
+  grupos: GrupoFoco[]
   puedeEditar: boolean
   ahoraMs: number | null
-  onEditarPlan: (g: GrupoArrastre) => void
-  onEliminar: (g: GrupoArrastre) => void
+  onEditarPlan: (g: GrupoFoco) => void
+  onEliminar: (g: GrupoFoco) => void
+  onRefrescar: () => void
 }) {
   return (
     <ScrollX>
@@ -455,7 +560,8 @@ function TablaArrastre({
             <TableHead>Se repitió</TableHead>
             <TableHead>Comentario</TableHead>
             <TableHead>Plan de acción</TableHead>
-            <TableHead>Abierto hace</TableHead>
+            {puedeEditar && <TableHead>Gestión</TableHead>}
+            <TableHead>Tiempo de respuesta</TableHead>
             {puedeEditar && <TableHead className="text-right">Eliminar</TableHead>}
           </TableRow>
         </TableHeader>
@@ -464,7 +570,18 @@ function TablaArrastre({
             const i = g.origen
             return (
               <TableRow key={g.clave}>
-                <TableCell className="whitespace-nowrap">{fmtFecha(i.fecha)}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <span className="flex flex-col">
+                    {fmtFecha(i.fecha)}
+                    {/* El episodio arrancó antes del período que se está
+                        mirando: el foco no nació acá. */}
+                    {i.repeticionDe && (
+                      <span className="text-[11px] text-muted-foreground">
+                        viene del {fmtFecha(i.repeticionDe)}
+                      </span>
+                    )}
+                  </span>
+                </TableCell>
                 <TableCell className="font-medium">{i.dominio}</TableCell>
                 <TableCell>
                   <TipoBadge tipo={i.tipo} />
@@ -507,8 +624,13 @@ function TablaArrastre({
                     onEditar={() => onEditarPlan(g)}
                   />
                 </TableCell>
+                {puedeEditar && (
+                  <TableCell className="min-w-32">
+                    <BotonEnCurso grupo={g} onListo={onRefrescar} />
+                  </TableCell>
+                )}
                 <TableCell className="whitespace-nowrap">
-                  <TiempoRespuestaCell item={i} ahoraMs={ahoraMs} />
+                  <TiempoRespuestaCell item={i} ahoraMs={ahoraMs} modo="foco" />
                 </TableCell>
                 {puedeEditar && (
                   <TableCell className="text-right">
@@ -676,6 +798,19 @@ export function ChecklistsMtto({
   const [delError, setDelError] = useState<string | null>(null)
   const [pendingDel, startDel] = useTransition()
 
+  /**
+   * Todos los reportes del episodio de una marca.
+   *
+   * El plan de acción y la OT son UNO para el problema entero, así que se buscan
+   * sobre el histórico completo y no sobre el período filtrado: si no, cargar el
+   * plan en noviembre dejaría abiertas las marcas de octubre del mismo defecto.
+   */
+  function idsDelEpisodio(i: ChecklistItemNoOk): string[] {
+    const ep = i.episodioId || i.id
+    const ids = itemsNoOk.filter((o) => (o.episodioId || o.id) === ep).map((o) => o.id)
+    return ids.length > 0 ? ids : [i.id]
+  }
+
   function pedirBorrado(items: ChecklistItemNoOk[]) {
     setDelError(null)
     setDelSerie(items)
@@ -750,7 +885,36 @@ export function ChecklistsMtto({
 
   // El arrastre se lista por FOCO, no por checklist: ver 16 veces la misma
   // pérdida de fluidos no es ver 16 problemas.
-  const grupos = useMemo(() => agruparArrastre(arrastre), [arrastre])
+  const grupos = useMemo(() => agruparFocos(arrastre), [arrastre])
+
+  /**
+   * Lo mismo para el período elegido: una fila por problema.
+   *
+   * 🚨 Antes esta tabla era una fila por checklist, y ahí estaba el nudo: el
+   * defecto que tarda en resolverse aparecía todos los días pidiendo su propio
+   * plan, su propia OT y mostrando su propio tiempo de respuesta. Agrupado por
+   * episodio hay un foco, un plan, una OT y un tiempo. El detalle marca por
+   * marca sigue a un click, para ver qué chofer lo reportó cada día.
+   */
+  const gruposPeriodo = useMemo(() => agruparFocos(items), [items])
+  const [verDetalle, setVerDetalle] = useState(false)
+
+  /**
+   * Todo lo que se está viendo, agrupado por FOCO. Es la unidad de medida de la
+   * pantalla entera: los KPI, las tortas por unidad y el tiempo de respuesta.
+   *
+   * Contando filas, los frenos del HELI1 reportados tres días daban 3 ítems no
+   * OK, 3 críticos y 3 planes: el tablero exageraba la deuda y el chofer que
+   * cumple reportándolo todos los días la inflaba más. Un episodio cuenta una
+   * vez; su estado es el más avanzado de sus planes (si uno cerró, el foco
+   * cerró).
+   */
+  const focosVisibles = useMemo(() => agruparFocos(visibles), [visibles])
+  const criticos = focosVisibles.filter((g) => g.origen.critico).length
+  const conPlan = focosVisibles.filter((g) => g.estadoGestion != null).length
+  const abiertos = focosVisibles.filter((g) => g.estadoGestion !== "resuelto").length
+  const enGestion = focosVisibles.filter((g) => g.estadoGestion === "en_proceso").length
+  const totalFocos = focosVisibles.length
 
   const coments = useMemo(
     () => comentarios.filter((c) => coincide(c) && dentroDe(c.fecha, rango)),
@@ -767,32 +931,25 @@ export function ChecklistsMtto({
    * 🚨 Un defecto que dura tres semanas lo vuelve a marcar el chofer en cada
    * checklist: la pérdida de fluidos del HELI1 dejó 23 filas. Contando fila por
    * fila, el HELI1 daba 26 focos contra 3 del HELI2 y se comía la torta entera
-   * con UN problema. Se agrupa por unidad + categoría + ítem, la misma clave
-   * que usa el arrastre (`agruparArrastre`) y el tiempo de respuesta.
+   * con UN problema. Se cuenta por EPISODIO, la misma unidad que usan el resto
+   * de los números de la pantalla (`agruparFocos`) y el tiempo de respuesta.
    *
-   * Un problema cuenta como abierto mientras alguna de sus marcas siga sin
-   * plan resuelto: que se haya cerrado la del martes no lo cierra si el jueves
-   * volvió a aparecer.
+   * El mismo defecto que apareció en mayo, se arregló y volvió en octubre son
+   * DOS episodios: uno cerrado y uno abierto. Eso es información —el defecto
+   * reincidente— y no se tapa contándolo como uno.
    */
   const porUnidad = useMemo(() => {
-    const focos = new Map<string, { dominio: string; abierto: boolean }>()
-    for (const i of visibles) {
-      const clave = `${i.dominio}|${i.categoria}|${i.item}`
-      const f = focos.get(clave) ?? { dominio: i.dominio, abierto: false }
-      if (i.plan?.estado !== "resuelto") f.abierto = true
-      focos.set(clave, f)
-    }
     const m = new Map<string, { abiertos: number; resueltos: number }>()
-    for (const f of focos.values()) {
-      const u = m.get(f.dominio) ?? { abiertos: 0, resueltos: 0 }
-      if (f.abierto) u.abiertos++
-      else u.resueltos++
-      m.set(f.dominio, u)
+    for (const g of focosVisibles) {
+      const u = m.get(g.origen.dominio) ?? { abiertos: 0, resueltos: 0 }
+      if (g.estadoGestion === "resuelto") u.resueltos++
+      else u.abiertos++
+      m.set(g.origen.dominio, u)
     }
     return Array.from(m.entries())
       .map(([dominio, v]) => ({ dominio, ...v, total: v.abiertos + v.resueltos }))
       .sort((a, b) => b.abiertos - a.abiertos || b.total - a.total)
-  }, [visibles])
+  }, [focosVisibles])
   const paleta = usePaletaViz()
   const tipoPorDominio = useMemo(
     () => new Map(unidades.map((u) => [u.dominio, u.tipo])),
@@ -811,10 +968,6 @@ export function ChecklistsMtto({
     }
   }, [porUnidad, tipoPorDominio])
 
-  const criticos = visibles.filter((i) => i.critico).length
-  const conPlan = visibles.filter((i) => i.plan).length
-  const abiertos = visibles.filter((i) => i.plan?.estado !== "resuelto").length
-
   /**
    * Los cinco KPI informaban un número y no había forma de ver QUÉ observación
    * lo formaba: las tablas de abajo listan sólo el período, sin el arrastre y
@@ -824,25 +977,28 @@ export function ChecklistsMtto({
     "abiertos" | "criticos" | "con_plan" | "resueltos" | null
   >(null)
 
+  // Las listas de detalle van por foco, como los números de las tarjetas: si el
+  // KPI dice 3 y la lista mostraba 5 filas, el número parece mentira.
   const detalleItems = useMemo(() => {
+    const filas = focosVisibles.map(filaDeFoco)
     switch (detalleKpi) {
       case "abiertos":
-        return visibles
+        return filas
           .filter((i) => i.plan?.estado !== "resuelto")
           .sort((a, b) => a.fecha.localeCompare(b.fecha))
       case "criticos":
-        return visibles.filter((i) => i.critico).sort((a, b) => b.fecha.localeCompare(a.fecha))
+        return filas.filter((i) => i.critico).sort((a, b) => b.fecha.localeCompare(a.fecha))
       case "con_plan":
-        return visibles.filter((i) => i.plan).sort((a, b) => b.fecha.localeCompare(a.fecha))
+        return filas.filter((i) => i.plan).sort((a, b) => b.fecha.localeCompare(a.fecha))
       case "resueltos":
         // Los más lentos primero: son los que explican el promedio.
-        return visibles
+        return filas
           .filter((i) => i.plan?.estado === "resuelto")
           .sort((a, b) => (b.horasResolucion ?? 0) - (a.horasResolucion ?? 0))
       default:
         return []
     }
-  }, [detalleKpi, visibles])
+  }, [detalleKpi, focosVisibles])
   // Tiempo de respuesta: promedio de los focos ya cerrados, medido de la
   // primera detección al cierre del plan.
   const duraciones = useMemo(() => duracionesPorFoco(visibles), [visibles])
@@ -859,20 +1015,26 @@ export function ChecklistsMtto({
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <KpiCard
           onClick={() => setDetalleKpi("abiertos")}
-          label="Ítems no OK"
+          label="Defectos no OK"
           valor={
             <>
               {abiertos}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
-                / {visibles.length}
+                / {totalFocos}
               </span>
             </>
           }
           estado={abiertos > 0 ? "alerta" : "ok"}
           dpo="1.3"
-          sub={`Sin resolver, sobre ${visibles.length} observación${
-            visibles.length === 1 ? "" : "es"
-          } ${historico ? "del histórico" : "en vista"} · click para verlas`}
+          sub={`Sin resolver, sobre ${totalFocos} defecto${
+            totalFocos === 1 ? "" : "s"
+          } ${historico ? "del histórico" : "en vista"}${
+            enGestion > 0 ? ` · ${enGestion} con plan en curso` : ""
+          }${
+            visibles.length !== totalFocos
+              ? ` · ${visibles.length} marcas de checklist`
+              : ""
+          } · click para verlos`}
         />
         <KpiCard
           onClick={() => setDetalleKpi("criticos")}
@@ -892,12 +1054,12 @@ export function ChecklistsMtto({
                   numerador contaba el arrastre y el denominador no, así que
                   podía dar más planes que observaciones. */}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
-                / {visibles.length}
+                / {totalFocos}
               </span>
             </>
           }
           estado="neutro"
-          sub="Observaciones con reparación registrada · click para verlas"
+          sub="Defectos con reparación registrada (cerrada o en curso) · click para verlos"
         />
         <KpiCard
           onClick={() => setDetalleKpi("resueltos")}
@@ -1008,7 +1170,44 @@ export function ChecklistsMtto({
             <span className="text-sm font-normal capitalize text-muted-foreground">
               · {etiquetaPeriodo}
             </span>
+            {items.length > 0 && (
+              <Badge variant="outline" className="font-normal">
+                {gruposPeriodo.length} defecto{gruposPeriodo.length === 1 ? "" : "s"}
+                {items.length !== gruposPeriodo.length && <> · {items.length} marcas</>}
+              </Badge>
+            )}
+            {/* Dos lecturas de lo mismo: la de gestión (un problema, una fila) y
+                la cruda (qué chofer lo marcó cada día). Antes sólo existía la
+                cruda, y un defecto que duraba una semana parecía siete. */}
+            {items.length > 0 && (
+              <span className="ml-auto flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant={verDetalle ? "ghost" : "secondary"}
+                  className="h-7 text-xs"
+                  onClick={() => setVerDetalle(false)}
+                >
+                  Por defecto
+                </Button>
+                <Button
+                  size="sm"
+                  variant={verDetalle ? "secondary" : "ghost"}
+                  className="h-7 text-xs"
+                  onClick={() => setVerDetalle(true)}
+                >
+                  Checklist por checklist
+                </Button>
+              </span>
+            )}
           </CardTitle>
+          {!verDetalle && items.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Una fila por defecto: si el chofer lo vuelve a marcar todos los días hasta
+              que se resuelve, sigue siendo uno. «Plan en curso» declara la gestión de
+              toda la serie de una vez —no se abre un plan ni una OT por checklist— y el
+              tiempo de respuesta corre desde la primera detección.
+            </p>
+          )}
         </CardHeader>
         <CardContent>
           {items.length === 0 ? (
@@ -1020,13 +1219,36 @@ export function ChecklistsMtto({
                   : `Sin ítems observados en ${etiquetaPeriodo}.`}
               </p>
             </div>
-          ) : (
+          ) : verDetalle ? (
             <TablaItemsNoOk
               items={items}
               puedeEditar={puedeEditar}
               ahoraMs={ahoraMs}
-              onEditarPlan={(i) => setPlanTarget({ item: i, ids: [i.id] })}
+              // 🚨 Desde una marca suelta el plan se carga para TODO el episodio:
+              // si fuera sólo para esa fila, el mismo defecto quedaría pidiendo
+              // plan en cada checklist siguiente (y habilitando otra OT).
+              onEditarPlan={(i) =>
+                setPlanTarget({
+                  item: i,
+                  ids: idsDelEpisodio(i),
+                })
+              }
               onEliminar={(i) => pedirBorrado([i])}
+            />
+          ) : (
+            <TablaFocos
+              grupos={gruposPeriodo}
+              puedeEditar={puedeEditar}
+              ahoraMs={ahoraMs}
+              onEditarPlan={(g) => setPlanTarget({ item: g.principal, ids: g.ids })}
+              onEliminar={(g) =>
+                pedirBorrado(
+                  items
+                    .filter((i) => g.ids.includes(i.id))
+                    .sort((a, b) => a.fecha.localeCompare(b.fecha))
+                )
+              }
+              onRefrescar={() => router.refresh()}
             />
           )}
         </CardContent>
@@ -1056,10 +1278,11 @@ export function ChecklistsMtto({
             </p>
           </CardHeader>
           <CardContent>
-            <TablaArrastre
+            <TablaFocos
               grupos={grupos}
               puedeEditar={puedeEditar}
               ahoraMs={ahoraMs}
+              onRefrescar={() => router.refresh()}
               onEditarPlan={(g) => setPlanTarget({ item: g.principal, ids: g.ids })}
               // De la más vieja a la más nueva: el diálogo muestra el rango de
               // fechas y `arrastre` viene ordenado al revés.
@@ -1193,27 +1416,32 @@ export function ChecklistsMtto({
 }
 
 /**
- * Tiempo de respuesta del foco, en orden de qué prueba hay de que se resolvió:
+ * Tiempo de respuesta del foco. **UNO por problema**, no uno por marca.
  *
- *  1. **Plan cerrado** → de la carga del checklist al cierre del plan.
- *  2. **Sin plan cerrado pero el ítem volvió a dar OK** → hasta esa vuelta a OK.
- *     Es la prueba que carga el chofer. Sin esto, un foco que nadie cerró en la
- *     app figuraba "abierto hace 64 días" aunque el checklist del día siguiente
- *     ya lo mostrara en OK: el número no medía el defecto, medía el olvido de
- *     cargar el plan. Se marca "sin plan cargado" porque eso sigue faltando.
- *  3. **Nunca volvió a OK** → cuánto lleva abierto, que es lo que corre.
+ *  1. **El problema cerró** → de la primera detección al cierre, lo haya cerrado
+ *     el plan de mantenimiento o la vuelta a OK que carga el chofer. Sin el
+ *     segundo caso, un foco que nadie cerró en la app figuraba "abierto hace 64
+ *     días" aunque el checklist siguiente ya lo mostrara en OK: el número no
+ *     medía el defecto, medía el olvido de cargar el plan. Se avisa "sin plan
+ *     cargado" porque eso sigue faltando.
+ *  2. **Sigue abierto** → cuánto lleva desde la primera detección, que es lo que
+ *     corre; y si la gestión ya está declarada en curso, lo dice.
+ *
+ * En la vista marca por marca, las repeticiones no repiten el número: el tiempo
+ * es el del problema y está en su primer reporte. Mostrarlo en cada fila pintaba
+ * catorce focos rojos de días cada uno donde hubo uno solo.
  */
 function TiempoRespuestaCell({
   item,
   ahoraMs,
+  modo = "marca",
 }: {
   item: ChecklistItemNoOk
   ahoraMs: number | null
+  /** "foco" = la fila YA es el problema entero (tabla agrupada). */
+  modo?: "foco" | "marca"
 }) {
-  // 0. Repetición del mismo foco mientras seguía abierto: el tiempo es el del
-  //    primer reporte y ya está contado ahí. Mostrarlo de nuevo en cada fila
-  //    pintaba catorce focos rojos de días cada uno donde hubo uno solo.
-  if (item.repeticionDe) {
+  if (modo === "marca" && item.repeticionDe) {
     return (
       <span className="flex flex-col">
         <span className="text-sm text-muted-foreground">repetición</span>
@@ -1223,50 +1451,59 @@ function TiempoRespuestaCell({
       </span>
     )
   }
-  // 2. Sin plan cerrado, pero el chofer ya reportó el ítem en OK.
-  if (
-    item.plan?.estado !== "resuelto" &&
-    item.horasHastaOk != null &&
-    item.volvioOkAt != null
-  ) {
-    const color = colorTiempoRespuesta(item.horasHastaOk, item.critico)
+  // 1-2. El problema cerró: el número es el del EPISODIO, de la primera
+  //      detección al cierre, lo haya cerrado el plan o la vuelta a OK.
+  //      🚨 Una sola lectura OK que al rato se desdice no cierra nada: eso lo
+  //      resuelve `lib/vehiculos/episodios-foco`, no esta celda.
+  if (item.episodioCierre && item.horasEpisodio != null) {
+    const color = colorTiempoRespuesta(item.horasEpisodio, item.critico)
     return (
       <span className="flex flex-col" title={textoMetaRespuesta(item.critico)}>
         <span className={cn("text-sm font-semibold", CLASE_TIEMPO[color])}>
-          {formatDuracion(item.horasHastaOk)}
-        </span>
-        <span className="text-[11px] text-amber-600 dark:text-amber-400">
-          volvió a OK {fmtFechaHora(item.volvioOkAt)} · sin plan cargado
-        </span>
-      </span>
-    )
-  }
-  if (item.plan?.estado === "resuelto" && item.horasResolucion != null) {
-    const color = colorTiempoRespuesta(item.horasResolucion, item.critico)
-    return (
-      <span className="flex flex-col" title={textoMetaRespuesta(item.critico)}>
-        <span className={cn("text-sm font-semibold", CLASE_TIEMPO[color])}>
-          {formatDuracion(item.horasResolucion)}
+          {formatDuracion(item.horasEpisodio)}
         </span>
         {/* El número solo no dice nada: al lado va contra qué plazo se lee. */}
-        <span className="text-[11px] text-muted-foreground">
-          {textoMetaRespuesta(item.critico)} · resuelto {fmtFechaHora(item.plan.resueltoAt)}
-        </span>
+        {item.episodioCierreFirme ? (
+          <span className="text-[11px] text-muted-foreground">
+            {textoMetaRespuesta(item.critico)} · resuelto{" "}
+            {fmtFechaHora(item.episodioCierre)}
+          </span>
+        ) : (
+          <span className="text-[11px] text-amber-600 dark:text-amber-400">
+            volvió a OK {fmtFechaHora(item.episodioCierre)} · sin plan cargado
+          </span>
+        )}
       </span>
     )
   }
+  // Lo que corre se mide desde la PRIMERA detección del problema: si se contara
+  // desde esta marca, el defecto arrastrado desde hace tres semanas aparecería
+  // "abierto hace 4 h" cada vez que el chofer lo vuelve a reportar.
+  const desde = item.episodioHora ?? item.hora
   const abiertoHace =
-    item.hora && ahoraMs != null
-      ? (ahoraMs - new Date(item.hora).getTime()) / 3_600_000
-      : null
+    desde && ahoraMs != null ? (ahoraMs - new Date(desde).getTime()) / 3_600_000 : null
   if (abiertoHace == null || abiertoHace < 0)
     return <span className="text-muted-foreground/50">—</span>
+  // El reloj sigue corriendo aunque la gestión esté en curso —el tiempo de
+  // respuesta se cierra cuando el defecto se va, no cuando se avisa que se está
+  // atendiendo—, pero la fila dice que ya hay alguien atrás: un defecto en
+  // gestión y un defecto sin mirar no son lo mismo.
+  const enCurso = item.plan?.estado === "en_proceso"
   return (
-    <span className="flex flex-col">
-      <span className="text-sm text-muted-foreground">
+    <span className="flex flex-col" title={textoMetaRespuesta(item.critico)}>
+      <span
+        className={cn(
+          "text-sm",
+          enCurso
+            ? "font-semibold text-amber-600 dark:text-amber-400"
+            : "text-muted-foreground"
+        )}
+      >
         {formatDuracion(abiertoHace)}
       </span>
-      <span className="text-[11px] text-muted-foreground">sin resolver</span>
+      <span className="text-[11px] text-muted-foreground">
+        {enCurso ? "en gestión, desde la 1ª detección" : "sin resolver"}
+      </span>
     </span>
   )
 }
@@ -1295,6 +1532,24 @@ function PlanCell({
   const plan = item.plan
   if (!plan) {
     if (!puedeEditar) return <span className="text-muted-foreground/50">—</span>
+    // Repetición de un defecto que ya tiene su episodio abierto: no pide un plan
+    // propio. Antes cada día ofrecía "Agregar" y por ahí se cargaba un plan —y a
+    // veces una OT— por checklist para el mismo desperfecto.
+    if (item.repeticionDe) {
+      return (
+        <button
+          type="button"
+          onClick={onEditar}
+          className="flex w-full flex-col items-start rounded-md p-1 text-left hover:bg-muted"
+          title="Abre el plan del defecto: es uno para toda la serie"
+        >
+          <span className="text-xs text-muted-foreground">
+            ya reportado el {fmtFecha(item.repeticionDe)}
+          </span>
+          <span className="text-[11px] text-primary">ver el plan del defecto</span>
+        </button>
+      )
+    }
     return (
       <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onEditar}>
         <Plus className="size-3.5" /> Agregar
@@ -1613,6 +1868,21 @@ function PlanDialog({
                   </Button>
                 </div>
               </div>
+            ) : otId ? (
+              /* Candado contra la OT duplicada: mientras este defecto tenga una
+                 orden vinculada, no se ofrece crear otra. El chofer lo sigue
+                 marcando todos los días y cada marca abría este mismo diálogo:
+                 de ahí salían dos órdenes para una sola reparación. Para
+                 programar otra hay que desvincular la actual a mano. */
+              <p className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
+                <Wrench className="mt-0.5 size-3.5 shrink-0 text-sky-700 dark:text-sky-400" />
+                <span>
+                  Este defecto ya se repara en la OT vinculada arriba
+                  {ids.length > 1 && <> (la misma para los {ids.length} reportes)</>}. No
+                  hace falta otra: si la reparación cambió de orden, elegí
+                  «Se resolvió sin OT» y volvé a vincular.
+                </span>
+              </p>
             ) : (
               <Button
                 type="button"

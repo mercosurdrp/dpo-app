@@ -778,7 +778,14 @@ export function MantenimientoClient({
    */
   const contadores = useMemo(() => {
     const r = tablero.resumen
-    const noOkAbiertos = checklists.itemsNoOk.filter((i) => i.horasResolucion == null).length
+    // Defectos, no marcas de checklist: el desperfecto que el chofer vuelve a
+    // reportar todos los días hasta que se resuelve es UNO. Contando filas, los
+    // frenos del HELI1 sumaban 3 al badge en tres días por el mismo problema.
+    const noOkAbiertos = new Set(
+      checklists.itemsNoOk
+        .filter((i) => i.plan?.estado !== "resuelto" && i.volvioOkAt == null)
+        .map((i) => i.episodioId || i.id)
+    ).size
     const c: Record<string, { valor: number; tono: keyof typeof TONO_CONTADOR }> = {
       // Defectos NO OK sin plan cerrado: la cola real de la sección.
       checklists: { valor: noOkAbiertos, tono: "critico" },
