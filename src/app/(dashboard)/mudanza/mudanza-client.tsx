@@ -40,6 +40,7 @@ import { MontoInput } from "@/components/mudanza/monto-input"
 import { TareaFormDialog } from "@/components/mudanza/tarea-form-dialog"
 import { AvanceFormDialog } from "@/components/mudanza/avance-form-dialog"
 import { GastoFormDialog } from "@/components/mudanza/gasto-form-dialog"
+import { TareaRapidaDialog } from "@/components/mudanza/tarea-rapida-dialog"
 import { PartidaFormDialog } from "@/components/mudanza/partida-form-dialog"
 import {
   colorResponsable,
@@ -98,6 +99,10 @@ export function MudanzaClient({
     tarea: null,
   })
   const [avanceDlg, setAvanceDlg] = useState<{ open: boolean; tarea: MudanzaTarea | null }>({
+    open: false,
+    tarea: null,
+  })
+  const [rapidaDlg, setRapidaDlg] = useState<{ open: boolean; tarea: MudanzaTarea | null }>({
     open: false,
     tarea: null,
   })
@@ -234,9 +239,9 @@ export function MudanzaClient({
   }
 
   const puedeAvanzar = (t: MudanzaTarea) => puedeEditar || (!!usuarioId && t.responsable_id === usuarioId)
+  // Clic en el nombre: dialogo rapido (fechas reales + gasto). El completo queda detras de "Editar todos los datos".
   const abrirTarea = (t: MudanzaTarea) => {
-    if (puedeEditar) setTareaDlg({ open: true, tarea: t })
-    else if (puedeAvanzar(t)) setAvanceDlg({ open: true, tarea: t })
+    if (puedeAvanzar(t)) setRapidaDlg({ open: true, tarea: t })
   }
 
   const gastoPorTarea = useMemo(() => {
@@ -920,6 +925,16 @@ export function MudanzaClient({
         onSaved={refrescar}
         tarea={avanceDlg.tarea}
         tareas={tareas.filter(puedeAvanzar)}
+      />
+      <TareaRapidaDialog
+        open={rapidaDlg.open}
+        onOpenChange={(o) => setRapidaDlg((s) => ({ ...s, open: o }))}
+        onSaved={refrescar}
+        tarea={rapidaDlg.tarea}
+        gastos={gastos}
+        puedeGastar={puedeEditar}
+        onEditarCompleto={puedeEditar ? (t) => setTareaDlg({ open: true, tarea: t }) : undefined}
+        onEditarGasto={puedeEditar ? (g) => setGastoDlg({ open: true, gasto: g }) : undefined}
       />
       <GastoFormDialog
         open={gastoDlg.open}

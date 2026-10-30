@@ -415,6 +415,55 @@ export async function setAvanceTarea(tareaId: string, avance: number): Promise<R
   }
 }
 
+/**
+ * Fechas reales de una tarea desde el diálogo rápido (clic en el nombre).
+ * Acomoda el estado: con inicio real la tarea pasa a "en curso", con fin real
+ * queda "hecha" al 100 %; si se borra el fin real vuelve a "en curso".
+ * Lo puede hacer un editor o el responsable.
+ */
+export async function setFechasRealesTarea(
+  tareaId: string,
+  inicioReal: string | null,
+  finReal: string | null,
+): Promise<Result<true>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+    const ok = (s: string | null) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null)
+    const ini = ok(inicioReal)
+    let fin = ok(finReal)
+    const { data: tarea, error: tErr } = await supabase
+      .from("mudanza_tareas")
+      .select("id, responsable_id, estado, avance, hito")
+      .eq("id", tareaId)
+      .single()
+    if (tErr || !tarea) return { error: tErr?.message ?? "Tarea no encontrada" }
+    if (!EDITORES.includes(profile.role) && tarea.responsable_id !== profile.id) {
+      return { error: "Sólo el responsable de la tarea o un editor pueden cargar fechas." }
+    }
+    if (tarea.hito && ini) fin = ini
+    if (fin && !ini) return { error: "Para cargar el fin real primero poné cuándo arrancó." }
+    if (ini && fin && fin < ini) return { error: "El fin real no puede ser antes del inicio real." }
+    const patch: Record<string, unknown> = { inicio_real: ini, fin_real: fin }
+    if (fin) {
+      patch.estado = "hecha"
+      patch.avance = 100
+    } else if (ini) {
+      if (tarea.estado === "pendiente" || tarea.estado === "hecha") patch.estado = "en_curso"
+      if (tarea.estado === "hecha") patch.avance = Math.min(90, Number(tarea.avance) || 0)
+    } else if (tarea.estado === "hecha") {
+      patch.estado = "en_curso"
+      patch.avance = Math.min(90, Number(tarea.avance) || 0)
+    }
+    const { error } = await supabase.from("mudanza_tareas").update(patch).eq("id", tareaId)
+    if (error) return { error: error.message }
+    revalidatePath(REVALIDATE_PATH)
+    return { data: true }
+  } catch (err) {
+    return { error: msg(err, "Error al guardar las fechas reales") }
+  }
+}
+
 /** Presupuesto de una tarea, editado en la fila. Sólo editores. */
 export async function setPresupuestoTarea(tareaId: string, monto: number | null): Promise<Result<true>> {
   try {
