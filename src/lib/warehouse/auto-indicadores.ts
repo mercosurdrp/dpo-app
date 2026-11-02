@@ -19,6 +19,11 @@
  */
 
 import { diaAnterior, esFeriado } from "@/lib/feriados-ar"
+import { diaCerrado, hoyArgentina, ultimaFechaVisible } from "@/lib/reuniones/fecha-visible"
+
+// Re-export: la regla de visibilidad vive en un módulo puro (sin fetch) para
+// que el cliente de /reuniones/[id] use exactamente la misma máscara.
+export { diaCerrado, hoyArgentina, ultimaFechaVisible }
 
 // ────────────────────────────────────────────────────────────────────
 // Configuración
@@ -382,22 +387,6 @@ export async function buildWarehouseSerieDiaria(
   return { ...base, ...extraSinWqi, wqi: wqiSerie ?? base.wqi }
 }
 
-/** HOY en zona horaria de Argentina (YYYY-MM-DD). Usar SIEMPRE esto en vez de
- * `toISOString()`, que devuelve UTC y de noche (>21hs ART) adelanta un día. */
-export function hoyArgentina(): string {
-  return new Date().toLocaleDateString("en-CA", {
-    timeZone: "America/Argentina/Buenos_Aires",
-  })
-}
-
-/** ¿El día `f` ya cerró (dato confirmado)? El día de la reunión se oculta
- * mientras la reunión sea de HOY o futura (en el matinal el cierre del día aún
- * no está confirmado). Una vez que esa fecha quedó en el pasado, el día de la
- * reunión ya cerró y se revela. */
-export function diaCerrado(f: string, fechaReunion: string, hoy: string): boolean {
-  return fechaReunion < hoy ? f <= fechaReunion : f < fechaReunion
-}
-
 function buildSerieFromSnapshot(
   fechas: string[],
   fechaReunion: string,
@@ -415,7 +404,7 @@ function buildSerieFromSnapshot(
   const hoy = hoyArgentina()
   for (const f of fechas) {
     const dia = dias[f]
-    const visible = f <= fechaReunion
+    const visible = f <= ultimaFechaVisible(fechaReunion, hoy)
     // WQI/FGLI/SCL: serie MTD acumulada. Sólo se conserva para que la
     // columna MTD del indicador tome el último acumulado del mes; las
     // celdas diarias se renderizan con la serie *_dia (ver fetchSerieExtra).
@@ -1040,7 +1029,7 @@ async function buildSerieLegacy(
   const scl: Record<string, number | null> = {}
   const hoy = hoyArgentina()
   for (const f of fechas) {
-    const visible = f <= fechaReunion
+    const visible = f <= ultimaFechaVisible(fechaReunion, hoy)
     // Serie MTD acumulada — sólo se usa para el MTD del indicador.
     // Las celdas diarias se renderizan con la serie *_dia (fetchSerieExtra).
     // WQI oculta el día de la reunión mientras sea de hoy/futura; una vez que
@@ -1240,7 +1229,7 @@ async function fetchSerieExtra(
   const hoy = hoyArgentina()
   for (const f of fechas) {
     // FGLI y SCL conservan el día en curso.
-    const visible = f <= fechaReunion
+    const visible = f <= ultimaFechaVisible(fechaReunion, hoy)
     // WQI, roturas, faltantes y WNP ocultan el día de la reunión (y futuros): a
     // la hora del matinal el cierre de hoy todavía no está confirmado, igual que
     // precisión, errores y ausentismo. Se muestran hasta el último día cerrado;

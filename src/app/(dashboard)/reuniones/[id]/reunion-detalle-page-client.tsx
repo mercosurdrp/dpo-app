@@ -56,6 +56,7 @@ import {
   setIndicadorValor,
 } from "@/actions/reuniones"
 import { IS_MISIONES } from "@/lib/empresa"
+import { hoyArgentina, ultimaFechaVisible } from "@/lib/reuniones/fecha-visible"
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
 import {
@@ -1217,12 +1218,19 @@ export function ReunionDetallePageClient({
 
   // Calcular semanas ISO ya iniciadas dentro del mes (solo las que tienen al
   // menos un día <= fecha de la reunión actual)
+  // Última columna con dato: la fecha de la reunión, salvo en la reunión de
+  // cierre del mes (último hábil), que ya pasada muestra también la cola del
+  // mes (sábado 31, domingo, feriado). Misma regla que el server (`diaCerrado`).
+  const fechaHasta = useMemo(
+    () => ultimaFechaVisible(detalle.fecha, hoyArgentina()),
+    [detalle.fecha],
+  )
+
   const semanasDelMes = useMemo(() => {
     if (!indicadoresMes) return [] as Array<{ key: string; label: string; fechas: string[] }>
-    const fechaReunion = detalle.fecha
     const map = new Map<string, string[]>()
     for (const f of indicadoresMes.fechas) {
-      if (f > fechaReunion) continue // solo semanas iniciadas
+      if (f > fechaHasta) continue // solo semanas iniciadas
       const d = new Date(f + "T12:00:00")
       // Lunes de esa semana ISO
       const dow = d.getDay() || 7 // 1..7
@@ -1251,18 +1259,18 @@ export function ReunionDetallePageClient({
           lunesIso,
         }
       })
-  }, [indicadoresMes, detalle.fecha])
+  }, [indicadoresMes, fechaHasta])
 
   const fechasFiltradas = useMemo(() => {
     if (!indicadoresMes) return [] as string[]
     if (vistaTablero === "mes_completo") return indicadoresMes.fechas
     if (vistaTablero === "hasta_hoy") {
-      return indicadoresMes.fechas.filter((f) => f <= detalle.fecha)
+      return indicadoresMes.fechas.filter((f) => f <= fechaHasta)
     }
     // semana_X
     const sem = semanasDelMes.find((s) => s.key === vistaTablero)
-    return sem ? sem.fechas : indicadoresMes.fechas.filter((f) => f <= detalle.fecha)
-  }, [indicadoresMes, vistaTablero, detalle.fecha, semanasDelMes])
+    return sem ? sem.fechas : indicadoresMes.fechas.filter((f) => f <= fechaHasta)
+  }, [indicadoresMes, vistaTablero, fechaHasta, semanasDelMes])
 
   // Fuente de actividades (defensiva: actividades nuevo, compromisos legacy)
   const actividadesAll: ReunionActividadConResponsable[] = useMemo(() => {
@@ -2344,7 +2352,7 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_roturas" ||
                             ind.id === "auto_faltantes"
                           const valorValido =
-                            valor != null && Number.isFinite(valor) && f <= detalle.fecha
+                            valor != null && Number.isFinite(valor) && f <= fechaHasta
                           const muestra =
                             valorValido &&
                             (ind.mostrar_cero || esErroresPicking || esWqiPerdidasCero

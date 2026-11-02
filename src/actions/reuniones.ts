@@ -34,6 +34,7 @@ import {
   type MaquinistasTramo,
   type OperadorApertura,
 } from "@/lib/warehouse/auto-indicadores"
+import { ultimaFechaVisible } from "@/lib/reuniones/fecha-visible"
 import {
   buildMisionesLogisticaSerie,
   type MisionesSucursal,
@@ -2958,6 +2959,10 @@ async function getIndicadoresMesCore(
     // reunión: la del 30 lo ocultaba y la del 1 ya armaba el mes siguiente).
     const hoy = hoyArgentina()
     const cerrado = (f: string) => diaCerrado(f, fecha, hoy)
+    // Hasta dónde llega el MTD: la fecha de la reunión, salvo en la reunión de
+    // cierre del mes (último hábil), que una vez pasada abarca también la cola
+    // del mes —el sábado 31/10/26 no se veía en ninguna reunión.
+    const fechaMtd = ultimaFechaVisible(fecha, hoy)
     const fechaDesde = fechas[0]
     const fechaHasta = fechas[fechas.length - 1]
 
@@ -3353,7 +3358,7 @@ async function getIndicadoresMesCore(
           valor: v,
           observacion: null,
         }
-        if (f <= fecha) mtd += v
+        if (f <= fechaMtd) mtd += v
       }
       return {
         id,
@@ -3455,7 +3460,7 @@ async function getIndicadoresMesCore(
               valor: tasa,
               observacion: null,
             }
-            if (f <= fecha) {
+            if (f <= fechaMtd) {
               sumHlMtd += hl
               sumVentasHlMtd += ventas
             }
@@ -3591,7 +3596,7 @@ async function getIndicadoresMesCore(
         ) => {
           if (!targets) return { meta: metaPlana }
           const delDia = targets[fecha] ?? null
-          const acum = targetAcumulado(targets, fecha)
+          const acum = targetAcumulado(targets, fechaMtd)
           return {
             meta: delDia?.meta ?? null,
             gatillo: delDia?.gatillo ?? null,
@@ -3633,7 +3638,7 @@ async function getIndicadoresMesCore(
               valor: b,
               observacion: null,
             }
-            if (f <= fecha) mtd += b
+            if (f <= fechaMtd) mtd += b
           }
           indicadoresAuto.push({
             id: "auto_bultos_vendidos",
@@ -3665,7 +3670,7 @@ async function getIndicadoresMesCore(
               valor: hRedondeado,
               observacion: null,
             }
-            if (f <= fecha) mtd += h
+            if (f <= fechaMtd) mtd += h
           }
           indicadoresAuto.push({
             id: "auto_hl_vendidos",
@@ -3719,7 +3724,7 @@ async function getIndicadoresMesCore(
             valor: prom,
             observacion: null,
           }
-          if (f <= fecha) {
+          if (f <= fechaMtd) {
             sumMtd += sum
             countMtd += cnt
           }
@@ -3863,7 +3868,7 @@ async function getIndicadoresMesCore(
             continue
           }
           valoresTlp[ff] = { reunion_id: "", valor: Math.round((ceqFecha[ff] / hh) * 100) / 100, observacion: null }
-          if (ff <= fecha) {
+          if (ff <= fechaMtd) {
             ceqMtd += ceqFecha[ff]
             hhMtd += hh
           }
@@ -4031,7 +4036,7 @@ async function getIndicadoresMesCore(
               observacion: null,
               texto: `${salieron}/${flotaReparto.size}`,
             }
-            if (f <= fecha) {
+            if (f <= fechaMtd) {
               sumSalieron += salieron
               sumFlota += flotaReparto.size
             }
@@ -4083,7 +4088,7 @@ async function getIndicadoresMesCore(
               observacion: null,
               texto: total > 0 ? `${aprob}/${total}` : null,
             }
-            if (f <= fecha) {
+            if (f <= fechaMtd) {
               sumAprob += aprob
               sumTotal += total
             }
@@ -4206,7 +4211,7 @@ async function getIndicadoresMesCore(
         for (const f of fechas) {
           const v = kmPorFecha[f] ?? 0
           kmValores[f] = { reunion_id: "auto", valor: v, observacion: null }
-          if (f <= fecha) kmMtd += v
+          if (f <= fechaMtd) kmMtd += v
         }
         indicadoresAuto.push({
           id: "auto_km_recorridos",
@@ -4259,7 +4264,7 @@ async function getIndicadoresMesCore(
               valor: Math.round(v * 10) / 10,
               observacion: null,
             }
-            if (f <= fecha) {
+            if (f <= fechaMtd) {
               horasSuma += v
               horasDias++
             }
@@ -4327,7 +4332,7 @@ async function getIndicadoresMesCore(
             valor: Math.round((personas / eg) * 100) / 100,
             observacion: null,
           }
-          if (f <= fecha) {
+          if (f <= fechaMtd) {
             ftePersonasMtd += personas
             fteEgresosMtd += eg
           }
@@ -4696,7 +4701,7 @@ async function getIndicadoresMesCore(
               ? { detalle_precision: porFechaDetalle[f] ?? null }
               : {}),
           }
-          if (v !== null && Number.isFinite(v) && f <= fecha) {
+          if (v !== null && Number.isFinite(v) && f <= fechaMtd) {
             numericos.push(v)
           }
         }
@@ -5184,7 +5189,7 @@ async function getIndicadoresMesCore(
           for (const f of fechas) {
             const v = porFecha[f] ?? null
             valoresPorFecha[f] = { reunion_id: "auto", valor: v, observacion: null }
-            if (v !== null && Number.isFinite(v) && f <= fecha) numericos.push(v)
+            if (v !== null && Number.isFinite(v) && f <= fechaMtd) numericos.push(v)
           }
           let mtd: number | null = null
           if (numericos.length > 0) {
@@ -5236,7 +5241,7 @@ async function getIndicadoresMesCore(
         if (alertasErr) throw alertasErr
         const alertas = (alertasRaw ?? []) as AlertaModulacion[]
         const porDia = new Map(modulacionPorDia(alertas).map((d) => [d.fecha, d]))
-        const mtdBase = resumirModulacion(alertas.filter((a) => cerrado(a.fecha) && a.fecha <= fecha))
+        const mtdBase = resumirModulacion(alertas.filter((a) => cerrado(a.fecha) && a.fecha <= fechaMtd))
         const modRow = (
           id: string,
           nombre: string,
