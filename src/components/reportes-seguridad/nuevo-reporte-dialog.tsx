@@ -407,9 +407,15 @@ export function NuevoReporteDialog({
               <Label>Tipo *</Label>
               <Select
                 value={tipo}
-                onValueChange={(v) =>
-                  setTipo((v ?? "incidente") as ReporteSeguridadTipo)
-                }
+                onValueChange={(v) => {
+                  const nuevo = (v ?? "incidente") as ReporteSeguridadTipo
+                  setTipo(nuevo)
+                  // Los actos inseguros suman a la pirámide como SHO: se
+                  // sugiere por defecto si todavía no se eligió un escalón.
+                  if (nuevo === "acto_inseguro" && !tipoAccidente) {
+                    setTipoAccidente("sho")
+                  }
+                }}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
