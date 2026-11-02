@@ -33,6 +33,7 @@ import { esPersonalExcluido, promotoresPorCliente } from "@/lib/foxtrot-alertas/
 import type { VendedorWa } from "@/lib/foxtrot-alertas/types"
 import { hayReparto, hoyART, proximoDiaRepartoART } from "@/lib/radar-rechazos/build"
 import {
+  RESUMEN_TOTAL_RADAR,
   mensajeSupervisor,
   mensajeVendedor,
   soloCriticos,
@@ -154,6 +155,28 @@ async function handle(request: NextRequest) {
         clientes: grupos.reduce((n, g) => n + g.clientes.length, 0),
         texto: mensajeSupervisor(s.nombre, grupos, fecha, hoy),
       })
+    }
+    // Jefe de ventas + Fausto: todos los vendedores juntos. Se registra como
+    // "supervisor" (el check de radar_rechazos_envios solo admite
+    // vendedor | supervisor); la idempotencia es por teléfono igual.
+    if (criticos.length) {
+      const todos: GrupoVendedor[] = [...porVendedor]
+        .map(([id, clientes]) => ({ nombre: porId.get(id)!.nombre ?? id, clientes }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre))
+      if (sinVendedor.length) {
+        todos.push({ nombre: "Sin vendedor con WhatsApp cargado", clientes: sinVendedor })
+      }
+      for (const j of RESUMEN_TOTAL_RADAR) {
+        if (envios.some((e) => e.phone === j.phone)) continue
+        envios.push({
+          destinatario: "supervisor",
+          id_promotor: "resumen_total",
+          nombre: j.nombre,
+          phone: j.phone,
+          clientes: criticos.length,
+          texto: mensajeSupervisor(j.nombre, todos, fecha, hoy, "todos"),
+        })
+      }
     }
 
     const resumen = {

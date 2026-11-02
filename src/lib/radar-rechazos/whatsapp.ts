@@ -12,6 +12,15 @@
  */
 import { evaluarCriticidad, type Criticidad } from "./criterio"
 
+/**
+ * Reciben el resumen de TODOS los vendedores (lo que le llegó a cada uno).
+ * Pedido de Nicolás Lescoulie (jefe de ventas) y Fausto, 2/11/2026.
+ */
+export const RESUMEN_TOTAL_RADAR: { nombre: string; phone: string }[] = [
+  { nombre: "NICOLAS LESCOULIE", phone: "5493364638124" },
+  { nombre: "FAUSTO AZZARETTI", phone: "5493407494491" },
+]
+
 export interface ClienteCritico {
   id_cliente: number | null
   nombre_cliente: string | null
@@ -114,6 +123,7 @@ export function mensajeSupervisor(
   grupos: GrupoVendedor[],
   fechaEntrega: string,
   hoy: string,
+  alcance: "equipo" | "todos" = "equipo",
 ): string {
   const total = grupos.reduce((n, g) => n + g.clientes.length, 0)
   const bloques = grupos.map((g) =>
@@ -127,7 +137,7 @@ export function mensajeSupervisor(
   )
   const hola = titulo(nombreSupervisor)
   return [
-    `🎯 *Radar de rechazos* — resumen del equipo, entrega ${textoFecha(fechaEntrega, hoy)}`,
+    `🎯 *Radar de rechazos* — resumen ${alcance === "todos" ? "de todos los vendedores" : "del equipo"}, entrega ${textoFecha(fechaEntrega, hoy)}`,
     "",
     `Hola${hola ? ` ${hola}` : ""}, hay *${total} ${total === 1 ? "cliente crítico" : "clientes críticos"}* con pedido. A cada vendedor ya le llegó su lista:`,
     "",
