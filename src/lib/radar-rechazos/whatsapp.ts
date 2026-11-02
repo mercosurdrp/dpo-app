@@ -11,6 +11,7 @@
  * que en vez de esperar que Ventas entre, se lo llevamos al WhatsApp.
  */
 import { evaluarCriticidad, type Criticidad } from "./criterio"
+import type { DetallePedido } from "./pedido-cliente"
 
 /**
  * Reciben el resumen de TODOS los vendedores (lo que le llegó a cada uno).
@@ -93,6 +94,7 @@ export function mensajeVendedor(
   clientes: ClienteCritico[],
   fechaEntrega: string,
   hoy: string,
+  conMensajes = false,
 ): string {
   const hola = titulo(nombreVendedor)
   const uno = clientes.length === 1
@@ -110,6 +112,41 @@ export function mensajeVendedor(
     clientes.map(lineaCliente).join("\n\n"),
     "",
     `${uno ? "Si no va" : "Si alguno no va"} a poder recibir, avisá para reprogramar la entrega. 🙌`,
+    ...(conMensajes
+      ? [
+          "",
+          `👇 Abajo te dejo ${uno ? "el mensaje listo" : "un mensaje listo para cada cliente"}: mantenelo apretado → *Copiar*, mandáselo al cliente y después mandale la captura a tu supervisor.`,
+        ]
+      : []),
+  ].join("\n")
+}
+
+/** "martes 03/11" */
+function diaYFecha(fecha: string): string {
+  const d = new Date(`${fecha}T00:00:00Z`)
+  return `${DIAS[d.getUTCDay()]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`
+}
+
+/**
+ * Mensaje para que el vendedor copie y le mande al cliente (formato de
+ * Nicolás Lescoulie): total facturado, productos y envases vacíos.
+ */
+export function mensajeCliente(c: ClienteCritico, det: DetallePedido, fechaEntrega: string): string {
+  const cuando = diaYFecha(fechaEntrega)
+  const dia = cuando.split(" ")[0]
+  const total = det.total != null && det.total > 0 ? ` por un total de *${pesos(det.total)}*` : ""
+  const vacios = det.cajones_retornables
+  return [
+    `¡Hola ${titulo(c.nombre_cliente) || ""}! 👋`,
+    `Te recordamos que tenés un pedido para el *${cuando}*${total}.`,
+    ...(det.productos.length
+      ? ["", "Tu pedido:", ...det.productos.map((p) => `• ${p.cantidad} de ${p.nombre}`)]
+      : []),
+    ...(vacios
+      ? ["", `🍻 Tené listos los envases vacíos: *${vacios} ${vacios === 1 ? "cajón" : "cajones"}*.`]
+      : []),
+    "",
+    `¡Nos vemos el ${dia}!`,
   ].join("\n")
 }
 

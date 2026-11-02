@@ -32,8 +32,10 @@ import { sendText } from "@/lib/wa-bot/evolution"
 import { esPersonalExcluido, promotoresPorCliente } from "@/lib/foxtrot-alertas/destinatarios"
 import type { VendedorWa } from "@/lib/foxtrot-alertas/types"
 import { hayReparto, hoyART, proximoDiaRepartoART } from "@/lib/radar-rechazos/build"
+import { detallePedidos, type DetallePedido } from "@/lib/radar-rechazos/pedido-cliente"
 import {
   RESUMEN_TOTAL_RADAR,
+  mensajeCliente,
   mensajeSupervisor,
   mensajeVendedor,
   soloCriticos,
@@ -55,6 +57,8 @@ interface Envio {
   phone: string
   clientes: number
   texto: string
+  /** Mensajes aparte, uno por cliente, para copiar y reenviar. */
+  extras?: string[]
 }
 
 export async function GET(request: NextRequest) {
@@ -106,6 +110,30 @@ async function handle(request: NextRequest) {
     }
     const criticos = soloCriticos(filas as Omit<ClienteCritico, "criticidad">[])
 
+    // ---- Detalle del pedido (productos + total facturado) ----
+    // Si Chess falla, los avisos salen igual, sin el mensaje para el cliente.
+    let detalles = new Map<number, DetallePedido>()
+    const creds = {
+      baseUrl: (process.env.CHESS_API_BASE_URL ?? "").trim(),
+      user: (process.env.CHESS_API_USER ?? "").trim(),
+      pass: (process.env.CHESS_API_PASS ?? "").trim(),
+    }
+    if (criticos.length && creds.baseUrl && creds.user && creds.pass) {
+      try {
+        detalles = await detallePedidos(
+          creds,
+          fecha,
+          criticos.flatMap((c) => (c.id_cliente != null ? [Number(c.id_cliente)] : [])),
+        )
+      } catch (err) {
+        console.error(`[radar-wa] detalle pedidos: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    // El monto de la foto (precio × unidades) no sirve: se muestra el facturado o nada.
+    for (const c of criticos) {
+      c.monto_pedido = (c.id_cliente != null && detalles.get(Number(c.id_cliente))?.total) || 0
+    }
+
     // ---- Equipo ----
     const { data: equipoRaw, error: eErr } = await supabase.from("bot_vendedores_wa").select("*")
     if (eErr) throw new Error(`leer equipo: ${eErr.message}`)
@@ -130,13 +158,18 @@ async function handle(request: NextRequest) {
     const envios: Envio[] = []
     for (const [id, clientes] of porVendedor) {
       const v = porId.get(id)!
+      const extras = clientes.flatMap((c) => {
+        const det = c.id_cliente != null ? detalles.get(Number(c.id_cliente)) : undefined
+        return det ? [mensajeCliente(c, det, fecha)] : []
+      })
       envios.push({
         destinatario: "vendedor",
         id_promotor: id,
         nombre: v.nombre,
         phone: phoneDe(v)!,
         clientes: clientes.length,
-        texto: mensajeVendedor(v.nombre, clientes, fecha, hoy),
+        texto: mensajeVendedor(v.nombre, clientes, fecha, hoy, extras.length > 0),
+        extras,
       })
     }
     for (const s of supervisores) {
@@ -209,6 +242,11 @@ async function handle(request: NextRequest) {
         ok = r.ok
         status = r.status
         if (!r.ok) error = JSON.stringify(r.body).slice(0, 500)
+        // Un mensaje aparte por cliente: así se copia entero con un toque.
+        for (const extra of ok ? e.extras ?? [] : []) {
+          const rx = await sendText(solo ?? e.phone, extra)
+          if (!rx.ok) error = `extra: ${JSON.stringify(rx.body).slice(0, 400)}`
+        }
       } catch (err) {
         error = err instanceof Error ? err.message : String(err)
       }

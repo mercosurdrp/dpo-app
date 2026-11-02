@@ -12,7 +12,7 @@ export interface ChessCredentials {
 
 const insecureAgent = new https.Agent({ rejectUnauthorized: false })
 
-function chessFetch(url: string, init?: RequestInit): Promise<Response> {
+export function chessFetch(url: string, init?: RequestInit): Promise<Response> {
   return fetch(url, {
     ...init,
     // @ts-expect-error Node fetch supports agent option
