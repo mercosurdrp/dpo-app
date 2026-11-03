@@ -98,8 +98,11 @@ on conflict (item_id) do update
 -- --------------------------------------------------------------------------
 -- Control: tiene que devolver las tres filas con su plan.
 -- --------------------------------------------------------------------------
+-- `tipo_vehiculo` es el enum `vehiculo_tipo` y el modal por defecto (camión) se
+-- guarda como null, así que el coalesce va sobre texto: con el enum crudo
+-- Postgres rechaza el literal 'camión' por no ser un valor del tipo.
 select ci.nombre,
-       coalesce(ci.tipo_vehiculo, 'camión') as modal,
+       coalesce(ci.tipo_vehiculo::text, 'camión') as modal,
        a.plan_estado,
        a.plan_accion
   from checklist_item_analisis a
