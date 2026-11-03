@@ -838,7 +838,20 @@ export type CampoFicha =
   | "chofer_asignado"
   | "notas"
 
-export type VehiculoDocumentoTipo = "cedula" | "titulo" | "seguro" | "vtv" | "otro"
+/**
+ * `evidencia` es la foto del dato de identificación grabado en la unidad
+ * (chasis, VIN, motor, chapa de tara): la prueba del DPO 1.1 de que el maestro
+ * dice lo que dice el camión. Va en la misma tabla de adjuntos que la cédula o
+ * el seguro —no tiene vencimiento— y la sube la columna "Evidencia" del maestro.
+ * 🚨 En la base `tipo` es TEXT sin check: agregar un valor acá no pide migración.
+ */
+export type VehiculoDocumentoTipo =
+  | "cedula"
+  | "titulo"
+  | "seguro"
+  | "vtv"
+  | "evidencia"
+  | "otro"
 
 /**
  * Una unidad en el maestro de flota: la ficha, sus papeles y cómo está hoy.

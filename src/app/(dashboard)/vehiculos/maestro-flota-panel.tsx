@@ -17,6 +17,7 @@ import { useMemo, useState, type ReactNode } from "react"
 import Link from "next/link"
 import {
   AlertTriangle,
+  Camera,
   ClipboardCheck,
   FileWarning,
   Pencil,
@@ -38,6 +39,10 @@ import {
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import { EditarFichaDialog, type SugerenciasFicha } from "./editar-ficha-dialog"
+import {
+  EvidenciaIdentificacionDialog,
+  evidenciasDe,
+} from "./evidencia-identificacion-dialog"
 import type { MaestroFlota, MaestroFlotaUnidad } from "@/types/database"
 
 type Vista = "identificacion" | "asignacion" | "documentacion" | "estado"
@@ -171,6 +176,7 @@ export function MaestroFlotaPanel({
   const { unidades, resumen } = maestro
   const [vista, setVista] = useState<Vista>("identificacion")
   const [editando, setEditando] = useState<MaestroFlotaUnidad | null>(null)
+  const [evidenciaDe, setEvidenciaDe] = useState<MaestroFlotaUnidad | null>(null)
   const [busqueda, setBusqueda] = useState("")
   const [tipoLocal, setTipoLocal] = useState<string>("todos")
   const tipo = tipoExterno ?? tipoLocal
@@ -494,6 +500,9 @@ export function MaestroFlotaPanel({
                       <TableHead>Carga</TableHead>
                       <TableHead>Tara</TableHead>
                       <TableHead>Carrocería</TableHead>
+                      {/* La foto del dato grabado en la unidad: es la prueba
+                          del 1.1 de que el maestro dice lo que dice el camión. */}
+                      <TableHead>Evidencia</TableHead>
                     </>
                   )}
                   {vista === "asignacion" && (
@@ -533,6 +542,7 @@ export function MaestroFlotaPanel({
                     vista={vista}
                     canEdit={canEdit}
                     onEditar={() => setEditando(u)}
+                    onEvidencia={() => setEvidenciaDe(u)}
                   />
                 ))}
               </TableBody>
@@ -549,6 +559,14 @@ export function MaestroFlotaPanel({
           sugerencias={sugerencias}
         />
       )}
+
+      {/* La evidencia se puede MIRAR sin permiso de edición (el auditor entra
+          con su usuario); subir y borrar sigue siendo de admin/supervisor. */}
+      <EvidenciaIdentificacionDialog
+        unidad={evidenciaDe}
+        canEdit={canEdit}
+        onClose={() => setEvidenciaDe(null)}
+      />
     </Card>
   )
 }
@@ -606,14 +624,17 @@ function FilaUnidad({
   vista,
   canEdit,
   onEditar,
+  onEvidencia,
 }: {
   u: MaestroFlotaUnidad
   vista: Vista
   canEdit: boolean
   onEditar: () => void
+  onEvidencia: () => void
 }) {
   const f = u.ficha
   const falta = (campo: string) => u.camposFaltantes.includes(campo)
+  const evidencias = evidenciasDe(u).length
 
   return (
     <TableRow className={cn(!u.activo && "opacity-60")}>
@@ -668,6 +689,25 @@ function FilaUnidad({
             />
           </TableCell>
           <TableCell><Dato valor={f?.carroceria} /></TableCell>
+          <TableCell className="px-1">
+            <Button
+              variant={evidencias > 0 ? "ghost" : "outline"}
+              size="sm"
+              className={cn(
+                "h-7 gap-1 px-2 text-xs",
+                evidencias === 0 && "border-dashed text-muted-foreground"
+              )}
+              onClick={onEvidencia}
+              title={
+                evidencias > 0
+                  ? `${evidencias} foto${evidencias === 1 ? "" : "s"} de identificación de ${u.dominio}`
+                  : `Subir la evidencia de identificación de ${u.dominio}`
+              }
+            >
+              <Camera className="size-3.5" aria-hidden />
+              {evidencias > 0 ? evidencias : "Subir"}
+            </Button>
+          </TableCell>
         </>
       )}
 

@@ -96,6 +96,9 @@ const DOC_TIPOS: { value: VehiculoDocumentoTipo; label: string }[] = [
   { value: "titulo", label: "Título" },
   { value: "seguro", label: "Seguro" },
   { value: "vtv", label: "VTV" },
+  // La foto del dato grabado en la unidad (chasis, VIN, motor, chapa de tara):
+  // la sube la columna Evidencia del maestro y cae en esta misma lista.
+  { value: "evidencia", label: "Evidencia de identificación" },
   { value: "otro", label: "Otro" },
 ]
 

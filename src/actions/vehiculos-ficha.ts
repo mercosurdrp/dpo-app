@@ -305,6 +305,9 @@ export async function crearDocumentoVehiculo(input: {
 
     if (error) return { error: error.message }
     revalidatePath(`/vehiculos/${input.dominio}`)
+    // El maestro de flota cuenta estos adjuntos en la columna Evidencia (1.1):
+    // sin esto la foto recién subida no aparece hasta el próximo deploy.
+    revalidatePath("/vehiculos")
     const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(data.storage_path)
     return { data: { ...(data as VehiculoDocumento), url: pub.publicUrl as string } }
   } catch (e) {
@@ -331,6 +334,7 @@ export async function eliminarDocumentoVehiculo(
       await supabase.storage.from(BUCKET).remove([doc.storage_path])
     }
     if (doc?.dominio) revalidatePath(`/vehiculos/${doc.dominio}`)
+    revalidatePath("/vehiculos")
     return { data: { success: true } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
