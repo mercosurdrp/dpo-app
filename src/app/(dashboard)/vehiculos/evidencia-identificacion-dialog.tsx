@@ -1,13 +1,14 @@
 "use client"
 
 /**
- * Evidencia fotográfica de la identificación de la unidad (DPO 1.1).
+ * Evidencia de los papeles reglamentarios que viajan en la unidad (DPO 1.1).
  *
- * El maestro mostraba los datos de identificación —N.º asignado, chasis, VIN,
- * motor, tara y carrocería— pero no había con qué comprobarlos: el auditor veía
- * un número tipeado y nada que probara que es el que está grabado en el camión.
- * La columna "Evidencia" de la vista de Identificación sube la foto de cada dato
- * y la deja colgada de la unidad.
+ * El maestro decía que la VTV vence tal día y que el seguro está al día, pero
+ * eso es la base de datos hablando de sí misma: nada probaba que el papel esté
+ * ARRIBA DEL CAMIÓN, que es lo que pide el punto 1.1 y lo que el auditor mira
+ * cuando abre la guantera. La columna "Evidencia" sube la foto del folio de
+ * cada unidad —cédula, seguro, VTV, SENASA, tarjeta de matafuegos— y la deja
+ * colgada de la unidad.
  *
  * 🚨 No hay tabla nueva: la foto va a `vehiculos_documentos` con
  * `tipo = 'evidencia'`, en el bucket `vehiculos-fichas` que ya existía para la
@@ -15,10 +16,12 @@
  * aparece también en la ficha de la unidad junto a la cédula y el seguro, y el
  * maestro la cuenta sin una consulta más (ya trae `documentos` de cada unidad).
  *
- * El diálogo no es un cajón de fotos sueltas: lista los seis datos de
- * identificación y para cada uno dice si tiene foto o no. Un cajón deja la
- * pregunta del auditor sin responder —¿de qué dato es esta foto?—; la etiqueta
- * es la que responde.
+ * Qué papeles muestra la foto se tilda de a varios, no se elige uno: el folio
+ * se fotografía abierto y en una sola toma entran la cédula, la póliza y la
+ * tarjeta de matafuegos. Con un solo rótulo por foto había que mentir o sacar
+ * cinco fotos del mismo folio. Y van varias fotos por unidad (frente y dorso
+ * del folio, o los papeles que quedaron fuera de cuadro): el input acepta
+ * varios archivos de una y los numera "(1/2)", "(2/2)".
  */
 
 import { useMemo, useRef, useState, useTransition } from "react"
@@ -35,13 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -57,21 +54,18 @@ const BUCKET = "vehiculos-fichas"
 const MAX_BYTES = 25 * 1024 * 1024
 
 /**
- * Los datos de identificación que pide R1.1.2, en el mismo orden y con el mismo
- * nombre que las columnas del maestro: la etiqueta de la foto tiene que decir
- * qué dato prueba, no "foto 3".
+ * Los papeles que tienen que viajar en la unidad. Son los mismos que el control
+ * documentario sigue por vencimiento (/requisitos-legales), para que la foto se
+ * lea contra la fecha: el auditor pregunta por el papel, no por la foto.
  */
-const ETIQUETAS = [
-  "N.º asignado",
-  "Chapa de chasis",
-  "VIN",
-  "N° de motor",
-  "Chapa de tara y carga",
-  "Carrocería",
-  "Frente de la unidad",
+const PAPELES = [
+  "Cédula",
+  "Seguro",
+  "VTV",
+  "SENASA",
+  "Matafuegos",
+  "Ruta / habilitación",
 ] as const
-
-const OTRA = "Otra"
 
 /** Las fotos de una unidad: el adjunto de la ficha marcado como evidencia. */
 export function evidenciasDe(u: MaestroFlotaUnidad): VehiculoDocumento[] {
@@ -88,8 +82,8 @@ export function EvidenciaIdentificacionDialog({
   onClose: () => void
 }) {
   const router = useRouter()
-  const [etiqueta, setEtiqueta] = useState<string>(ETIQUETAS[1])
-  const [etiquetaLibre, setEtiquetaLibre] = useState("")
+  const [tildados, setTildados] = useState<string[]>([])
+  const [otro, setOtro] = useState("")
   const [files, setFiles] = useState<File[]>([])
   const [subiendo, setSubiendo] = useState(false)
   const [, startTransition] = useTransition()
@@ -103,22 +97,31 @@ export function EvidenciaIdentificacionDialog({
 
   const evidencias = unidad ? evidenciasDe(unidad) : []
 
-  // Qué dato de identificación todavía no tiene foto. El nombre guardado puede
-  // venir numerado ("Chapa de chasis (1/2)"), así que se compara por prefijo.
-  const cubierta = (et: string) =>
-    evidencias.some((d) => d.nombre === et || d.nombre.startsWith(`${et} (`))
+  // Qué papel ya quedó fotografiado. El nombre guardado junta los papeles de la
+  // toma ("Cédula, Seguro, Matafuegos (1/2)"), así que se busca contenido.
+  const cubierto = (papel: string) =>
+    evidencias.some((d) => d.nombre.toLowerCase().includes(papel.toLowerCase()))
+
+  function toggle(papel: string) {
+    setTildados((prev) =>
+      prev.includes(papel) ? prev.filter((p) => p !== papel) : [...prev, papel]
+    )
+  }
 
   function limpiar() {
     setFiles([])
-    setEtiquetaLibre("")
+    setTildados([])
+    setOtro("")
     if (inputRef.current) inputRef.current.value = ""
   }
 
   async function handleSubir() {
     if (!unidad) return
-    const nombreBase = etiqueta === OTRA ? etiquetaLibre.trim() : etiqueta
+    const partes = [...tildados]
+    if (otro.trim()) partes.push(otro.trim())
+    const nombreBase = partes.join(", ")
     if (!nombreBase) {
-      toast.error("Decí qué muestra la foto")
+      toast.error("Tildá qué papeles se ven en la foto")
       return
     }
     if (files.length === 0) {
@@ -186,26 +189,26 @@ export function EvidenciaIdentificacionDialog({
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2">
             <Camera className="size-4 text-muted-foreground" aria-hidden />
-            Evidencia de identificación — {unidad?.dominio}
+            Papeles de la unidad — {unidad?.dominio}
             <DpoPuntoBadge numero="1.1" />
           </DialogTitle>
         </DialogHeader>
 
         <p className="text-sm text-muted-foreground">
-          La foto del dato grabado en la unidad es lo que prueba que el maestro
-          dice la verdad: chapa de chasis, VIN, número de motor, chapa de tara y
-          carga, carrocería y el número asignado.
+          Los papeles reglamentarios que viajan en la guantera: cédula, seguro,
+          VTV, SENASA y la tarjeta de matafuegos. La foto del folio es lo que
+          prueba que están a bordo, no sólo cargados en el sistema.
         </p>
 
-        {/* Qué dato ya está probado y qué falta. Es la lectura que hace el
-            auditor, y la que dice qué foto sacar la próxima vez que la unidad
-            pase por planta. */}
+        {/* Qué papel ya está fotografiado y cuál falta. Es la lectura que hace
+            el auditor y la que dice qué sacar la próxima vez que la unidad
+            pasa por planta. */}
         <div className="flex flex-wrap gap-1.5">
-          {ETIQUETAS.map((et) => {
-            const ok = cubierta(et)
+          {PAPELES.map((papel) => {
+            const ok = cubierto(papel)
             return (
               <Badge
-                key={et}
+                key={papel}
                 variant="outline"
                 className={cn(
                   "gap-1 text-[11px] font-normal",
@@ -215,7 +218,7 @@ export function EvidenciaIdentificacionDialog({
                 )}
               >
                 {ok && <Check className="size-3" aria-hidden />}
-                {et}
+                {papel}
               </Badge>
             )
           })}
@@ -224,7 +227,7 @@ export function EvidenciaIdentificacionDialog({
         {/* Lo cargado */}
         {evidencias.length === 0 ? (
           <p className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
-            Sin evidencia cargada todavía.
+            Sin fotos cargadas todavía.
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -272,29 +275,40 @@ export function EvidenciaIdentificacionDialog({
         {/* Subir */}
         {canEdit && (
           <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+            <div className="space-y-2">
+              <Label className="text-xs">Qué papeles se ven en la foto</Label>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {PAPELES.map((papel) => (
+                  <label
+                    key={papel}
+                    className="flex cursor-pointer items-center gap-1.5 text-sm"
+                  >
+                    <Checkbox
+                      checked={tildados.includes(papel)}
+                      onCheckedChange={() => toggle(papel)}
+                    />
+                    {papel}
+                  </label>
+                ))}
+              </div>
+            </div>
+
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label className="text-xs">Qué muestra la foto</Label>
-                <Select
-                  value={etiqueta}
-                  onValueChange={(v) => setEtiqueta(v ?? ETIQUETAS[1])}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ETIQUETAS.map((et) => (
-                      <SelectItem key={et} value={et}>
-                        {et}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value={OTRA}>Otra (describir)</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs" htmlFor="evidencia-otro">
+                  Otro papel (opcional)
+                </Label>
+                <Input
+                  id="evidencia-otro"
+                  value={otro}
+                  onChange={(e) => setOtro(e.target.value)}
+                  placeholder="Ej.: Libreta sanitaria"
+                  className="h-9"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs" htmlFor="evidencia-archivo">
-                  Foto o archivo
+                  Fotos (se pueden elegir varias)
                 </Label>
                 <Input
                   id="evidencia-archivo"
@@ -308,26 +322,11 @@ export function EvidenciaIdentificacionDialog({
               </div>
             </div>
 
-            {etiqueta === OTRA && (
-              <div className="space-y-1.5">
-                <Label className="text-xs" htmlFor="evidencia-otra">
-                  Descripción
-                </Label>
-                <Input
-                  id="evidencia-otra"
-                  value={etiquetaLibre}
-                  onChange={(e) => setEtiquetaLibre(e.target.value)}
-                  placeholder="Ej.: Chapa patente trasera"
-                  className="h-9"
-                />
-              </div>
-            )}
-
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">
                 {files.length > 0
-                  ? `${files.length} archivo${files.length === 1 ? "" : "s"} elegido${files.length === 1 ? "" : "s"}`
-                  : "Se puede elegir más de una foto del mismo dato."}
+                  ? `${files.length} foto${files.length === 1 ? "" : "s"} elegida${files.length === 1 ? "" : "s"}`
+                  : "Elegí las dos caras del folio de una vez: se numeran solas."}
               </span>
               <Button size="sm" onClick={handleSubir} disabled={subiendo}>
                 {subiendo ? (
@@ -336,7 +335,7 @@ export function EvidenciaIdentificacionDialog({
                   </>
                 ) : (
                   <>
-                    <Upload className="mr-1.5 size-3.5" /> Subir evidencia
+                    <Upload className="mr-1.5 size-3.5" /> Subir fotos
                   </>
                 )}
               </Button>

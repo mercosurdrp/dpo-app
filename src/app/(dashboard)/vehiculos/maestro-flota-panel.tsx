@@ -524,8 +524,8 @@ export function MaestroFlotaPanel({
                       <TableHead>Carga</TableHead>
                       <TableHead>Tara</TableHead>
                       <TableHead>Carrocería</TableHead>
-                      {/* La foto del dato grabado en la unidad: es la prueba
-                          del 1.1 de que el maestro dice lo que dice el camión. */}
+                      {/* La foto del folio de la guantera: la prueba del 1.1 de
+                          que los papeles viajan arriba del camión. */}
                       <TableHead>Evidencia</TableHead>
                     </>
                   )}
@@ -733,8 +733,8 @@ function FilaUnidad({
               onClick={onEvidencia}
               title={
                 evidencias > 0
-                  ? `${evidencias} foto${evidencias === 1 ? "" : "s"} de identificación de ${u.dominio}`
-                  : `Subir la evidencia de identificación de ${u.dominio}`
+                  ? `${evidencias} foto${evidencias === 1 ? "" : "s"} de los papeles de ${u.dominio}`
+                  : `Subir la foto de los papeles de ${u.dominio}`
               }
             >
               <Camera className="size-3.5" aria-hidden />
