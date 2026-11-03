@@ -19,6 +19,18 @@ import {
   esCargaSinRegistrar,
   medianasPorDominio,
 } from "@/lib/vehiculos/combustible-limpio"
+import {
+  archivosDeFila,
+  archivosDelForm,
+  columnasArchivos,
+  subirArchivosAvance,
+  type ArchivoAvance,
+} from "@/lib/adjuntos-avance"
+
+// Las fotos de los avances van al bucket que ya usan las facturas y los
+// residuos de mantenimiento: no hace falta uno nuevo. (Local: "use server" no
+// puede exportar constantes.)
+const BUCKET_EVIDENCIAS_FLOTA = "mantenimiento-evidencias"
 
 export type FlotaKpi =
   | "disponibilidad"
@@ -1629,6 +1641,148 @@ export async function deleteFlotaPlanItem(
       .delete()
       .eq("id", id)
     if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== AVANCES DE LOS PLANES (seguimiento) ====================
+//
+// El plan tenía causa raíz, acciones y cierre, pero nada en el medio: un plan
+// abierto hace dos meses no decía si alguien lo estaba atendiendo. Acá va el
+// comentario de avance con hasta dos fotos (opcionales).
+//
+// 🚨 Las fotos van al bucket `mantenimiento-evidencias`, el mismo de las
+// facturas y los residuos: ya existe y ya tiene policies.
+
+export interface FlotaPlanAvance {
+  id: string
+  plan_id: string
+  comentario: string | null
+  archivos: ArchivoAvance[]
+  autor_id: string | null
+  autor_nombre: string | null
+  created_at: string
+}
+
+/** Tope de fotos por avance: lo pedido fue "1 o 2, optativas". */
+const MAX_FOTOS_AVANCE = 2
+
+export async function listarAvancesFlotaPlan(
+  planId: string
+): Promise<{ data: FlotaPlanAvance[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    if (!planId) return { error: "ID de plan inválido" }
+
+    const { data, error } = await supabase
+      .from("flota_plan_avances")
+      .select("*, autor:profiles!flota_plan_avances_autor_id_fkey(id, nombre)")
+      .eq("plan_id", planId)
+      .order("created_at", { ascending: false })
+
+    // La tabla se crea con la migración 20261103150000: hasta que se corra, el
+    // panel muestra el aviso en vez de un error rojo.
+    if (error) {
+      if (error.code === "PGRST205" || error.code === "42P01") return { data: [] }
+      return { error: error.message }
+    }
+
+    const avances = ((data ?? []) as unknown as Array<Record<string, unknown>>).map(
+      (row) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = row as any
+        return {
+          id: r.id as string,
+          plan_id: r.plan_id as string,
+          comentario: (r.comentario ?? null) as string | null,
+          archivos: archivosDeFila(r),
+          autor_id: (r.autor_id ?? null) as string | null,
+          autor_nombre: (r.autor?.nombre ?? null) as string | null,
+          created_at: r.created_at as string,
+        }
+      }
+    )
+    return { data: avances }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function agregarAvanceFlotaPlan(
+  planId: string,
+  formData: FormData
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    if (!planId) return { error: "ID de plan inválido" }
+
+    const comentario = String(formData.get("comentario") ?? "").trim() || null
+    const files = archivosDelForm(formData)
+    if (files.length > MAX_FOTOS_AVANCE) {
+      return { error: `Hasta ${MAX_FOTOS_AVANCE} fotos por comentario` }
+    }
+    if (!comentario && files.length === 0) {
+      return { error: "Escribí un comentario o adjuntá una foto" }
+    }
+
+    let archivos: ArchivoAvance[] = []
+    if (files.length > 0) {
+      const subida = await subirArchivosAvance(
+        supabase,
+        BUCKET_EVIDENCIAS_FLOTA,
+        `planes-flota/${planId}`,
+        files
+      )
+      if ("error" in subida) return { error: subida.error }
+      archivos = subida.archivos
+    }
+
+    const { error } = await supabase.from("flota_plan_avances").insert({
+      plan_id: planId,
+      comentario,
+      ...columnasArchivos(archivos),
+      autor_id: profile.id,
+    })
+
+    if (error) {
+      // Si la fila no entra, no dejamos las fotos huérfanas en el bucket.
+      if (archivos.length > 0) {
+        await supabase.storage
+          .from(BUCKET_EVIDENCIAS_FLOTA)
+          .remove(archivos.map((a) => a.path))
+      }
+      return { error: error.message }
+    }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function eliminarAvanceFlotaPlan(
+  avanceId: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    if (!avanceId) return { error: "ID de avance inválido" }
+
+    const { data, error } = await supabase
+      .from("flota_plan_avances")
+      .delete()
+      .eq("id", avanceId)
+      .select("*")
+      .single()
+    if (error) return { error: error.message }
+
+    const paths = archivosDeFila(data as Record<string, unknown>).map((a) => a.path)
+    if (paths.length > 0) {
+      await supabase.storage.from(BUCKET_EVIDENCIAS_FLOTA).remove(paths)
+    }
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }

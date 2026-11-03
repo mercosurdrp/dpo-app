@@ -4,7 +4,14 @@
 // tendencia de los últimos 3 meses y plan de acción por mes fuera de meta
 // (patrón TML/TI adaptado con discriminador de KPI).
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -24,18 +31,23 @@ import {
 } from "@/components/ui/dialog"
 import { ArrowRight, ClipboardList, Pencil, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { createClient as createClientBrowser } from "@/lib/supabase/client"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard, type EstadoKpi } from "./_components/kpi-card"
 import {
   addFlotaPlanItem,
+  agregarAvanceFlotaPlan,
   cerrarFlotaPlan,
   createFlotaPlan,
   deleteFlotaPlan,
   deleteFlotaPlanItem,
+  eliminarAvanceFlotaPlan,
   getFlotaKpiDetalle,
+  listarAvancesFlotaPlan,
   updateFlotaMeta,
   updateFlotaPlanItem,
   type DetalleKpi,
+  type FlotaPlanAvance,
   type FlotaKpi,
   type FlotaKpiConDetalle,
   type FlotaKpiSnapshot,
@@ -1788,6 +1800,15 @@ function DetallePlanDialog({
             )}
           </div>
 
+          {/*
+            Entre que el plan se abre y se cierra no había dónde contar qué se
+            hizo: el auditor veía un plan abierto hace dos meses sin saber si
+            alguien lo estaba atendiendo. El seguimiento va con foto opcional
+            porque "se pidió el turno" y "acá está el repuesto puesto" no
+            prueban lo mismo.
+          */}
+          <AvancesPlanFlota planId={plan.id} puedeEditar={puedeEditar} />
+
           {cerrado ? (
             <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
               <p className="text-xs font-medium uppercase text-emerald-600 dark:text-emerald-400">
@@ -1840,5 +1861,196 @@ function DetallePlanDialog({
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * Seguimiento del plan: comentarios con hasta dos fotos opcionales.
+ *
+ * Un plan tenía tres momentos —se abre, se tildan las acciones, se cierra— y
+ * nada en el medio. Lo que falta contar es justamente lo del medio: se pidió el
+ * turno, llegó el repuesto, el taller lo devolvió sin hacer. Las fotos son
+ * opcionales a propósito: la mayoría de los avances son una línea de texto y
+ * pedir evidencia para escribirla haría que no se escriba nada.
+ *
+ * 🚨 Los avances se leen al abrir el diálogo, no vienen con el plan: son pocos
+ * y así no engordan la consulta del tablero, que trae TODOS los planes.
+ */
+function AvancesPlanFlota({
+  planId,
+  puedeEditar,
+}: {
+  planId: string
+  puedeEditar: boolean
+}) {
+  const [avances, setAvances] = useState<FlotaPlanAvance[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [comentario, setComentario] = useState("")
+  const [fotos, setFotos] = useState<File[]>([])
+  const [guardando, setGuardando] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const supabase = useMemo(() => createClientBrowser(), [])
+  const urlDe = (path: string) =>
+    supabase.storage.from("mantenimiento-evidencias").getPublicUrl(path).data.publicUrl
+
+  const [recarga, setRecarga] = useState(0)
+  const recargar = useCallback(() => setRecarga((n) => n + 1), [])
+
+  // El diálogo se monta al abrirlo: esto corre una vez por apertura y una vez
+  // por cada comentario agregado o borrado (`recarga`).
+  useEffect(() => {
+    let vivo = true
+    listarAvancesFlotaPlan(planId).then((res) => {
+      if (!vivo) return
+      setAvances("error" in res ? [] : res.data)
+      setCargando(false)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [planId, recarga])
+
+  const guardar = async () => {
+    if (!comentario.trim() && fotos.length === 0) {
+      toast.error("Escribí un comentario o adjuntá una foto")
+      return
+    }
+    if (fotos.length > 2) {
+      toast.error("Hasta 2 fotos por comentario")
+      return
+    }
+    setGuardando(true)
+    const fd = new FormData()
+    fd.set("comentario", comentario)
+    for (const f of fotos) fd.append("archivo", f)
+    const res = await agregarAvanceFlotaPlan(planId, fd)
+    setGuardando(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    setComentario("")
+    setFotos([])
+    if (fileRef.current) fileRef.current.value = ""
+    toast.success("Comentario agregado")
+    recargar()
+  }
+
+  const borrar = async (id: string) => {
+    if (!window.confirm("¿Eliminar este comentario?")) return
+    const res = await eliminarAvanceFlotaPlan(id)
+    if ("error" in res) toast.error(res.error)
+    else recargar()
+  }
+
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase text-muted-foreground">
+        Seguimiento
+      </p>
+
+      <div className="mt-1.5 space-y-2">
+        {cargando ? (
+          <p className="text-sm text-muted-foreground">Cargando…</p>
+        ) : avances.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Sin comentarios cargados.
+          </p>
+        ) : (
+          avances.map((a) => (
+            <div key={a.id} className="rounded-md border border-border px-2.5 py-2">
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(a.created_at).toLocaleString("es-AR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                    {a.autor_nombre ? ` · ${a.autor_nombre}` : ""}
+                  </p>
+                  {a.comentario && (
+                    <p className="mt-0.5 whitespace-pre-wrap text-sm text-foreground">
+                      {a.comentario}
+                    </p>
+                  )}
+                  {a.archivos.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-2">
+                      {a.archivos.map((f) => (
+                        <a
+                          key={f.path}
+                          href={urlDe(f.path)}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={f.nombre}
+                        >
+                          {(f.mime ?? "").startsWith("image/") ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={urlDe(f.path)}
+                              alt={f.nombre}
+                              className="h-20 w-28 rounded border object-cover"
+                            />
+                          ) : (
+                            <span className="text-xs text-primary underline">
+                              {f.nombre}
+                            </span>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {puedeEditar && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-muted-foreground hover:text-destructive"
+                    onClick={() => borrar(a.id)}
+                    aria-label="Eliminar comentario"
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {puedeEditar && (
+        <div className="mt-2 space-y-2 rounded-md border border-border bg-muted/30 p-2.5">
+          <Textarea
+            value={comentario}
+            onChange={(e) => setComentario(e.target.value)}
+            placeholder="Qué se hizo o en qué está (ej.: se pidió turno al taller para el martes)"
+            rows={2}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Input
+                ref={fileRef}
+                type="file"
+                multiple
+                accept="image/*,application/pdf,.pdf"
+                className="h-9 w-auto text-xs"
+                onChange={(e) => setFotos(Array.from(e.target.files ?? []).slice(0, 2))}
+              />
+              <span className="text-xs text-muted-foreground">
+                {fotos.length > 0
+                  ? `${fotos.length} de 2`
+                  : "Fotos opcionales (hasta 2)"}
+              </span>
+            </div>
+            <Button size="sm" onClick={guardar} disabled={guardando}>
+              {guardando ? "Guardando…" : "Agregar comentario"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
