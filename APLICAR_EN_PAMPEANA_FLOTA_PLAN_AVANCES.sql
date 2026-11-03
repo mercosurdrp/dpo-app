@@ -18,6 +18,11 @@
 CREATE TABLE IF NOT EXISTS flota_plan_avances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   plan_id UUID NOT NULL REFERENCES flota_plan_accion(id) ON DELETE CASCADE,
+  -- 🚨 El comentario cuelga de UNA ACCIÓN del plan, no del plan entero: un plan
+  -- con cinco acciones tenía un solo renglón de seguimiento para las cinco y no
+  -- se sabía a cuál se refería. NULL = comentario general del plan (no lo usa
+  -- la pantalla hoy, queda por si hace falta).
+  item_id UUID REFERENCES flota_plan_accion_items(id) ON DELETE CASCADE,
   comentario TEXT,
   archivos JSONB NOT NULL DEFAULT '[]'::jsonb,
   archivo_path TEXT,
@@ -37,6 +42,8 @@ CREATE TABLE IF NOT EXISTS flota_plan_avances (
 
 CREATE INDEX IF NOT EXISTS idx_flota_plan_avances_plan
   ON flota_plan_avances(plan_id);
+CREATE INDEX IF NOT EXISTS idx_flota_plan_avances_item
+  ON flota_plan_avances(item_id);
 CREATE INDEX IF NOT EXISTS idx_flota_plan_avances_created
   ON flota_plan_avances(created_at);
 

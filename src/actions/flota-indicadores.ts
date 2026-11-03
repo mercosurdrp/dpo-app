@@ -1659,6 +1659,8 @@ export async function deleteFlotaPlanItem(
 export interface FlotaPlanAvance {
   id: string
   plan_id: string
+  /** Acción del plan a la que pertenece el comentario. null = general. */
+  item_id: string | null
   comentario: string | null
   archivos: ArchivoAvance[]
   autor_id: string | null
@@ -1697,6 +1699,7 @@ export async function listarAvancesFlotaPlan(
         return {
           id: r.id as string,
           plan_id: r.plan_id as string,
+          item_id: (r.item_id ?? null) as string | null,
           comentario: (r.comentario ?? null) as string | null,
           archivos: archivosDeFila(r),
           autor_id: (r.autor_id ?? null) as string | null,
@@ -1721,6 +1724,7 @@ export async function agregarAvanceFlotaPlan(
     if (!planId) return { error: "ID de plan inválido" }
 
     const comentario = String(formData.get("comentario") ?? "").trim() || null
+    const itemId = String(formData.get("item_id") ?? "").trim() || null
     const files = archivosDelForm(formData)
     if (files.length > MAX_FOTOS_AVANCE) {
       return { error: `Hasta ${MAX_FOTOS_AVANCE} fotos por comentario` }
@@ -1743,6 +1747,7 @@ export async function agregarAvanceFlotaPlan(
 
     const { error } = await supabase.from("flota_plan_avances").insert({
       plan_id: planId,
+      item_id: itemId,
       comentario,
       ...columnasArchivos(archivos),
       autor_id: profile.id,
