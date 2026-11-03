@@ -56,6 +56,7 @@ import {
   Leaf,
   PackageOpen,
   Bot,
+  GitCompareArrows,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -402,6 +403,16 @@ const navItemsFlat: NavItem[] = [
     hideForEmpleado: true,
   },
   {
+    // Punto DPO Entrega 5.2 BENCHMARK: benchs internos (rutas/equipos) y
+    // externos (otro CD / otra empresa) con minuta, fotos de evidencia y qué
+    // aplicamos, midiendo la mejora sobre un indicador.
+    label: "Benchmarking",
+    href: "/benchmarking",
+    icon: <GitCompareArrows className="size-5" />,
+    roles: ["admin", "supervisor", "admin_rrhh", "auditor"],
+    hideForEmpleado: true,
+  },
+  {
     label: "Mudanza",
     href: "/mudanza",
     icon: <PackageOpen className="size-5" />,
@@ -457,6 +468,7 @@ export const navSections: NavGroup[] = [
     "/feedback-empleados",
     "/heladeras",
     "/clasificacion-envases",
+    "/benchmarking",
   ]),
   grupo("Flota", ["/vehiculos", "/vehiculos/mantenimiento"]),
   grupo("Seguridad y Calidad", [
