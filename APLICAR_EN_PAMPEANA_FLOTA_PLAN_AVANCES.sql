@@ -40,6 +40,11 @@ CREATE TABLE IF NOT EXISTS flota_plan_avances (
   )
 );
 
+-- Por si la tabla ya se habia creado con la primera version de este archivo
+-- (sin item_id): correrlo de nuevo la completa en vez de fallar.
+ALTER TABLE flota_plan_avances
+  ADD COLUMN IF NOT EXISTS item_id UUID REFERENCES flota_plan_accion_items(id) ON DELETE CASCADE;
+
 CREATE INDEX IF NOT EXISTS idx_flota_plan_avances_plan
   ON flota_plan_avances(plan_id);
 CREATE INDEX IF NOT EXISTS idx_flota_plan_avances_item
