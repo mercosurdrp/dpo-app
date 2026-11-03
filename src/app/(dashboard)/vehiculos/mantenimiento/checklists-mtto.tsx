@@ -79,6 +79,7 @@ import {
 import {
   CLASE_TIEMPO,
   colorTiempoRespuesta,
+  metaRespuestaHoras,
   textoMetaRespuesta,
   formatDuracion,
 } from "@/lib/vehiculos/tiempo-resolucion"
@@ -321,17 +322,39 @@ function agruparFocos(items: ChecklistItemNoOk[]): GrupoFoco[] {
  * la pérdida de fluidos del HELI1 daba 16 tiempos en vez de los 25 días que
  * estuvo abierta. Mismo vicio de denominador que la adherencia auto-reportada.
  */
-function duracionesPorFoco(items: ChecklistItemNoOk[]): number[] {
+interface TiempoFoco {
+  horas: number
+  critico: boolean
+  /** El episodio nunca pasó de REGULAR: se lee contra la meta de 7 días. */
+  observacion: boolean
+}
+
+function duracionesPorFoco(items: ChecklistItemNoOk[]): TiempoFoco[] {
   // Un tiempo por episodio, el que calculó el servidor sobre el histórico
   // completo: el cierre vale venga del plan de mantenimiento o de la vuelta a OK
   // del chofer (dejar afuera los que nadie cerró en la app sesgaba el promedio
   // hacia los focos que alguien se acordó de cerrar).
-  const porEpisodio = new Map<string, number>()
+  //
+  // Va con la severidad porque el número no se lee contra un solo plazo: una
+  // observación tiene 7 días y un NO OK crítico, 24 h.
+  const porEpisodio = new Map<string, TiempoFoco>()
   for (const i of items) {
     if (i.horasEpisodio == null) continue
-    porEpisodio.set(i.episodioId || i.id, i.horasEpisodio)
+    porEpisodio.set(i.episodioId || i.id, {
+      horas: i.horasEpisodio,
+      critico: i.critico,
+      observacion: i.episodioObservacion,
+    })
   }
   return Array.from(porEpisodio.values())
+}
+
+/** Mediana de una serie de horas. null si no hay datos. */
+function medianaHoras(valores: number[]): number | null {
+  if (valores.length === 0) return null
+  const orden = [...valores].sort((a, b) => a - b)
+  const m = Math.floor(orden.length / 2)
+  return orden.length % 2 === 0 ? (orden[m - 1] + orden[m]) / 2 : orden[m]
 }
 
 /**
@@ -1024,13 +1047,39 @@ export function ChecklistsMtto({
         return []
     }
   }, [detalleKpi, focosVisibles])
-  // Tiempo de respuesta: promedio de los focos ya cerrados, medido de la
-  // primera detección al cierre del plan.
+  /**
+   * Tiempo de respuesta de los focos ya cerrados, de la primera detección al
+   * cierre.
+   *
+   * 🚨 El número que se muestra es la MEDIANA, no el promedio. Un solo caso de
+   * escala distinta lo gobierna: el espejo del HELI2 estuvo 89 días abierto y
+   * subía el promedio de 39 defectos a 4,4 días cuando la mitad se resuelve en
+   * menos de 24 h. El promedio queda al lado, que para eso sirve: si se separa
+   * mucho de la mediana, hay un caso largo que vale mirar.
+   *
+   * El "fuera de meta" se cuenta contra el plazo de cada uno —24 h el NO OK
+   * crítico, 72 h el no crítico, 7 días la observación—, no contra un número
+   * único: ese era el desacomodo que pintaba de rojo las observaciones bien
+   * atendidas.
+   */
   const duraciones = useMemo(() => duracionesPorFoco(visibles), [visibles])
-  const horasProm =
-    duraciones.length > 0
-      ? duraciones.reduce((a, h) => a + h, 0) / duraciones.length
-      : null
+  const tiempos = useMemo(() => {
+    const horas = duraciones.map((d) => d.horas)
+    const noOk = duraciones.filter((d) => !d.observacion).map((d) => d.horas)
+    const obs = duraciones.filter((d) => d.observacion).map((d) => d.horas)
+    return {
+      mediana: medianaHoras(horas),
+      promedio:
+        horas.length > 0 ? horas.reduce((a, h) => a + h, 0) / horas.length : null,
+      medianaNoOk: medianaHoras(noOk),
+      medianaObs: medianaHoras(obs),
+      cantNoOk: noOk.length,
+      cantObs: obs.length,
+      fueraDeMeta: duraciones.filter(
+        (d) => d.horas > metaRespuestaHoras(d.critico, d.observacion)
+      ).length,
+    }
+  }, [duraciones])
 
   return (
     <div className="space-y-6">
@@ -1090,13 +1139,33 @@ export function ChecklistsMtto({
           onClick={() => setDetalleKpi("resueltos")}
           label="Tiempo de respuesta"
           valor={
-            <span className="text-2xl">{formatDuracion(horasProm)}</span>
+            <span className="text-2xl">{formatDuracion(tiempos.mediana)}</span>
           }
           estado={
-            horasProm == null ? "neutro" : horasProm <= 72 ? "ok" : "alerta"
+            tiempos.mediana == null
+              ? "neutro"
+              : tiempos.fueraDeMeta === 0
+                ? "ok"
+                : "alerta"
           }
           dpo="1.3"
-          sub={`Promedio de ${duraciones.length} defecto${duraciones.length === 1 ? "" : "s"} resuelto${duraciones.length === 1 ? "" : "s"} (primera detección → cierre del plan) · click para verlos`}
+          sub={`Mediana de ${duraciones.length} defecto${duraciones.length === 1 ? "" : "s"} resuelto${duraciones.length === 1 ? "" : "s"} (primera detección → cierre)${
+            tiempos.cantNoOk > 0 && tiempos.cantObs > 0
+              ? ` · NO OK ${formatDuracion(tiempos.medianaNoOk)} · observación ${formatDuracion(tiempos.medianaObs)}`
+              : ""
+          } · promedio ${formatDuracion(tiempos.promedio)} · click para verlos`}
+          footer={
+            tiempos.fueraDeMeta > 0 ? (
+              <span className="text-xs text-muted-foreground">
+                <strong className="text-foreground">{tiempos.fueraDeMeta}</strong> fuera de
+                meta — 24 h el NO OK crítico, 72 h el no crítico, 7 días la observación
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                Todos dentro de meta
+              </span>
+            )
+          }
         />
         <KpiCard
           onClick={() =>
@@ -1481,16 +1550,20 @@ function TiempoRespuestaCell({
   //      🚨 Una sola lectura OK que al rato se desdice no cierra nada: eso lo
   //      resuelve `lib/vehiculos/episodios-foco`, no esta celda.
   if (item.episodioCierre && item.horasEpisodio != null) {
-    const color = colorTiempoRespuesta(item.horasEpisodio, item.critico)
+    const color = colorTiempoRespuesta(
+      item.horasEpisodio,
+      item.critico,
+      item.episodioObservacion
+    )
     return (
-      <span className="flex flex-col" title={textoMetaRespuesta(item.critico)}>
+      <span className="flex flex-col" title={textoMetaRespuesta(item.critico, item.episodioObservacion)}>
         <span className={cn("text-sm font-semibold", CLASE_TIEMPO[color])}>
           {formatDuracion(item.horasEpisodio)}
         </span>
         {/* El número solo no dice nada: al lado va contra qué plazo se lee. */}
         {item.episodioCierreFirme ? (
           <span className="text-[11px] text-muted-foreground">
-            {textoMetaRespuesta(item.critico)} · resuelto{" "}
+            {textoMetaRespuesta(item.critico, item.episodioObservacion)} · resuelto{" "}
             {fmtFechaHora(item.episodioCierre)}
           </span>
         ) : (
@@ -1515,7 +1588,7 @@ function TiempoRespuestaCell({
   // gestión y un defecto sin mirar no son lo mismo.
   const enCurso = item.plan?.estado === "en_proceso"
   return (
-    <span className="flex flex-col" title={textoMetaRespuesta(item.critico)}>
+    <span className="flex flex-col" title={textoMetaRespuesta(item.critico, item.episodioObservacion)}>
       <span
         className={cn(
           "text-sm",

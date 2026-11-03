@@ -68,6 +68,20 @@ export function formatDuracion(horas: number | null): string {
 /**
  * Tiempo de respuesta comprometido para un ítem observado en el checklist.
  *
+ * **Observación (REGULAR) — 7 días.** El checklist tiene TRES niveles y los dos
+ * de abajo no piden lo mismo: NO OK saca la unidad de servicio, REGULAR es una
+ * observación a seguir ("poco freno", "leve presencia de fluidos") con la que la
+ * unidad sigue operando. Medirla contra el reloj del defecto crítico pintaba de
+ * rojo lo que estaba bien atendido: los frenos del HELI1 se reportaron el 28/10,
+ * el plan se cargó ese mismo día con turno pedido al proveedor, y el episodio
+ * marcaba 145 h contra una meta de 24 h. De las 11 observaciones cerradas en
+ * Pampeana, 8 daban fuera de meta y 7 lo daban sólo por esto.
+ *
+ * Siete días es lo que tarda un turno de proveedor o un repuesto que no frena el
+ * reparto. Ámbar hasta 14 días. **La severidad la manda la peor marca del
+ * episodio:** una observación que después se reportó NO OK es un defecto y se
+ * mide con el plazo del defecto. Decidido con el Gestor de Flota el 03/11/2026.
+ *
  * **Crítico — 24 h.** Son los ítems marcados `critico` en `checklist_items`:
  * frenos, luces, pérdida de fluidos, matafuegos, cinturón, botiquín, EPP y
  * documentación. Si uno de esos está mal la unidad no debería salir, así que el
@@ -88,15 +102,27 @@ export function formatDuracion(horas: number | null): string {
  * del checklist. Cerrar un plan tarde no mejora el número, y cargarlo tarde
  * tampoco lo empeora si el defecto se resolvió en el día.
  */
-export const META_RESPUESTA_HORAS = { critico: 24, noCritico: 72 } as const
+export const META_RESPUESTA_HORAS = {
+  critico: 24,
+  noCritico: 72,
+  observacion: 168,
+} as const
 
-/** Horas comprometidas según el ítem. */
-export function metaRespuestaHoras(critico: boolean): number {
+/**
+ * Horas comprometidas según el ítem y la severidad de la marca.
+ *
+ * `observacion` = el episodio nunca pasó de REGULAR. Si en algún momento se
+ * marcó NO OK, va con el plazo del defecto aunque haya arrancado como
+ * observación.
+ */
+export function metaRespuestaHoras(critico: boolean, observacion = false): number {
+  if (observacion) return META_RESPUESTA_HORAS.observacion
   return critico ? META_RESPUESTA_HORAS.critico : META_RESPUESTA_HORAS.noCritico
 }
 
-/** "meta 24 h" / "meta 72 h (3 días)", para ponerlo al lado del número. */
-export function textoMetaRespuesta(critico: boolean): string {
+/** "meta 24 h" / "meta 72 h (3 días)" / "meta 7 días", para el lado del número. */
+export function textoMetaRespuesta(critico: boolean, observacion = false): string {
+  if (observacion) return "meta 7 días (observación)"
   return critico ? "meta 24 h (crítico)" : "meta 72 h (3 días)"
 }
 
@@ -104,18 +130,19 @@ export function textoMetaRespuesta(critico: boolean): string {
  * Semáforo del tiempo de respuesta.
  *
  * Verde = dentro de la meta. Ámbar = se pasó pero sigue en el orden del plazo
- * (48 h en críticos, 5 días en no críticos). Rojo = se fue de escala: ahí ya no
- * es un atraso, es un defecto que quedó conviviendo con la operación.
+ * (48 h en críticos, 5 días en no críticos, 14 días en observaciones). Rojo = se
+ * fue de escala: ahí ya no es un atraso, es un defecto que quedó conviviendo con
+ * la operación.
  */
 export function colorTiempoRespuesta(
   horas: number | null,
   critico: boolean,
+  observacion = false,
 ): "verde" | "ambar" | "rojo" | "neutro" {
   if (horas == null) return "neutro"
-  const meta = metaRespuestaHoras(critico)
-  if (horas <= meta) return "verde"
-  if (horas <= (critico ? 48 : 120)) return "ambar"
-  return "rojo"
+  if (horas <= metaRespuestaHoras(critico, observacion)) return "verde"
+  const limiteAmbar = observacion ? 336 : critico ? 48 : 120
+  return horas <= limiteAmbar ? "ambar" : "rojo"
 }
 
 export const CLASE_TIEMPO: Record<

@@ -1671,6 +1671,14 @@ export interface ChecklistItemNoOk {
    * repeticiones no tienen el suyo.
    */
   horasEpisodio: number | null
+  /**
+   * El episodio nunca pasó de REGULAR: es una observación a seguir y no un
+   * defecto que saque la unidad de servicio. Decide contra qué plazo se lee el
+   * tiempo de respuesta — 7 días en vez de 24 h / 72 h (ver
+   * `lib/vehiculos/tiempo-resolucion`). La severidad la manda la peor marca de
+   * la serie, así que una observación que después se marcó NO OK da `false`.
+   */
+  episodioObservacion: boolean
 }
 
 /**
@@ -1934,14 +1942,33 @@ export async function getChecklistsMtto(): Promise<
       }))
     )
 
+    /**
+     * Severidad del episodio: manda la PEOR marca, no la primera.
+     *
+     * El plazo de respuesta no es el mismo para un NO OK que para una
+     * observación (7 días, ver `lib/vehiculos/tiempo-resolucion`), y un defecto
+     * que arrancó como "poco freno" y después se marcó NO OK es un defecto: se
+     * mide con el reloj corto. Al revés también importa: si el episodio nunca
+     * pasó de REGULAR, medirlo contra las 24 h del ítem crítico pinta rojo algo
+     * con lo que la unidad sigue operando a propósito.
+     */
+    const episodiosConNoOk = new Set<string>()
+    for (const i of conTiempos) {
+      if ((i.valor || "").toLowerCase() !== "regular") {
+        episodiosConNoOk.add(marcas.get(i.id)?.episodioId ?? i.id)
+      }
+    }
+
     const itemsNoOk: ChecklistItemNoOk[] = conTiempos
       .map((i) => {
         const marca = marcas.get(i.id)
         const desde = marca?.primeraHora ?? i.hora
+        const episodioId = marca?.episodioId ?? i.id
         return {
           ...i,
+          episodioObservacion: !episodiosConNoOk.has(episodioId),
           repeticionDe: marca?.repeticionDe ?? null,
-          episodioId: marca?.episodioId ?? i.id,
+          episodioId,
           episodioReportes: marca?.reportes ?? 1,
           episodioDesde: marca?.primeraFecha ?? i.fecha,
           episodioHora: desde,
