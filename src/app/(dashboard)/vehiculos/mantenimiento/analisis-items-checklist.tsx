@@ -18,6 +18,13 @@
 //  · Los ítems que nunca detectaron nada se muestran igual, en su propio bloque.
 //    Es el hallazgo incómodo del punto: un ítem con miles de evaluaciones y cero
 //    defectos no suele estar sano, suele no estar mirándose.
+//  · Los ítems que más se repiten llevan además su PLAN DE ACCIÓN, en su propio
+//    bloque. Es la respuesta al "¿y qué hicieron?" que sigue al número, y es
+//    distinta del plan de cada marca (que arregla una unidad un día): acá va la
+//    contramedida de fondo — se cambió de marca de focos, se pidieron dos
+//    presupuestos por las manijas, se le retiró al autoelevador el aceite
+//    hidráulico de más que había dejado el service. Ninguna de las tres deja
+//    rastro en una OT, así que sin esto el ítem se lee como desatendido.
 //  · Cada fila lleva su CONCLUSIÓN escrita. El número solo no defiende el punto:
 //    "documentación nunca detectó nada" es un hallazgo hasta que alguien escribe
 //    que el vencimiento lo controla el sistema con alertas y no el chofer. La
@@ -60,15 +67,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Download, MessageSquarePlus, Repeat, SearchX } from "lucide-react"
+import {
+  ClipboardList,
+  Download,
+  MessageSquarePlus,
+  Repeat,
+  SearchX,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard } from "./_components/kpi-card"
 import {
   getAnalisisChecklist,
   setObservacionItem,
+  setPlanAccionItem,
 } from "@/actions/checklist-analisis"
-import type { AnalisisChecklist, AnalisisItem } from "@/actions/checklist-analisis"
+import type {
+  AnalisisChecklist,
+  AnalisisItem,
+  PlanItemEstado,
+} from "@/actions/checklist-analisis"
 import {
   FiltroPeriodo,
   etiquetaDe,
@@ -79,19 +97,33 @@ import {
 } from "./_components/filtro-periodo"
 import { usePaletaViz } from "./_components/paleta-viz"
 import { TooltipBarras } from "./_components/tooltip-barras"
-import { DIAS_CRONICO_ACTIVO } from "@/lib/flota/checklist-cronicos"
+import { DIAS_CRONICO_ACTIVO, UMBRAL_CRONICO } from "@/lib/flota/checklist-cronicos"
 
 interface Props {
   analisis: AnalisisChecklist
   puedeEditar: boolean
 }
 
-interface DialogoObs {
+/**
+ * El mismo diálogo escribe las dos cosas, porque son las dos mitades de la
+ * misma pregunta: la CONCLUSIÓN explica por qué el número es el que es y el
+ * PLAN dice qué se está haciendo para que baje.
+ */
+interface DialogoItem {
+  modo: "conclusion" | "plan"
   itemId: string
   itemNombre: string
   criterio: string | null
   texto: string
+  estado: PlanItemEstado
 }
+
+/**
+ * Hallazgos desde los que el ítem pide plan de acción propio. Es el mismo
+ * umbral con el que la pantalla ya llama crónico a un defecto: tres marcas
+ * dejan de ser casualidad y pasan a tener causa.
+ */
+const UMBRAL_PLAN = UMBRAL_CRONICO
 
 const fmtPct = (v: number | null, dec = 2) =>
   v == null ? "—" : `${v.toFixed(dec)}%`
@@ -152,7 +184,7 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
     set.add(hoyISO().slice(0, 4))
     return Array.from(set).sort((a, b) => b.localeCompare(a))
   }, [analisis.porMes])
-  const { items, cronicos, porMes, porCategoria, totales } = datos
+  const { items, cronicos, porMes, porCategoria, totales, planHabilitado } = datos
   const router = useRouter()
 
   /**
@@ -183,36 +215,81 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
 
   const [, startTransition] = useTransition()
   const [verSinDeteccion, setVerSinDeteccion] = useState(false)
-  const [dialogo, setDialogo] = useState<DialogoObs | null>(null)
+  const [dialogo, setDialogo] = useState<DialogoItem | null>(null)
   const [guardando, setGuardando] = useState(false)
   // Override optimista: la nota se ve al toque y no espera el refresh del server.
   const [obsOverrides, setObsOverrides] = useState<Map<string, string | null>>(new Map())
+  const [planOverrides, setPlanOverrides] = useState<
+    Map<string, { plan: string | null; estado: PlanItemEstado | null; fecha: string | null }>
+  >(new Map())
 
   const obsDe = (i: AnalisisItem): string | null =>
     obsOverrides.has(i.id) ? (obsOverrides.get(i.id) ?? null) : i.observacion
 
+  const planDe = (
+    i: AnalisisItem
+  ): { plan: string | null; estado: PlanItemEstado | null; fecha: string | null } =>
+    planOverrides.get(i.id) ?? {
+      plan: i.planAccion,
+      estado: i.planEstado,
+      fecha: i.planFecha,
+    }
+
   const abrirObservacion = (i: AnalisisItem) => {
     if (!puedeEditar) return
     setDialogo({
+      modo: "conclusion",
       itemId: i.id,
       itemNombre: i.nombre,
       criterio: i.criterio,
       texto: obsDe(i) ?? "",
+      estado: "en_curso",
     })
   }
 
-  const guardarObservacion = async () => {
+  const abrirPlan = (i: AnalisisItem) => {
+    if (!puedeEditar) return
+    const p = planDe(i)
+    setDialogo({
+      modo: "plan",
+      itemId: i.id,
+      itemNombre: i.nombre,
+      criterio: i.criterio,
+      texto: p.plan ?? "",
+      estado: p.estado ?? "en_curso",
+    })
+  }
+
+  const guardar = async () => {
     if (!dialogo) return
     setGuardando(true)
     const texto = dialogo.texto.trim() || null
-    const res = await setObservacionItem({ itemId: dialogo.itemId, observacion: texto })
+    const res =
+      dialogo.modo === "conclusion"
+        ? await setObservacionItem({ itemId: dialogo.itemId, observacion: texto })
+        : await setPlanAccionItem({
+            itemId: dialogo.itemId,
+            plan: texto,
+            estado: dialogo.estado,
+          })
     setGuardando(false)
     if ("error" in res) {
       toast.error(res.error)
       return
     }
-    setObsOverrides((prev) => new Map(prev).set(dialogo.itemId, texto))
-    toast.success(texto ? "Conclusión guardada" : "Conclusión borrada")
+    if (dialogo.modo === "conclusion") {
+      setObsOverrides((prev) => new Map(prev).set(dialogo.itemId, texto))
+      toast.success(texto ? "Conclusión guardada" : "Conclusión borrada")
+    } else {
+      setPlanOverrides((prev) =>
+        new Map(prev).set(dialogo.itemId, {
+          plan: texto,
+          estado: texto ? dialogo.estado : null,
+          fecha: texto ? new Date().toISOString() : null,
+        })
+      )
+      toast.success(texto ? "Plan de acción guardado" : "Plan de acción borrado")
+    }
     setDialogo(null)
     startTransition(() => router.refresh())
   }
@@ -268,6 +345,48 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
   )
 
   const criticosNoOk = conDefectos.filter((i) => i.critico).reduce((a, i) => a + i.noOk, 0)
+
+  /**
+   * Los ítems que piden plan de acción propio: los que llegaron al umbral de
+   * hallazgos, más cualquiera que ya tenga un plan escrito —aunque haya dejado
+   * de marcarse, porque eso es justamente lo que prueba que el plan funcionó, y
+   * esconderlo borraría la evidencia.
+   *
+   * Ordenados por hallazgos y NO por la tabla de arriba (que ordena por NO OK a
+   * propósito): acá la pregunta es cuál se repite más, y las 23 observaciones de
+   * fluidos del autoelevador son el caso que más plan necesitaba.
+   */
+  const frecuentes = useMemo(() => {
+    const planDeItem = (i: AnalisisItem) =>
+      planOverrides.has(i.id) ? planOverrides.get(i.id)!.plan : i.planAccion
+    return conDefectos
+      .filter((i) => i.hallazgos >= UMBRAL_PLAN || planDeItem(i) != null)
+      .sort((a, b) => b.hallazgos - a.hallazgos || b.noOk - a.noOk)
+  }, [conDefectos, planOverrides])
+
+  // Cuánto del total de hallazgos explican esos ítems: es lo que justifica
+  // mirar cinco filas y no las cuarenta y ocho.
+  const pesoFrecuentes = useMemo(() => {
+    const total = conDefectos.reduce((a, i) => a + i.hallazgos, 0)
+    if (total === 0) return null
+    return (frecuentes.reduce((a, i) => a + i.hallazgos, 0) / total) * 100
+  }, [conDefectos, frecuentes])
+
+  const frecuentesSinPlan = useMemo(
+    () =>
+      frecuentes.filter(
+        (i) => (planOverrides.has(i.id) ? planOverrides.get(i.id)!.plan : i.planAccion) == null
+      ).length,
+    [frecuentes, planOverrides]
+  )
+
+  const conPlan = useMemo(
+    () =>
+      items.filter((i) =>
+        planOverrides.has(i.id) ? planOverrides.get(i.id)!.plan != null : i.planAccion != null
+      ).length,
+    [items, planOverrides]
+  )
 
   // Se recuenta en el cliente para que la nota recién escrita mueva el número
   // sin esperar el refresh.
@@ -413,6 +532,28 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
           valor={totales.hallazgos}
           sub={`${totales.noOk} NO OK · ${totales.regular} observación(es) · en ${totales.checklists.toLocaleString("es-AR")} checklists`}
           dpo="1.3"
+          footer={
+            frecuentes.length > 0 ? (
+              <button
+                className={cn(
+                  "text-left text-xs underline underline-offset-2",
+                  planHabilitado && frecuentesSinPlan > 0
+                    ? "font-medium text-destructive"
+                    : "text-muted-foreground"
+                )}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  irA("planes-items")
+                }}
+              >
+                {!planHabilitado
+                  ? `Plan de acción de los ${frecuentes.length} ítems más frecuentes`
+                  : frecuentesSinPlan > 0
+                    ? `${frecuentesSinPlan} de los ${frecuentes.length} ítems más frecuentes sin plan de acción`
+                    : `Los ${frecuentes.length} ítems más frecuentes tienen plan de acción`}
+              </button>
+            ) : undefined
+          }
           onClick={() => irA("items-con-defectos")}
         />
         <KpiCard
@@ -626,6 +767,154 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
         </CardContent>
       </Card>
 
+      {frecuentes.length > 0 && (
+        <Card id="planes-items" className="scroll-mt-4">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              <ClipboardList className="size-4 text-muted-foreground" aria-hidden /> Plan
+              de acción de los ítems que más fallan
+              {planHabilitado && frecuentesSinPlan > 0 && (
+                <Badge className="border-destructive/30 bg-destructive/10 text-destructive">
+                  {frecuentesSinPlan} sin plan
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Los ítems con {UMBRAL_PLAN} hallazgos o más
+              {pesoFrecuentes != null && (
+                <>
+                  {" "}
+                  — {frecuentes.length} de {conDefectos.length} ítems, que explican{" "}
+                  <strong className="text-foreground">{fmtPct(pesoFrecuentes, 0)}</strong>{" "}
+                  de los hallazgos
+                </>
+              )}
+              . Acá va la contramedida <strong className="text-foreground">de fondo</strong>{" "}
+              sobre el ítem, no el arreglo de la marca del día: ese es el plan de cada
+              defecto y vive en Check lists. La diferencia es la que pide el punto —
+              cambiar de marca de focos ataca la causa; reponer el foco de esa unidad, no.
+              Un ítem que se deja de marcar después de ejecutar el plan es la prueba de
+              que la contramedida funcionó, así que el plan queda a la vista aunque el
+              ítem ya no esté entre los frecuentes.
+            </p>
+            {!planHabilitado && (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                Falta correr en la base el archivo{" "}
+                <strong>APLICAR_EN_PAMPEANA_CHECKLIST_ITEM_PLAN_ACCION.sql</strong>: hasta
+                entonces los planes no se pueden guardar y las filas de abajo salen vacías
+                —no es que no tengan plan.
+              </p>
+            )}
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ítem</TableHead>
+                    <TableHead className="text-right">Hallazgos</TableHead>
+                    <TableHead>Unidades</TableHead>
+                    <TableHead>Plan de acción</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Cargado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {frecuentes.map((i) => {
+                    const p = planDe(i)
+                    return (
+                      <TableRow key={i.id}>
+                        <TableCell className="py-2">
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-medium text-foreground">{i.nombre}</span>
+                            {i.critico && (
+                              <Badge className="border-destructive/30 bg-destructive/10 text-[10px] text-destructive">
+                                Crítico
+                              </Badge>
+                            )}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {i.categoria} · {i.tipoVehiculo}
+                          </span>
+                        </TableCell>
+                        <TableCell className="py-2 text-right">
+                          <span className="block font-semibold tabular-nums">
+                            {i.hallazgos}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {i.noOk > 0 && `${i.noOk} NO OK`}
+                            {i.noOk > 0 && i.regular > 0 && " · "}
+                            {i.regular > 0 && `${i.regular} obs.`}
+                          </span>
+                        </TableCell>
+                        <TableCell className="py-2 text-xs text-muted-foreground">
+                          {i.unidades.length === 0
+                            ? "—"
+                            : i.unidades
+                                .slice(0, 3)
+                                .map(
+                                  (u) => `${u.dominio}${u.veces > 1 ? ` (${u.veces})` : ""}`
+                                )
+                                .join(", ") +
+                              (i.unidades.length > 3 ? ` +${i.unidades.length - 3}` : "")}
+                        </TableCell>
+                        <TableCell className="py-2">
+                          {!planHabilitado ? (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          ) : p.plan ? (
+                            <button
+                              className={cn(
+                                "max-w-[30rem] text-left text-xs text-foreground",
+                                puedeEditar && "hover:underline hover:underline-offset-2"
+                              )}
+                              onClick={() => abrirPlan(i)}
+                              disabled={!puedeEditar}
+                              title={p.plan}
+                            >
+                              {p.plan}
+                            </button>
+                          ) : puedeEditar ? (
+                            <button
+                              className="flex items-center gap-1 text-xs text-destructive underline underline-offset-2"
+                              onClick={() => abrirPlan(i)}
+                            >
+                              <MessageSquarePlus className="size-3.5" aria-hidden /> Cargar
+                              plan
+                            </button>
+                          ) : (
+                            <span className="text-xs text-destructive">Sin plan</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-2">
+                          {!planHabilitado ? (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          ) : p.plan == null ? (
+                            <Badge className="border-destructive/30 bg-destructive/10 text-destructive">
+                              Sin plan
+                            </Badge>
+                          ) : p.estado === "cerrado" ? (
+                            <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                              Cerrado
+                            </Badge>
+                          ) : (
+                            <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                              En curso
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-2 text-right text-xs tabular-nums text-muted-foreground">
+                          {fmtFecha(p.fecha ? p.fecha.slice(0, 10) : null)}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {pareto.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
@@ -808,17 +1097,39 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
         <strong className="text-foreground">
           {conObservacion} de {totales.itemsActivos}
         </strong>{" "}
-        ítems · criterio operativo cargado en {totales.itemsConCriterio} de{" "}
+        ítems
+        {planHabilitado && (
+          <>
+            {" "}
+            · planes de acción de ítem:{" "}
+            <strong className="text-foreground">
+              {conPlan} de {frecuentes.length}
+            </strong>{" "}
+            ítems frecuentes
+          </>
+        )}{" "}
+        · criterio operativo cargado en {totales.itemsConCriterio} de{" "}
         {totales.itemsActivos} (los que faltan se completan con el SOP de Checklist).
       </p>
 
       <Dialog open={dialogo != null} onOpenChange={(o) => !o && setDialogo(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Conclusión del ítem</DialogTitle>
+            <DialogTitle>
+              {dialogo?.modo === "plan" ? "Plan de acción del ítem" : "Conclusión del ítem"}
+            </DialogTitle>
             <DialogDescription>
-              {dialogo?.itemNombre} — por qué la tasa es la que es y qué se decidió
-              hacer. Es lo que lee el auditor al lado del número.
+              {dialogo?.modo === "plan" ? (
+                <>
+                  {dialogo?.itemNombre} — qué se está haciendo para que deje de
+                  aparecer. La contramedida del ítem, no el arreglo de una unidad.
+                </>
+              ) : (
+                <>
+                  {dialogo?.itemNombre} — por qué la tasa es la que es y qué se decidió
+                  hacer. Es lo que lee el auditor al lado del número.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           {dialogo?.criterio && (
@@ -830,15 +1141,49 @@ export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
           <Textarea
             value={dialogo?.texto ?? ""}
             onChange={(e) => setDialogo((d) => (d ? { ...d, texto: e.target.value } : d))}
-            placeholder="Ej.: los REGULAR son la gotita por la tapa del depósito, ya reemplazada el 28/07; no son pérdida de fluido"
+            placeholder={
+              dialogo?.modo === "plan"
+                ? "Ej.: se cambia de marca de focos; los que venían fallando eran de la marca anterior"
+                : "Ej.: los REGULAR son la gotita por la tapa del depósito, ya reemplazada el 28/07; no son pérdida de fluido"
+            }
             rows={4}
             autoFocus
           />
+          {dialogo?.modo === "plan" && (
+            <div className="space-y-1.5">
+              <span className="text-xs text-muted-foreground">
+                Estado del plan{" "}
+                <span className="text-muted-foreground/70">
+                  (cerrado = ya se ejecutó; si el ítem deja de marcarse, funcionó)
+                </span>
+              </span>
+              {/* Dos botones y no un desplegable: los select de la app se abren
+                  encima del control y hacen creer que no pasó nada. */}
+              <div className="flex gap-2">
+                {(
+                  [
+                    ["en_curso", "En curso"],
+                    ["cerrado", "Cerrado"],
+                  ] as Array<[PlanItemEstado, string]>
+                ).map(([valor, etiqueta]) => (
+                  <Button
+                    key={valor}
+                    type="button"
+                    size="sm"
+                    variant={dialogo.estado === valor ? "default" : "outline"}
+                    onClick={() => setDialogo((d) => (d ? { ...d, estado: valor } : d))}
+                  >
+                    {etiqueta}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogo(null)} disabled={guardando}>
               Cancelar
             </Button>
-            <Button onClick={guardarObservacion} disabled={guardando}>
+            <Button onClick={guardar} disabled={guardando}>
               {guardando ? "Guardando…" : "Guardar"}
             </Button>
           </DialogFooter>

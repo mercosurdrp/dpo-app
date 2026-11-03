@@ -50,6 +50,56 @@ function diasDesde(fecha: string, hoy: string): number {
   return Math.max(0, Math.round(ms / 86_400_000))
 }
 
+/** Fila de `checklist_item_analisis`: la conclusión y el plan de cada ítem. */
+interface NotaItem {
+  item_id: string
+  observacion: string | null
+  updated_at: string
+  plan_accion: string | null
+  plan_estado: PlanItemEstado | null
+  plan_at: string | null
+}
+
+const COLUMNAS_NOTA = "item_id, observacion, updated_at, plan_accion, plan_estado, plan_at"
+/** Sin las columnas del plan, para la base que todavía no corrió el ALTER. */
+const COLUMNAS_NOTA_LEGACY = "item_id, observacion, updated_at"
+
+/**
+ * Conclusiones y planes por ítem. El DDL de las columnas del plan se aplica a
+ * mano en el SQL Editor, así que si todavía no está, la pantalla sigue andando
+ * con las conclusiones y el plan simplemente no aparece — en vez de romperse.
+ * 42703 = columna inexistente.
+ */
+async function leerNotasItem(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<{ data: NotaItem[]; error: string | null; disponible: boolean }> {
+  const conPlan = await supabase.from("checklist_item_analisis").select(COLUMNAS_NOTA)
+  if (!conPlan.error) {
+    return {
+      data: (conPlan.data || []) as unknown as NotaItem[],
+      error: null,
+      disponible: true,
+    }
+  }
+  if (conPlan.error.code !== "42703") {
+    return { data: [], error: conPlan.error.message, disponible: false }
+  }
+
+  const legacy = await supabase
+    .from("checklist_item_analisis")
+    .select(COLUMNAS_NOTA_LEGACY)
+  if (legacy.error) return { data: [], error: legacy.error.message, disponible: false }
+  return {
+    data: ((legacy.data || []) as unknown as Array<{
+      item_id: string
+      observacion: string | null
+      updated_at: string
+    }>).map((o) => ({ ...o, plan_accion: null, plan_estado: null, plan_at: null })),
+    error: null,
+    disponible: false,
+  }
+}
+
 export interface AnalisisItem {
   id: string
   categoria: string
@@ -76,7 +126,19 @@ export interface AnalisisItem {
   observacion: string | null
   /** Cuándo se escribió esa conclusión. */
   observacionFecha: string | null
+  /**
+   * Plan de acción DEL ÍTEM: la contramedida de fondo sobre la causa que lo
+   * hace repetirse en toda la flota, no el arreglo de la marca del día (eso son
+   * los planes por respuesta de `checklist_planes_accion`).
+   */
+  planAccion: string | null
+  planEstado: PlanItemEstado | null
+  /** Cuándo se cargó o actualizó ese plan. */
+  planFecha: string | null
 }
+
+/** Un plan de ítem está en curso hasta que se ejecutó y se dio por cerrado. */
+export type PlanItemEstado = "en_curso" | "cerrado"
 
 export interface DefectoCronico {
   itemId: string
@@ -105,6 +167,13 @@ export interface DefectoCronico {
 export interface AnalisisChecklist {
   items: AnalisisItem[]
   cronicos: DefectoCronico[]
+  /**
+   * ¿La base ya tiene las columnas del plan de acción por ítem? El DDL se
+   * aplica a mano en el SQL Editor, así que hasta que se corra la pantalla
+   * tiene que decir eso y no mostrar los ítems como "sin plan" —que es una
+   * acusación distinta.
+   */
+  planHabilitado: boolean
   /** Desvíos por mes en toda la flota, separados por severidad. */
   porMes: Array<{ ym: string; veces: number; noOk: number; regular: number }>
   /** Hallazgos por categoría del checklist, de mayor a menor. */
@@ -126,6 +195,8 @@ export interface AnalisisChecklist {
     itemsConDeteccion: number
     /** Ítems con la conclusión del análisis ya escrita. */
     itemsConObservacion: number
+    /** Ítems con plan de acción cargado sobre el ítem. */
+    itemsConPlan: number
     /** Ítems con el criterio operativo cargado (lo que lee el chofer). */
     itemsConCriterio: number
     checklists: number
@@ -197,12 +268,12 @@ export async function getAnalisisChecklist(periodo?: {
           .limit(1),
         "fecha"
       ),
-      supabase.from("checklist_item_analisis").select("item_id, observacion, updated_at"),
+      leerNotasItem(supabase),
     ])
     if (itemsRes.error) return { error: itemsRes.error.message }
     if (noOkRes.error) return { error: noOkRes.error.message }
     if (checksRes.error) return { error: checksRes.error.message }
-    if (obsRes.error) return { error: obsRes.error.message }
+    if (obsRes.error) return { error: obsRes.error }
 
     // Ojo: el mismo nombre existe varias veces, una por modal ("Pérdida de
     // fluidos" está en camión y en autoelevador). Se agrupa por id y el modal se
@@ -218,13 +289,7 @@ export async function getAnalisisChecklist(periodo?: {
       descripcion: string | null
     }>
 
-    const obsPorItem = new Map(
-      ((obsRes.data || []) as Array<{
-        item_id: string
-        observacion: string | null
-        updated_at: string
-      }>).map((o) => [o.item_id, o])
-    )
+    const obsPorItem = new Map(obsRes.data.map((o) => [o.item_id, o]))
 
     // Denominador por ítem: un solo group by en la base. Con período, el corte
     // entra por `checklist_vehiculos` para poder usar la fecha del checklist,
@@ -317,6 +382,9 @@ export async function getAnalisisChecklist(periodo?: {
         criterio: i.descripcion,
         observacion: obs?.observacion ?? null,
         observacionFecha: obs?.observacion ? obs.updated_at : null,
+        planAccion: obs?.plan_accion ?? null,
+        planEstado: obs?.plan_accion ? (obs.plan_estado ?? "en_curso") : null,
+        planFecha: obs?.plan_accion ? (obs.plan_at ?? obs.updated_at) : null,
       }
     })
     // Ordena por defecto real primero y recién después por observaciones: un
@@ -428,6 +496,7 @@ export async function getAnalisisChecklist(periodo?: {
       data: {
         items: analisis,
         cronicos,
+        planHabilitado: obsRes.disponible,
         porMes: [...mesesFlota.entries()]
           .map(([ym, v]) => ({ ym, veces: v.noOk + v.regular, ...v }))
           .sort((a, b) => a.ym.localeCompare(b.ym)),
@@ -447,6 +516,7 @@ export async function getAnalisisChecklist(periodo?: {
           itemsActivos: items.length,
           itemsConDeteccion: analisis.filter((i) => i.hallazgos > 0).length,
           itemsConObservacion: analisis.filter((i) => i.observacion != null).length,
+          itemsConPlan: analisis.filter((i) => i.planAccion != null).length,
           itemsConCriterio: analisis.filter((i) => i.criterio != null).length,
           checklists: checksRes.count ?? 0,
           desde: fechasNoOk[0] ?? null,
@@ -474,6 +544,19 @@ export async function setObservacionItem(input: {
     const texto = input.observacion?.trim() || null
 
     if (texto == null) {
+      // Borrar la conclusión no puede llevarse puesto el plan de acción del
+      // ítem, que vive en la misma fila: si hay plan se vacía la columna y la
+      // fila queda; si no hay nada más, se borra la fila entera.
+      const nota = await leerNotaItem(supabase, input.itemId)
+      if ("error" in nota) return nota
+      if (nota.planAccion != null) {
+        const { error } = await supabase
+          .from("checklist_item_analisis")
+          .update({ observacion: null, updated_by: profile.id })
+          .eq("item_id", input.itemId)
+        if (error) return { error: error.message }
+        return { success: true }
+      }
       const { error } = await supabase
         .from("checklist_item_analisis")
         .delete()
@@ -492,6 +575,105 @@ export async function setObservacionItem(input: {
       { onConflict: "item_id" }
     )
     if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Una sola fila de `checklist_item_analisis`, tolerante a que las columnas del
+ * plan todavía no existan en la base. Devuelve nulls si el ítem no tiene fila.
+ */
+async function leerNotaItem(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  itemId: string
+): Promise<{ observacion: string | null; planAccion: string | null } | { error: string }> {
+  for (const columnas of [COLUMNAS_NOTA, COLUMNAS_NOTA_LEGACY]) {
+    const { data, error } = await supabase
+      .from("checklist_item_analisis")
+      .select(columnas)
+      .eq("item_id", itemId)
+      .maybeSingle()
+    if (!error) {
+      const fila = data as unknown as Partial<NotaItem> | null
+      return {
+        observacion: fila?.observacion ?? null,
+        planAccion: fila?.plan_accion ?? null,
+      }
+    }
+    if (error.code !== "42703") return { error: error.message }
+  }
+  return { observacion: null, planAccion: null }
+}
+
+/**
+ * Guarda el PLAN DE ACCIÓN de un ítem del checklist (DPO 1.3): la contramedida
+ * de fondo sobre el ítem que se repite, no el arreglo de la marca del día.
+ *
+ * Es lo que contesta el "¿y qué hicieron?" que sigue al número. Los tres casos
+ * que lo pidieron son los de mayor frecuencia: el exceso de aceite hidráulico
+ * que había dejado el service del autoelevador, los dos presupuestos de las
+ * manijas del cierre de lonas y el cambio de marca de focos de las luces de
+ * freno. Ninguno de los tres deja rastro en una OT, así que sin esto el ítem
+ * se sigue leyendo como un defecto que nadie atendió.
+ *
+ * Sólo el Gestor de Flota — admin o supervisor. Texto vacío borra el plan y
+ * conserva la conclusión si la hay.
+ */
+export async function setPlanAccionItem(input: {
+  itemId: string
+  plan: string | null
+  estado?: PlanItemEstado
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const texto = input.plan?.trim() || null
+
+    if (texto == null) {
+      const nota = await leerNotaItem(supabase, input.itemId)
+      if ("error" in nota) return nota
+      if (nota.observacion != null) {
+        const { error } = await supabase
+          .from("checklist_item_analisis")
+          .update({ plan_accion: null, plan_estado: null, plan_at: null, plan_by: null })
+          .eq("item_id", input.itemId)
+        if (error) return { error: error.message }
+        return { success: true }
+      }
+      const { error } = await supabase
+        .from("checklist_item_analisis")
+        .delete()
+        .eq("item_id", input.itemId)
+      if (error) return { error: error.message }
+      return { success: true }
+    }
+
+    const ahora = new Date().toISOString()
+    const { error } = await supabase.from("checklist_item_analisis").upsert(
+      {
+        item_id: input.itemId,
+        plan_accion: texto,
+        plan_estado: input.estado ?? "en_curso",
+        plan_at: ahora,
+        plan_by: profile.id,
+        updated_at: ahora,
+        updated_by: profile.id,
+      },
+      { onConflict: "item_id" }
+    )
+    if (error) {
+      // La fila existe pero el ALTER no se corrió: mejor decirlo que dejar un
+      // "no se pudo guardar" sin causa.
+      if (error.code === "42703") {
+        return {
+          error:
+            "Falta aplicar en la base el SQL del plan de acción por ítem (columna plan_accion).",
+        }
+      }
+      return { error: error.message }
+    }
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }

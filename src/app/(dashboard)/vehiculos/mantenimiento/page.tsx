@@ -208,6 +208,7 @@ export default async function MantenimientoPage() {
       : {
           items: [],
           cronicos: [],
+          planHabilitado: false,
           porMes: [],
           porCategoria: [],
           totales: {
@@ -219,6 +220,7 @@ export default async function MantenimientoPage() {
             itemsActivos: 0,
             itemsConDeteccion: 0,
             itemsConObservacion: 0,
+            itemsConPlan: 0,
             itemsConCriterio: 0,
             checklists: 0,
             desde: null,
