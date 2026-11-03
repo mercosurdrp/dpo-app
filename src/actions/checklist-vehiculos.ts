@@ -1,6 +1,11 @@
 "use server"
 
+import { after } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import {
+  avisarChecklistCritico,
+  syncIndisponibilidadCritica,
+} from "@/lib/vehiculos/bloqueo-critico"
 import { requireAuth } from "@/lib/session"
 import {
   addDays,
@@ -424,6 +429,20 @@ export async function createChecklist(
       .insert(respuestasToInsert)
 
     if (respError) return { error: respError.message }
+
+    // 🚨 Crítico en NO OK: WhatsApp a Fausto y el camión queda bloqueado para
+    // salir (y como IND en flota) hasta que se resuelva el plan de acción. Va
+    // después de responder: el chofer no espera al WhatsApp.
+    if (resultado === "rechazado") {
+      after(async () => {
+        await avisarChecklistCritico(checklist.id)
+        await syncIndisponibilidadCritica(undefined, dominioNorm).catch((e) =>
+          console.error(
+            `[checklist-critico] IND ${dominioNorm}: ${e instanceof Error ? e.message : e}`
+          )
+        )
+      })
+    }
 
     return { data: checklist as ChecklistVehiculo }
   } catch (e) {

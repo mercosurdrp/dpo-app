@@ -4,6 +4,7 @@ import { parseEnteroEsAR } from "@/lib/numeros"
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { IS_MISIONES } from "@/lib/empresa"
 import {
   validarLectura,
   type LecturaPrevia,
@@ -438,7 +439,11 @@ export function ChecklistFormClient({
       ? "salida del depósito"
       : "entrada al depósito"
     if (result.data.resultado === "rechazado") {
-      toast.error(`Checklist de ${label} RECHAZADO — ítems críticos no aprobados`)
+      toast.error(
+        IS_MISIONES
+          ? `Checklist de ${label} RECHAZADO — ítems críticos no aprobados`
+          : `Checklist de ${label} RECHAZADO — el camión queda bloqueado para salir y ya se avisó al supervisor`
+      )
     } else {
       toast.success(`Checklist de ${label} registrado correctamente`)
     }
@@ -804,7 +809,7 @@ export function ChecklistFormClient({
                 {criticosRechazados.length} ítem
                 {criticosRechazados.length === 1 ? "" : "s"} crítico
                 {criticosRechazados.length === 1 ? "" : "s"} no aprobado
-                {criticosRechazados.length === 1 ? "" : "s"}. Al registrar quedará marcado como RECHAZADO.
+                {criticosRechazados.length === 1 ? "" : "s"}. Al registrar quedará marcado como RECHAZADO{IS_MISIONES ? "" : " y el camión no podrá salir hasta que mantenimiento lo resuelva"}.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {criticosRechazados.map((i) => (

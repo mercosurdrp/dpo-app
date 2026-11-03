@@ -18,6 +18,8 @@ import { toast } from "sonner"
 import { createRegistroVehiculo } from "@/actions/registros-vehiculos"
 import { calcTml, esAyudante, franjaPorHoraSalida } from "@/lib/tml/calculo"
 import type { CatalogoChofer, CatalogoVehiculo } from "@/types/database"
+import type { CamionBloqueado } from "@/lib/vehiculos/bloqueo-critico-tipos"
+import { BloqueoCriticoBanner } from "@/components/vehiculos/bloqueo-critico-banner"
 import {
   ArrowLeft,
   Truck,
@@ -32,9 +34,17 @@ import Link from "next/link"
 interface Props {
   choferes: CatalogoChofer[]
   vehiculos: CatalogoVehiculo[]
+  bloqueados: CamionBloqueado[]
+  puedeLiberar: boolean
 }
 
-export function RegistroFormClient({ choferes, vehiculos }: Props) {
+export function RegistroFormClient({
+  choferes,
+  vehiculos,
+  bloqueados: bloqueadosIniciales,
+  puedeLiberar,
+}: Props) {
+  const [bloqueados, setBloqueados] = useState(bloqueadosIniciales)
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -49,6 +59,8 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
   const [odometro, setOdometro] = useState("")
   const [hora, setHora] = useState("")
   const [observaciones, setObservaciones] = useState("")
+
+  const bloqueo = bloqueados.find((b) => b.dominio === dominio.trim().toUpperCase())
 
   // All people (choferes) for ayudante selects
   const personasOptions = choferes.map((c) => c.nombre)
@@ -243,10 +255,18 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
                       <SelectItem key={v.id} value={v.dominio}>
                         {v.dominio}
                         {v.descripcion && ` — ${v.descripcion}`}
+                        {bloqueados.some((b) => b.dominio === v.dominio.toUpperCase()) && " ⛔ BLOQUEADO"}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {bloqueo && (
+                  <BloqueoCriticoBanner
+                    bloqueo={bloqueo}
+                    puedeLiberar={puedeLiberar}
+                    onLiberado={(d) => setBloqueados((bs) => bs.filter((b) => b.dominio !== d))}
+                  />
+                )}
               </div>
 
               {/* Chofer */}

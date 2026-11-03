@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { capturarFlotaKpiSnapshots } from "@/lib/vehiculos/flota-kpis"
 import { IS_MISIONES } from "@/lib/empresa"
+import { syncIndisponibilidadCritica } from "@/lib/vehiculos/bloqueo-critico"
 
 const CRON_SECRET = process.env.CRON_SECRET
 export const maxDuration = 60
@@ -33,7 +34,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const res = await capturarFlotaKpiSnapshots(createAdminClient())
-    return NextResponse.json({ success: true, ...res })
+    // Camiones bloqueados por un crítico del checklist: la parada (IND) se
+    // estira hasta hoy mientras sigan sin resolver. Si falla, no tapa el resto.
+    const bloqueoCritico = await syncIndisponibilidadCritica().catch((e) => ({
+      error: e instanceof Error ? e.message : String(e),
+    }))
+    return NextResponse.json({ success: true, ...res, bloqueoCritico })
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Error desconocido" },

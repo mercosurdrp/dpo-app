@@ -2,6 +2,11 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import {
+  bloqueaEgreso,
+  getBloqueosCriticos,
+  mensajeBloqueo,
+} from "@/lib/vehiculos/bloqueo-critico"
 import type {
   RegistroVehiculo,
   TipoRegistroVehiculo,
@@ -79,6 +84,14 @@ export async function createRegistroVehiculo(
       input.odometro
     )
     if (errorLectura) return { error: errorLectura }
+
+    // 🚨 Camión con un crítico del checklist sin resolver: no sale.
+    if (input.tipo === "egreso") {
+      const dom = input.dominio.trim().toUpperCase()
+      const bloqueo = (await getBloqueosCriticos(dom)).get(dom)
+      const items = bloqueo ? bloqueaEgreso(bloqueo, input.fecha, input.hora) : []
+      if (items.length > 0) return { error: mensajeBloqueo(dom, items) }
+    }
 
     const horaEntrada = input.horaEntrada ?? franjaPorHoraSalida(input.hora)
     const tml = input.tipo === "egreso" ? calcTml(input.hora, horaEntrada) : null
