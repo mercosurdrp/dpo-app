@@ -20,6 +20,7 @@ import {
   Camera,
   ClipboardCheck,
   FileWarning,
+  Maximize2,
   Pencil,
   Search,
   Truck,
@@ -43,6 +44,7 @@ import {
   EvidenciaIdentificacionDialog,
   evidenciasDe,
 } from "./evidencia-identificacion-dialog"
+import { VistaGeneralFlota } from "./vista-general-flota"
 import type { MaestroFlota, MaestroFlotaUnidad } from "@/types/database"
 
 type Vista = "identificacion" | "asignacion" | "documentacion" | "estado"
@@ -187,6 +189,7 @@ export function MaestroFlotaPanel({
   }
   const [verBajas, setVerBajas] = useState(false)
   const [foco, setFoco] = useState<Foco | null>(null)
+  const [verGeneral, setVerGeneral] = useState(false)
 
   /**
    * Al tocar un aviso se limpian los demás filtros: los contadores de arriba se
@@ -279,6 +282,16 @@ export function MaestroFlotaPanel({
     )
   }, [filtradas, foco])
 
+  /** Qué filtro está puesto, para el título de la visualización general. */
+  const filtroTexto = [
+    foco ? FOCOS[foco].titulo : null,
+    tipo !== "todos" ? (TIPO_LABEL[tipo] ?? tipo) : null,
+    busqueda.trim() ? `«${busqueda.trim()}»` : null,
+    verBajas ? "con bajas" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -289,6 +302,17 @@ export function MaestroFlotaPanel({
             {resumen.activas} unidades activas
             {resumen.bajas > 0 ? ` · ${resumen.bajas} de baja` : ""}
           </span>
+          {/* Las cuatro vistas juntas, a pantalla completa y descargable. */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto h-8"
+            onClick={() => setVerGeneral(true)}
+            title="Identificación, asignación, documentación y estado en una sola tabla"
+          >
+            <Maximize2 className="mr-1.5 size-3.5" />
+            Ver visualización general
+          </Button>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -550,6 +574,15 @@ export function MaestroFlotaPanel({
           </div>
         )}
       </CardContent>
+
+      {verGeneral && (
+        <VistaGeneralFlota
+          todas={unidades.filter((u) => u.activo)}
+          filtradas={filtradas}
+          filtro={filtroTexto || null}
+          onClose={() => setVerGeneral(false)}
+        />
+      )}
 
       {canEdit && (
         <EditarFichaDialog
