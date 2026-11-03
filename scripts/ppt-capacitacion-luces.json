@@ -1,0 +1,125 @@
+{
+  "salida": "C:\\Users\\Electro PC\\Desktop\\Capacitacion - Luces del checklist.pptx",
+  "slides": [
+    {
+      "tipo": "titulo",
+      "titulo": "Luces del checklist",
+      "subtitulo": "Capacitación de Flota · Checklist diario de vehículos|Mercosur Región Pampeana · Noviembre 2026"
+    },
+    {
+      "tipo": "bullets",
+      "titulo": "El dato que motiva la charla",
+      "bullets": [
+        "Entre el 5 de agosto y el 22 de septiembre el pañol entregó 25 piezas de iluminación: 23 focos y 2 micas.",
+        "En el mismo período el checklist marcó UNA sola luz mal, sobre 2.309 respuestas de los 5 ítems de LUCES.",
+        "Desde el 23 de septiembre a hoy: ninguna.",
+        "Las luces se queman y se cambian. Lo que falta es el registro."
+      ]
+    },
+    {
+      "tipo": "bullets",
+      "titulo": "Qué está pasando en realidad",
+      "bullets": [
+        "El circuito que usamos hoy: el chofer avisa de palabra, el pañol entrega el foco y se cambia en el depósito.",
+        "14 de esas entregas no tienen orden de trabajo. Varias dicen textual: \"hecho en casa, sin pasar por taller\".",
+        "El defecto nunca entra al sistema: no queda fecha, ni unidad, ni historial.",
+        "El problema no es que el checklist no sirva. Es que lo que vemos no lo cargamos."
+      ]
+    },
+    {
+      "tipo": "bullets",
+      "titulo": "Por qué importa",
+      "bullets": [
+        "Seguridad: 4 de los 5 ítems de luces son críticos. Sin luz de freno o sin balizas, el riesgo es en ruta y la multa es en el control.",
+        "Repuestos: si el defecto no se carga, el pañol no sabe qué reponer y el foco falta justo el día que hace falta.",
+        "Mantenimiento: sin defecto previo, la reparación aparece de golpe y no se puede anticipar.",
+        "Auditoría: el checklist es la evidencia del punto 1.3. Un ítem con miles de respuestas y cero hallazgos se lee como un control que no se hace."
+      ]
+    },
+    {
+      "tipo": "bullets",
+      "titulo": "Los 5 ítems de LUCES",
+      "bullets": [
+        "Luces bajas y altas — camión — CRÍTICO",
+        "Luces de frenos — camión — CRÍTICO",
+        "Luces de giro y balizas, delanteras y traseras — camión — CRÍTICO",
+        "Luces de posición, delanteras y traseras — camión — CRÍTICO",
+        "Estado de luces — camioneta — delanteras, traseras, giros, balizas y freno",
+        "Criterio del checklist, igual para todos:",
+        "- OK = sin daños que comprometan el funcionamiento.",
+        "- NO OK = estado malo o que comprometa el funcionamiento."
+      ]
+    },
+    {
+      "tipo": "bullets",
+      "titulo": "Cómo se mira: dos minutos, una vuelta al vehículo",
+      "bullets": [
+        "Bajas y altas: prendé y cambiá; que funcionen las dos.",
+        "Posición: delanteras y traseras, incluidas las de la caja y las laterales.",
+        "Giro y balizas: los cuatro giros y las balizas, adelante y atrás.",
+        "Freno: pedí que alguien pise el pedal, o mirá el reflejo contra una pared.",
+        "Micas: rota, rajada u opaca también es NO OK, aunque la luz prenda.",
+        "Tildar los cinco ítems de corrido, sin bajar de la unidad, no es hacer el checklist."
+      ]
+    },
+    {
+      "tipo": "bullets",
+      "titulo": "Cómo se reporta",
+      "bullets": [
+        "Marcá NO OK en el ítem que corresponde. No en observaciones y no de palabra.",
+        "Sumá la foto y una línea: qué luz es y de qué lado.",
+        "Si el foco ya lo cambiaste vos, igual va marcado: el registro vale para el historial de la unidad y para el repuesto.",
+        "Si lo detectás a la vuelta, cargalo en el checklist de RETORNO: mantenimiento lo resuelve de noche y a la mañana no te frena la salida."
+      ]
+    },
+    {
+      "tipo": "bullets",
+      "titulo": "Nuevo desde el 3/11: qué pasa al marcar un ítem crítico",
+      "bullets": [
+        "Sale un aviso automático por WhatsApp a Fausto y a mantenimiento, con la patente, el chofer, la hora y el ítem.",
+        "La unidad queda bloqueada para salir hasta que mantenimiento resuelva el plan de acción. Un supervisor la puede liberar con motivo.",
+        "No es un castigo al que reporta: es para que el defecto se arregle el mismo día.",
+        "El que no reporta sale igual con la luz mal, y en la ruta el riesgo y la multa son del que maneja."
+      ]
+    },
+    {
+      "tipo": "bullets",
+      "titulo": "La regla simple",
+      "bullets": [
+        "Si el pañol te dio un foco o una mica, ese día el checklist tiene que tener un NO OK en luces.",
+        "Si no está, falta el registro.",
+        "Hoy la cuenta va 25 piezas contra 1 defecto reportado."
+      ]
+    },
+    {
+      "tipo": "bullets",
+      "titulo": "Qué vamos a controlar",
+      "bullets": [
+        "Todos los meses se cruzan las entregas de iluminación del pañol contra los NO OK de LUCES del checklist.",
+        "Cada pieza entregada sin defecto reportado es un defecto que no se cargó.",
+        "Objetivo: que los dos números se parezcan.",
+        "También se mira la adherencia: checklist hecho todos los días, completo y por el chofer que maneja la unidad."
+      ]
+    },
+    {
+      "tipo": "bullets",
+      "titulo": "Repaso",
+      "bullets": [
+        "1. ¿Cuántos ítems de LUCES hay y cuántos son críticos?",
+        "2. La luz prende pero la mica está rota: ¿OK o NO OK?",
+        "3. Cambiaste el foco con uno del pañol: ¿qué tenés que hacer en el checklist?",
+        "4. ¿En qué checklist conviene cargarlo para no frenar la salida?",
+        "Respuestas: 5 ítems, 4 críticos — NO OK — marcar NO OK ese día con foto — en el de retorno."
+      ]
+    },
+    {
+      "tipo": "bullets",
+      "titulo": "Cierre",
+      "bullets": [
+        "Mirar las luces lleva dos minutos.",
+        "Cargar el NO OK lleva veinte segundos.",
+        "Lo que no se carga no existe: ni para el repuesto, ni para el taller, ni para la auditoría."
+      ]
+    }
+  ]
+}
