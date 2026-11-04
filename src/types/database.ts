@@ -1541,6 +1541,82 @@ export interface MantenimientoPlanTarea {
   created_by: string | null
   created_at: string
   updated_at: string
+  /** Palabras que vinculan el texto libre de una OT con esta tarea (columna opcional). */
+  palabras_clave?: string[] | null
+}
+
+/**
+ * Sistema del camión al que pertenece una OT (R2.2.6 / R2.4.2). Es la unidad
+ * de análisis de la recurrencia: "carrocería" junta soldaduras, parantes y
+ * lona aunque cada OT las describa distinto. Se guarda en
+ * `mantenimiento_realizados.sistema`; `sugerirSistema()` lo deduce del texto
+ * cuando no está cargado.
+ */
+export type MantenimientoSistema =
+  | "motor"
+  | "refrigeracion_fluidos"
+  | "frenos_aire"
+  | "transmision"
+  | "suspension_direccion"
+  | "electrico"
+  | "luces"
+  | "carroceria_lona"
+  | "cabina_confort"
+  | "neumaticos"
+  | "hidraulico"
+  | "otro"
+
+export const MANTENIMIENTO_SISTEMA_LABELS: Record<MantenimientoSistema, string> = {
+  motor: "Motor",
+  refrigeracion_fluidos: "Pérdidas y refrigeración",
+  frenos_aire: "Frenos y circuito de aire",
+  transmision: "Transmisión y embrague",
+  suspension_direccion: "Suspensión y dirección",
+  electrico: "Eléctrico",
+  luces: "Luces y balizas",
+  carroceria_lona: "Carrocería y lona",
+  cabina_confort: "Cabina y confort",
+  neumaticos: "Neumáticos",
+  hidraulico: "Hidráulico",
+  otro: "Otro",
+}
+
+/** De dónde salió un cambio del plan preventivo (R2.2.6). */
+export type PlanEvolucionOrigen =
+  | "correctivo_recurrente"
+  | "fabricante"
+  | "auditoria"
+  | "checklist"
+  | "otro"
+
+export const PLAN_EVOLUCION_ORIGEN_LABELS: Record<PlanEvolucionOrigen, string> = {
+  correctivo_recurrente: "Correctivo recurrente",
+  fabricante: "Fabricante / manual",
+  auditoria: "Auditoría DPO",
+  checklist: "Checklist diario",
+  otro: "Otro",
+}
+
+/**
+ * Fila del historial del plan preventivo. La escribe un trigger en cada
+ * alta/cambio/baja de `mantenimiento_plan_tareas`; el motivo, el origen y las
+ * OT que lo justifican los completa la app (columnas de la migración
+ * 20261104120000, opcionales en el tipo hasta que corra).
+ */
+export interface MantenimientoPlanTareaHistorial {
+  id: string
+  tarea_id: string | null
+  accion: "alta" | "cambio" | "baja"
+  datos_antes: Partial<MantenimientoPlanTarea> | null
+  datos_despues: Partial<MantenimientoPlanTarea> | null
+  changed_by: string | null
+  changed_at: string
+  motivo?: string | null
+  origen?: PlanEvolucionOrigen | null
+  ot_ids?: string[] | null
+  sistema?: MantenimientoSistema | null
+  /** Nombre del usuario que hizo el cambio (resuelto en la action). */
+  autor_nombre?: string | null
 }
 
 export interface MantenimientoPlanOverride {
@@ -1688,6 +1764,12 @@ export interface MantenimientoRealizado {
    * de Órdenes de Trabajo, que muestra el mantenimiento general.
    */
   rubro: "general" | "neumaticos"
+  /**
+   * Sistema del vehículo al que pertenece el trabajo (carrocería, pérdidas,
+   * luces…). Base del análisis de correctivos recurrentes (R2.2.6). Opcional:
+   * la columna la agrega la migración 20261104120000.
+   */
+  sistema?: MantenimientoSistema | null
   /** Origen del registro: cargado a mano o traído del sync de Cloudfleet. */
   origen: "manual" | "cloudfleet"
   /** Nº de OT en Cloudfleet (clave del upsert del sync). NULL en las manuales. */

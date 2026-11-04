@@ -10,6 +10,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { MantenimientoEstado, MantenimientoTipo } from "@/types/database"
+import { sugerirSistema } from "@/lib/flota/sistemas-ot"
 import {
   fetchWorkOrders,
   fetchWorkOrderDetail,
@@ -33,6 +34,15 @@ function mapEstado(status: string | null): MantenimientoEstado {
     default:
       return "en_taller"
   }
+}
+
+/** ¿Ya existe `mantenimiento_realizados.sistema`? Hasta que corra el SQL, la OT se guarda sin él. */
+let cacheHaySistema: boolean | null = null
+async function haySistema(supabase: SupabaseClient): Promise<boolean> {
+  if (cacheHaySistema === true) return true
+  const sonda = await supabase.from("mantenimiento_realizados").select("sistema").limit(1)
+  cacheHaySistema = !sonda.error
+  return cacheHaySistema
 }
 
 function mapTipo(type: string | null): MantenimientoTipo {
@@ -90,6 +100,20 @@ async function upsertOrden(
     costo_mano_obra: d.totalCostLabors ?? null,
     observaciones,
     es_service_general: esServiceGeneral(d),
+    // Sistema del vehículo (R2.2.6): Cloudfleet manda system/subsystem por mano
+    // de obra; se clasifica con el mismo criterio que las OT manuales. Sólo si
+    // la columna ya existe (la agrega la migración 20261104120000).
+    ...((await haySistema(supabase))
+      ? {
+          sistema:
+            sugerirSistema([
+              ...(d.labors ?? []).flatMap((l) => [l.system?.name, l.subsystem?.name, l.name]),
+              d.comments,
+              d.reason,
+              d.detectedIssue,
+            ])?.sistema ?? null,
+        }
+      : {}),
     fuera_servicio_desde: fueraDeServicio ? fechaOt : null,
     fuera_servicio_hasta:
       fueraDeServicio && d.finalCompletionDate ? fechaARG(d.finalCompletionDate) : null,

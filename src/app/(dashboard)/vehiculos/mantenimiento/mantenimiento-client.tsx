@@ -108,12 +108,14 @@ import type {
   MantenimientoRealizado,
   MantenimientoTareaReprogramada,
   MantenimientoTipo,
+  PlanEvolucionOrigen,
   VehiculoTipo,
   ChecklistVehiculo,
 } from "@/types/database"
 import {
   MANTENIMIENTO_CATEGORIA_LABELS,
   MANTENIMIENTO_ESTADO_LABELS,
+  PLAN_EVOLUCION_ORIGEN_LABELS,
 } from "@/types/database"
 import { TableroOperativo, type OTPendiente } from "./tablero-operativo"
 import { ProgramacionOt } from "./programacion-ot"
@@ -126,6 +128,13 @@ import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
 import { Sustentabilidad } from "./sustentabilidad"
 import { ProveedorPicker } from "./_components/proveedor-picker"
+import {
+  EvolucionPlanPanel,
+  type AnalisisRecurrenciaProps,
+  type TareaPlanPrefill,
+} from "./_components/evolucion-plan"
+import { SistemaSelect, type SistemaValor } from "./_components/sistema-select"
+import { sugerirSistema } from "@/lib/flota/sistemas-ot"
 import { GestionMtto } from "./gestion-mtto"
 import { DisposicionResiduos } from "./disposicion-residuos"
 import { HerramientasTab } from "./herramientas-tab"
@@ -534,6 +543,8 @@ interface MantenimientoClientProps {
   rotacionKm: number
   /** Intervalos de rotación/alineación/balanceo por tipo de unidad. */
   intervalosNeumaticos: IntervaloNeumaticos[]
+  /** Correctivos recurrentes + evolución del plan (R2.2.6), ya analizados en el server. */
+  recurrencia: AnalisisRecurrenciaProps
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -573,6 +584,7 @@ export function MantenimientoClient({
   herramientas,
   rotacionKm,
   intervalosNeumaticos,
+  recurrencia,
   puedeEditar,
   esAdmin,
 }: MantenimientoClientProps) {
@@ -615,6 +627,8 @@ export function MantenimientoClient({
   const [deleteMantId, setDeleteMantId] = useState<string | null>(null)
   const [tareaEdit, setTareaEdit] = useState<MantenimientoPlanTarea | null>(null)
   const [nuevaTareaOpen, setNuevaTareaOpen] = useState(false)
+  // Motivo + OT vinculadas que llegan desde «Llevar al plan» (R2.2.6).
+  const [tareaPrefill, setTareaPrefill] = useState<TareaPlanPrefill | null>(null)
   const [overrideOpen, setOverrideOpen] = useState(false)
 
   // Filtros del historial
@@ -1657,6 +1671,24 @@ export function MantenimientoClient({
                 </CardContent>
               </Card>
             )}
+
+            {/* R2.2.6: qué correctivo se repite y cómo evolucionó el plan por eso. */}
+            <EvolucionPlanPanel
+              analisis={recurrencia}
+              tareas={tareas}
+              puedeEditar={puedeEditar}
+              onLlevarAlPlan={(prefill) => {
+                setTareaPrefill(prefill)
+                setTareaEdit(null)
+                setNuevaTareaOpen(true)
+              }}
+              onAjustarTarea={(t, prefill) => {
+                setTareaPrefill(prefill)
+                setNuevaTareaOpen(false)
+                setTareaEdit(t)
+              }}
+              onRefresh={refresh}
+            />
           </TabsContent>
         )}
       </Tabs>
@@ -1860,13 +1892,16 @@ export function MantenimientoClient({
       {(tareaEdit || nuevaTareaOpen) && (
         <TareaPlantillaDialog
           tarea={tareaEdit}
+          prefill={tareaPrefill}
           onClose={() => {
             setTareaEdit(null)
             setNuevaTareaOpen(false)
+            setTareaPrefill(null)
           }}
           onSaved={() => {
             setTareaEdit(null)
             setNuevaTareaOpen(false)
+            setTareaPrefill(null)
             refresh()
           }}
         />
@@ -1983,6 +2018,8 @@ function NuevoMantenimientoDialog({
   const [esServiceGeneral, setEsServiceGeneral] = useState(false)
   // Rubro: las OT de cubiertas se listan en la solapa Neumáticos.
   const [esNeumaticos, setEsNeumaticos] = useState(false)
+  // Sistema del vehículo (R2.2.6): sugerido por el texto hasta que se elija a mano.
+  const [sistemaManual, setSistemaManual] = useState<SistemaValor | null>(null)
   // Entrada/salida del taller (fecha + hora). De acá se deriva el período fuera
   // de servicio: por defecto la OT nueva marca la unidad NO disponible desde el
   // ingreso. Si no la saca de ruta, vaciá "Entrada al taller".
@@ -2007,6 +2044,23 @@ function NuevoMantenimientoDialog({
   const tipoVeh = (vehiculoSel?.vehiculo.tipo ?? "camion") as VehiculoTipo
   const tareasDisponibles = vehiculoSel ? (tareasPorTipo.get(tipoVeh) ?? []) : []
   const esAutoelevador = tipoVeh === "autoelevador"
+  // Sugerencia de sistema a partir de lo que ya se tipeó (tareas del plan
+  // tildadas, tareas libres y observaciones). Neumáticos manda si está tildado.
+  const sistemaSugerido = useMemo(
+    () =>
+      sugerirSistema(
+        [
+          ...(vehiculoSel ? (tareasPorTipo.get(tipoVeh) ?? []) : [])
+            .filter((t) => tareasSel.has(t.id))
+            .map((t) => t.nombre),
+          ...libres,
+          obs,
+        ],
+        { rubro: esNeumaticos ? "neumaticos" : "general" }
+      ),
+    [vehiculoSel, tareasPorTipo, tipoVeh, tareasSel, libres, obs, esNeumaticos]
+  )
+  const sistemaEfectivo: SistemaValor = sistemaManual ?? sistemaSugerido?.sistema ?? "none"
   // Últimas lecturas de la unidad para sugerir al cargar la OT sin retipear.
   // - Camiones/etc.: odómetro de registros/checklist/combustible.
   // - Autoelevadores: horómetro que se toma en el checklist (se guarda en la
@@ -2078,6 +2132,7 @@ function NuevoMantenimientoDialog({
       observaciones: obs,
       es_service_general: esServiceGeneral,
       rubro: esNeumaticos ? "neumaticos" : "general",
+      sistema: sistemaEfectivo === "none" ? null : sistemaEfectivo,
       costo_mano_obra: parseNum(costoMO),
       repuestos: repuestosPayload(repuestos),
       facturas: comprobantes.facturas,
@@ -2365,6 +2420,13 @@ function NuevoMantenimientoDialog({
               </span>
             </span>
           </label>
+
+          <SistemaSelect
+            valor={sistemaEfectivo}
+            manual={sistemaManual != null}
+            sugerencia={sistemaSugerido}
+            onChange={(v, manual) => setSistemaManual(manual ? v : null)}
+          />
 
           {/* Detalle de tareas: qué se hizo en el service y qué quedó pendiente.
               🚨 Va ABIERTO. Estuvo plegado y rotulado "(opcional)" hasta el
@@ -3541,6 +3603,16 @@ function EditarMantenimientoDialog({
   const [obs, setObs] = useState(m.observaciones ?? "")
   const [esServiceGeneral, setEsServiceGeneral] = useState(m.es_service_general)
   const [esNeumaticos, setEsNeumaticos] = useState(m.rubro === "neumaticos")
+  // Sistema (R2.2.6): el cargado en la OT es manual; si no hay, se sugiere por el texto.
+  const [sistemaManual, setSistemaManual] = useState<SistemaValor | null>(m.sistema ?? null)
+  const sistemaSugerido = useMemo(
+    () =>
+      sugerirSistema([...(m.tareas ?? []).map((t) => t.descripcion ?? ""), obs], {
+        rubro: esNeumaticos ? "neumaticos" : "general",
+      }),
+    [m.tareas, obs, esNeumaticos]
+  )
+  const sistemaEfectivo: SistemaValor = sistemaManual ?? sistemaSugerido?.sistema ?? "none"
   // Entrada/salida del taller (prellenadas desde la OT o, en OT viejas, desde el
   // período fuera de servicio que se haya cargado).
   const [entradaTaller, setEntradaTaller] = useState(
@@ -3584,6 +3656,7 @@ function EditarMantenimientoDialog({
       observaciones: obs,
       es_service_general: esServiceGeneral,
       rubro: esNeumaticos ? "neumaticos" : "general",
+      sistema: sistemaEfectivo === "none" ? null : sistemaEfectivo,
       costo_mano_obra: parseNum(costoMO),
       repuestos: repuestosPayload(repuestos),
       facturas: comprobantes.facturas,
@@ -3710,6 +3783,14 @@ function EditarMantenimientoDialog({
             </span>
           </label>
 
+          <SistemaSelect
+            className="col-span-2"
+            valor={sistemaEfectivo}
+            manual={sistemaManual != null}
+            sugerencia={sistemaSugerido}
+            onChange={(v, manual) => setSistemaManual(manual ? v : null)}
+          />
+
           <div className="col-span-2 rounded-md border border-amber-200 bg-amber-50/60 p-3">
             <p className="text-sm font-medium text-amber-800">Entrada y salida del taller</p>
             <p className="mb-2 text-xs text-amber-700">
@@ -3781,16 +3862,27 @@ function EditarMantenimientoDialog({
 
 function TareaPlantillaDialog({
   tarea,
+  prefill,
   onClose,
   onSaved,
 }: {
   tarea: MantenimientoPlanTarea | null
+  /** Motivo, origen y OT vinculadas que vienen de «Llevar al plan» (R2.2.6). */
+  prefill?: TareaPlanPrefill | null
   onClose: () => void
   onSaved: () => void
 }) {
-  const [nombre, setNombre] = useState(tarea?.nombre ?? "")
-  const [categoria, setCategoria] = useState<MantenimientoCategoria>(tarea?.categoria ?? "general")
-  const [tipoVeh, setTipoVeh] = useState<VehiculoTipo>(tarea?.tipo_vehiculo ?? "camion")
+  const [nombre, setNombre] = useState(tarea?.nombre ?? prefill?.nombre ?? "")
+  const [categoria, setCategoria] = useState<MantenimientoCategoria>(
+    tarea?.categoria ?? prefill?.categoria ?? "general"
+  )
+  const [tipoVeh, setTipoVeh] = useState<VehiculoTipo>(
+    tarea?.tipo_vehiculo ?? prefill?.tipoVehiculo ?? "camion"
+  )
+  // R2.2.6: todo cambio del plan lleva su POR QUÉ. Si viene de un correctivo
+  // recurrente ya llega redactado con las OT; si no, lo escribe quien cambia.
+  const [motivo, setMotivo] = useState(prefill?.motivo ?? "")
+  const [origen, setOrigen] = useState<PlanEvolucionOrigen>(prefill?.origen ?? "otro")
   const [frecKm, setFrecKm] = useState(
     tarea?.frecuencia_km != null ? String(tarea.frecuencia_km) : ""
   )
@@ -3815,6 +3907,16 @@ function TareaPlantillaDialog({
       toast.error("Definí al menos una frecuencia (km, meses u horas)")
       return
     }
+    if (motivo.trim().length < 10) {
+      toast.error("Contá por qué cambia el plan: es lo que pide el R2.2.6")
+      return
+    }
+    const evolucion = {
+      motivo,
+      origen,
+      otIds: prefill?.otIds ?? null,
+      sistema: prefill?.sistema ?? null,
+    }
     setSaving(true)
     const res = tarea
       ? await updatePlanTarea(tarea.id, {
@@ -3824,6 +3926,7 @@ function TareaPlantillaDialog({
           frecuencia_meses: meses,
           frecuencia_horas: horas,
           activo,
+          ...evolucion,
         })
       : await createPlanTarea({
           codigo: nombre,
@@ -3834,13 +3937,15 @@ function TareaPlantillaDialog({
           frecuencia_meses: meses,
           frecuencia_horas: horas,
           orden: 500,
+          ...evolucion,
         })
     setSaving(false)
     if ("error" in res) {
       toast.error(res.error)
       return
     }
-    toast.success(tarea ? "Tarea actualizada" : "Tarea creada")
+    if (res.warning) toast.warning(res.warning)
+    else toast.success(tarea ? "Tarea actualizada" : "Tarea creada")
     onSaved()
   }
 
@@ -3927,6 +4032,36 @@ function TareaPlantillaDialog({
               Tarea activa en el plan
             </label>
           )}
+
+          {/* R2.2.6: el cambio del plan con su por qué. Queda en el historial. */}
+          <div className="space-y-2 rounded-md border border-violet-200 bg-violet-50/50 p-3">
+            <div className="grid grid-cols-[1fr_auto] items-end gap-3">
+              <Label className="text-violet-900">¿Por qué cambia el plan?</Label>
+              <Select value={origen} onValueChange={(v) => setOrigen(v as PlanEvolucionOrigen)}>
+                <SelectTrigger className="h-8 w-48 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(PLAN_EVOLUCION_ORIGEN_LABELS) as PlanEvolucionOrigen[]).map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {PLAN_EVOLUCION_ORIGEN_LABELS[k]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Textarea
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              rows={prefill ? 5 : 3}
+              placeholder="Qué fallaba y qué resuelve. Ej.: «Se agrega inspección de lona y carrocería en cada service porque hubo 13 soldaduras correctivas en 7 camiones en un año»."
+            />
+            <p className="text-xs text-violet-800">
+              {prefill && prefill.otIds.length > 0
+                ? `Quedan vinculadas ${prefill.otIds.length} OT correctivas como respaldo del cambio.`
+                : "Queda en la evolución del plan, que es lo que el auditor revisa en el 2.2."}
+            </p>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

@@ -23,6 +23,10 @@ import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
 import { esFocoDeMantenimiento } from "@/lib/vehiculos/focos-checklist"
 import { marcarEpisodios } from "@/lib/vehiculos/episodios-foco"
 import { TAREAS_CIL } from "@/lib/flota/cil-tareas"
+import {
+  analizarRecurrencia,
+  type AnalisisRecurrencia,
+} from "@/lib/flota/recurrencia-correctivos"
 import type {
   CostosMantenimiento,
   DiaRuteo,
@@ -32,9 +36,12 @@ import type {
   MantenimientoEstado,
   MantenimientoPlanOverride,
   MantenimientoPlanTarea,
+  MantenimientoPlanTareaHistorial,
   MantenimientoRealizado,
+  MantenimientoSistema,
   MantenimientoTareaReprogramada,
   MantenimientoTipo,
+  PlanEvolucionOrigen,
   VehiculoTipo,
 } from "@/types/database"
 
@@ -385,6 +392,19 @@ export async function getTableroOperativo(): Promise<
 
 // ==================== PLANTILLAS ====================
 
+/**
+ * Por qué cambia el plan (R2.2.6). El trigger de auditoría guarda QUÉ cambió;
+ * esto es el POR QUÉ, con las OT correctivas que lo justifican. Se anota sobre
+ * la fila del historial que el trigger acaba de escribir.
+ */
+interface MotivoEvolucionInput {
+  motivo: string
+  origen?: PlanEvolucionOrigen | null
+  /** OT (mantenimiento_realizados.id) que originaron el cambio. */
+  otIds?: string[] | null
+  sistema?: MantenimientoSistema | null
+}
+
 interface PlanTareaInput {
   codigo: string
   nombre: string
@@ -394,16 +414,76 @@ interface PlanTareaInput {
   frecuencia_meses?: number | null
   frecuencia_horas?: number | null
   orden?: number
+  /** Obligatorio: sin motivo el cambio del plan no se puede defender en la auditoría. */
+  motivo: string
+  origen?: PlanEvolucionOrigen | null
+  otIds?: string[] | null
+  sistema?: MantenimientoSistema | null
+}
+
+const MOTIVO_MIN = 10
+
+function validarMotivo(motivo: string | undefined): string | null {
+  if (!motivo || motivo.trim().length < MOTIVO_MIN) {
+    return `Contá por qué cambia el plan (al menos ${MOTIVO_MIN} caracteres): es lo que pide el R2.2.6.`
+  }
+  return null
+}
+
+function faltaColumna(error: { code?: string | null; message?: string | null } | null): boolean {
+  if (!error) return false
+  if (error.code === "42703" || error.code === "PGRST204") return true
+  return /column .* does not exist|Could not find the '.*' column/i.test(error.message ?? "")
+}
+
+const AVISO_SQL_EVOLUCION =
+  "La tarea se guardó, pero el motivo no: falta aplicar APLICAR_EN_PAMPEANA_PLAN_MP_EVOLUCION.sql."
+
+/**
+ * Completa motivo/origen/OT en la fila MÁS NUEVA del historial de la tarea
+ * (la que el trigger escribió recién). Si la columna todavía no existe —el
+ * SQL lo corre otra persona después del deploy— la tarea queda guardada igual
+ * y se devuelve un aviso en vez de romper la carga.
+ */
+async function anotarMotivoHistorial(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tareaId: string,
+  input: MotivoEvolucionInput
+): Promise<string | undefined> {
+  const { data: fila, error } = await supabase
+    .from("mantenimiento_plan_tareas_historial")
+    .select("id, changed_at")
+    .eq("tarea_id", tareaId)
+    .order("changed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error || !fila) return "La tarea se guardó, pero no se encontró el cambio en el historial para anotarle el motivo."
+  // Protección: que sea el cambio de recién y no uno de otra sesión.
+  const hace = Date.now() - new Date(fila.changed_at as string).getTime()
+  if (hace > 2 * 60_000) return "La tarea se guardó sin cambios visibles: no hay fila nueva en el historial para el motivo."
+  const upd = await supabase
+    .from("mantenimiento_plan_tareas_historial")
+    .update({
+      motivo: input.motivo.trim(),
+      origen: input.origen ?? null,
+      ot_ids: input.otIds && input.otIds.length > 0 ? input.otIds : null,
+      sistema: input.sistema ?? null,
+    })
+    .eq("id", fila.id as string)
+  if (upd.error) return faltaColumna(upd.error) ? AVISO_SQL_EVOLUCION : upd.error.message
+  return undefined
 }
 
 export async function createPlanTarea(
   input: PlanTareaInput
-): Promise<{ data: MantenimientoPlanTarea } | { error: string }> {
+): Promise<{ data: MantenimientoPlanTarea; warning?: string } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
     if (!input.frecuencia_km && !input.frecuencia_meses && !input.frecuencia_horas) {
       return { error: "Definí al menos una frecuencia (km, meses u horas)" }
     }
+    const errorMotivo = validarMotivo(input.motivo)
+    if (errorMotivo) return { error: errorMotivo }
     const supabase = await createClient()
     const { data, error } = await supabase
       .from("mantenimiento_plan_tareas")
@@ -421,7 +501,9 @@ export async function createPlanTarea(
       .select()
       .single()
     if (error) return { error: error.message }
-    return { data: data as MantenimientoPlanTarea }
+    const tarea = data as MantenimientoPlanTarea
+    const warning = await anotarMotivoHistorial(supabase, tarea.id, input)
+    return warning ? { data: tarea, warning } : { data: tarea }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
@@ -430,9 +512,11 @@ export async function createPlanTarea(
 export async function updatePlanTarea(
   id: string,
   input: Partial<PlanTareaInput> & { activo?: boolean }
-): Promise<{ data: MantenimientoPlanTarea } | { error: string }> {
+): Promise<{ data: MantenimientoPlanTarea; warning?: string } | { error: string }> {
   try {
     await requireRole(["admin", "supervisor"])
+    const errorMotivo = validarMotivo(input.motivo)
+    if (errorMotivo) return { error: errorMotivo }
     const supabase = await createClient()
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
     if (input.nombre !== undefined) patch.nombre = input.nombre.trim()
@@ -450,7 +534,128 @@ export async function updatePlanTarea(
       .select()
       .single()
     if (error) return { error: error.message }
-    return { data: data as MantenimientoPlanTarea }
+    const tarea = data as MantenimientoPlanTarea
+    const warning = await anotarMotivoHistorial(supabase, tarea.id, {
+      motivo: input.motivo!,
+      origen: input.origen,
+      otIds: input.otIds,
+      sistema: input.sistema,
+    })
+    return warning ? { data: tarea, warning } : { data: tarea }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Documenta un cambio viejo del plan (los 140 de jul–sep 2026 nacieron sin
+ * motivo). Es lo que le falta al R2.2.6: "se agregó X porque fallaba Y".
+ */
+export async function explicarCambioPlan(
+  historialId: string,
+  input: MotivoEvolucionInput
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const errorMotivo = validarMotivo(input.motivo)
+    if (errorMotivo) return { error: errorMotivo }
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("mantenimiento_plan_tareas_historial")
+      .update({
+        motivo: input.motivo.trim(),
+        origen: input.origen ?? null,
+        ot_ids: input.otIds && input.otIds.length > 0 ? input.otIds : null,
+        sistema: input.sistema ?? null,
+      })
+      .eq("id", historialId)
+    if (error) {
+      return {
+        error: faltaColumna(error)
+          ? "Falta aplicar APLICAR_EN_PAMPEANA_PLAN_MP_EVOLUCION.sql para guardar motivos."
+          : error.message,
+      }
+    }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Historial de cambios del plan preventivo con el nombre de quien lo hizo.
+ * Si las columnas de motivo todavía no existen, devuelve las filas igual
+ * (sin motivo) y `sqlPendiente = true` para que la pantalla lo avise.
+ */
+export async function getHistorialPlan(): Promise<
+  { data: { filas: MantenimientoPlanTareaHistorial[]; sqlPendiente: boolean } } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    let sqlPendiente = false
+    const base = "id, tarea_id, accion, datos_antes, datos_despues, changed_by, changed_at"
+    const leer = (columnas: string) =>
+      supabase
+        .from("mantenimiento_plan_tareas_historial")
+        .select(columnas)
+        .order("changed_at", { ascending: false })
+    let { data, error } = await leer(`${base}, motivo, origen, ot_ids, sistema`)
+    if (error && faltaColumna(error)) {
+      sqlPendiente = true
+      ;({ data, error } = await leer(base))
+    }
+    if (error) return { error: error.message }
+    const filas = (data ?? []) as unknown as MantenimientoPlanTareaHistorial[]
+
+    const ids = [...new Set(filas.map((f) => f.changed_by).filter((x): x is string => !!x))]
+    if (ids.length > 0) {
+      const { data: perfiles } = await supabase.from("profiles").select("id, nombre").in("id", ids)
+      const nombres = new Map(
+        ((perfiles ?? []) as Array<{ id: string; nombre: string | null }>).map((p) => [p.id, p.nombre])
+      )
+      for (const f of filas) f.autor_nombre = f.changed_by ? (nombres.get(f.changed_by) ?? null) : null
+    }
+    return { data: { filas, sqlPendiente } }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Correctivos recurrentes por sistema + evolución del plan (R2.2.6). Trae 24
+ * meses de OT (la recurrencia mira 12; el efecto de cada cambio, 6 a cada
+ * lado) sin depender de la ventana de la grilla de OT.
+ */
+export async function getRecurrenciaCorrectivos(): Promise<
+  { data: AnalisisRecurrencia & { sqlPendiente: boolean } } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const desde = new Date()
+    desde.setMonth(desde.getMonth() - 24)
+    const [otsRes, tareasRes, histRes] = await Promise.all([
+      supabase
+        .from("mantenimiento_realizados")
+        .select(
+          "*, tareas:mantenimiento_realizado_tareas(*), repuestos:mantenimiento_realizado_repuestos(*)"
+        )
+        .gte("fecha", desde.toISOString().slice(0, 10))
+        .order("fecha", { ascending: false }),
+      supabase.from("mantenimiento_plan_tareas").select("*"),
+      getHistorialPlan(),
+    ])
+    if (otsRes.error) return { error: otsRes.error.message }
+    if (tareasRes.error) return { error: tareasRes.error.message }
+    if ("error" in histRes) return { error: histRes.error }
+    const analisis = analizarRecurrencia({
+      mantenimientos: (otsRes.data ?? []) as MantenimientoRealizado[],
+      tareasPlan: (tareasRes.data ?? []) as MantenimientoPlanTarea[],
+      historial: histRes.data.filas,
+      hoy: today(),
+    })
+    return { data: { ...analisis, sqlPendiente: histRes.data.sqlPendiente } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
@@ -810,6 +1015,8 @@ interface CreateMantenimientoInput {
   salida_taller?: string | null
   /** La unidad quedó parada fuera de la planta (punta de la pirámide). */
   auxilio_ruta?: boolean
+  /** Sistema del vehículo (carrocería, pérdidas, luces…): base de la recurrencia (R2.2.6). */
+  sistema?: MantenimientoSistema | null
   tareas: MantenimientoTareaInput[]
   repuestos?: MantenimientoRepuestoInput[]
   /** Comprobantes de la OT (proveedor + nº + monto + adjunto). */
@@ -1087,6 +1294,14 @@ async function hayAuxilioRuta(
   return !sonda.error
 }
 
+/** Ídem para `sistema` (migración 20261104120000, R2.2.6). */
+async function haySistemaOt(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<boolean> {
+  const sonda = await supabase.from("mantenimiento_realizados").select("sistema").limit(1)
+  return !sonda.error
+}
+
 export async function createMantenimiento(
   input: CreateMantenimientoInput
 ): Promise<{ data: MantenimientoRealizado; warning?: string } | { error: string }> {
@@ -1146,6 +1361,9 @@ export async function createMantenimiento(
         fuera_servicio_desde: fs.desde,
         fuera_servicio_hasta: fs.hasta,
         ...((await hayAuxilioRuta(supabase)) ? { auxilio_ruta: !!input.auxilio_ruta } : {}),
+        ...(input.sistema !== undefined && (await haySistemaOt(supabase))
+          ? { sistema: input.sistema || null }
+          : {}),
         created_by: profile.id,
       })
       .select()
@@ -1236,6 +1454,8 @@ interface UpdateMantenimientoInput {
   salida_taller?: string | null
   /** La unidad quedó parada fuera de la planta (punta de la pirámide). */
   auxilio_ruta?: boolean
+  /** Sistema del vehículo al que pertenece el trabajo (R2.2.6). */
+  sistema?: MantenimientoSistema | null
   /** Si se pasa, reemplaza el detalle completo de tareas. */
   tareas?: MantenimientoTareaInput[]
   /** Si se pasa, reemplaza el detalle completo de repuestos. */
@@ -1342,6 +1562,8 @@ export async function updateMantenimiento(
     if (input.salida_taller !== undefined) patch.salida_taller = input.salida_taller || null
     if (input.auxilio_ruta !== undefined && (await hayAuxilioRuta(supabase)))
       patch.auxilio_ruta = input.auxilio_ruta
+    if (input.sistema !== undefined && (await haySistemaOt(supabase)))
+      patch.sistema = input.sistema || null
     // Fuera de servicio: explícito si se pasa; si no, se deriva de entrada/salida.
     if (input.fuera_servicio_desde !== undefined)
       patch.fuera_servicio_desde = input.fuera_servicio_desde || null

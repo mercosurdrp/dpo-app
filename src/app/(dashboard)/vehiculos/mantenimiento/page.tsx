@@ -7,6 +7,7 @@ import {
   getGestionMtto,
   getIndisponibilidades,
   getMantenimientos,
+  getRecurrenciaCorrectivos,
   getSiguienteNumeroOt,
   getTableroOperativo,
   getTareasCil,
@@ -81,6 +82,7 @@ export default async function MantenimientoPage() {
     herramientasRes,
     reprogramadasRes,
     checklistsFlotaRes,
+    recurrenciaRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -113,6 +115,7 @@ export default async function MantenimientoPage() {
     getHerramientas(),
     getTareasReprogramadas(),
     getChecklists({ limit: 50, conRechazados: true }),
+    getRecurrenciaCorrectivos(),
     getProfile(),
   ])
 
@@ -244,6 +247,25 @@ export default async function MantenimientoPage() {
   // Query aparte y tolerante: si falla, el resto del módulo se sigue viendo.
   const reprogramadas = "data" in reprogramadasRes ? reprogramadasRes.data : []
   const checklistsFlota = "data" in checklistsFlotaRes ? checklistsFlotaRes.data : []
+  // R2.2.6: si falla, la solapa Plan muestra el análisis vacío y el resto sigue.
+  const recurrencia =
+    "data" in recurrenciaRes
+      ? recurrenciaRes.data
+      : {
+          desde: "",
+          hasta: "",
+          sistemas: [],
+          evoluciones: [],
+          resumen: {
+            correctivas: 0,
+            sistemasRecurrentes: 0,
+            sinClasificar: 0,
+            cambios: 0,
+            conMotivo: 0,
+            deCorrectivos: 0,
+          },
+          sqlPendiente: false,
+        }
   const role = profile?.role ?? "viewer"
 
   return (
@@ -282,6 +304,7 @@ export default async function MantenimientoPage() {
       herramientas={herramientas}
       rotacionKm={configRes.rotacion_km}
       intervalosNeumaticos={intervalosRes.data}
+      recurrencia={recurrencia}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}
     />

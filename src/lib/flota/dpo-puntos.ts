@@ -275,9 +275,9 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     label: "Plan / Plantillas",
     grupo: "gestion",
     puntos: ["2.2"],
-    requisitos: ["R2.2.2", "R2.2.6"],
+    requisitos: ["R2.2.2", "R2.2.5", "R2.2.6"],
     aporta:
-      "Plan preventivo por tipo de unidad según ciclo de km/horas/tiempo, con overrides por unidad.",
+      "Plan preventivo por tipo de unidad según ciclo de km/horas/tiempo, con overrides por unidad, y la evolución del plan: cada cambio con su motivo y las OT correctivas recurrentes que lo originaron.",
   },
 ]
 

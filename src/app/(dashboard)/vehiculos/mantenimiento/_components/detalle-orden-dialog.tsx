@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils"
 import { PlanHerramientasInline } from "@/components/herramientas-gestion/plan-herramientas-inline"
 import { FACTURA_CONCEPTO_LABEL, MANTENIMIENTO_ESTADO_LABELS } from "@/types/database"
+import { labelSistema } from "@/lib/flota/sistemas-ot"
 import type {
   MantenimientoPlanTarea,
   MantenimientoRealizado,
@@ -104,6 +105,11 @@ export function DetalleOrdenDialog({
                 className="gap-1 border-sky-200 bg-sky-50 text-sky-700"
               >
                 <Cloud className="size-3" /> Cloudfleet
+              </Badge>
+            )}
+            {m.sistema && (
+              <Badge variant="outline" className="text-muted-foreground" title="Sistema del vehículo (R2.2.6)">
+                {labelSistema(m.sistema)}
               </Badge>
             )}
             {fueraServicio ? (
