@@ -21,6 +21,7 @@ import { KpiCard } from "./_components/kpi-card"
 import { HistorialChecklists } from "@/components/flota/historial-checklists"
 import { HistorialLecturasMes } from "./_components/historial-lecturas-mes"
 import { DetalleOrdenDialog } from "./_components/detalle-orden-dialog"
+import { MixPreventivoCorrectivo } from "./_components/mix-preventivo-correctivo"
 import {
   Table,
   TableBody,
@@ -717,12 +718,13 @@ export function MantenimientoClient({
     [mantenimientos]
   )
 
-  const mantenimientosFiltrados = useMemo(() => {
+  // Base del historial SIN el filtro de tipo: es lo que mide el KPI de mezcla
+  // preventivo/correctivo (filtrando tipo=preventivo la torta daría 100 %).
+  const otFiltradasSinTipo = useMemo(() => {
     const q = fBusqueda.trim().toLowerCase()
     return otGenerales.filter(
       (m) =>
         (fDominio === "todos" || m.dominio === fDominio) &&
-        (fTipo === "todos" || m.tipo === fTipo) &&
         (fEstado === "todos" || m.estado === fEstado) &&
         (fMes === "todos" || m.fecha.slice(0, 7) === fMes) &&
         (q === "" ||
@@ -730,7 +732,12 @@ export function MantenimientoClient({
           (m.numero_factura ?? "").toLowerCase().includes(q) ||
           (m.cloudfleet_number != null && String(m.cloudfleet_number).includes(q)))
     )
-  }, [otGenerales, fDominio, fTipo, fEstado, fMes, fBusqueda])
+  }, [otGenerales, fDominio, fEstado, fMes, fBusqueda])
+
+  const mantenimientosFiltrados = useMemo(
+    () => otFiltradasSinTipo.filter((m) => fTipo === "todos" || m.tipo === fTipo),
+    [otFiltradasSinTipo, fTipo]
+  )
 
   // Costo total de las órdenes según los filtros aplicados.
   const costoFiltrado = useMemo(
@@ -1259,6 +1266,18 @@ export function MantenimientoClient({
               <p className="text-xl font-bold text-foreground">{fmtMoney(costoFiltrado)}</p>
             </div>
           </div>
+
+          {/* KPI de mezcla: no mira el filtro de Tipo (ver el componente). */}
+          <MixPreventivoCorrectivo
+            ordenes={otFiltradasSinTipo}
+            dominioSel={fDominio}
+            onDominio={setFDominio}
+            etiquetaPeriodo={
+              (fMes === "todos" ? "Todo el histórico" : fmtMes(fMes)) +
+              (fEstado === "todos" ? "" : ` · ${MANTENIMIENTO_ESTADO_LABELS[fEstado as MantenimientoEstado]}`) +
+              (fTipo === "todos" ? "" : " · el filtro de Tipo no afecta a este indicador")
+            }
+          />
 
           <Card>
             <CardContent className="overflow-x-auto pt-6">
