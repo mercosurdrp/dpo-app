@@ -679,7 +679,7 @@ export async function generarTareasDesdeEerr(
       anio: number
       mes: number
       rubro: string
-      pilar: PilarPresupuesto | null
+      pilar?: PilarPresupuesto
       monto_presupuestado: number | null
       monto_real: number | null
       responsable_id: string | null
@@ -696,11 +696,13 @@ export async function generarTareasDesdeEerr(
         continue
       }
       const it = items[i]
+      const pilar = pilarParaRubro(it.rubro, categoriaPorRubro.get(norms[i]))
       aInsertar.push({
         anio,
         mes,
         rubro: it.rubro,
-        pilar: pilarParaRubro(it.rubro, categoriaPorRubro.get(norms[i])),
+        // Solo si hay valor (la columna puede no existir todavía en un tenant).
+        ...(pilar ? { pilar } : {}),
         monto_presupuestado: it.monto_presupuestado,
         monto_real: it.monto_real,
         responsable_id: it.responsable_id,

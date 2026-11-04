@@ -626,7 +626,9 @@ export async function crearTarea(
         anio,
         mes,
         rubro,
-        pilar,
+        // Solo si hay valor: así la carga sigue andando en un tenant que
+        // todavía no aplicó la columna `pilar`.
+        ...(pilar ? { pilar } : {}),
         monto_presupuestado,
         monto_real,
         descripcion,
@@ -729,7 +731,9 @@ export async function actualizarTarea(
       update.estado = estadoRaw
     }
 
-    // El pilar solo se toca si el form lo manda (vacío = sin pilar).
+    // El pilar solo se toca si el form lo manda: el form lo manda cuando se
+    // eligió uno o cuando se sacó el que tenía (vacío = sin pilar). Si no lo
+    // manda, no se toca la columna (puede no existir todavía en un tenant).
     if (formData.has("pilar")) update.pilar = leerPilar(formData)
 
     // Editores pueden corregir la justificación desde el form de edición,

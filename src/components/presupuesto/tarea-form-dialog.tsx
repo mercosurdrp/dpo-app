@@ -119,7 +119,12 @@ export function TareaFormDialog({
     formData.set("mes", mes)
     if (responsableId) formData.set("responsable_id", responsableId)
     else formData.delete("responsable_id")
-    formData.set("pilar", pilar === SIN_PILAR ? "" : pilar)
+    // Se manda el pilar si se eligió uno, o vacío si se sacó el que tenía.
+    // Si nunca tuvo y sigue sin tener, no se manda: la acción no toca la
+    // columna (puede no existir todavía en un tenant).
+    if (pilar !== SIN_PILAR) formData.set("pilar", pilar)
+    else if (tarea?.pilar) formData.set("pilar", "")
+    else formData.delete("pilar")
 
     startTransition(async () => {
       const result = editing
