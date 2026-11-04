@@ -621,8 +621,15 @@ export function MantenimientoClient({
   const [fDominio, setFDominio] = useState("todos")
   const [fTipo, setFTipo] = useState("todos")
   const [fEstado, setFEstado] = useState("todos")
+  const [fAnio, setFAnio] = useState("todos")
   const [fMes, setFMes] = useState("todos")
   const [fBusqueda, setFBusqueda] = useState("")
+
+  /** Cambiar de año tira el mes si era de otro: si no, el filtro daba cero. */
+  const cambiarAnio = (v: string) => {
+    setFAnio(v)
+    if (v !== "todos" && fMes !== "todos" && fMes.slice(0, 4) !== v) setFMes("todos")
+  }
 
   const refresh = () => startTransition(() => router.refresh())
 
@@ -688,12 +695,28 @@ export function MantenimientoClient({
     return filas.sort((a, b) => (b.celda.pctConsumido ?? 0) - (a.celda.pctConsumido ?? 0))
   }, [detallePlan, estados, tareasById])
 
-  // Meses con órdenes registradas (para el selector), más reciente primero.
+  // Años con órdenes registradas, más reciente primero.
+  const aniosDisponibles = useMemo(
+    () =>
+      Array.from(new Set(mantenimientos.map((m) => m.fecha.slice(0, 4)))).sort((a, b) =>
+        b.localeCompare(a)
+      ),
+    [mantenimientos]
+  )
+
+  // Meses con órdenes registradas (para el selector), más reciente primero. Si
+  // hay un año elegido lista sólo los suyos: con los 22 meses del histórico
+  // adentro era fácil terminar con un mes de 2025 y el año en 2026, o sea nada.
   const mesesDisponibles = useMemo(
     () =>
-      Array.from(new Set(mantenimientos.map((m) => m.fecha.slice(0, 7))))
-        .sort((a, b) => b.localeCompare(a)),
-    [mantenimientos]
+      Array.from(
+        new Set(
+          mantenimientos
+            .filter((m) => fAnio === "todos" || m.fecha.slice(0, 4) === fAnio)
+            .map((m) => m.fecha.slice(0, 7))
+        )
+      ).sort((a, b) => b.localeCompare(a)),
+    [mantenimientos, fAnio]
   )
 
   // Las OT de cubiertas (rotación, alineación, balanceo, reparación, recapado) se
@@ -722,13 +745,14 @@ export function MantenimientoClient({
       (m) =>
         (fDominio === "todos" || m.dominio === fDominio) &&
         (fEstado === "todos" || m.estado === fEstado) &&
+        (fAnio === "todos" || m.fecha.slice(0, 4) === fAnio) &&
         (fMes === "todos" || m.fecha.slice(0, 7) === fMes) &&
         (q === "" ||
           (m.numero_ot ?? "").toLowerCase().includes(q) ||
           (m.numero_factura ?? "").toLowerCase().includes(q) ||
           (m.cloudfleet_number != null && String(m.cloudfleet_number).includes(q)))
     )
-  }, [otGenerales, fDominio, fEstado, fMes, fBusqueda])
+  }, [otGenerales, fDominio, fEstado, fAnio, fMes, fBusqueda])
 
   const mantenimientosFiltrados = useMemo(
     () => otFiltradasSinTipo.filter((m) => fTipo === "todos" || m.tipo === fTipo),
@@ -1238,13 +1262,31 @@ export function MantenimientoClient({
               </Select>
             </div>
             <div>
+              <Label className="text-xs text-muted-foreground">Año</Label>
+              <Select value={fAnio} onValueChange={(v: string | null) => cambiarAnio(v ?? "todos")}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos los años</SelectItem>
+                  {aniosDisponibles.map((y) => (
+                    <SelectItem key={y} value={y}>
+                      {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label className="text-xs text-muted-foreground">Mes</Label>
               <Select value={fMes} onValueChange={(v: string | null) => setFMes(v ?? "todos")}>
                 <SelectTrigger className="w-40">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="todos">Todos los meses</SelectItem>
+                  <SelectItem value="todos">
+                    {fAnio === "todos" ? "Todos los meses" : `Todo ${fAnio}`}
+                  </SelectItem>
                   {mesesDisponibles.map((ym) => (
                     <SelectItem key={ym} value={ym}>
                       {fmtMes(ym)}
@@ -1271,7 +1313,11 @@ export function MantenimientoClient({
             dominiosBaja={dominiosBaja}
             totalActivas={estados.length}
             etiquetaPeriodo={
-              (fMes === "todos" ? "Todo el histórico" : fmtMes(fMes)) +
+              (fMes !== "todos"
+                ? fmtMes(fMes)
+                : fAnio !== "todos"
+                  ? `Año ${fAnio}`
+                  : "Todo el histórico") +
               (fEstado === "todos" ? "" : ` · ${MANTENIMIENTO_ESTADO_LABELS[fEstado as MantenimientoEstado]}`) +
               (fTipo === "todos" ? "" : " · el filtro de Tipo no afecta a este indicador")
             }
