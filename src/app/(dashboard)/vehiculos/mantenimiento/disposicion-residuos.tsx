@@ -173,6 +173,7 @@ export function DisposicionResiduos({
   const [anio, setAnio] = useState(anioActual)
   const [punto, setPunto] = useState<PuntoEstadoDpo | null>(null)
   const [auditoria, setAuditoria] = useState<string | null>(null)
+  const [fechaAuditoria, setFechaAuditoria] = useState<string | null>(null)
 
   // Lo que dijo la última auditoría se LEE de la auditoría cerrada, no se
   // escribe acá: es el único modo de poder mostrar la mejora entre ciclos.
@@ -182,6 +183,15 @@ export function DisposicionResiduos({
       if (!vivo || !("data" in r)) return
       setPunto(r.data.puntos.find((p) => p.numero === "1.4") ?? null)
       setAuditoria(r.data.auditoria?.nombre ?? null)
+      const f = r.data.auditoria?.fechaInicio
+      setFechaAuditoria(
+        f
+          ? new Date(`${f.slice(0, 10)}T12:00:00`).toLocaleDateString("es-AR", {
+              month: "long",
+              year: "numeric",
+            })
+          : null
+      )
     })
     return () => {
       vivo = false
@@ -209,10 +219,17 @@ export function DisposicionResiduos({
         (f) => ampara != null && f.cantidad != null && f.cantidad === ampara
       )
       const consumen = filas.filter((f) => f !== cabecera)
-      const esCantidad = filas.some((f) => f.material === "neumaticos")
-      const usado = esCantidad
-        ? consumen.reduce((a, f) => a + (f.cantidad ?? 0), 0)
-        : null
+      // 🚨 Las cubiertas se cuentan en CASCOS (es lo que lleva número de fuego)
+      // pero su certificado declara PESO: el de Kumen dice "cantidad retirada,
+      // transportada y tratada: 325 kg". Las dos magnitudes no se restan, así
+      // que acá no hay saldo — se muestra lo que dice el papel al lado de lo
+      // que efectivamente salió. Sólo se calcula saldo cuando el certificado y
+      // los retiros hablan en la misma unidad.
+      const esCubiertas = filas.some((f) => f.material === "neumaticos")
+      const unidadCert = esCubiertas ? "kg" : ((cabecera ?? filas[0]).unidad ?? null)
+      const mismaUnidad =
+        !esCubiertas && consumen.every((f) => (f.unidad ?? null) === unidadCert)
+      const retirado = consumen.reduce((a, f) => a + (f.cantidad ?? 0), 0)
       return {
         path,
         url: filas.find((f) => f.certificado_url)?.certificado_url ?? null,
@@ -220,8 +237,11 @@ export function DisposicionResiduos({
         materiales: [...new Set(filas.map((f) => f.material))],
         fecha: filas.reduce((min, f) => (f.fecha < min ? f.fecha : min), filas[0].fecha),
         ampara,
-        unidad: (cabecera ?? filas[0]).unidad,
-        usado,
+        unidad: unidadCert,
+        esCubiertas,
+        /** Saldo sólo si el papel y los retiros están en la misma unidad. */
+        saldo: mismaUnidad && ampara != null ? ampara - retirado : null,
+        retirado,
         amparados: consumen.length,
       }
     })
@@ -287,9 +307,7 @@ export function DisposicionResiduos({
     0
   )
 
-  const certCubiertas = certificados.find((c) => c.materiales.includes("neumaticos"))
-  const saldoCubiertas =
-    certCubiertas?.ampara != null ? certCubiertas.ampara - (certCubiertas.usado ?? 0) : null
+  const certCubiertas = certificados.find((c) => c.esCubiertas)
 
   return (
     <div className="space-y-6">
@@ -304,14 +322,14 @@ export function DisposicionResiduos({
           sub={`${retiros.length} retiro${retiros.length === 1 ? "" : "s"}, todos con número de fuego y certificado`}
         />
         <KpiCard
-          label="Saldo del certificado de cubiertas"
-          valor={saldoCubiertas != null ? fmtNum(saldoCubiertas) : "—"}
+          label="Certificado de cubiertas"
+          valor={certCubiertas?.ampara != null ? `${fmtNum(certCubiertas.ampara)} kg` : "—"}
           dpo="1.4"
-          estado={saldoCubiertas != null && saldoCubiertas < 20 ? "alerta" : "ok"}
+          estado={certCubiertas ? "ok" : "alerta"}
           sub={
             certCubiertas?.ampara != null
-              ? `${fmtNum(certCubiertas.usado)} usadas de ${fmtNum(certCubiertas.ampara)} que ampara ${certCubiertas.operador}`
-              : "Sin certificado por cantidad cargado"
+              ? `Kilos tratados que declara ${certCubiertas.operador}. El papel va por peso; los cascos se cuentan aparte`
+              : "Sin certificado cargado"
           }
         />
         <KpiCard
@@ -342,22 +360,24 @@ export function DisposicionResiduos({
           <CardHeader>
             <CardTitle className="flex flex-wrap items-center gap-2 text-base">
               <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
-              Lo que pidió la auditoría
+              Punto de partida: lo que pidió la última auditoría
               {punto.puntaje != null && (
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "tabular-nums",
-                    punto.puntaje === 0 && "border-destructive/30 bg-destructive/10 text-destructive"
-                  )}
-                >
-                  Puntaje {punto.puntaje}
+                <Badge variant="outline" className="tabular-nums">
+                  Puntuó {punto.puntaje}
+                  {fechaAuditoria ? ` en ${fechaAuditoria}` : ""}
                 </Badge>
               )}
-              {auditoria && (
-                <span className="text-xs font-normal text-muted-foreground">{auditoria}</span>
-              )}
             </CardTitle>
+            {/* 🚨 El puntaje es el de la auditoría CERRADA, no el estado de hoy:
+                sin decirlo, la tarjeta se lee como "hoy tenés 0". Se muestra
+                justamente para poder decir "esto era un 0 y mirá lo que hay
+                ahora", que es lo que el DPO premia. */}
+            <p className="text-sm text-muted-foreground">
+              Es el puntaje de {auditoria ?? "la última auditoría"},{" "}
+              <strong>no el estado de hoy</strong>: está acá para poder mostrar la diferencia
+              contra lo que hay cargado ahora. El puntaje nuevo sale cuando se abra el próximo
+              ciclo.
+            </p>
           </CardHeader>
           <CardContent className="space-y-4">
             {punto.comentario && (
@@ -384,10 +404,11 @@ export function DisposicionResiduos({
             <FileText className="size-4" />
             Certificados y constancias vigentes
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Los operadores no emiten un papel por viaje: emiten uno por cantidad y se va
-            descontando retiro a retiro. Por eso lo que hay que mirar es el saldo, no cuántos
-            certificados hay.
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            El operador no emite un papel por viaje: emite uno por tanda y el mismo ampara varios
+            retiros. En cubiertas el certificado declara <strong>kilos tratados</strong> —no
+            unidades— y los cascos se cuentan aparte porque son los que llevan número de fuego:
+            las dos magnitudes van una al lado de la otra, no se restan.
           </p>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -402,8 +423,8 @@ export function DisposicionResiduos({
                   <TableHead>Operador</TableHead>
                   <TableHead>Material</TableHead>
                   <TableHead>Desde</TableHead>
-                  <TableHead className="text-right">Ampara</TableHead>
-                  <TableHead className="text-right">Usado</TableHead>
+                  <TableHead className="text-right">Declara</TableHead>
+                  <TableHead className="text-right">Imputado</TableHead>
                   <TableHead className="text-right">Saldo</TableHead>
                   <TableHead>Documento</TableHead>
                 </TableRow>
@@ -426,10 +447,21 @@ export function DisposicionResiduos({
                       {c.ampara != null ? `${fmtNum(c.ampara)} ${c.unidad ?? ""}` : "—"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {c.usado != null ? fmtNum(c.usado) : `${c.amparados} registros`}
+                      {c.esCubiertas
+                        ? `${fmtNum(c.retirado)} cascos`
+                        : `${c.amparados} registros`}
                     </TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">
-                      {c.usado != null && c.ampara != null ? fmtNum(c.ampara - c.usado) : "—"}
+                      {c.saldo != null ? (
+                        fmtNum(c.saldo)
+                      ) : (
+                        <span
+                          className="text-xs font-normal text-muted-foreground"
+                          title="El certificado declara peso y los retiros se cuentan en cascos: no se restan entre sí"
+                        >
+                          no aplica
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {c.url ? (
@@ -579,7 +611,11 @@ export function DisposicionResiduos({
                   <TableHead>Fecha</TableHead>
                   <TableHead>Unidad</TableHead>
                   <TableHead>Taller</TableHead>
-                  <TableHead className="w-40">Aceite usado</TableHead>
+                  {/* "Litros", no "Aceite usado": la columna es la CANTIDAD, y
+                      que diga "sin declarar" se leía como que el residuo no
+                      estaba amparado. Lo amparado lo dice la columna
+                      Constancia, que es la que mira el auditor. */}
+                  <TableHead className="w-40">Litros de aceite</TableHead>
                   <TableHead className="text-right">Filtros</TableHead>
                   <TableHead>Constancia</TableHead>
                 </TableRow>
@@ -669,14 +705,16 @@ export function DisposicionResiduos({
             </p>
             <p className="text-muted-foreground">
               <span className="font-semibold text-foreground">
-                {litrosDeclarados > 0 ? `${fmtNum(litrosDeclarados, 1)} lts` : "sin declarar"}
+                {litrosDeclarados > 0 ? `${fmtNum(litrosDeclarados, 1)} lts` : "0 lts"}
               </span>{" "}
-              de aceite usado con cantidad cargada.
+              de aceite usado con los litros cargados.
             </p>
             <p className="text-muted-foreground">
               <FilterIcon className="mr-1 inline size-3.5" />
-              El R1.4.2 exige fecha, material y proveedor; la cantidad no es requisito, pero sin ella
-              no se contrasta lo generado contra lo que ampara el manifiesto.
+              Que falten los litros <strong>no</strong> quiere decir que el residuo esté sin
+              amparar: eso lo dice la columna Constancia. El R1.4.2 exige fecha, material y
+              proveedor y la cantidad no es requisito — pero sin ella no se puede contrastar lo
+              generado contra lo que declara el manifiesto.
             </p>
           </div>
         </CardContent>
@@ -752,7 +790,7 @@ function LitrosAceite({
     const texto =
       residuo.cantidad != null
         ? `${fmtNum(residuo.cantidad, 1)} ${residuo.unidad ?? "lts"}`
-        : "sin declarar"
+        : "cargar litros"
     if (!puedeEditar) {
       return (
         <span

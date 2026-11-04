@@ -217,10 +217,12 @@ export interface RetiroCubiertas {
   /** Archivo del certificado en el bucket: identifica al papel entre retiros. */
   certificado_path: string | null
   /**
-   * Unidades que declara cubrir el certificado. El operador entrega UNO que
-   * ampara varios cientos de cubiertas y se va descontando retiro a retiro, así
-   * que el tope se carga una vez —en el retiro que subió el archivo— y vale
-   * para todos los que reusan el mismo certificado.
+   * Cantidad que declara el certificado. En cubiertas son los KILOS del renglón
+   * "cantidad retirada, transportada y tratada" del papel del operador de NFU
+   * —el de Kumen dice 325 kg—, no una cantidad de cubiertas: los cascos se
+   * cuentan aparte, en `cantidad`, porque son los que llevan número de fuego.
+   * Se carga una vez —en el retiro que subió el archivo— y vale para todos los
+   * retiros que reusan ese mismo certificado.
    */
   certificado_unidades: number | null
   observaciones: string | null

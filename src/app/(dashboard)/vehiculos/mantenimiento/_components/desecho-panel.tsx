@@ -114,10 +114,15 @@ export function DesechoPanel({
     [neumaticos]
   )
 
-  // Los certificados cargados con lo que ya se les imputó. El operador entrega
-  // UNO por varios cientos de unidades, no uno por viaje: lo que importa es
-  // cuánto queda, y eso se cuenta sumando las cubiertas de todos los retiros
-  // que comparten el archivo.
+  // Los certificados cargados con lo que ya se les imputó. El operador no
+  // entrega uno por viaje, así que un mismo papel ampara varios retiros y se
+  // agrupa por archivo.
+  //
+  // 🚨 El certificado declara PESO tratado ("cantidad retirada, transportada y
+  // tratada: 325 kg") y los retiros se cuentan en CASCOS, que es lo que lleva
+  // número de fuego. Las dos magnitudes no se restan: `unidades` son los kg del
+  // papel y `usadas` los cascos imputados, y van una al lado de la otra, nunca
+  // como un saldo.
   const certificados = useMemo<CertificadoDesecho[]>(() => {
     const porArchivo = new Map<string, CertificadoDesecho>()
     for (const r of retiros) {
@@ -265,11 +270,6 @@ export function DesechoPanel({
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               {certificados.map((c) => {
-                const queda = c.unidades != null ? c.unidades - c.usadas : null
-                const pct =
-                  c.unidades && c.unidades > 0
-                    ? Math.min(100, (c.usadas * 100) / c.unidades)
-                    : 0
                 return (
                   <div key={c.path ?? c.url} className="rounded-md border p-2.5">
                     <div className="flex items-start justify-between gap-2">
@@ -289,42 +289,29 @@ export function DesechoPanel({
                         <Paperclip className="mr-0.5 inline size-3" /> Ver
                       </a>
                     </div>
+                    {/* 🚨 El certificado de NFU declara PESO, no unidades: el de
+                        Kumen dice "cantidad retirada, transportada y tratada:
+                        325 kg". Los retiros, en cambio, se cuentan en cascos,
+                        porque es lo que tiene número de fuego. Las dos cosas no
+                        se restan, así que acá no va un saldo: va lo que dice el
+                        papel y, al lado, lo que efectivamente salió. */}
                     {c.unidades != null ? (
-                      <>
-                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                          <div
-                            className={cn(
-                              "h-full rounded-full",
-                              pct >= 100
-                                ? "bg-destructive"
-                                : pct >= 80
-                                  ? "bg-amber-500"
-                                  : "bg-emerald-500"
-                            )}
-                            style={{ width: `${Math.max(2, pct)}%` }}
-                          />
-                        </div>
-                        <p className="mt-1 text-xs tabular-nums text-muted-foreground">
-                          <strong className="font-semibold text-foreground">
-                            {c.usadas} de {c.unidades}
-                          </strong>{" "}
-                          unidades ·{" "}
-                          {queda! > 0 ? (
-                            <>quedan {queda}</>
-                          ) : (
-                            <span className="font-semibold text-destructive">
-                              agotado, pedí uno nuevo
-                            </span>
-                          )}
-                        </p>
-                      </>
+                      <p className="mt-2 text-xs tabular-nums text-muted-foreground">
+                        Certifica{" "}
+                        <strong className="font-semibold text-foreground">
+                          {c.unidades} kg
+                        </strong>{" "}
+                        tratados ·{" "}
+                        <strong className="font-semibold text-foreground">{c.usadas}</strong>{" "}
+                        {c.usadas === 1 ? "casco imputado" : "cascos imputados"}
+                      </p>
                     ) : (
                       <p className="mt-2 text-xs text-muted-foreground">
                         {c.usadas} {c.usadas === 1 ? "cubierta" : "cubiertas"} imputadas ·{" "}
                         <span className="text-amber-700 dark:text-amber-500">
-                          sin tope declarado
+                          sin cantidad declarada
                         </span>
-                        : cargalo en el próximo retiro para saber cuánto queda
+                        : cargá los kg que dice el certificado en el próximo retiro
                       </p>
                     )}
                   </div>
@@ -570,14 +557,12 @@ function RetiroDialog({
   const [proveedor, setProveedor] = useState("")
   const [obs, setObs] = useState("")
   const [certificados, setCertificados] = useState<File[]>([])
-  // Qué certificado ampara el retiro: uno ya cargado (lo normal, porque el
-  // operador entrega uno por varios cientos de unidades) o uno nuevo.
-  const primeroConSaldo =
-    certificadosCargados.find(
-      (c) => c.unidades == null || c.unidades - c.usadas > 0
-    ) ?? certificadosCargados[0]
+  // Qué certificado ampara el retiro: uno ya cargado o uno nuevo. Por defecto,
+  // el más reciente — el certificado declara los kg tratados en su fecha, así
+  // que el que corresponde a un retiro nuevo es siempre el último.
+  const certMasNuevo = certificadosCargados[0]
   const [certClave, setCertClave] = useState<string>(
-    primeroConSaldo ? (primeroConSaldo.path ?? primeroConSaldo.url) : "nuevo"
+    certMasNuevo ? (certMasNuevo.path ?? certMasNuevo.url) : "nuevo"
   )
   const certElegido =
     certClave === "nuevo"
@@ -657,9 +642,9 @@ function RetiroDialog({
             </div>
           </div>
 
-          {/* Certificado: no hace falta uno por retiro. El operador entrega uno
-              que ampara varios cientos de unidades y se va descontando, así que
-              lo normal es reusar el que ya está cargado. */}
+          {/* Certificado: no hace falta uno por retiro. El operador emite uno
+              por tanda y el mismo papel ampara varios retiros, así que lo
+              normal es reusar el que ya está cargado. */}
           <div className="rounded-md border border-border p-2.5">
             <Label className="text-xs text-muted-foreground">
               Certificado de disposición final
@@ -669,7 +654,6 @@ function RetiroDialog({
               <div className="mt-1.5 space-y-1">
                 {certificadosCargados.map((c) => {
                   const clave = c.path ?? c.url
-                  const queda = c.unidades != null ? c.unidades - c.usadas : null
                   return (
                     <label
                       key={clave}
@@ -685,16 +669,7 @@ function RetiroDialog({
                       <span className="font-medium">{c.proveedor}</span>
                       <span className="text-xs text-muted-foreground">
                         {fmtFecha(c.fecha)}
-                        {queda != null && (
-                          <>
-                            {" · "}
-                            {queda > 0 ? (
-                              <>quedan {queda} de {c.unidades}</>
-                            ) : (
-                              <span className="font-medium text-destructive">agotado</span>
-                            )}
-                          </>
-                        )}
+                        {c.unidades != null && <> · {c.unidades} kg certificados</>}
                       </span>
                     </label>
                   )
@@ -722,38 +697,33 @@ function RetiroDialog({
               </div>
             )}
 
-            {/* El tope: se pide cuando el certificado todavía no lo tiene. */}
+            {/* Los kg del certificado: el papel del operador de NFU declara
+                PESO tratado, no unidades. Se piden cuando el certificado
+                todavía no los tiene cargados. */}
             {(certClave === "nuevo" || certElegido?.unidades == null) && (
               <div className="mt-2">
                 <Label className="text-xs text-muted-foreground">
-                  ¿Cuántas unidades cubre? (opcional)
+                  ¿Cuántos kg declara el certificado? (opcional)
                 </Label>
                 <Input
                   type="number"
                   inputMode="numeric"
                   min={1}
-                  placeholder="300"
+                  placeholder="325"
                   value={unidades}
                   onChange={(e) => setUnidades(e.target.value)}
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Con esto el panel lleva la cuenta de cuánto queda y te avisa cuándo
-                  hay que pedir el próximo.
+                  Es el renglón “cantidad retirada, transportada y tratada” del papel.
                 </p>
               </div>
             )}
 
             {certElegido && certElegido.unidades != null && (
               <p className="mt-2 text-[11px] text-muted-foreground">
-                Va imputado a ese certificado: {certElegido.usadas} de{" "}
-                {certElegido.unidades} unidades usadas
-                {certElegido.unidades - certElegido.usadas - sel.size < 0 && (
-                  <span className="font-medium text-destructive">
-                    {" "}
-                    · con estas {sel.size} te pasás del tope
-                  </span>
-                )}
-                .
+                Ese certificado declara {certElegido.unidades} kg tratados y ya tiene{" "}
+                {certElegido.usadas} {certElegido.usadas === 1 ? "casco" : "cascos"}{" "}
+                imputados.
               </p>
             )}
 
