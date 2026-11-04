@@ -2689,6 +2689,13 @@ export interface Residuo {
   numeros_fuego: string | null
   certificado_url: string | null
   certificado_path: string | null
+  /**
+   * Cuántas unidades ampara el certificado adjunto. Los operadores no emiten un
+   * papel por viaje sino uno por CANTIDAD —el de Kumen cubre 300 cubiertas, el
+   * manifiesto de aceite 200 kg—, así que el saldo se calcula descontando los
+   * retiros contra este número. null = el certificado no declara cantidad.
+   */
+  certificado_unidades: number | null
   observaciones: string | null
   created_at: string
 }
@@ -3337,6 +3344,41 @@ export async function deleteConteo(
   }
 }
 
+/**
+ * Carga la cantidad de un residuo ya registrado.
+ *
+ * Los registros de aceite de los services nacieron sin litros: el taller retiene
+ * el aceite drenado y no lo informa en la factura, así que la fila quedó con el
+ * material y el proveedor pero sin cuánto. El R1.4.2 pide fecha, material y
+ * proveedor —la cantidad no es requisito—, pero sin ella no se puede contrastar
+ * lo generado contra lo que ampara el manifiesto. Esto permite completarla a
+ * medida que el taller la informa, sin tener que borrar y volver a cargar.
+ */
+export async function setResiduoCantidad(input: {
+  id: string
+  cantidad: number | null
+  unidad?: string | null
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    if (!input.id) return { error: "ID de residuo inválido" }
+    if (input.cantidad != null && (!isFinite(input.cantidad) || input.cantidad < 0)) {
+      return { error: "La cantidad tiene que ser un número positivo" }
+    }
+    const supabase = await createClient()
+    const update: Record<string, unknown> = { cantidad: input.cantidad }
+    if (input.unidad !== undefined) update.unidad = input.unidad?.trim() || null
+    const { error } = await supabase
+      .from("mantenimiento_residuos")
+      .update(update)
+      .eq("id", input.id)
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 export async function deleteResiduo(
   id: string
 ): Promise<{ success: true } | { error: string }> {
@@ -3350,8 +3392,18 @@ export async function deleteResiduo(
       .single()
     const { error } = await supabase.from("mantenimiento_residuos").delete().eq("id", id)
     if (error) return { error: error.message }
+    // 🚨 El certificado es POR CANTIDAD y lo comparten varias filas: el de Kumen
+    // ampara los tres retiros de cubiertas y el manifiesto de aceite ampara los
+    // 28 registros de service. Borrar el archivo con la primera fila dejaba a
+    // las demás con el link roto, así que sólo se borra si ya no lo usa nadie.
     if (row?.certificado_path) {
-      await supabase.storage.from(RESIDUOS_BUCKET).remove([row.certificado_path])
+      const { count } = await supabase
+        .from("mantenimiento_residuos")
+        .select("id", { count: "exact", head: true })
+        .eq("certificado_path", row.certificado_path)
+      if (!count) {
+        await supabase.storage.from(RESIDUOS_BUCKET).remove([row.certificado_path])
+      }
     }
     return { success: true }
   } catch (e) {

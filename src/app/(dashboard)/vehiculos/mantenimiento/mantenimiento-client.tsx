@@ -65,6 +65,7 @@ import {
   Paperclip,
   Plus,
   Pencil,
+  Recycle,
   Search,
   ShieldCheck,
   Sparkles,
@@ -123,6 +124,7 @@ import { PiramideDefectos } from "./piramide-defectos"
 import { Sustentabilidad } from "./sustentabilidad"
 import { ProveedorPicker } from "./_components/proveedor-picker"
 import { GestionMtto } from "./gestion-mtto"
+import { DisposicionResiduos } from "./disposicion-residuos"
 import { HerramientasTab } from "./herramientas-tab"
 import type { Herramienta } from "@/actions/mantenimiento-herramientas"
 import { IndicadoresFlota } from "./indicadores-flota"
@@ -354,6 +356,7 @@ const ICONO_SECCION: Record<string, LucideIcon> = {
   estandares: ShieldCheck,
   herramientas: Hammer,
   repuestos: Package,
+  residuos: Recycle,
   plantillas: ClipboardList,
 }
 
@@ -1106,6 +1109,20 @@ export function MantenimientoClient({
             recuentoFrecuenciaDias={gestion.recuentoFrecuenciaDias}
             otsParaPedido={otsParaPedido}
             puedeEditar={puedeEditar}
+          />
+        </TabsContent>
+
+        {/* ============ TAB: Disposición de residuos (DPO 1.4) ============
+            El punto se respondía desde Repuestos (el registro crudo) y desde
+            Neumáticos (el retiro de cascos), y ninguna de las dos mostraba el
+            circuito completo ni los services que todavía no tienen registro. */}
+        <TabsContent value="residuos" className="space-y-6">
+          <DisposicionResiduos
+            residuos={gestion.residuos}
+            neumaticos={neumaticos}
+            mantenimientos={mantenimientos}
+            puedeEditar={puedeEditar}
+            onChanged={refresh}
           />
         </TabsContent>
 

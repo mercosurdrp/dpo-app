@@ -221,10 +221,32 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     id: "repuestos",
     label: "Repuestos",
     grupo: "gestion",
+    // Sigue respondiendo el 1.4 porque acá vive el REGISTRO —la tabla cruda de
+    // eliminaciones y el alta de una disposición nueva, que es lo que el SOP
+    // referencia como "Mantenimiento → Gestión → Residuos"—. La solapa
+    // "Disposición de residuos" es el SEGUIMIENTO sobre ese mismo registro.
     puntos: ["2.3", "1.4"],
     requisitos: ["R2.3.2", "R1.4.2"],
     aporta:
-      "Stock mínimo/objetivo/máximo con recuentos, y trazabilidad de la disposición de residuos de mantenimiento.",
+      "Stock mínimo/objetivo/máximo con recuentos, y el registro de las eliminaciones de residuos de mantenimiento.",
+  },
+  {
+    // 🚨 El 1.4 se respondía desde dos solapas que son de otra cosa —Repuestos
+    // (inventario) y Neumáticos (medición y rotación)—, así que el auditor tenía
+    // que armar el punto saltando entre pantallas y ninguna mostraba el circuito
+    // completo. Acá vive entero: los dos flujos que genera residuo (la cubierta
+    // que se desecha y el aceite y los filtros que quedan en el taller), el
+    // saldo de cada certificado y los services que todavía no tienen registro.
+    //
+    // La auditoría H1 2026 puntuó 0 y pidió textualmente "generar seguimiento
+    // histórico para cuando comiencen": esta solapa ES ese seguimiento.
+    id: "residuos",
+    label: "Disposición de residuos",
+    grupo: "gestion",
+    puntos: ["1.4"],
+    requisitos: ["R1.4.1", "R1.4.2", "R1.4.3"],
+    aporta:
+      "Seguimiento electrónico de cada eliminación con fecha, material y proveedor: disposición final de cubiertas con el número de fuego y el saldo del certificado, y el aceite y los filtros que retiene cada taller externo en los services, con la constancia que los ampara.",
   },
   {
     // El mapa de la auditoría: qué puntuó el último ciclo y dónde está hoy la
