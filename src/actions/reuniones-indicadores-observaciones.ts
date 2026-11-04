@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { SECCION_INDICADOR_LIKE } from "@/lib/reuniones-seccion-observaciones"
 import {
   SLA_INDICADOR_LIKE,
   slaIndicadorId,
@@ -106,7 +107,8 @@ const SELECT_ACT =
 
 /**
  * Observaciones del tablero cargadas en una reunión (las que se listan debajo
- * del cuadro). Las de SLA (indicador sla_*) van aparte, en la sección de SLA.
+ * del cuadro). Las de SLA (indicador sla_*) y las de secciones (seccion_*) van
+ * aparte, en su propia sección.
  */
 export async function listObservacionesReunion(
   reunionId: string,
@@ -119,6 +121,33 @@ export async function listObservacionesReunion(
       .select(SELECT_OBS)
       .eq("reunion_id", reunionId)
       .not("indicador_id", "like", SLA_INDICADOR_LIKE)
+      .not("indicador_id", "like", SECCION_INDICADOR_LIKE)
+      .order("created_at", { ascending: false })
+    if (error) return { error: error.message }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { data: (data ?? []).map((r) => mapObservacion(r as any)) }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando observaciones" }
+  }
+}
+
+/**
+ * Observaciones de una SECCIÓN de la reunión (clave `seccion_<slug>`, ej.
+ * Dimensionamiento). Sólo las cargadas en esta reunión, de la más nueva a la
+ * más vieja.
+ */
+export async function listObservacionesSeccion(
+  reunionId: string,
+  indicadorId: string,
+): Promise<Result<ReunionIndicadorObservacionConAutor[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("reuniones_indicadores_observaciones")
+      .select(SELECT_OBS)
+      .eq("reunion_id", reunionId)
+      .eq("indicador_id", indicadorId)
       .order("created_at", { ascending: false })
     if (error) return { error: error.message }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
