@@ -27,6 +27,7 @@ import {
 } from "@/actions/mudanza"
 import {
   MUDANZA_RUBROS,
+  tipoPagoLabel,
   type MudanzaAvance,
   type MudanzaConfig,
   type MudanzaGasto,
@@ -42,6 +43,7 @@ import { AvanceFormDialog } from "@/components/mudanza/avance-form-dialog"
 import { GastoFormDialog } from "@/components/mudanza/gasto-form-dialog"
 import { TareaRapidaDialog } from "@/components/mudanza/tarea-rapida-dialog"
 import { PartidaFormDialog } from "@/components/mudanza/partida-form-dialog"
+import { PagosPrevistos } from "@/components/mudanza/pagos-previstos"
 import {
   colorResponsable,
   desvioDias,
@@ -245,12 +247,16 @@ export function MudanzaClient({
   }
 
   const gastoPorTarea = useMemo(() => {
-    const m: Record<string, { pagado: number; comprometido: number }> = {}
+    const m: Record<string, { pagado: number; comprometido: number; proximoPago: string | null }> = {}
     for (const g of gastos) {
       if (!g.tarea_id) continue
-      const x = (m[g.tarea_id] ??= { pagado: 0, comprometido: 0 })
+      const x = (m[g.tarea_id] ??= { pagado: 0, comprometido: 0, proximoPago: null })
       if (g.estado === "pagado") x.pagado += g.monto
-      else x.comprometido += g.monto
+      else {
+        x.comprometido += g.monto
+        // Fecha probable más cercana de lo que queda a pagar en la tarea.
+        if (g.fecha_pago && (!x.proximoPago || g.fecha_pago < x.proximoPago)) x.proximoPago = g.fecha_pago
+      }
     }
     return m
   }, [gastos])
@@ -630,6 +636,15 @@ export function MudanzaClient({
             />
           </div>
 
+          <PagosPrevistos
+            gastos={gastos}
+            tareas={tareas}
+            hoy={hoy}
+            puedeEditar={puedeEditar}
+            onEditar={(g) => setGastoDlg({ open: true, gasto: g })}
+            onSaved={refrescar}
+          />
+
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-semibold text-slate-800">Por tarea</h3>
             {puedeEditar && (
@@ -754,6 +769,7 @@ export function MudanzaClient({
                     <th className="px-3 py-2">Partida</th>
                     <th className="px-3 py-2">Proveedor</th>
                     <th className="px-3 py-2">Estado</th>
+                    <th className="px-3 py-2">Pago previsto</th>
                     <th className="px-3 py-2 text-right">Monto</th>
                     <th className="px-3 py-2">Comprobante</th>
                   </tr>
@@ -789,8 +805,21 @@ export function MudanzaClient({
                               : "border-amber-200 bg-amber-100 text-amber-700"
                           }
                         >
-                          {g.estado}
+                          {g.estado === "pagado" ? "pagado" : "a pagar"}
                         </Badge>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-xs text-slate-600">
+                        {g.estado === "comprometido" && g.fecha_pago ? (
+                          <span className={g.fecha_pago < hoy ? "font-semibold text-red-600" : ""}>
+                            {formatFecha(g.fecha_pago)}
+                          </span>
+                        ) : null}
+                        {tipoPagoLabel(g.tipo_pago) && (
+                          <span className="ml-1 text-slate-500">{tipoPagoLabel(g.tipo_pago)}</span>
+                        )}
+                        {g.estado === "comprometido" && !g.fecha_pago && !g.tipo_pago && (
+                          <span className="text-slate-400">sin fecha</span>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{formatMoney(g.monto)}</td>
                       <td className="px-3 py-1.5">
@@ -1073,7 +1102,7 @@ function RubroTareas({
   pagado: number
   comprometido: number
   tareas: MudanzaTarea[]
-  gastoPorTarea: Record<string, { pagado: number; comprometido: number }>
+  gastoPorTarea: Record<string, { pagado: number; comprometido: number; proximoPago: string | null }>
   puedeEditar: boolean
   onSaved: () => void
   onGasto: (tareaId: string) => void
@@ -1093,7 +1122,7 @@ function RubroTareas({
         </td>
       </tr>
       {tareas.map((t) => {
-        const g = gastoPorTarea[t.id] ?? { pagado: 0, comprometido: 0 }
+        const g = gastoPorTarea[t.id] ?? { pagado: 0, comprometido: 0, proximoPago: null }
         return (
           <tr key={t.id} className="border-t border-slate-100 text-slate-700">
             <td className="px-3 py-1 pl-7">
@@ -1108,7 +1137,14 @@ function RubroTareas({
               <MontoInput tareaId={t.id} monto={t.presupuesto} disabled={!puedeEditar} onSaved={onSaved} />
             </td>
             <td className="px-3 py-1 text-right tabular-nums">{g.pagado ? formatMoney(g.pagado) : "—"}</td>
-            <td className="px-3 py-1 text-right tabular-nums">{g.comprometido ? formatMoney(g.comprometido) : "—"}</td>
+            <td className="px-3 py-1 text-right tabular-nums">
+              {g.comprometido ? formatMoney(g.comprometido) : "—"}
+              {g.proximoPago && (
+                <div className="text-xs font-normal text-slate-500" title="Fecha probable del próximo pago">
+                  pagar el {formatFecha(g.proximoPago)}
+                </div>
+              )}
+            </td>
             <td className="px-3 py-1 text-right tabular-nums">
               {t.presupuesto == null ? <span className="text-slate-400">—</span> : <Desvio v={g.pagado + g.comprometido - t.presupuesto} />}
             </td>

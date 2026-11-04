@@ -14,6 +14,7 @@ import type {
   MudanzaEstado,
   MudanzaGasto,
   MudanzaGastoEstado,
+  MudanzaTipoPago,
   MudanzaMiembro,
   MudanzaPartida,
   MudanzaTarea,
@@ -671,6 +672,10 @@ export async function guardarGasto(formData: FormData): Promise<Result<MudanzaGa
       concepto,
       monto: monto(formData, "monto"),
       estado: estado === "comprometido" ? "comprometido" : "pagado",
+      // Fecha probable de pago: sólo mientras está a pagar. Al quedar pagado la
+      // fecha real es `fecha` y la prevista deja de tener sentido.
+      fecha_pago: estado === "comprometido" ? fecha(formData, "fecha_pago") : null,
+      tipo_pago: tipoPago(str(formData, "tipo_pago")),
       notas: str(formData, "notas"),
     }
     let q
@@ -707,6 +712,33 @@ export async function guardarGasto(formData: FormData): Promise<Result<MudanzaGa
     }
   } catch (err) {
     return { error: msg(err, "Error al guardar el gasto") }
+  }
+}
+
+const TIPOS_PAGO: MudanzaTipoPago[] = ["adelanto", "saldo", "total"]
+function tipoPago(v: string | null): MudanzaTipoPago | null {
+  return v && (TIPOS_PAGO as string[]).includes(v) ? (v as MudanzaTipoPago) : null
+}
+
+/**
+ * Un pago previsto se concretó: pasa a pagado con la fecha real del pago. La
+ * fecha probable se limpia (ya no es una previsión) y el monto queda como estaba;
+ * si se pagó otra cifra, se edita el gasto.
+ */
+export async function marcarGastoPagado(id: string, fechaPago: string | null): Promise<Result<true>> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+    const f = fechaPago && /^\d{4}-\d{2}-\d{2}$/.test(fechaPago) ? fechaPago : new Date().toISOString().slice(0, 10)
+    const { error } = await supabase
+      .from("mudanza_gastos")
+      .update({ estado: "pagado", fecha: f, fecha_pago: null })
+      .eq("id", id)
+    if (error) return { error: error.message }
+    revalidatePath(REVALIDATE_PATH)
+    return { data: true }
+  } catch (err) {
+    return { error: msg(err, "Error al marcar el pago") }
   }
 }
 

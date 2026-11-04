@@ -15,7 +15,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { AdjuntosInput } from "@/components/adjuntos-input"
 import { guardarGasto, setFechasRealesTarea } from "@/actions/mudanza"
-import type { MudanzaGasto, MudanzaTarea } from "@/types/mudanza"
+import {
+  MUDANZA_TIPOS_PAGO,
+  tipoPagoLabel,
+  type MudanzaGasto,
+  type MudanzaTarea,
+  type MudanzaTipoPago,
+} from "@/types/mudanza"
 import { formatFecha, formatMoney, isoHoy } from "./formato"
 
 interface Props {
@@ -62,6 +68,8 @@ function TareaRapida({
   const [fechaGasto, setFechaGasto] = useState(isoHoy())
   const [concepto, setConcepto] = useState("")
   const [pagado, setPagado] = useState(true)
+  const [fechaPago, setFechaPago] = useState("")
+  const [tipoPago, setTipoPago] = useState<MudanzaTipoPago | "">("")
   const [archivos, setArchivos] = useState<File[]>([])
 
   const deTarea = gastos.filter((g) => g.tarea_id === tarea.id)
@@ -99,6 +107,8 @@ function TareaRapida({
         fd.set("monto", monto)
         fd.set("concepto", concepto.trim() || tarea.nombre)
         fd.set("estado", pagado ? "pagado" : "comprometido")
+        if (!pagado && fechaPago) fd.set("fecha_pago", fechaPago)
+        if (tipoPago) fd.set("tipo_pago", tipoPago)
         for (const f of archivos) fd.append("archivo", f)
         const r = await guardarGasto(fd)
         if ("error" in r) {
@@ -199,7 +209,7 @@ function TareaRapida({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="tr-fecha">Fecha</Label>
+                <Label htmlFor="tr-fecha">{pagado ? "Fecha de pago" : "Fecha del compromiso"}</Label>
                 <Input
                   id="tr-fecha"
                   type="date"
@@ -231,6 +241,37 @@ function TareaRapida({
                 </div>
               </div>
             </div>
+            {/* Qué se paga (adelanto / saldo / total) y, si queda a pagar, la fecha
+                probable: alimenta el calendario de pagos del presupuesto. */}
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>{pagado ? "Qué se pagó" : "Qué se va a pagar"}</Label>
+                <div className="flex h-9 flex-wrap items-center gap-3 text-sm">
+                  {MUDANZA_TIPOS_PAGO.map((t) => (
+                    <label key={t.value} className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name="tr-tipo-pago"
+                        checked={tipoPago === t.value}
+                        onChange={() => setTipoPago(t.value)}
+                      />
+                      {t.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {!pagado && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="tr-fecha-pago">Fecha probable de pago</Label>
+                  <Input
+                    id="tr-fecha-pago"
+                    type="date"
+                    value={fechaPago}
+                    onChange={(e) => setFechaPago(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="tr-concepto">Concepto (opcional)</Label>
@@ -261,8 +302,13 @@ function TareaRapida({
                     <li key={g.id} className="flex items-center justify-between gap-2">
                       <span className="truncate">
                         {formatFecha(g.fecha)} · {g.concepto}
+                        {tipoPagoLabel(g.tipo_pago) && (
+                          <span className="ml-1 text-slate-500">· {tipoPagoLabel(g.tipo_pago)}</span>
+                        )}
                         {g.estado === "comprometido" && (
-                          <span className="ml-1 text-amber-600">(a pagar)</span>
+                          <span className="ml-1 text-amber-600">
+                            (a pagar{g.fecha_pago ? ` el ${formatFecha(g.fecha_pago)}` : ""})
+                          </span>
                         )}
                       </span>
                       <span className="flex items-center gap-2 whitespace-nowrap tabular-nums">
