@@ -60,6 +60,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Cloud,
+  FileText,
   Hammer,
   LayoutDashboard,
   ListChecks,
@@ -1446,7 +1447,28 @@ export function MantenimientoClient({
                   intervalo por tipo de unidad.
                 </span>
               </p>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                {/* Dos PDFs para la auditoría del 2.2: el estándar configurado
+                    (plantillas) y cómo viene la flota contra ese estándar. Los
+                    endpoints devuelven el PDF inline: se abren en otra pestaña. */}
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    window.open("/api/vehiculos/plan-pdf/estandar", "_blank", "noopener")
+                  }
+                  title="PDF del plan preventivo configurado, por tipo de unidad"
+                >
+                  <FileText className="mr-1 size-4" /> PDF estándar
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    window.open("/api/vehiculos/plan-pdf/estado", "_blank", "noopener")
+                  }
+                  title="PDF de cómo viene cada unidad contra el plan, hoy"
+                >
+                  <ClipboardCheck className="mr-1 size-4" /> PDF estado de la flota
+                </Button>
                 <Button variant="outline" onClick={() => setOverrideOpen(true)}>
                   Excepción por unidad
                 </Button>
