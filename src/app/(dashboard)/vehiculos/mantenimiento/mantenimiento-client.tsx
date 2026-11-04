@@ -718,6 +718,13 @@ export function MantenimientoClient({
     [mantenimientos]
   )
 
+  // Memoizado porque es prop del KPI de mezcla: un array nuevo en cada render
+  // le recalcularía las series al componente sin que haya cambiado nada.
+  const dominiosBaja = useMemo(
+    () => tablero.unidadesBaja.map((u) => u.dominio),
+    [tablero.unidadesBaja]
+  )
+
   // Base del historial SIN el filtro de tipo: es lo que mide el KPI de mezcla
   // preventivo/correctivo (filtrando tipo=preventivo la torta daría 100 %).
   const otFiltradasSinTipo = useMemo(() => {
@@ -1272,6 +1279,8 @@ export function MantenimientoClient({
             ordenes={otFiltradasSinTipo}
             dominioSel={fDominio}
             onDominio={setFDominio}
+            dominiosBaja={dominiosBaja}
+            totalActivas={estados.length}
             etiquetaPeriodo={
               (fMes === "todos" ? "Todo el histórico" : fmtMes(fMes)) +
               (fEstado === "todos" ? "" : ` · ${MANTENIMIENTO_ESTADO_LABELS[fEstado as MantenimientoEstado]}`) +

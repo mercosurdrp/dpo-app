@@ -106,6 +106,10 @@ export interface MixPreventivoCorrectivoProps {
   onDominio: (dominio: string) => void
   /** Texto del período filtrado, para que el título diga sobre qué se midió. */
   etiquetaPeriodo: string
+  /** Unidades dadas de baja: quedan FUERA del indicador salvo que se pidan. */
+  dominiosBaja?: string[]
+  /** Unidades activas, sólo para decir cuántas mide el indicador. */
+  totalActivas?: number
 }
 
 export function MixPreventivoCorrectivo({
@@ -113,13 +117,42 @@ export function MixPreventivoCorrectivo({
   dominioSel,
   onDominio,
   etiquetaPeriodo,
+  dominiosBaja = [],
+  totalActivas,
 }: MixPreventivoCorrectivoProps) {
   const paleta = usePaletaViz()
   const [metrica, setMetrica] = useState<Metrica>("cantidad")
 
+  // 🚨 Las unidades de baja quedan FUERA por defecto. Con ellas adentro el
+  // bloque mentía sobre la flota de hoy y además desordenaba la lectura: los
+  // tres Toyota y el UR se metían entre los que más gastan (TOYOTA3 cuarto con
+  // $15,9 M) por trabajos de unidades que ya no están.
+  const setBaja = useMemo(() => new Set(dominiosBaja), [dominiosBaja])
+  const [incluirBaja, setIncluirBaja] = useState(false)
+  // Si el filtro de la solapa apunta a una unidad de baja hay que mostrarla
+  // igual: el bloque quedaría vacío sin explicar por qué.
+  const bajaSeleccionada = setBaja.has(dominioSel)
+  const verBaja = incluirBaja || bajaSeleccionada
+
   // Las canceladas no son una intervención: no entran ni a la cuenta ni a la
   // plata (si no, una OT anulada bajaría el % de preventivo de la flota).
-  const base = useMemo(() => ordenes.filter((m) => m.estado !== "cancelado"), [ordenes])
+  const vigentes = useMemo(() => ordenes.filter((m) => m.estado !== "cancelado"), [ordenes])
+  const base = useMemo(
+    () => (verBaja ? vigentes : vigentes.filter((m) => !setBaja.has(m.dominio))),
+    [vigentes, verBaja, setBaja]
+  )
+
+  // Lo que se está dejando afuera, para poder ofrecerlo sin esconderlo.
+  const excluido = useMemo(() => {
+    if (verBaja) return null
+    const ots = vigentes.filter((m) => setBaja.has(m.dominio))
+    if (ots.length === 0) return null
+    return {
+      n: ots.length,
+      $: ots.reduce((a, m) => a + costoTotalOt(m), 0),
+      unidades: new Set(ots.map((m) => m.dominio)).size,
+    }
+  }, [vigentes, verBaja, setBaja])
 
   const global = useMemo(() => {
     const m = mezclaVacia()
@@ -210,7 +243,13 @@ export function MixPreventivoCorrectivo({
                 <CardTitle className="text-sm font-medium">
                   Preventivo vs. correctivo — {alcance}
                 </CardTitle>
-                <p className="text-xs text-muted-foreground">{etiquetaPeriodo}</p>
+                <p className="text-xs text-muted-foreground">
+                  {etiquetaPeriodo}
+                  {dominioSel === "todos" && !verBaja && totalActivas != null && (
+                    <> · flota activa ({totalActivas} unidades)</>
+                  )}
+                  {bajaSeleccionada && <> · unidad dada de baja</>}
+                </p>
               </div>
               {/* Las dos lecturas: cuántas OT y cuánta plata. */}
               <div className="flex gap-1 rounded-lg border bg-muted/40 p-1">
@@ -306,6 +345,34 @@ export function MixPreventivoCorrectivo({
                 </ul>
               </div>
             )}
+            {/* Las de baja no se esconden: se dice cuánto quedó afuera y se
+                puede sumar de un click. */}
+            {excluido && (
+              <p className="mt-3 border-t pt-2 text-xs text-muted-foreground">
+                Quedan afuera {excluido.unidades}{" "}
+                {excluido.unidades === 1 ? "unidad de baja" : "unidades de baja"} ·{" "}
+                {fmtNum(excluido.n)} OT · {fmtMoney(excluido.$)}{" "}
+                <button
+                  type="button"
+                  onClick={() => setIncluirBaja(true)}
+                  className="font-medium text-primary hover:underline"
+                >
+                  Incluirlas
+                </button>
+              </p>
+            )}
+            {incluirBaja && (
+              <p className="mt-3 border-t pt-2 text-xs text-muted-foreground">
+                Incluye las unidades dadas de baja.{" "}
+                <button
+                  type="button"
+                  onClick={() => setIncluirBaja(false)}
+                  className="font-medium text-primary hover:underline"
+                >
+                  Ver sólo la flota activa
+                </button>
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -360,7 +427,14 @@ export function MixPreventivoCorrectivo({
                           dominio === dominioSel && "bg-sky-50 dark:bg-sky-950/40"
                         )}
                       >
-                        <TableCell className="font-medium">{dominio}</TableCell>
+                        <TableCell className="whitespace-nowrap font-medium">
+                          {dominio}
+                          {setBaja.has(dominio) && (
+                            <span className="ml-1.5 rounded-sm border px-1 py-0.5 text-[10px] font-normal text-muted-foreground">
+                              baja
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right tabular-nums">{m.nTotal}</TableCell>
                         {tiposVisibles.map((t) => (
                           <TableCell key={t} className="text-right tabular-nums">
