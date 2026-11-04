@@ -84,6 +84,7 @@ import type {
   CapacitacionRespuesta,
   CapacitacionDpoPuntoFull,
   Empleado,
+  Asistencia,
   AsistenciaConEmpleado,
   EstadoCapacitacion,
   ResultadoCapacitacion,
@@ -134,6 +135,13 @@ interface Props {
   intentos: IntentoExamen[]
   respuestas: CapacitacionRespuesta[]
   canEdit: boolean
+  /**
+   * Convocatoria del usuario logueado a ESTA capacitación (null si no está
+   * convocado o no tiene ficha de empleado). Un admin convocado rinde desde
+   * acá: antes el único camino era «Mis Capacitaciones» y parecía que el rol
+   * administrador no podía rendir.
+   */
+  miAsistencia: Asistencia | null
 }
 
 export function CapacitacionDetailClient({
@@ -145,6 +153,7 @@ export function CapacitacionDetailClient({
   intentos,
   respuestas,
   canEdit,
+  miAsistencia,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -308,8 +317,29 @@ export function CapacitacionDetailClient({
             <p className="mt-1 text-sm text-slate-500">{cap.descripcion}</p>
           )}
         </div>
+        <div className="flex items-center gap-3">
+          {miAsistencia && (
+            <Link href={`/mis-capacitaciones/${cap.id}`}>
+              <Button
+                size="sm"
+                className={
+                  miAsistencia.resultado === "pendiente"
+                    ? "bg-amber-500 hover:bg-amber-600"
+                    : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                }
+                title={
+                  miAsistencia.resultado === "pendiente"
+                    ? "Estás convocado y todavía no rendiste"
+                    : `Ya rendiste: ${miAsistencia.resultado}${miAsistencia.nota != null ? ` (${miAsistencia.nota}%)` : ""}`
+                }
+              >
+                <ClipboardList className="mr-2 size-4" />
+                {miAsistencia.resultado === "pendiente" ? "Rendir mi examen" : "Ver mi examen"}
+              </Button>
+            </Link>
+          )}
         {canEdit && (
-          <div className="flex items-center gap-3">
+          <>
             <Button
               variant="outline"
               size="sm"
@@ -413,8 +443,9 @@ export function CapacitacionDetailClient({
             >
               {cap.estado === "cancelada" ? "Reactivar" : "Dar de baja"}
             </Button>
-          </div>
+          </>
         )}
+        </div>
       </div>
 
       {/* Info cards */}
