@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react"
+import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react"
 import {
   Loader2,
   Upload,
@@ -67,6 +67,7 @@ export function SeccionGaleriaFotos({
   verMasHref,
   verMasLabel,
   capturaDia,
+  antesDeAcciones,
 }: {
   reunionId: string
   reunionTipo?: TipoReunion
@@ -88,6 +89,8 @@ export function SeccionGaleriaFotos({
   /** Si se pasa, muestra el botón "Capturar del día" que genera una imagen-resumen
    *  con los KPIs reales del dashboard (RMD/NPS) y la guarda como evidencia. */
   capturaDia?: { seccion: "rmd" | "nps"; fecha: string }
+  /** Bloque que va entre las fotos y el Action Log (ej. observaciones de la sección). */
+  antesDeAcciones?: ReactNode
 }) {
   const t = TEMAS[tema]
   const [items, setItems] = useState<SeccionFoto[] | null>(null)
@@ -338,6 +341,8 @@ export function SeccionGaleriaFotos({
                 ))}
               </div>
             )}
+
+            {antesDeAcciones}
 
             <ActionLogSeccion
               reunionId={reunionId}

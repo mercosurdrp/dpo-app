@@ -24,7 +24,9 @@
  * haber existido ese día). La fecha real de carga queda igual en `updated_at`.
  *
  * La evidencia y los compromisos reusan `SeccionGaleriaFotos`, igual que el resto
- * de las secciones de la reunión.
+ * de las secciones de la reunión. Además se puede dejar una OBSERVACIÓN suelta
+ * (sin abrir una acción): va a reuniones_indicadores_observaciones con la clave
+ * `seccion_dimensionamiento`, igual que las observaciones de SLA.
  */
 
 import { useCallback, useEffect, useState, useTransition } from "react"
@@ -35,11 +37,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { SeccionGaleriaFotos } from "./seccion-galeria-fotos"
+import { SeccionObservaciones } from "./seccion-observaciones"
+import { listObservacionesSeccion } from "@/actions/reuniones-indicadores-observaciones"
+import { seccionIndicadorId } from "@/lib/reuniones-seccion-observaciones"
 import {
   getResumenDimReunion, actualizarResumenDimReunion,
   type ResumenDimensionamiento, type ResumenAlmacenRol, type ResumenFlotaRecurso,
 } from "@/actions/reuniones-dimensionamiento"
-import type { ReunionActividadConResponsable } from "@/types/database"
+import type { ReunionActividadConResponsable, ReunionIndicadorObservacionConAutor } from "@/types/database"
 
 interface ResponsableOpt {
   id: string
@@ -79,6 +84,23 @@ export function SeccionDimensionamiento({
   const [snap, setSnap] = useState<{ datos: ResumenDimensionamiento; updatedAt: string } | null>(null)
   const [cargando, setCargando] = useState(true)
   const [pend, startPend] = useTransition()
+  const [observaciones, setObservaciones] = useState<ReunionIndicadorObservacionConAutor[]>([])
+  const [obsReload, setObsReload] = useState(0)
+
+  useEffect(() => {
+    let cancel = false
+    void listObservacionesSeccion(reunionId, seccionIndicadorId(SECCION_DIMENSIONAMIENTO)).then((res) => {
+      if (cancel) return
+      if ("error" in res) toast.error(res.error)
+      else setObservaciones(res.data)
+    })
+    return () => { cancel = true }
+  }, [reunionId, obsReload])
+
+  const onObsChanged = useCallback(() => {
+    setObsReload((n) => n + 1)
+    onActividadesChanged()
+  }, [onActividadesChanged])
 
   useEffect(() => {
     let cancel = false
@@ -267,7 +289,7 @@ export function SeccionDimensionamiento({
         reunionId={reunionId}
         reunionTipo="logistica"
         seccion={SECCION_DIMENSIONAMIENTO}
-        titulo="Dimensionamiento — evidencia y compromisos"
+        titulo="Dimensionamiento — evidencia, observaciones y compromisos"
         icono={Boxes}
         tema="teal"
         emptyHint="Sin fotos cargadas. Subí la captura del cuadro comunicado a almacén y a distribución para dejar registro de la comunicación del mes."
@@ -277,6 +299,19 @@ export function SeccionDimensionamiento({
         onActividadesChanged={onActividadesChanged}
         verMasHref="/planeamiento/dimensionamiento"
         verMasLabel="Ver dimensionamiento completo"
+        antesDeAcciones={
+          <SeccionObservaciones
+            reunionId={reunionId}
+            reunionTipo="logistica"
+            seccion={SECCION_DIMENSIONAMIENTO}
+            nombre="Dimensionamiento"
+            observaciones={observaciones}
+            responsables={responsables}
+            puedeEditar={puedeEditar}
+            onChanged={onObsChanged}
+            hint="Lo que se comentó del mes que entra y no necesita una acción con responsable. Si hace falta seguimiento, creá una acción: queda en el Action Log de abajo."
+          />
+        }
       />
     </div>
   )
