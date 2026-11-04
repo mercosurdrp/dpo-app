@@ -5,6 +5,7 @@ import type {
   CampusPilarCodigo,
 } from "@/lib/campus"
 import type { PlanResumen } from "@/lib/vehiculos/tiempo-resolucion"
+import type { PilarPresupuesto } from "@/lib/presupuesto/pilares"
 
 // Enum types
 export type UserRole =
@@ -3491,6 +3492,8 @@ export interface PresupuestoTarea {
   anio: number
   mes: number
   rubro: string
+  /** Pilar DPO del gasto; null = sin clasificar (ver src/lib/presupuesto/pilares.ts). */
+  pilar: PilarPresupuesto | null
   monto_presupuestado: number | null
   monto_real: number | null
   descripcion: string | null

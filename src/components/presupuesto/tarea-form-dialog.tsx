@@ -21,7 +21,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { actualizarTarea, crearTarea } from "@/actions/presupuesto"
+import {
+  PILARES,
+  PILAR_LABELS,
+  inferirPilar,
+} from "@/lib/presupuesto/pilares"
 import type { PresupuestoTareaConResponsable } from "@/types/database"
+
+// Radix Select no acepta value="": "none" es «sin pilar».
+const SIN_PILAR = "none"
 
 const MESES = [
   "Enero",
@@ -74,6 +82,7 @@ export function TareaFormDialog({
   const [responsableId, setResponsableId] = useState<string>(
     tarea?.responsable_id ?? "",
   )
+  const [pilar, setPilar] = useState<string>(tarea?.pilar ?? SIN_PILAR)
 
   useEffect(() => {
     if (open) {
@@ -83,9 +92,18 @@ export function TareaFormDialog({
           : String(defaultMes ?? new Date().getMonth() + 1),
       )
       setResponsableId(tarea?.responsable_id ?? "")
+      setPilar(tarea?.pilar ?? SIN_PILAR)
       setError(null)
     }
   }, [open, tarea, defaultMes])
+
+  // Al salir del rubro, si no se eligió pilar se sugiere uno por palabra
+  // clave («Combustible flota» → Flota). Se puede cambiar antes de guardar.
+  function sugerirPilar(rubro: string) {
+    if (pilar !== SIN_PILAR) return
+    const sugerido = inferirPilar(rubro)
+    if (sugerido) setPilar(sugerido)
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -101,6 +119,7 @@ export function TareaFormDialog({
     formData.set("mes", mes)
     if (responsableId) formData.set("responsable_id", responsableId)
     else formData.delete("responsable_id")
+    formData.set("pilar", pilar === SIN_PILAR ? "" : pilar)
 
     startTransition(async () => {
       const result = editing
@@ -152,8 +171,32 @@ export function TareaFormDialog({
                 defaultValue={tarea?.rubro ?? ""}
                 placeholder="Ej. Combustible flota"
                 required
+                onBlur={(e) => sugerirPilar(e.currentTarget.value)}
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Pilar</Label>
+            <Select
+              value={pilar}
+              onValueChange={(v: string | null) => setPilar(v ?? SIN_PILAR)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Sin pilar" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SIN_PILAR}>Sin pilar</SelectItem>
+                {PILARES.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {PILAR_LABELS[p]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              A qué pilar de DPO pertenece el gasto. Se sugiere solo a partir del rubro.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

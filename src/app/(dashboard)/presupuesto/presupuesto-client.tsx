@@ -21,6 +21,7 @@ import {
   Send,
   Eye,
   Info,
+  Layers,
   Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -38,6 +39,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -53,11 +55,18 @@ import { PlanesAccionSection } from "@/components/presupuesto/planes-accion-sect
 import { InversionesSection } from "@/components/presupuesto/inversiones-section"
 import { RefrescoFotos } from "@/components/fotos/refresco-fotos"
 import {
+  clasificarTareasPorPilar,
   eliminarEerrAnual,
   eliminarTarea,
   getSignedUrl,
   getSignedUrlDescarga,
 } from "@/actions/presupuesto"
+import {
+  PILARES,
+  PILAR_BADGE,
+  PILAR_LABELS,
+  esPilar,
+} from "@/lib/presupuesto/pilares"
 import { SubirPresupuestoAnualDialog } from "@/components/presupuesto/subir-presupuesto-anual-dialog"
 import { SubirEerrAnualDialog } from "@/components/presupuesto/subir-eerr-anual-dialog"
 import { TareaFormDialog } from "@/components/presupuesto/tarea-form-dialog"
@@ -157,6 +166,18 @@ function formatMoney(n: number | null): string {
   }).format(n)
 }
 
+function PilarBadge({ pilar }: { pilar: string | null }) {
+  if (!esPilar(pilar)) return null
+  return (
+    <Badge
+      variant="outline"
+      className={`mr-2 px-1.5 py-0 text-[11px] font-medium ${PILAR_BADGE[pilar]}`}
+    >
+      {PILAR_LABELS[pilar]}
+    </Badge>
+  )
+}
+
 function EstadoBadge({ estado }: { estado: EstadoPresupuestoTarea }) {
   if (estado === "completada") {
     return (
@@ -240,6 +261,9 @@ export function PresupuestoClient({
   // Filtros adicionales en tabla tareas (mes ya está fijado por mesActivo)
   const [filtroResp, setFiltroResp] = useState<string>("todos")
   const [filtroEstado, setFiltroEstado] = useState<string>("todos")
+  // Pilar DPO del gasto: "todos" | "sin" (sin clasificar) | un pilar.
+  const [filtroPilar, setFiltroPilar] = useState<string>("todos")
+  const [clasificando, setClasificando] = useState(false)
 
   function refrescar() {
     refrescarConScroll()
@@ -320,9 +344,59 @@ export function PresupuestoClient({
           return false
       }
       if (filtroEstado !== "todos" && t.estado !== filtroEstado) return false
+      if (filtroPilar !== "todos") {
+        if (filtroPilar === "sin" && t.pilar) return false
+        if (filtroPilar !== "sin" && t.pilar !== filtroPilar) return false
+      }
       return true
     })
-  }, [tareas, mesActivo, verTodosLosMeses, filtroResp, filtroEstado])
+  }, [
+    tareas,
+    mesActivo,
+    verTodosLosMeses,
+    filtroResp,
+    filtroEstado,
+    filtroPilar,
+  ])
+
+  // Totales de lo filtrado: con el filtro en Flota, es «cuánto gasta Flota».
+  const totales = useMemo(() => {
+    let presup = 0
+    let real = 0
+    let conPresup = false
+    for (const t of tareasFiltradas) {
+      if (t.monto_presupuestado != null) {
+        presup += t.monto_presupuestado
+        conPresup = true
+      }
+      if (t.monto_real != null) real += t.monto_real
+    }
+    const desvio = conPresup && presup !== 0 ? ((real - presup) / presup) * 100 : null
+    return { presup, real, desvio }
+  }, [tareasFiltradas])
+
+  // Tareas del año sin pilar: habilita el botón «Clasificar por pilar».
+  const sinPilar = useMemo(() => tareas.filter((t) => !t.pilar).length, [tareas])
+
+  async function handleClasificarPilar() {
+    setClasificando(true)
+    try {
+      const result = await clasificarTareasPorPilar(anioActivo)
+      if ("error" in result) {
+        alert(`Error: ${result.error}`)
+        return
+      }
+      const { clasificadas, sinPilar: quedaron } = result.data
+      if (quedaron > 0) {
+        alert(
+          `Se clasificaron ${clasificadas} tareas. ${quedaron} quedaron sin pilar: ningún criterio reconoció el rubro, asignalo desde Editar.`,
+        )
+      }
+      refrescar()
+    } finally {
+      setClasificando(false)
+    }
+  }
 
   const tareasDelMes = useMemo(
     () =>
@@ -640,6 +714,21 @@ export function PresupuestoClient({
           </h2>
           {puedeEditar && (
             <div className="flex gap-2">
+              {sinPilar > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleClasificarPilar}
+                  disabled={clasificando}
+                  title="Asigna el pilar a las tareas que no lo tienen, según el rubro"
+                >
+                  <Layers className="mr-2 size-4" />
+                  {clasificando
+                    ? "Clasificando…"
+                    : `Clasificar por pilar (${sinPilar})`}
+                </Button>
+              )}
               {eerr && eerr.archivo_url && (
                 <Button
                   type="button"
@@ -717,6 +806,23 @@ export function PresupuestoClient({
               <SelectItem value="completada">Completada</SelectItem>
             </SelectContent>
           </Select>
+          <Select
+            value={filtroPilar}
+            onValueChange={(v: string | null) => setFiltroPilar(v ?? "todos")}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos los pilares</SelectItem>
+              {PILARES.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {PILAR_LABELS[p]}
+                </SelectItem>
+              ))}
+              <SelectItem value="sin">Sin pilar</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Tabla */}
@@ -771,6 +877,7 @@ export function PresupuestoClient({
                           {MESES[t.mes - 1]}
                         </span>
                       )}
+                      <PilarBadge pilar={t.pilar} />
                       {t.rubro}
                       {t.descripcion && (
                         <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
@@ -865,6 +972,32 @@ export function PresupuestoClient({
                 )
               })}
             </TableBody>
+            {tareasFiltradas.length > 0 && (
+              <TableFooter>
+                <TableRow>
+                  <TableCell className="text-sm font-semibold">
+                    Total
+                    {filtroPilar !== "todos" && esPilar(filtroPilar)
+                      ? ` ${PILAR_LABELS[filtroPilar]}`
+                      : ""}
+                    <span className="ml-2 font-normal text-muted-foreground">
+                      {tareasFiltradas.length}{" "}
+                      {tareasFiltradas.length === 1 ? "tarea" : "tareas"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right text-sm font-semibold">
+                    {formatMoney(totales.presup)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right text-sm font-semibold">
+                    {formatMoney(totales.real)}
+                  </TableCell>
+                  <TableCell>
+                    <DesvioBadge pct={totales.desvio} />
+                  </TableCell>
+                  <TableCell colSpan={4} />
+                </TableRow>
+              </TableFooter>
+            )}
           </Table>
         </div>
       </section>

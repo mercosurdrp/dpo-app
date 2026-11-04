@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, getProfile } from "@/lib/session"
 import {
+  esPilar,
+  normalizarTexto,
+  pilarParaRubro,
+  type PilarPresupuesto,
+} from "@/lib/presupuesto/pilares"
+import {
   archivosDelForm,
   subirArchivosAvance,
   type ArchivoAvance,
@@ -159,6 +165,7 @@ function mapTarea(row: any): PresupuestoTareaConResponsable {
     anio: r.anio,
     mes: r.mes,
     rubro: r.rubro,
+    pilar: esPilar(r.pilar) ? r.pilar : null,
     monto_presupuestado: presup,
     monto_real: real,
     descripcion: r.descripcion,
@@ -504,6 +511,68 @@ export async function eliminarEerrAnual(
 // Mutaciones — tareas
 // =============================================
 
+/** Pilar del form: uno válido o null (vacío / "none" del Select). */
+function leerPilar(formData: FormData): PilarPresupuesto | null {
+  const raw = String(formData.get("pilar") ?? "").trim()
+  return esPilar(raw) ? raw : null
+}
+
+/**
+ * Clasifica por pilar las tareas del año que todavía no tienen uno: el
+ * catálogo de rubros manda cuando el rubro está catalogado, si no las reglas
+ * por palabra clave de `pilarParaRubro`. Las que ya tienen pilar no se tocan
+ * (puede haberlo corregido alguien a mano). Devuelve cuántas quedaron sin
+ * pilar porque ninguna regla reconoció el rubro.
+ */
+export async function clasificarTareasPorPilar(
+  anio: number,
+): Promise<Result<{ clasificadas: number; sinPilar: number }>> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+
+    const [{ data: tareas, error }, { data: catalogo }] = await Promise.all([
+      supabase
+        .from("presupuestos_tareas")
+        .select("id, rubro")
+        .eq("anio", anio)
+        .is("pilar", null),
+      supabase.from("presupuesto_rubros_catalogo").select("rubro, categoria"),
+    ])
+    if (error) return { error: error.message }
+
+    const categoriaPorRubro = new Map<string, string>(
+      ((catalogo ?? []) as { rubro: string; categoria: string }[]).map((c) => [
+        normalizarTexto(c.rubro),
+        c.categoria,
+      ]),
+    )
+
+    let clasificadas = 0
+    let sinPilar = 0
+    for (const t of (tareas ?? []) as { id: string; rubro: string }[]) {
+      const pilar = pilarParaRubro(t.rubro, categoriaPorRubro.get(normalizarTexto(t.rubro)))
+      if (!pilar) {
+        sinPilar++
+        continue
+      }
+      const { error: errUpd } = await supabase
+        .from("presupuestos_tareas")
+        .update({ pilar })
+        .eq("id", t.id)
+      if (errUpd) return { error: errUpd.message }
+      clasificadas++
+    }
+
+    if (clasificadas > 0) revalidatePath(REVALIDATE_PATH)
+    return { data: { clasificadas, sinPilar } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error clasificando por pilar",
+    }
+  }
+}
+
 export async function crearTarea(
   formData: FormData,
 ): Promise<Result<PresupuestoTarea>> {
@@ -524,6 +593,7 @@ export async function crearTarea(
       String(formData.get("responsable_id") ?? "").trim() || null
     const fecha_limite =
       String(formData.get("fecha_limite") ?? "").trim() || null
+    const pilar = leerPilar(formData)
 
     if (!anioStr) return { error: "El año es obligatorio" }
     if (!mesStr) return { error: "El mes es obligatorio" }
@@ -556,6 +626,7 @@ export async function crearTarea(
         anio,
         mes,
         rubro,
+        pilar,
         monto_presupuestado,
         monto_real,
         descripcion,
@@ -657,6 +728,9 @@ export async function actualizarTarea(
     ) {
       update.estado = estadoRaw
     }
+
+    // El pilar solo se toca si el form lo manda (vacío = sin pilar).
+    if (formData.has("pilar")) update.pilar = leerPilar(formData)
 
     // Editores pueden corregir la justificación desde el form de edición,
     // incluso en tareas ya completadas (solo se toca si el form la envía).

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import * as XLSX from "xlsx"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { pilarParaRubro, type PilarPresupuesto } from "@/lib/presupuesto/pilares"
 import type { Profile } from "@/types/database"
 
 const BUCKET = "presupuestos"
@@ -648,11 +649,21 @@ export async function generarTareasDesdeEerr(
     if (!items.length) return { data: { creadas: 0, saltadas: 0 } }
 
     const norms = items.map((i) => normalizar(i.rubro))
-    const { data: existentesRaw } = await supabase
-      .from("presupuestos_tareas")
-      .select("rubro")
-      .eq("anio", anio)
-      .eq("mes", mes)
+    const [{ data: existentesRaw }, { data: catalogoRaw }] = await Promise.all([
+      supabase
+        .from("presupuestos_tareas")
+        .select("rubro")
+        .eq("anio", anio)
+        .eq("mes", mes),
+      // Para el pilar de cada tarea nueva: la categoría del catálogo manda.
+      supabase.from("presupuesto_rubros_catalogo").select("rubro, categoria"),
+    ])
+    const categoriaPorRubro = new Map<string, string>(
+      ((catalogoRaw ?? []) as { rubro: string; categoria: string }[]).map((c) => [
+        normalizar(c.rubro),
+        c.categoria,
+      ]),
+    )
     const existentes = new Set(
       (existentesRaw ?? []).map((t: { rubro: string }) =>
         normalizar(t.rubro),
@@ -668,6 +679,7 @@ export async function generarTareasDesdeEerr(
       anio: number
       mes: number
       rubro: string
+      pilar: PilarPresupuesto | null
       monto_presupuestado: number | null
       monto_real: number | null
       responsable_id: string | null
@@ -688,6 +700,7 @@ export async function generarTareasDesdeEerr(
         anio,
         mes,
         rubro: it.rubro,
+        pilar: pilarParaRubro(it.rubro, categoriaPorRubro.get(norms[i])),
         monto_presupuestado: it.monto_presupuestado,
         monto_real: it.monto_real,
         responsable_id: it.responsable_id,
