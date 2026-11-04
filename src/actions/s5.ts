@@ -1293,6 +1293,69 @@ export async function finalizarAuditoria(
   }
 }
 
+/**
+ * Vuelve una auditoría completada a borrador para corregir puntajes.
+ * Borra la nota (se recalcula al volver a finalizar) y saca de las
+ * observaciones las líneas automáticas de bonus y check de limpieza,
+ * que finalizarAuditoria vuelve a agregar.
+ */
+export async function reabrirAuditoria(
+  id: string
+): Promise<{ data: S5Auditoria } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    assertAuditorOrAdmin(profile.role)
+
+    const supabase = await createClient()
+
+    const { data: aud, error: errAud } = await supabase
+      .from("s5_auditorias")
+      .select("id, estado, observaciones_generales")
+      .eq("id", id)
+      .single()
+
+    if (errAud || !aud) {
+      return { error: errAud?.message ?? "Auditoría no encontrada" }
+    }
+    if (aud.estado !== "completada") {
+      return { error: "La auditoría no está completada" }
+    }
+
+    const obsOriginal = (aud.observaciones_generales as string | null) ?? ""
+    const obsLimpia = obsOriginal
+      .split("\n")
+      .filter(
+        (l) =>
+          !l.startsWith("Documentación 5S del mes:") &&
+          !l.startsWith("Check de limpieza:")
+      )
+      .join("\n")
+      .trim()
+
+    const { data, error } = await supabase
+      .from("s5_auditorias")
+      .update({
+        estado: "borrador",
+        nota_total: null,
+        notas_por_s: null,
+        observaciones_generales: obsLimpia === "" ? null : obsLimpia,
+      })
+      .eq("id", id)
+      .select()
+      .single()
+
+    if (error) return { error: error.message }
+
+    revalidatePath(DASHBOARD_PATH)
+    revalidatePath(`${DASHBOARD_PATH}/auditoria/${id}`)
+    return { data: data as S5Auditoria }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error reabriendo",
+    }
+  }
+}
+
 // ===================================================
 // Helpers de período actual (export por conveniencia)
 // ===================================================

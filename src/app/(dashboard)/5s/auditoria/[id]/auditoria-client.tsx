@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Lock,
   Save,
+  Unlock,
   Truck,
   User,
   Warehouse,
@@ -20,7 +21,11 @@ import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Progress } from "@/components/ui/progress"
-import { finalizarAuditoria, guardarPuntajeItem } from "@/actions/s5"
+import {
+  finalizarAuditoria,
+  guardarPuntajeItem,
+  reabrirAuditoria,
+} from "@/actions/s5"
 import {
   S5_AUDITORIA_ESTADO_COLORS,
   S5_AUDITORIA_ESTADO_LABELS,
@@ -81,6 +86,8 @@ export function AuditoriaClient({
     (currentRole === "admin" || currentRole === "auditor") &&
     auditoria.estado === "borrador"
   const readOnly = auditoria.estado === "completada"
+  const canReabrir =
+    (currentRole === "admin" || currentRole === "auditor") && readOnly
 
   const puntajesValidos =
     auditoria.tipo === "almacen" ? S5_PUNTAJES_ALMACEN : S5_PUNTAJES_FLOTA
@@ -209,6 +216,25 @@ export function AuditoriaClient({
     })
   }
 
+  function handleReabrir() {
+    if (
+      !confirm(
+        "¿Reabrir auditoría? Vuelve a borrador para corregir puntajes. La nota se borra y se recalcula al finalizar de nuevo."
+      )
+    ) {
+      return
+    }
+    startTransition(async () => {
+      const res = await reabrirAuditoria(auditoria.id)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Auditoría reabierta. Corregí los puntajes y volvé a finalizar.")
+      router.refresh()
+    })
+  }
+
   return (
     <div className="space-y-5">
       {/* Breadcrumb / back */}
@@ -263,6 +289,19 @@ export function AuditoriaClient({
               {S5_AUDITORIA_ESTADO_LABELS[auditoria.estado]}
             </Badge>
           </div>
+          {canReabrir && (
+            <div className="mt-3 flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleReabrir}
+                disabled={isPending}
+              >
+                <Unlock className="mr-2 size-4" />
+                {isPending ? "Reabriendo..." : "Reabrir para corregir"}
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
