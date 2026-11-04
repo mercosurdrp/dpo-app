@@ -145,6 +145,19 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
       "Estratificación de los defectos del checklist por ítem y por unidad: qué falla, con qué frecuencia sobre las veces evaluado, y qué defectos se repiten en la misma unidad.",
   },
   {
+    // 🚨 El 2.4 puntuó 1 en H1 porque el correctivo se miraba OT por OT: el
+    // auditor pidió «análisis de incidencias aperturado y tomar acciones». Acá
+    // las OT correctivas se estratifican por sistema, unidad, mes y taller
+    // (interno / externo), con la conclusión y la acción de fondo por sistema.
+    id: "analisis-correctivos",
+    label: "Análisis de correctivos",
+    grupo: "analisis",
+    puntos: ["2.4"],
+    requisitos: ["R2.4.1", "R2.4.2", "R2.4.3", "R2.4.4"],
+    aporta:
+      "Estratificación de las OT correctivas (externas e internas) por sistema del vehículo, unidad, mes y taller, con Pareto de OT y de costo, la matriz unidad × sistema, y por cada sistema la conclusión escrita y la acción tomada; desde cada sistema se abre el 5 Porqués sobre la OT más cara.",
+  },
+  {
     id: "indicadores",
     label: "Indicadores",
     grupo: "analisis",

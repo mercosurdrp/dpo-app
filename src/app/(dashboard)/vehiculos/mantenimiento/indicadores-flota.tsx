@@ -197,6 +197,9 @@ const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
     detalle: "repuestos_trazabilidad",
     label: "Ver los repuestos cargados en OT",
   },
+  roturas_flota: { tab: "analisis-correctivos", label: "Ver el análisis de correctivos" },
+  correctivo_tiempo_servicio: { tab: "historial", label: "Ver las OT con entrada y salida de taller" },
+  rechazos_rotura_flota: { href: "/rechazos", label: "Ver los rechazos por rotura de camión" },
   presupuesto_desvio: {
     detalle: "presupuesto_desvio",
     label: "Ver el desvío rubro por rubro",
@@ -590,6 +593,38 @@ const KPI_DEFS: KpiDef[] = [
     conSerie: true,
     dpo: "2.4",
     acumulativo: true,
+  },
+  {
+    kpi: "roturas_flota",
+    label: "Roturas de flota",
+    descripcion:
+      "OT correctivas del mes que dejaron la unidad parada al menos un día o requirieron auxilio en ruta: la «avería» de la pirámide de fallas, que es el «nº de roturas de flota» del R2.4.3. Se cuenta por OT (n = correctivas del mes)",
+    fmt: (v) => `${v.toFixed(0)}`,
+    conSerie: true,
+    dpo: "2.4",
+    acumulativo: true,
+    nLabel: { sing: "OT correctiva", plural: "OT correctivas" },
+  },
+  {
+    kpi: "correctivo_tiempo_servicio",
+    label: "Tiempo de servicio en taller",
+    descripcion:
+      "Horas promedio entre la entrada y la salida del taller de las OT correctivas del mes, sobre las que tienen las dos fechas cargadas. Mide al proveedor tanto como a la falla y alimenta el ANS con los talleres (R2.4.3 «tiempo de servicio»)",
+    fmt: (v) => `${v.toFixed(0)} h`,
+    conSerie: true,
+    dpo: "2.4",
+    nLabel: { sing: "OT con entrada y salida", plural: "OT con entrada y salida" },
+  },
+  {
+    kpi: "rechazos_rotura_flota",
+    label: "Rechazos por rotura de flota",
+    descripcion:
+      "Rechazos de entrega del mes con motivo «ROTURA DE CAMION - SINIESTRO» (tabla rechazos, fuente Chess). Es el KPI que el R2.4.3 nombra textual y el que conecta el correctivo con el nivel de servicio: cada evento es un cliente que no recibió por una falla del camión. n = bultos rechazados",
+    fmt: (v) => `${v.toFixed(0)}`,
+    conSerie: true,
+    dpo: "2.4",
+    acumulativo: true,
+    nLabel: { sing: "bulto rechazado", plural: "bultos rechazados" },
   },
   // 🚨 Neumáticos son DOS indicadores y no uno: antes "conformidad" dividía por
   // las cubiertas instaladas, así que la que no se medía contaba como si
@@ -1017,6 +1052,9 @@ export function IndicadoresFlota({
                       </td>
                       <td className="text-center">
                         <EstadoPlanBadge estado={p.estado} />
+                        {p.estado !== "cerrado" && p.items.length > 0 && done === p.items.length && (
+                          <div className="mt-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">listo para cerrar</div>
+                        )}
                       </td>
                     </tr>
                   )

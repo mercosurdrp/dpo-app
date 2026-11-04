@@ -112,6 +112,15 @@ export function DetalleOrdenDialog({
                 {labelSistema(m.sistema)}
               </Badge>
             )}
+            {(m.origen as string) === "checklist" && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-violet-200 bg-violet-50 text-violet-700"
+                title="OT interna: nació del plan de acción de un ítem NO OK del checklist (DPO 2.4, R2.4.1)"
+              >
+                Interna · checklist
+              </Badge>
+            )}
             {fueraServicio ? (
               <Badge variant="outline" className="gap-1 border-red-200 bg-red-50 text-red-700">
                 <Ban className="size-3" /> No disponible

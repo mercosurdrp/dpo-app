@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
@@ -1736,6 +1737,10 @@ function PlanDialog({
   const [otTaller, setOtTaller] = useState("")
   const [creandoOt, setCreandoOt] = useState(false)
   const [otAviso, setOtAviso] = useState<string | null>(null)
+  // Correctivo interno = OT (DPO 2.4): al cerrar sin OT, la app crea la OT
+  // interna sola. Se apaga cuando lo que se hizo no es una reparación.
+  const [crearOtInterna, setCrearOtInterna] = useState(true)
+  const ofreceOtInterna = tipo === "correctivo" && estado === "resuelto" && !otId && !plan?.otId
 
   useEffect(() => {
     let vivo = true
@@ -1792,6 +1797,7 @@ function PlanDialog({
     fd.set("descripcion", descripcion.trim())
     // Siempre, incluso vacío: así quitar la OT del plan también se guarda.
     fd.set("ot_id", otId)
+    fd.set("crear_ot_interna", ofreceOtInterna && crearOtInterna ? "1" : "0")
     if (repuestoId) {
       fd.set("repuesto_id", repuestoId)
       fd.set("repuesto_cantidad", repuestoCantidad || "1")
@@ -1995,8 +2001,30 @@ function PlanDialog({
 
             <p className="mt-1.5 text-xs text-muted-foreground">
               {otAviso ??
-                "Un foco o un relay se cambia acá mismo y no lleva OT. Si el defecto es más grave, programá la reparación."}
+                "Un foco o un relay se cambia acá mismo. Si el defecto es más grave, programá la reparación en un taller."}
             </p>
+            {ofreceOtInterna && (
+              /* DPO 2.4 / R2.4.1: el correctivo hecho en depósito también es una
+                 OT. Antes el cambio de foco quedaba sólo en este plan y la base
+                 de OT no lo veía; el auditor lo marcó textual. */
+              <label className="mt-2 flex items-start gap-2 rounded-md border border-sky-500/30 bg-sky-500/5 p-2 text-xs">
+                <Checkbox
+                  className="mt-0.5"
+                  checked={crearOtInterna}
+                  onCheckedChange={(c) => setCrearOtInterna(c === true)}
+                />
+                <span>
+                  <span className="font-medium text-foreground">
+                    Registrar como OT interna (hecha en depósito)
+                  </span>
+                  <span className="mt-0.5 block text-muted-foreground">
+                    Al guardar, la reparación queda en Órdenes de Trabajo con taller «Depósito», costo 0 y el
+                    repuesto del pañol descontado desde la OT. Destildá si lo que se hizo no es una reparación
+                    (se lavó, se reacomodó la carga).
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
 
           {/*

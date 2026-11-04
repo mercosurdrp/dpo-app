@@ -30,6 +30,7 @@ import {
   type PoliticaItem,
   type ResumenPolitica,
 } from "@/lib/flota/inventario-politica"
+import { sugerirSistema } from "@/lib/flota/sistemas-ot"
 import {
   analizarRecurrencia,
   type AnalisisRecurrencia,
@@ -2374,8 +2375,89 @@ export async function upsertPlanChecklist(
      * mover stock. Cambiar el repuesto de un plan ya cerrado tampoco: eso se
      * corrige a mano desde el pañol, que es donde se ve el historial.
      */
-    let movimientoId: string | null = movimientoPrevio
-    if (hayColumnas && repuestoId && estado === "resuelto" && !movimientoPrevio) {
+    /**
+     * Correctivo INTERNO = OT (DPO 2.4 / R2.4.1). El auditor marcó que los
+     * cambios de foco hechos en depósito no estaban en la base de OT: «mapear
+     * cuando un check sale NO OK y sumar la OT para cerrar el círculo con el
+     * descuento en el stock». Cuando un plan correctivo se cierra sin OT, la
+     * app crea la OT interna completada (taller Depósito, costo 0, sistema
+     * deducido del ítem) y la vincula. Si el plan trae repuesto, el egreso
+     * sale por la OT —así cuenta en la trazabilidad— y el plan hereda ese
+     * movimiento en vez de registrar el suyo. El formulario puede apagarlo
+     * («no es una reparación»: se lavó, se ajustó la carga).
+     */
+    let otId_ = otId
+    let movimientoDeOt: string | null = null
+    const quiereOtInterna = String(formData.get("crear_ot_interna") || "1") !== "0"
+    let otPrevia: string | null = null
+    if (hayOt && existing) {
+      const prev = await supabase.from("checklist_planes_accion").select("ot_id").eq("id", existing.id).maybeSingle()
+      otPrevia = (prev.data?.ot_id as string | null) ?? null
+    }
+    if (
+      hayOt &&
+      quiereOtInterna &&
+      tipo === "correctivo" &&
+      estado === "resuelto" &&
+      !otId_ &&
+      !otPrevia &&
+      !movimientoPrevio
+    ) {
+      const { data: ctxOt } = await supabase
+        .from("checklist_respuestas")
+        .select("comentario, item:checklist_items(nombre, categoria), cv:checklist_vehiculos(fecha, dominio)")
+        .eq("id", respuestaId)
+        .maybeSingle()
+      const c = ctxOt as unknown as {
+        comentario: string | null
+        item: { nombre: string; categoria: string | null } | null
+        cv: { fecha: string; dominio: string } | null
+      } | null
+      if (c?.cv) {
+        let nombreRepuesto: string | null = null
+        if (repuestoId) {
+          const { data: rep } = await supabase.from("mantenimiento_repuestos").select("nombre").eq("id", repuestoId).maybeSingle()
+          nombreRepuesto = (rep?.nombre as string | null) ?? null
+        }
+        const sistema =
+          sugerirSistema([c.item?.nombre, descripcion, nombreRepuesto, c.item?.categoria])?.sistema ?? null
+        const creada = await createMantenimiento({
+          dominio: c.cv.dominio,
+          fecha: new Date().toISOString().slice(0, 10),
+          tipo: "correctivo",
+          estado: "completado",
+          taller: "Depósito",
+          costo: null,
+          sistema,
+          observaciones:
+            `OT interna: sale del plan de acción del checklist del ${c.cv.fecha}${c.item ? ` — ${c.item.nombre}` : ""}. ` +
+            `Hecha en depósito, sin taller.` +
+            (c.comentario?.trim() ? ` El chofer anotó: "${c.comentario.trim()}"` : ""),
+          tareas: [{ descripcion: descripcion.slice(0, 300) }],
+          repuestos:
+            repuestoId && hayColumnas
+              ? [{ descripcion: nombreRepuesto ?? "Repuesto del pañol", cantidad: repuestoCantidad ?? 1, repuestoId }]
+              : [],
+        })
+        if ("error" in creada) return { error: `No se pudo crear la OT interna: ${creada.error}` }
+        otId_ = creada.data.id
+        if (repuestoId && hayColumnas) {
+          const { data: filaRep } = await supabase
+            .from("mantenimiento_realizado_repuestos")
+            .select("movimiento_id")
+            .eq("mantenimiento_id", creada.data.id)
+            .not("movimiento_id", "is", null)
+            .limit(1)
+            .maybeSingle()
+          movimientoDeOt = (filaRep?.movimiento_id as string | null) ?? null
+        }
+      }
+    }
+    // Lo que sigue usa la OT efectiva (la elegida o la interna recién creada).
+    const otIdFinal = otId_
+
+    let movimientoId: string | null = movimientoPrevio ?? movimientoDeOt
+    if (hayColumnas && repuestoId && estado === "resuelto" && !movimientoPrevio && !movimientoDeOt) {
       const { data: ctx } = await supabase
         .from("checklist_respuestas")
         .select("item:checklist_items(nombre), cv:checklist_vehiculos(fecha, dominio)")
@@ -2465,7 +2547,7 @@ export async function upsertPlanChecklist(
         tipo,
         estado,
         descripcion,
-        ...(hayOt ? { ot_id: otId } : {}),
+        ...(hayOt ? { ot_id: otIdFinal } : {}),
         updated_at: new Date().toISOString(),
       }
       for (const rid of extras) {

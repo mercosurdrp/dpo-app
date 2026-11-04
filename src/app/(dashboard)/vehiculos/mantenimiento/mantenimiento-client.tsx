@@ -76,6 +76,7 @@ import {
   TrendingUp,
   Triangle,
   Truck,
+  Stethoscope,
   Wrench,
   X,
 } from "lucide-react"
@@ -142,6 +143,8 @@ import type { Herramienta } from "@/actions/mantenimiento-herramientas"
 import { IndicadoresFlota } from "./indicadores-flota"
 import { EstandaresFlota } from "./estandares-flota"
 import { AnalisisItemsChecklist } from "./analisis-items-checklist"
+import { AnalisisCorrectivos } from "./analisis-correctivos"
+import { esOtInterna } from "@/lib/flota/correctivo-analisis"
 import type { AnalisisChecklist } from "@/actions/checklist-analisis"
 import type { EstandaresFlota as EstandaresFlotaData } from "@/actions/flota-estandares"
 import type {
@@ -348,6 +351,7 @@ const ICONO_SECCION: Record<string, LucideIcon> = {
   historial: Wrench,
   cil: Sparkles,
   "analisis-items": ListChecks,
+  "analisis-correctivos": Stethoscope,
   indicadores: TrendingUp,
   seguimiento: Activity,
   piramide: Triangle,
@@ -638,6 +642,8 @@ export function MantenimientoClient({
   // Filtros del historial
   const [fDominio, setFDominio] = useState("todos")
   const [fTipo, setFTipo] = useState("todos")
+  // Interno (depósito / plan del checklist) o externo (taller): DPO 2.4, R2.4.1.
+  const [fOrigen, setFOrigen] = useState<"todos" | "interna" | "externa">("todos")
   const [fEstado, setFEstado] = useState("todos")
   const [fAnio, setFAnio] = useState("todos")
   const [fMes, setFMes] = useState("todos")
@@ -763,6 +769,7 @@ export function MantenimientoClient({
       (m) =>
         (fDominio === "todos" || m.dominio === fDominio) &&
         (fEstado === "todos" || m.estado === fEstado) &&
+        (fOrigen === "todos" || (fOrigen === "interna") === esOtInterna(m)) &&
         (fAnio === "todos" || m.fecha.slice(0, 4) === fAnio) &&
         (fMes === "todos" || m.fecha.slice(0, 7) === fMes) &&
         (q === "" ||
@@ -770,7 +777,7 @@ export function MantenimientoClient({
           (m.numero_factura ?? "").toLowerCase().includes(q) ||
           (m.cloudfleet_number != null && String(m.cloudfleet_number).includes(q)))
     )
-  }, [otGenerales, fDominio, fEstado, fAnio, fMes, fBusqueda])
+  }, [otGenerales, fDominio, fEstado, fOrigen, fAnio, fMes, fBusqueda])
 
   const mantenimientosFiltrados = useMemo(
     () => otFiltradasSinTipo.filter((m) => fTipo === "todos" || m.tipo === fTipo),
@@ -1047,6 +1054,11 @@ export function MantenimientoClient({
           />
         </TabsContent>
 
+        {/* ============ TAB: Análisis de correctivos (DPO 2.4) ============ */}
+        <TabsContent value="analisis-correctivos" className="space-y-6">
+          <AnalisisCorrectivos mantenimientos={mantenimientos} tareasPlan={tareas} puedeEditar={puedeEditar} onVerOt={(m) => setVerMant(m)} />
+        </TabsContent>
+
         <TabsContent value="piramide" className="space-y-6">
           <PiramideDefectos
             itemsNoOk={checklists.itemsNoOk}
@@ -1269,6 +1281,20 @@ export function MantenimientoClient({
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Origen</Label>
+              <Select value={fOrigen} onValueChange={(v: string | null) => setFOrigen((v as "todos" | "interna" | "externa") ?? "todos")}>
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Internas y externas</SelectItem>
+                  <SelectItem value="interna">Internas (depósito)</SelectItem>
+                  <SelectItem value="externa">Externas (taller)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div>
               <Label className="text-xs text-muted-foreground">Estado</Label>
               <Select

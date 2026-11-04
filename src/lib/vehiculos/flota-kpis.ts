@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { kpisInventarioMes } from "@/lib/vehiculos/inventario-kpis"
+import { kpisCorrectivoMes } from "@/lib/vehiculos/correctivo-kpis"
 import { calcularAdherenciaChecklist } from "@/lib/vehiculos/checklist-adherencia"
 import { conformidadDocumental } from "@/lib/vehiculos/documentos-conformidad"
 import { cumplimientoPlanDesdeEstados } from "@/lib/vehiculos/plan-cumplimiento"
@@ -203,8 +204,11 @@ export async function capturarFlotaKpiSnapshots(client: SupabaseClient): Promise
   // ventana en vivo de Indicadores sea de 3 meses. Si la consulta falla (p. ej.
   // columna de precio todavía sin migrar), los otros KPIs se guardan igual.
   const inventario = await kpisInventarioMes(client, year, mes).catch(() => ({}) as Record<string, number | null>)
+  // Correctivo (DPO 2.4): días parado, roturas, tiempo de servicio y rechazos por rotura.
+  const correctivo = await kpisCorrectivoMes(client, year, mes).catch(() => ({}) as Record<string, number | null>)
   const valores: Record<string, number | null> = {
     ...inventario,
+    ...correctivo,
     cumplimiento_plan: plan.pct,
     // La cobertura viaja con el KPI para que los meses YA CERRADOS también
     // puedan mostrar sobre cuántas tareas se calculó ese porcentaje: el estado

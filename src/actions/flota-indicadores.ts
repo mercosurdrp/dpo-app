@@ -16,6 +16,7 @@ import { tasaFlota } from "@/lib/vehiculos/desgaste-neumaticos"
 import { getDesgasteNeumaticos } from "@/actions/neumaticos"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 import { CAUSA_DIFERENCIA_LABEL, esAjusteConteo, type CausaDiferencia } from "@/lib/flota/inventario-politica"
+import { MOTIVO_RECHAZO_ROTURA } from "@/lib/vehiculos/correctivo-kpis"
 import {
   esCargaSinRegistrar,
   medianasPorDominio,
@@ -57,6 +58,9 @@ export type FlotaKpi =
   | "cil_tareas"
   | "cil_defectos_anticipables"
   | "correctivo_dias_parado"
+  | "roturas_flota"
+  | "correctivo_tiempo_servicio"
+  | "rechazos_rotura_flota"
   | "neumaticos_conformidad"
   | "neumaticos_medicion"
   | "neumaticos_desgaste"
@@ -890,6 +894,58 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     const diasParado = new Map<string, number>()
     for (const [ym, set] of paradoPorMes) diasParado.set(ym, set.size)
 
+    // Correctivo (DPO 2.4 / R2.4.3), los otros tres PI que nombra el requisito:
+    //  · roturas_flota: OT correctivas del mes con unidad parada ≥ 1 día o auxilio en ruta
+    //  · correctivo_tiempo_servicio: horas promedio entrada→salida del taller
+    //  · rechazos_rotura_flota: rechazos de entrega con motivo "ROTURA DE CAMION - SINIESTRO"
+    const [otCorrRes, rechRoturaRes] = await Promise.all([
+      supabase
+        .from("mantenimiento_realizados")
+        .select("fecha, fuera_servicio_desde, fuera_servicio_hasta, auxilio_ruta, entrada_taller, salida_taller")
+        .eq("tipo", "correctivo")
+        .neq("estado", "cancelado")
+        .gte("fecha", inicioVentana),
+      supabase
+        .from("rechazos")
+        .select("fecha, bultos_rechazados")
+        .eq("ds_rechazo", MOTIVO_RECHAZO_ROTURA)
+        .gte("fecha", inicioVentana),
+    ])
+    const roturasMes = new Map<string, { n: number; roturas: number }>()
+    const tiempoServicioMes = new Map<string, { horas: number; n: number }>()
+    for (const o of (otCorrRes.data || []) as Array<{
+      fecha: string
+      fuera_servicio_desde: string | null
+      fuera_servicio_hasta: string | null
+      auxilio_ruta: boolean | null
+      entrada_taller: string | null
+      salida_taller: string | null
+    }>) {
+      const ym = o.fecha.slice(0, 7)
+      const parado =
+        o.fuera_servicio_desde &&
+        (o.fuera_servicio_hasta == null ||
+          Date.parse(o.fuera_servicio_hasta.slice(0, 10)) - Date.parse(o.fuera_servicio_desde.slice(0, 10)) >= MS_DIA)
+      const r = roturasMes.get(ym) ?? { n: 0, roturas: 0 }
+      r.n++
+      if (parado || o.auxilio_ruta) r.roturas++
+      roturasMes.set(ym, r)
+      if (o.entrada_taller && o.salida_taller) {
+        const t = tiempoServicioMes.get(ym) ?? { horas: 0, n: 0 }
+        t.horas += Math.max(0, (Date.parse(o.salida_taller) - Date.parse(o.entrada_taller)) / 3_600_000)
+        t.n++
+        tiempoServicioMes.set(ym, t)
+      }
+    }
+    const rechazosRoturaMes = new Map<string, { eventos: number; bultos: number }>()
+    for (const r of (rechRoturaRes.data || []) as Array<{ fecha: string; bultos_rechazados: number | null }>) {
+      const ym = r.fecha.slice(0, 7)
+      const acc = rechazosRoturaMes.get(ym) ?? { eventos: 0, bultos: 0 }
+      acc.eventos++
+      acc.bultos += Number(r.bultos_rechazados ?? 0)
+      rechazosRoturaMes.set(ym, acc)
+    }
+
     /**
      * Neumáticos (DPO 3.4), en DOS indicadores que antes eran uno solo.
      *
@@ -1028,6 +1084,25 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         correctivo_dias_parado: meses.map((ym) => ({
           ym,
           valor: diasParado.get(ym) ?? 0,
+        })),
+        // Roturas de flota (DPO 2.4): OT correctivas que pararon la unidad o
+        // fueron auxilio en ruta. Mes sin correctivas = 0, no null: no romper
+        // nada es el resultado buscado.
+        roturas_flota: meses.map((ym) => ({
+          ym,
+          valor: roturasMes.get(ym)?.roturas ?? 0,
+          n: roturasMes.get(ym)?.n ?? 0,
+        })),
+        // Tiempo de servicio en taller: sólo las OT con entrada Y salida cargadas.
+        correctivo_tiempo_servicio: meses.map((ym) => {
+          const t = tiempoServicioMes.get(ym)
+          return { ym, valor: t && t.n > 0 ? t.horas / t.n : null, n: t?.n ?? 0 }
+        }),
+        // Rechazos por rotura de flota: eventos del mes (n = bultos rechazados).
+        rechazos_rotura_flota: meses.map((ym) => ({
+          ym,
+          valor: rechazosRoturaMes.get(ym)?.eventos ?? 0,
+          n: Math.round(rechazosRoturaMes.get(ym)?.bultos ?? 0),
         })),
         // Mes sin presupuesto cargado = null (sin dato), no 0 %: no haber
         // cargado el mes no es lo mismo que haber gastado lo previsto.
