@@ -2945,6 +2945,37 @@ const AVISO_MIGRACION_TRAMITE =
   "Falta correr en la base el archivo APLICAR_EN_PAMPEANA_RESIDUOS_TRAMITE.sql (agrega las columnas del trámite)."
 
 /**
+ * Un UPDATE sobre `mantenimiento_residuos`, pidiendo de vuelta la fila tocada.
+ *
+ * 🚨 Pedir la fila no es decorativo: la tabla tiene RLS y durante un tiempo no
+ * tuvo policy de UPDATE, así que escribir no fallaba — matcheaba CERO filas y
+ * devolvía éxito. El botón "Solicitada" y el editor de litros guardaban contra
+ * la nada y la pantalla no tenía cómo enterarse. Con `select()` eso se detecta
+ * y se avisa en vez de mentir.
+ */
+async function actualizarResiduo(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+  update: Record<string, unknown>
+): Promise<{ success: true } | { error: string }> {
+  const { data, error } = await supabase
+    .from("mantenimiento_residuos")
+    .update(update)
+    .eq("id", id)
+    .select("id")
+  if (error) {
+    return { error: faltaMigracionTramite(error.code) ? AVISO_MIGRACION_TRAMITE : error.message }
+  }
+  if (!data || data.length === 0) {
+    return {
+      error:
+        "El cambio no se guardó: la base no permite modificar este registro. Falta correr APLICAR_EN_PAMPEANA_RESIDUOS_UPDATE_POLICY.sql.",
+    }
+  }
+  return { success: true }
+}
+
+/**
  * Marca —o desmarca— que la constancia de disposición final ya se le pidió al
  * operador. Guarda la fecha del reclamo, que es lo que después se le muestra al
  * auditor para explicar un registro sin certificado.
@@ -2958,18 +2989,11 @@ export async function marcarConstanciaSolicitada(input: {
     await requireRole(["admin", "supervisor"])
     if (!input.id) return { error: "ID de residuo inválido" }
     const supabase = await createClient()
-    const { error } = await supabase
-      .from("mantenimiento_residuos")
-      .update({
-        constancia_solicitada_at: input.solicitada
-          ? (input.fecha ?? new Date().toISOString().slice(0, 10))
-          : null,
-      })
-      .eq("id", input.id)
-    if (error) {
-      return { error: faltaMigracionTramite(error.code) ? AVISO_MIGRACION_TRAMITE : error.message }
-    }
-    return { success: true }
+    return actualizarResiduo(supabase, input.id, {
+      constancia_solicitada_at: input.solicitada
+        ? (input.fecha ?? new Date().toISOString().slice(0, 10))
+        : null,
+    })
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
@@ -3011,18 +3035,16 @@ export async function subirConstanciaTramite(
       .eq("id", id)
       .single()
 
-    const { error } = await supabase
-      .from("mantenimiento_residuos")
-      .update({
-        tramite_path: path,
-        tramite_url: pub.publicUrl,
-        tramite_nombre: file.name,
-        tramite_mime: file.type || null,
-      })
-      .eq("id", id)
-    if (error) {
+    const res = await actualizarResiduo(supabase, id, {
+      tramite_path: path,
+      tramite_url: pub.publicUrl,
+      tramite_nombre: file.name,
+      tramite_mime: file.type || null,
+    })
+    if ("error" in res) {
+      // Si la fila no se tocó, el archivo no queda huérfano en el bucket.
       await supabase.storage.from(RESIDUOS_BUCKET).remove([path])
-      return { error: faltaMigracionTramite(error.code) ? AVISO_MIGRACION_TRAMITE : error.message }
+      return res
     }
     const anterior = (previo as { tramite_path?: string | null } | null)?.tramite_path
     if (anterior && anterior !== path) {
@@ -3046,18 +3068,13 @@ export async function quitarConstanciaTramite(
       .select("tramite_path")
       .eq("id", id)
       .single()
-    const { error } = await supabase
-      .from("mantenimiento_residuos")
-      .update({
-        tramite_path: null,
-        tramite_url: null,
-        tramite_nombre: null,
-        tramite_mime: null,
-      })
-      .eq("id", id)
-    if (error) {
-      return { error: faltaMigracionTramite(error.code) ? AVISO_MIGRACION_TRAMITE : error.message }
-    }
+    const res = await actualizarResiduo(supabase, id, {
+      tramite_path: null,
+      tramite_url: null,
+      tramite_nombre: null,
+      tramite_mime: null,
+    })
+    if ("error" in res) return res
     const path = (previo as { tramite_path?: string | null } | null)?.tramite_path
     if (path) await supabase.storage.from(RESIDUOS_BUCKET).remove([path])
     return { success: true }
@@ -3734,12 +3751,7 @@ export async function setResiduoCantidad(input: {
     const supabase = await createClient()
     const update: Record<string, unknown> = { cantidad: input.cantidad }
     if (input.unidad !== undefined) update.unidad = input.unidad?.trim() || null
-    const { error } = await supabase
-      .from("mantenimiento_residuos")
-      .update(update)
-      .eq("id", input.id)
-    if (error) return { error: error.message }
-    return { success: true }
+    return actualizarResiduo(supabase, input.id, update)
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
