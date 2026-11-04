@@ -167,14 +167,24 @@ export function descripcionDeOt(m: MantenimientoRealizado): string {
   return obs || "(sin descripción)"
 }
 
-/** Costo de la OT: el mayor entre la cabecera y el desglose (mismo criterio que costos). */
+/**
+ * Costo de la OT: el mayor entre la cabecera y el desglose (mismo criterio que
+ * `costoTotalOt`).
+ *
+ * 🚨 Si la suma de las tareas coincide con `costo_mano_obra` es LA MISMA PLATA
+ * y va una sola vez: el sync de Cloudfleet carga cada labor como tarea con su
+ * costo Y su total en `costo_mano_obra`. Ver el comentario largo en
+ * `_components/ot-formato.ts`.
+ */
 function costoDeOt(m: MantenimientoRealizado): number {
   const tareas = (m.tareas ?? []).reduce((a, t) => a + Number(t.costo || 0), 0)
   const repuestos = (m.repuestos ?? []).reduce(
     (a, r) => a + Number(r.cantidad || 1) * Number(r.costo_unitario || 0),
     0
   )
-  return Math.max(Number(m.costo || 0), tareas + Number(m.costo_mano_obra || 0) + repuestos)
+  const manoObra = Number(m.costo_mano_obra || 0)
+  const duplicada = tareas > 0 && Math.abs(tareas - manoObra) < 1
+  return Math.max(Number(m.costo || 0), tareas + (duplicada ? 0 : manoObra) + repuestos)
 }
 
 /** Sistema efectivo de una OT: el cargado o, si falta, el sugerido por el texto. */
