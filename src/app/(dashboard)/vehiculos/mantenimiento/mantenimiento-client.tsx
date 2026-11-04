@@ -22,6 +22,7 @@ import { HistorialChecklists } from "@/components/flota/historial-checklists"
 import { HistorialLecturasMes } from "./_components/historial-lecturas-mes"
 import { DetalleOrdenDialog } from "./_components/detalle-orden-dialog"
 import { MixPreventivoCorrectivo } from "./_components/mix-preventivo-correctivo"
+import { costoTotalOt } from "./_components/ot-formato"
 import {
   Table,
   TableBody,
@@ -281,19 +282,6 @@ const fmtMoney = (v: number) =>
   }).format(v)
 
 const fmtNum = (v: number) => new Intl.NumberFormat("es-AR").format(v)
-
-// Costo total de una OT = mayor entre el costo de cabecera y el desglose
-// (tareas + mano de obra + repuestos). Mismo criterio que getCostosMantenimiento:
-// la cabecera de las OT cargadas por la app ya es MO + repuestos, así no se duplica.
-function costoTotalOt(m: MantenimientoRealizado): number {
-  const tareas = (m.tareas ?? []).reduce((a, t) => a + Number(t.costo || 0), 0)
-  const repuestos = (m.repuestos ?? []).reduce(
-    (a, r) => a + Number(r.cantidad || 1) * Number(r.costo_unitario || 0),
-    0
-  )
-  const desglosado = tareas + Number(m.costo_mano_obra || 0) + repuestos
-  return Math.max(Number(m.costo || 0), desglosado)
-}
 
 function parseNum(s: string): number | null {
   if (!s.trim()) return null

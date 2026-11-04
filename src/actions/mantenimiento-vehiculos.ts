@@ -3757,10 +3757,15 @@ export async function getCostosMantenimiento(): Promise<
         (a, r) => a + Number(r.cantidad || 1) * Number(r.costo_unitario || 0),
         0
       )
-      const desglosado = costoTareas + Number(m.costo_mano_obra || 0) + costoRepuestos
-      // El costo de cabecera de las OT cargadas por la app ya es MO + repuestos
-      // (sin tareas); tomar el mayor entre cabecera y desglose suma lo que falte
-      // sin duplicar, y conserva las OT viejas que solo tienen costo de cabecera.
+      // 🚨 Si la suma de las tareas coincide con `costo_mano_obra` es LA MISMA
+      // PLATA y va una sola vez: el sync de Cloudfleet carga cada labor como
+      // tarea con su costo Y su total en `costo_mano_obra`. Mismo criterio que
+      // `costoTotalOt` — ver el comentario largo ahí.
+      const manoObra = Number(m.costo_mano_obra || 0)
+      const duplicada = costoTareas > 0 && Math.abs(costoTareas - manoObra) < 1
+      const desglosado = costoTareas + (duplicada ? 0 : manoObra) + costoRepuestos
+      // Tomar el mayor entre cabecera y desglose suma lo que falte sin duplicar,
+      // y conserva las OT viejas que solo tienen costo de cabecera.
       const costo = Math.max(Number(m.costo || 0), desglosado)
       if (m.fecha >= inicioAnio) costoYTD += costo
       if (m.fecha.slice(0, 7) === mesActual) costoMes += costo

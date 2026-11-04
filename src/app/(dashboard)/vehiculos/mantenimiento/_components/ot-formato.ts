@@ -57,8 +57,16 @@ export const fmtNumOt = (v: number) => new Intl.NumberFormat("es-AR").format(v)
 
 /**
  * Costo total de una OT = mayor entre el costo de cabecera y el desglose
- * (tareas + mano de obra + repuestos). Mismo criterio que getCostosMantenimiento:
- * la cabecera de las OT cargadas por la app ya es MO + repuestos, así no se duplica.
+ * (tareas + mano de obra + repuestos).
+ *
+ * 🚨 Si la suma de las tareas coincide con `costo_mano_obra`, es LA MISMA PLATA
+ * y se cuenta una sola vez. El sync de Cloudfleet carga cada *labor* como una
+ * tarea con su costo Y además su total en `costo_mano_obra`
+ * (`work-orders-sync.ts`), así que sumar las dos cosas duplicaba la mano de
+ * obra: 59 OT (56 de Cloudfleet y 3 cargadas a mano con el mismo número en los
+ * dos campos) inflaban el gasto de la flota en $25,4 M — la OT 1507 del TOYOTA3
+ * figuraba $15,2 M cuando la factura es de $8,29 M. La cabecera (`totalCost` en
+ * Cloudfleet) es el total correcto en los 59 casos.
  */
 export function costoTotalOt(m: MantenimientoRealizado): number {
   const tareas = (m.tareas ?? []).reduce((a, t) => a + Number(t.costo || 0), 0)
@@ -66,7 +74,10 @@ export function costoTotalOt(m: MantenimientoRealizado): number {
     (a, r) => a + Number(r.cantidad || 1) * Number(r.costo_unitario || 0),
     0
   )
-  const desglosado = tareas + Number(m.costo_mano_obra || 0) + repuestos
+  const manoObra = Number(m.costo_mano_obra || 0)
+  // Tolerancia de $1 por el redondeo de los decimales que vienen de la API.
+  const duplicada = tareas > 0 && Math.abs(tareas - manoObra) < 1
+  const desglosado = tareas + (duplicada ? 0 : manoObra) + repuestos
   return Math.max(Number(m.costo || 0), desglosado)
 }
 
