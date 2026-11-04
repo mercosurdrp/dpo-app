@@ -1,5 +1,5 @@
 import { getCapacitacion, getEmpleados, getCapacitacionPreguntas, getDpoPuntosForCapacitacion, getDpoHierarchy, getIntentosCapacitacion, getRespuestasCapacitacion } from "@/actions/capacitaciones"
-import { getProfile } from "@/lib/session"
+import { getMiEmpleado, getProfile } from "@/lib/session"
 import { CapacitacionDetailClient } from "./capacitacion-detail-client"
 
 export default async function CapacitacionDetailPage({
@@ -8,7 +8,7 @@ export default async function CapacitacionDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [result, empleadosResult, preguntasResult, dpoPuntosResult, dpoHierarchyResult, intentosResult, respuestasResult, profile] = await Promise.all([
+  const [result, empleadosResult, preguntasResult, dpoPuntosResult, dpoHierarchyResult, intentosResult, respuestasResult, profile, miEmpleado] = await Promise.all([
     getCapacitacion(id),
     getEmpleados(),
     getCapacitacionPreguntas(id),
@@ -17,6 +17,9 @@ export default async function CapacitacionDetailPage({
     getIntentosCapacitacion(id),
     getRespuestasCapacitacion(id),
     getProfile(),
+    // Un admin/auditor también puede estar convocado: desde acá se le ofrece
+    // rendir su propio examen sin tener que ir a «Mis Capacitaciones».
+    getMiEmpleado(),
   ])
 
   if ("error" in result) {
@@ -35,6 +38,9 @@ export default async function CapacitacionDetailPage({
   const intentos = "error" in intentosResult ? [] : intentosResult.data
   const respuestas = "error" in respuestasResult ? [] : respuestasResult.data
   const canEdit = profile?.role === "admin" || profile?.role === "auditor"
+  const miAsistencia = miEmpleado
+    ? result.data.asistencias.find((a) => a.empleado_id === miEmpleado.id) ?? null
+    : null
 
   return (
     <CapacitacionDetailClient
@@ -46,6 +52,7 @@ export default async function CapacitacionDetailPage({
       intentos={intentos}
       respuestas={respuestas}
       canEdit={canEdit}
+      miAsistencia={miAsistencia}
     />
   )
 }

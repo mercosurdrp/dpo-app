@@ -70,6 +70,8 @@ interface Props {
   canEdit: boolean
   /** Asistencia individual. Null para quien no puede verla (no es admin/auditor). */
   asistenciaPorEmpleado: { filas: FilaAsistenciaEmpleado[]; empleados: EmpleadoRef[] } | null
+  /** Ids de capacitaciones a las que el usuario logueado está convocado y todavía no rindió. */
+  misPendientes: string[]
 }
 
 const estadoOptions: { value: string; label: string }[] = [
@@ -114,6 +116,7 @@ export function CapacitacionesClient({
   capacitaciones: initial,
   canEdit,
   asistenciaPorEmpleado,
+  misPendientes,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -780,6 +783,22 @@ export function CapacitacionesClient({
                       <MapPin className="size-3.5" />
                       <span>{cap.lugar}</span>
                     </div>
+                  )}
+                  {misPendientes.includes(cap.id) && (
+                    // La tarjeta entera ya es un Link: un <a> adentro de otro no es
+                    // HTML válido, así que se navega a mano.
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        router.push(`/mis-capacitaciones/${cap.id}`)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md bg-amber-50 px-2 py-1 text-left text-amber-700 hover:bg-amber-100"
+                    >
+                      <ClipboardCheck className="size-3.5" />
+                      <span className="font-medium">Te falta rendir este examen</span>
+                    </button>
                   )}
                   {canEdit && (
                     <div className="flex justify-end gap-1 pt-1">
