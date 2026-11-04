@@ -392,3 +392,64 @@ export async function createProveedor(
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
 }
+
+/**
+ * Datos del proveedor para el DPO 2.3 (planilla "Listado de Proveedores" y
+ * ANS con proveedores de piezas): razón social, CUIT, contacto, tipo de
+ * vehículo que atiende y el lead time acordado. Columnas de la migración
+ * 20261105120000; si todavía no corrió, se avisa en vez de romper.
+ */
+export async function updateProveedor(
+  id: string,
+  input: {
+    nombre?: string
+    activo?: boolean
+    razon_social?: string | null
+    cuit?: string | null
+    telefono?: string | null
+    email?: string | null
+    localidad?: string | null
+    tipo_vehiculo?: string | null
+    es_repuestos?: boolean
+    es_taller?: boolean
+    lead_time_dias?: number | null
+    notas?: string | null
+  }
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const patch: Record<string, unknown> = {}
+    if (input.nombre !== undefined) {
+      const limpio = input.nombre.trim()
+      if (!limpio) return { error: "El nombre no puede quedar vacío" }
+      patch.nombre = limpio
+    }
+    if (input.activo !== undefined) patch.activo = input.activo
+    for (const k of [
+      "razon_social",
+      "cuit",
+      "telefono",
+      "email",
+      "localidad",
+      "tipo_vehiculo",
+      "notas",
+    ] as const) {
+      if (input[k] !== undefined) patch[k] = input[k]?.toString().trim() || null
+    }
+    if (input.es_repuestos !== undefined) patch.es_repuestos = input.es_repuestos
+    if (input.es_taller !== undefined) patch.es_taller = input.es_taller
+    if (input.lead_time_dias !== undefined) patch.lead_time_dias = input.lead_time_dias
+    patch.updated_at = new Date().toISOString()
+    const { error } = await supabase.from("mantenimiento_proveedores").update(patch).eq("id", id)
+    if (error) {
+      if (error.code === "42703" || error.code === "PGRST204")
+        return { error: "Falta aplicar APLICAR_EN_PAMPEANA_INVENTARIO_2_3.sql para guardar los datos del proveedor." }
+      return { error: error.message }
+    }
+    revalidatePath(PATH)
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}

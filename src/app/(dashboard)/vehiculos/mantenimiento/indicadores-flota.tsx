@@ -155,14 +155,24 @@ const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
   estandares_mandatorios: { tab: "estandares", label: "Ver la matriz de estándares" },
   estandares_excelencia: { tab: "estandares", label: "Ver la matriz de estándares" },
   inventario_exactitud: {
-    tab: "repuestos",
-    label: "Ver los conteos de stock",
+    detalle: "inventario_exactitud",
+    label: "Ver el conteo ítem por ítem, con la causa de cada diferencia",
     labelSinDato: "Sin conteo este mes",
   },
   repuestos_stock_minimo: {
-    tab: "repuestos",
-    label: "Ver los conteos de stock",
+    detalle: "repuestos_stock_minimo",
+    label: "Ver qué ítems quedaron FUERA del mínimo",
     labelSinDato: "Sin conteo este mes",
+  },
+  repuestos_demora_pieza: {
+    tab: "repuestos",
+    label: "Ver los pedidos de repuestos",
+    labelSinDato: "Sin pedidos este mes",
+  },
+  valor_stock_panol: {
+    tab: "repuestos",
+    label: "Ver el valor por ítem en Inventario",
+    labelSinDato: "Sin precios cargados en el pañol",
   },
   cil_tareas: { tab: "cil", label: "Ver las tareas CIL del mes" },
   cil_defectos_anticipables: { tab: "analisis-items", label: "Ver los defectos por ítem" },
@@ -203,7 +213,11 @@ const RESUMEN_DETALLE: Record<FlotaKpiConDetalle, (d: DetalleKpi) => string> = {
   checklist_resolucion: (d) =>
     `${d.denominador} ${d.denominador === 1 ? "plan resuelto" : "planes resueltos"}, ${(d.denominador > 0 ? d.numerador / d.denominador : 0).toFixed(1)} días promedio${d.excluidos > 0 ? ` · ${d.excluidos} sin tiempo medible` : ""}`,
   repuestos_trazabilidad: (d) =>
-    `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "fila" : "filas"} de repuesto vinculan al ítem del pañol`,
+    `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "egreso" : "egresos"} del pañol salieron contra una OT o un plan del checklist${d.excluidos > 0 ? ` · ${d.excluidos} ajuste${d.excluidos === 1 ? "" : "s"} por conteo afuera` : ""}`,
+  inventario_exactitud: (d) =>
+    `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "ítem contado" : "ítems contados"} sin diferencia en el último conteo del mes`,
+  repuestos_stock_minimo: (d) =>
+    `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "ítem con mínimo" : "ítems con mínimo"} en o por encima del mínimo${d.excluidos > 0 ? ` · ${d.excluidos} sin mínimo definido` : ""}`,
   presupuesto_desvio: (d) =>
     `Gastado $${d.numerador.toLocaleString("es-AR")} contra $${d.denominador.toLocaleString("es-AR")} presupuestados` +
     (d.denominador > 0
@@ -502,11 +516,31 @@ const KPI_DEFS: KpiDef[] = [
     kpi: "repuestos_trazabilidad",
     label: "Trazabilidad de egresos",
     descripcion:
-      "Repuestos cargados en una OT que apuntan al ítem del pañol (y por lo tanto descuentan stock solos) ÷ repuestos cargados en OT del mes. Las OT de rubro Neumáticos quedan afuera: la cubierta vive en su propio módulo y nunca sale del pañol. El denominador sí incluye las piezas compradas contra la OT, que por diseño no vinculan, así que la meta es la proporción que la operación espera sacar del pañol y no 100 %. Arranca el 25/08/2026, que es cuando el vínculo existe",
+      "Egresos del pañol que nacieron de una OT o de un plan de acción del checklist (descuento automático, atado al trabajo y a la unidad) ÷ egresos del pañol del mes, sin los ajustes por conteo. Mide la disciplina de registro: el SOP dice que el egreso nunca se carga a mano, así que la meta es 100 %. Fórmula del 04/11/2026; la anterior (filas de repuesto de OT vinculadas ÷ todas) se movía con cuántas piezas compraba el taller. Arranca el 25/08/2026, que es cuando el vínculo existe",
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
     dpo: "2.3",
-    nLabel: { sing: "repuesto vinculado", plural: "repuestos vinculados" },
+    nLabel: { sing: "egreso contra trabajo", plural: "egresos contra trabajo" },
+  },
+  {
+    kpi: "repuestos_demora_pieza",
+    label: "Demora por falta de pieza",
+    descripcion:
+      "Días promedio que un pedido de repuestos esperó la pieza, de la detección de la falta al retiro (los abiertos cuentan hasta hoy), por mes de detección. Es el «pedidos de servicio retrasados debido a las piezas» del R2.3.3: lo que el pañol existe para evitar",
+    fmt: (v) => `${v.toFixed(1)} d`,
+    conSerie: true,
+    dpo: "2.3",
+    nLabel: { sing: "pedido", plural: "pedidos" },
+  },
+  {
+    kpi: "valor_stock_panol",
+    label: "Valor del pañol",
+    descripcion:
+      "Capital inmovilizado en el pañol: stock actual × último precio unitario de cada pieza. Es el primer KPI que el auditor nombra en R2.3.3 (capital circulante). Foto de hoy; los meses cerrados salen de los snapshots del cron. Se lee junto con los ítems SOBRE máximo",
+    fmt: (v) => `$${Math.round(v).toLocaleString("es-AR")}`,
+    conSerie: true,
+    dpo: "2.3",
+    nLabel: { sing: "pieza con precio", plural: "piezas con precio" },
   },
   {
     kpi: "combustible_kml",

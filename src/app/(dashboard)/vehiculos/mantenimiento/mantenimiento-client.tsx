@@ -161,6 +161,7 @@ import type {
   ConsumoRepuesto,
   ConteoResumen,
   Novedad,
+  PoliticaInventario,
   TareaCil,
   OrdenCompra,
   Repuesto,
@@ -530,6 +531,9 @@ interface MantenimientoClientProps {
     residuos: Residuo[]
     conteos: ConteoResumen[]
     consumos: ConsumoRepuesto[]
+    /** Política del pañol (sugeridos, FUERA/SOBRE, criticidad, valor) — DPO 2.3. */
+    politica: PoliticaInventario
+    proveedores: MantenimientoProveedor[]
     recuentoFrecuenciaDias: number | null
   }
   flotaMetas: FlotaMeta[]
@@ -988,6 +992,12 @@ export function MantenimientoClient({
             programacion={tablero.programacion}
             documentos={tablero.documentos}
             unidadesBaja={tablero.unidadesBaja}
+            inventario={{
+              fuera: gestion.politica.resumen.fuera,
+              sobre: gestion.politica.resumen.sobre,
+              ultimoConteo: gestion.conteos.map((c) => c.fecha).sort().at(-1) ?? null,
+              frecuenciaDias: gestion.recuentoFrecuenciaDias,
+            }}
             puedeEditar={puedeEditar}
             onNavigate={navegar}
           />
@@ -1147,6 +1157,8 @@ export function MantenimientoClient({
             residuos={gestion.residuos}
             conteos={gestion.conteos}
             consumos={gestion.consumos}
+            politica={gestion.politica}
+            proveedores={gestion.proveedores}
             recuentoFrecuenciaDias={gestion.recuentoFrecuenciaDias}
             otsParaPedido={otsParaPedido}
             puedeEditar={puedeEditar}

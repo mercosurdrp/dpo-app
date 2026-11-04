@@ -24,6 +24,13 @@ import { esFocoDeMantenimiento } from "@/lib/vehiculos/focos-checklist"
 import { marcarEpisodios } from "@/lib/vehiculos/episodios-foco"
 import { TAREAS_CIL } from "@/lib/flota/cil-tareas"
 import {
+  analizarPolitica,
+  CAUSA_DIFERENCIA_LABEL,
+  type CausaDiferencia,
+  type PoliticaItem,
+  type ResumenPolitica,
+} from "@/lib/flota/inventario-politica"
+import {
   analizarRecurrencia,
   type AnalisisRecurrencia,
 } from "@/lib/flota/recurrencia-correctivos"
@@ -37,6 +44,7 @@ import type {
   MantenimientoPlanOverride,
   MantenimientoPlanTarea,
   MantenimientoPlanTareaHistorial,
+  MantenimientoProveedor,
   MantenimientoRealizado,
   MantenimientoSistema,
   MantenimientoTareaReprogramada,
@@ -2862,6 +2870,17 @@ export interface Repuesto {
   /** Días de cobertura que se quieren tener de esta pieza. */
   dias_stock: number | null
   clase_abc: "A" | "B" | "C" | null
+  /**
+   * Columnas de la migración 20261105120000 (DPO 2.3): precio para el capital
+   * inmovilizado, proveedor y lead time para la criticidad, y la fecha en que
+   * se adoptó la política sugerida. Opcionales hasta que corra el SQL.
+   */
+  precio_unitario?: number | null
+  proveedor_id?: string | null
+  lead_time_dias?: number | null
+  parada_por_falta?: boolean | null
+  politica_actualizada_at?: string | null
+  en_panol?: boolean | null
 }
 
 /**
@@ -2889,8 +2908,21 @@ export interface ConsumoRepuesto {
   objetivoSugerido: number | null
 }
 
-/** Días de cobertura que se asumen cuando la pieza todavía no los tiene declarados. */
-const DIAS_STOCK_POR_DEFECTO = 30
+/**
+ * Política de stock calculada para el pañol entero (DPO 2.3 / R2.3.2): por
+ * ítem, lo que el consumo real sugiere contra lo declarado, FUERA/SOBRE,
+ * criticidad y valor; y los totales para la cabecera de Inventario.
+ * `items` va como objeto y no como Map porque viaja al cliente.
+ */
+export interface PoliticaInventario {
+  desde: string
+  hasta: string
+  items: Record<string, PoliticaItem>
+  resumen: ResumenPolitica
+  /** false = la migración 20261105120000 todavía no corrió (sin precio, proveedor, lead time). */
+  columnasNuevas: boolean
+}
+
 export interface OrdenCompra {
   id: string
   numero: string | null
@@ -3124,6 +3156,10 @@ export async function getGestionMtto(): Promise<
         conteos: ConteoResumen[]
         /** Consumo real por pieza, para contrastar la política declarada. */
         consumos: ConsumoRepuesto[]
+        /** Política completa (sugeridos, FUERA/SOBRE, criticidad, valor) — DPO 2.3. */
+        politica: PoliticaInventario
+        /** Proveedores (talleres y de repuestos) con sus datos, para el maestro y la solapa Proveedores. */
+        proveedores: MantenimientoProveedor[]
         /** Cada cuántos días se declaró el recuento físico. null = sin declarar. */
         recuentoFrecuenciaDias: number | null
       }
@@ -3133,7 +3169,7 @@ export async function getGestionMtto(): Promise<
   try {
     await requireAuth()
     const supabase = await createClient()
-    const [nov, rep, oc, res, conteos] = await Promise.all([
+    const [nov, rep, oc, res, conteos, movs, provs] = await Promise.all([
       supabase.from("mantenimiento_novedades").select("*").order("fecha", { ascending: false }),
       selectRepuestosPanol(supabase, "*"),
       supabase
@@ -3146,9 +3182,27 @@ export async function getGestionMtto(): Promise<
         .order("fecha", { ascending: false })
         .limit(500),
       loadConteosResumen(supabase),
+      // Todos los movimientos: la ventana de consumo la corta la lib (90 días),
+      // pero el lote de compra sale del mayor ingreso de la historia.
+      supabase
+        .from("mantenimiento_repuestos_movimientos")
+        .select("repuesto_id, tipo, cantidad, fecha, motivo")
+        .order("fecha", { ascending: true })
+        .limit(5000),
+      supabase.from("mantenimiento_proveedores").select("*").order("nombre"),
     ])
-    for (const r of [nov, rep, oc, res]) if (r.error) throw new Error(r.error.message)
+    for (const r of [nov, rep, oc, res, movs, provs]) if (r.error) throw new Error(r.error.message)
     const repuestos = (rep.data || []) as unknown as Repuesto[]
+    const politica = calcularPoliticaInventario(
+      repuestos,
+      (movs.data || []) as unknown as Array<{
+        repuesto_id: string
+        tipo: "ingreso" | "egreso"
+        cantidad: number
+        fecha: string
+        motivo: string | null
+      }>
+    )
     return {
       data: {
         novedades: (nov.data || []) as Novedad[],
@@ -3156,7 +3210,9 @@ export async function getGestionMtto(): Promise<
         ordenesCompra: (oc.data || []) as OrdenCompra[],
         residuos: (res.data || []) as Residuo[],
         conteos,
-        consumos: await calcularConsumoRepuestos(supabase, repuestos),
+        consumos: consumosDesdePolitica(politica),
+        politica,
+        proveedores: (provs.data || []) as MantenimientoProveedor[],
         recuentoFrecuenciaDias: await leerFrecuenciaRecuento(supabase),
       },
     }
@@ -3165,81 +3221,49 @@ export async function getGestionMtto(): Promise<
   }
 }
 
-/**
- * Consumo real de cada repuesto en los últimos 90 días, con la clase ABC que
- * sale de ese consumo.
- *
- * La curva es Pareto sobre unidades consumidas, no sobre plata: en este pañol
- * todo vale parecido —focos, micas, relays— y lo que importa para el stock es
- * cuántas salen, no cuánto cuestan. Una pieza sin un solo egreso es C: no
- * inmoviliza decisión ninguna.
- *
- * 🚨 Con poca historia la clasificación es provisoria y hay que decirlo: al
- * 07/10/2026 son 48 días y 14 de las 19 piezas no tuvieron ni un movimiento.
- * Por eso el número calculado se muestra al lado del declarado en vez de
- * pisarlo — la política la fija el Gestor de Flota, el cálculo sólo la
- * respalda.
- */
-async function calcularConsumoRepuestos(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  repuestos: Repuesto[]
-): Promise<ConsumoRepuesto[]> {
-  if (repuestos.length === 0) return []
-  const desde = new Date()
-  desde.setDate(desde.getDate() - 90)
-  const desdeISO = desde.toISOString().slice(0, 10)
-
-  const { data, error } = await supabase
-    .from("mantenimiento_repuestos_movimientos")
-    .select("repuesto_id, tipo, cantidad, fecha")
-    .eq("tipo", "egreso")
-    .gte("fecha", desdeISO)
-  if (error) return []
-
-  type Mov = { repuesto_id: string; cantidad: number | null; fecha: string | null }
-  const movs = (data || []) as unknown as Mov[]
-  const fechas = movs.map((m) => m.fecha).filter((f): f is string => !!f).sort()
-  // La ventana real es la historia que hay, no 90 días imaginarios: con 48 días
-  // de movimientos, dividir por 90 subestimaría el consumo a la mitad.
-  const ventanaDias = Math.max(
-    1,
-    fechas.length > 0
-      ? Math.round(
-          (Date.parse(fechas[fechas.length - 1]) - Date.parse(fechas[0])) / 86_400_000
-        ) || 1
-      : 1
-  )
-
-  const porPieza = new Map<string, number>()
-  for (const m of movs) {
-    porPieza.set(m.repuesto_id, (porPieza.get(m.repuesto_id) ?? 0) + Number(m.cantidad ?? 0))
-  }
-
-  // Pareto: A hasta el 80 % del consumo acumulado, B hasta el 95 %, C el resto.
-  const total = [...porPieza.values()].reduce((a, n) => a + n, 0)
-  const clase = new Map<string, "A" | "B" | "C">()
-  let acumulado = 0
-  for (const [id, n] of [...porPieza.entries()].sort((a, b) => b[1] - a[1])) {
-    acumulado += n
-    const pct = total > 0 ? (acumulado / total) * 100 : 100
-    clase.set(id, pct <= 80 ? "A" : pct <= 95 ? "B" : "C")
-  }
-
-  return repuestos.map((r) => {
-    const consumo = porPieza.get(r.id) ?? 0
-    const consumoDia = consumo / ventanaDias
-    const dias = r.dias_stock ?? DIAS_STOCK_POR_DEFECTO
-    return {
-      repuestoId: r.id,
-      consumo,
-      ventanaDias,
-      consumoDia,
-      coberturaDias: consumoDia > 0 ? Math.round(Number(r.stock_actual) / consumoDia) : null,
-      claseSugerida: clase.get(r.id) ?? "C",
-      objetivoSugerido:
-        consumoDia > 0 ? Math.max(Number(r.stock_min) || 0, Math.ceil(consumoDia * dias)) : null,
-    }
+/** Corre la lib de política y la deja lista para viajar al cliente. */
+function calcularPoliticaInventario(
+  repuestos: Repuesto[],
+  movimientos: Array<{
+    repuesto_id: string
+    tipo: "ingreso" | "egreso"
+    cantidad: number
+    fecha: string
+    motivo: string | null
+  }>
+): PoliticaInventario {
+  const a = analizarPolitica({
+    repuestos: repuestos.map((r) => ({
+      ...r,
+      stock_actual: Number(r.stock_actual),
+      stock_min: r.stock_min != null ? Number(r.stock_min) : null,
+      stock_max: r.stock_max != null ? Number(r.stock_max) : null,
+      stock_objetivo: r.stock_objetivo != null ? Number(r.stock_objetivo) : null,
+      precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : null,
+    })),
+    movimientos: movimientos.map((m) => ({ ...m, cantidad: Number(m.cantidad), fecha: m.fecha.slice(0, 10) })),
+    hoy: today(),
   })
+  return {
+    desde: a.desde,
+    hasta: a.hasta,
+    items: Object.fromEntries(a.porItem),
+    resumen: a.resumen,
+    columnasNuevas: repuestos.length === 0 || repuestos.some((r) => "precio_unitario" in r),
+  }
+}
+
+/** Compatibilidad: el diálogo de repuesto todavía lee `ConsumoRepuesto`. */
+function consumosDesdePolitica(p: PoliticaInventario): ConsumoRepuesto[] {
+  return Object.values(p.items).map((i) => ({
+    repuestoId: i.repuestoId,
+    consumo: i.consumo,
+    ventanaDias: i.ventanaDias,
+    consumoDia: i.consumoDia,
+    coberturaDias: i.coberturaDias,
+    claseSugerida: i.claseSugerida,
+    objetivoSugerido: i.consumoDia > 0 ? i.objetivoSugerido : null,
+  }))
 }
 
 /** Frecuencia declarada del recuento. null si la migración no corrió todavía. */
@@ -3561,6 +3585,9 @@ export interface ConteoItemDetalle {
   unidad: string | null
   stock_sistema: number
   stock_contado: number
+  /** Por qué dio distinto (R2.3.2: "toda diferencia se explica"). null = sin causa cargada. */
+  causa: CausaDiferencia | null
+  nota: string | null
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3610,17 +3637,24 @@ export async function getConteoDetalle(
   try {
     await requireAuth()
     const supabase = await createClient()
-    const { data, error } = await supabase
-      .from("mantenimiento_conteo_items")
-      .select(
+    const leer = (cols: string) =>
+      supabase.from("mantenimiento_conteo_items").select(cols).eq("conteo_id", id)
+    let { data, error } = await leer(
+      "repuesto_id, stock_sistema, stock_contado, causa, nota, repuesto:mantenimiento_repuestos(nombre, unidad)"
+    )
+    // Sin la migración 20261105120000 no hay causa: se lee lo que hay.
+    if (error && faltaColumna(error)) {
+      ;({ data, error } = await leer(
         "repuesto_id, stock_sistema, stock_contado, repuesto:mantenimiento_repuestos(nombre, unidad)"
-      )
-      .eq("conteo_id", id)
+      ))
+    }
     if (error) return { error: error.message }
     type Row = {
       repuesto_id: string
       stock_sistema: number
       stock_contado: number
+      causa?: CausaDiferencia | null
+      nota?: string | null
       repuesto: { nombre: string; unidad: string | null } | null
     }
     const detalle = ((data || []) as unknown as Row[])
@@ -3630,6 +3664,8 @@ export async function getConteoDetalle(
         unidad: r.repuesto?.unidad ?? null,
         stock_sistema: Number(r.stock_sistema),
         stock_contado: Number(r.stock_contado),
+        causa: r.causa ?? null,
+        nota: r.nota ?? null,
       }))
       .sort((a, b) => a.nombre.localeCompare(b.nombre))
     return { data: detalle }
@@ -3648,8 +3684,9 @@ export async function createConteo(input: {
   realizadoPor: string
   observaciones?: string
   ajustar: boolean
-  items: Array<{ repuestoId: string; contado: number }>
-}): Promise<{ success: true } | { error: string }> {
+  /** Por ítem: lo contado y, si difiere del sistema, la causa (R2.3.2). */
+  items: Array<{ repuestoId: string; contado: number; causa?: CausaDiferencia | null; nota?: string | null }>
+}): Promise<{ success: true; warning?: string } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
     if (!input.realizadoPor.trim()) return { error: "Indicá quién hizo el conteo" }
@@ -3681,6 +3718,7 @@ export async function createConteo(input: {
       .single()
     if (conteoErr) return { error: conteoErr.message }
 
+    const causaPorItem = new Map(input.items.map((i) => [i.repuestoId, i]))
     const payload = input.items
       .filter((i) => stockById.has(i.repuestoId))
       .map((i) => ({
@@ -3689,25 +3727,61 @@ export async function createConteo(input: {
         stock_sistema: stockById.get(i.repuestoId)!,
         stock_contado: i.contado,
       }))
-    const { error: itemsErr } = await supabase
+    const conCausa = payload.map((p) => {
+      const i = causaPorItem.get(p.repuesto_id)
+      const difiere = p.stock_sistema !== p.stock_contado
+      return {
+        ...p,
+        causa: difiere ? (i?.causa ?? null) : null,
+        nota: difiere ? i?.nota?.trim() || null : null,
+      }
+    })
+    let warning: string | undefined
+    let { data: insertados, error: itemsErr } = await supabase
       .from("mantenimiento_conteo_items")
-      .insert(payload)
+      .insert(conCausa)
+      .select("id, repuesto_id")
+    // Sin la migración 20261105120000: se guarda sin causa, avisando.
+    if (itemsErr && faltaColumna(itemsErr)) {
+      ;({ data: insertados, error: itemsErr } = await supabase
+        .from("mantenimiento_conteo_items")
+        .insert(payload)
+        .select("id, repuesto_id"))
+      warning = "Conteo guardado sin las causas: falta aplicar APLICAR_EN_PAMPEANA_INVENTARIO_2_3.sql."
+    }
     if (itemsErr) {
       await supabase.from("mantenimiento_conteos").delete().eq("id", conteo.id)
       return { error: itemsErr.message }
     }
 
+    // Ajuste: el stock NO se pisa a mano (SOP 4.2). Cada diferencia entra como
+    // movimiento con su causa, así el historial de la pieza explica el salto y
+    // la trazabilidad puede dejar los ajustes afuera.
     if (input.ajustar) {
-      for (const i of payload) {
-        if (i.stock_sistema === i.stock_contado) continue
-        const { error: adjErr } = await supabase
-          .from("mantenimiento_repuestos")
-          .update({ stock_actual: i.stock_contado })
-          .eq("id", i.repuesto_id)
+      const itemIdPorRepuesto = new Map(
+        ((insertados || []) as Array<{ id: string; repuesto_id: string }>).map((r) => [r.repuesto_id, r.id])
+      )
+      const fechaCorta = input.fecha.slice(0, 10).split("-").reverse().join("/")
+      for (const i of conCausa) {
+        const dif = Number(i.stock_contado) - Number(i.stock_sistema)
+        if (dif === 0) continue
+        const causaTxt = i.causa ? CAUSA_DIFERENCIA_LABEL[i.causa] : "sin causa"
+        const { data: mov, error: adjErr } = await supabase.rpc("registrar_movimiento_repuesto", {
+          p_repuesto_id: i.repuesto_id,
+          p_tipo: dif > 0 ? "ingreso" : "egreso",
+          p_cantidad: Math.abs(dif),
+          p_motivo: `Ajuste por conteo ${fechaCorta} — ${causaTxt}${i.nota ? `: ${i.nota}` : ""}`,
+          p_fecha: input.fecha,
+        })
         if (adjErr) return { error: `Conteo guardado pero falló el ajuste: ${adjErr.message}` }
+        const movId = (mov as { id?: string } | null)?.id
+        const itemId = itemIdPorRepuesto.get(i.repuesto_id)
+        if (movId && itemId && !warning) {
+          await supabase.from("mantenimiento_conteo_items").update({ movimiento_id: movId }).eq("id", itemId)
+        }
       }
     }
-    return { success: true }
+    return warning ? { success: true, warning } : { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
@@ -3853,7 +3927,14 @@ export async function upsertRepuesto(input: {
   stock_objetivo?: number | null
   dias_stock?: number | null
   clase_abc?: "A" | "B" | "C" | null
-}): Promise<{ success: true } | { error: string }> {
+  /** Migración 20261105120000 (DPO 2.3): precio, proveedor, lead time, parada por falta. */
+  precio_unitario?: number | null
+  proveedor_id?: string | null
+  lead_time_dias?: number | null
+  parada_por_falta?: boolean
+  /** true = la persona revisó/adoptó la política: se sella `politica_actualizada_at`. */
+  politica_revisada?: boolean
+}): Promise<{ success: true; warning?: string } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
     if (!input.nombre.trim()) return { error: "Ingresá el nombre del repuesto" }
@@ -3871,13 +3952,93 @@ export async function upsertRepuesto(input: {
       clase_abc: input.clase_abc ?? null,
       updated_at: new Date().toISOString(),
     }
-    const { error } = input.id
-      ? await supabase.from("mantenimiento_repuestos").update(row).eq("id", input.id)
-      : await supabase
-          .from("mantenimiento_repuestos")
-          .insert({ ...row, created_by: profile.id })
+    const extra: Record<string, unknown> = {}
+    if (input.precio_unitario !== undefined) extra.precio_unitario = input.precio_unitario
+    if (input.proveedor_id !== undefined) extra.proveedor_id = input.proveedor_id || null
+    if (input.lead_time_dias !== undefined) extra.lead_time_dias = input.lead_time_dias
+    if (input.parada_por_falta !== undefined) extra.parada_por_falta = input.parada_por_falta
+    if (input.politica_revisada) {
+      extra.politica_actualizada_at = new Date().toISOString()
+      extra.politica_actualizada_por = profile.id
+    }
+    const guardar = (datos: Record<string, unknown>) =>
+      input.id
+        ? supabase.from("mantenimiento_repuestos").update(datos).eq("id", input.id)
+        : supabase.from("mantenimiento_repuestos").insert({ ...datos, created_by: profile.id })
+    let { error } = await guardar({ ...row, ...extra })
+    let warning: string | undefined
+    // El SQL lo corre otra persona después del deploy: si las columnas nuevas
+    // no están, el repuesto se guarda igual con lo que sí existe.
+    if (error && faltaColumna(error) && Object.keys(extra).length > 0) {
+      ;({ error } = await guardar(row))
+      warning = "Guardado sin precio/proveedor/lead time: falta aplicar APLICAR_EN_PAMPEANA_INVENTARIO_2_3.sql."
+    }
     if (error) return { error: error.message }
-    return { success: true }
+    return warning ? { success: true, warning } : { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Adopta la política sugerida por el consumo (mínimo, objetivo, máximo y clase
+ * ABC) en una pieza o en todo el pañol. Es el "se actualizan en función de las
+ * salidas" del R2.3.2 hecho acción, y deja fecha y autor en la pieza.
+ */
+export async function adoptarPoliticaSugerida(input: {
+  repuestoId: string | "todos"
+  /** Qué campos adoptar; por defecto todos. */
+  campos?: Array<"min" | "objetivo" | "max" | "abc">
+}): Promise<{ success: true; actualizados: number; warning?: string } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const campos = new Set(input.campos ?? ["min", "objetivo", "max", "abc"])
+    const [rep, movs] = await Promise.all([
+      selectRepuestosPanol(supabase, "*"),
+      supabase
+        .from("mantenimiento_repuestos_movimientos")
+        .select("repuesto_id, tipo, cantidad, fecha, motivo")
+        .order("fecha", { ascending: true })
+        .limit(5000),
+    ])
+    if (rep.error) return { error: rep.error.message }
+    if (movs.error) return { error: movs.error.message }
+    const repuestos = (rep.data || []) as unknown as Repuesto[]
+    const politica = calcularPoliticaInventario(
+      repuestos,
+      (movs.data || []) as unknown as Array<{
+        repuesto_id: string
+        tipo: "ingreso" | "egreso"
+        cantidad: number
+        fecha: string
+        motivo: string | null
+      }>
+    )
+    const objetivo = input.repuestoId === "todos" ? repuestos : repuestos.filter((r) => r.id === input.repuestoId)
+    let actualizados = 0
+    let warning: string | undefined
+    for (const r of objetivo) {
+      const p = politica.items[r.id]
+      if (!p) continue
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+      if (campos.has("min")) patch.stock_min = p.minSugerido
+      if (campos.has("objetivo")) patch.stock_objetivo = p.objetivoSugerido
+      if (campos.has("max")) patch.stock_max = p.maxSugerido
+      if (campos.has("abc")) patch.clase_abc = p.claseSugerida
+      if (r.dias_stock == null) patch.dias_stock = 30
+      let { error } = await supabase
+        .from("mantenimiento_repuestos")
+        .update({ ...patch, politica_actualizada_at: new Date().toISOString(), politica_actualizada_por: profile.id })
+        .eq("id", r.id)
+      if (error && faltaColumna(error)) {
+        ;({ error } = await supabase.from("mantenimiento_repuestos").update(patch).eq("id", r.id))
+        warning = "Política adoptada, pero sin fecha de revisión: falta aplicar APLICAR_EN_PAMPEANA_INVENTARIO_2_3.sql."
+      }
+      if (error) return { error: `${r.nombre}: ${error.message}` }
+      actualizados++
+    }
+    return warning ? { success: true, actualizados, warning } : { success: true, actualizados }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

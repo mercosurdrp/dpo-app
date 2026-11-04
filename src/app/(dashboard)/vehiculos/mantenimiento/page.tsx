@@ -198,6 +198,23 @@ export default async function MantenimientoPage() {
           residuos: [],
           conteos: [],
           consumos: [],
+          politica: {
+            desde: "",
+            hasta: "",
+            items: {},
+            resumen: {
+              items: 0,
+              valorTotal: 0,
+              itemsConPrecio: 0,
+              fuera: 0,
+              sobre: 0,
+              sinPolitica: 0,
+              criticidadAlta: 0,
+              porClase: { A: 0, B: 0, C: 0 },
+            },
+            columnasNuevas: false,
+          },
+          proveedores: [],
           recuentoFrecuenciaDias: null,
         }
   const flotaMetas = "data" in metasRes ? metasRes.data : []

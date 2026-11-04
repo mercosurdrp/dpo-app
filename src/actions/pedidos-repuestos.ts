@@ -357,11 +357,43 @@ export async function marcarPedidoRetirado(
     await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
     const hoy = fecha || new Date().toISOString().slice(0, 10)
+    const { data: previo } = await supabase
+      .from("mantenimiento_pedidos")
+      .select("estado, proveedor")
+      .eq("id", id)
+      .maybeSingle()
     const { error } = await supabase
       .from("mantenimiento_pedidos")
       .update({ estado: "retirado", fecha_retiro: hoy, updated_at: new Date().toISOString() })
       .eq("id", id)
     if (error) return { error: error.message }
+
+    // Las piezas del pedido que SON del pañol entran al stock al retirarlas
+    // (SOP 4.1: el ingreso se registra al recibir la mercadería). Antes el
+    // retiro cerraba el pedido y el stock no se enteraba: la pieza aparecía
+    // después como diferencia positiva en el conteo. Sólo la primera vez.
+    if (previo && previo.estado !== "retirado") {
+      const { data: items } = await supabase
+        .from("mantenimiento_pedido_items")
+        .select("repuesto_id, cantidad, repuesto:mantenimiento_repuestos(en_panol, nombre)")
+        .eq("pedido_id", id)
+      for (const it of (items || []) as unknown as Array<{
+        repuesto_id: string | null
+        cantidad: number | null
+        repuesto: { en_panol: boolean | null; nombre: string } | null
+      }>) {
+        if (!it.repuesto_id || it.repuesto?.en_panol === false) continue
+        const cantidad = Number(it.cantidad ?? 0)
+        if (!(cantidad > 0)) continue
+        await supabase.rpc("registrar_movimiento_repuesto", {
+          p_repuesto_id: it.repuesto_id,
+          p_tipo: "ingreso",
+          p_cantidad: cantidad,
+          p_motivo: `Pedido retirado ${hoy.split("-").reverse().join("/")}${previo.proveedor ? ` — ${previo.proveedor}` : ""}`,
+          p_fecha: hoy,
+        })
+      }
+    }
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }

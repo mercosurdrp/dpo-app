@@ -148,7 +148,7 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     id: "indicadores",
     label: "Indicadores",
     grupo: "analisis",
-    puntos: ["2.1", "4.3"],
+    puntos: ["2.1", "4.3", "2.3"],
     requisitos: ["R2.1.3", "R2.1.4", "R4.3.2"],
     aporta:
       "PIs de flota con meta, serie histórica y planes de acción asociados. Incluye la huella de CO₂.",
@@ -226,9 +226,9 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     // referencia como "Mantenimiento → Gestión → Residuos"—. La solapa
     // "Disposición de residuos" es el SEGUIMIENTO sobre ese mismo registro.
     puntos: ["2.3", "1.4"],
-    requisitos: ["R2.3.2", "R1.4.2"],
+    requisitos: ["R2.3.1", "R2.3.2", "R2.3.3", "R2.3.4", "R1.4.2"],
     aporta:
-      "Stock mínimo/objetivo/máximo con recuentos, y el registro de las eliminaciones de residuos de mantenimiento.",
+      "Política de stock de cada pieza (mínimo/objetivo/máximo, curva ABC y criticidad calculadas desde el consumo real), rutina de recuento con la causa de cada diferencia, egreso trazable desde la OT, pedidos con su demora, proveedores con sus ANS, el valor del pañol y la planilla oficial DPO 2.3 para exportar; más el registro de las eliminaciones de residuos de mantenimiento.",
   },
   {
     // 🚨 El 1.4 se respondía desde dos solapas que son de otra cosa —Repuestos

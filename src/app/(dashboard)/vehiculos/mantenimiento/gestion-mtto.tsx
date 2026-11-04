@@ -35,20 +35,26 @@ import {
 import {
   CalendarClock,
   ClipboardCheck,
+  FileSpreadsheet,
   FileText,
   History,
   Minus,
   Plus,
+  Printer,
   Trash2,
+  Wand2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
+import { Checkbox } from "@/components/ui/checkbox"
 import { DpoPuntoBadge, DpoResponde, DpoSeccionCinta } from "./_components/dpo-badge"
+import { ProveedoresRepuestos } from "./_components/proveedores-repuestos"
 import {
   PedidosRepuestosPanel,
   type OtParaPedido,
 } from "@/components/flota/pedidos-repuestos-panel"
 import {
+  adoptarPoliticaSugerida,
   createConteo,
   createResiduo,
   deleteConteo,
@@ -63,9 +69,18 @@ import {
   type ConsumoRepuesto,
   type ConteoResumen,
   type MovimientoRepuesto,
+  type PoliticaInventario,
   type Repuesto,
   type Residuo,
 } from "@/actions/mantenimiento-vehiculos"
+import {
+  CAUSA_DIFERENCIA_LABEL,
+  CAUSAS_DIFERENCIA,
+  ESTADO_STOCK_LABEL,
+  type CausaDiferencia,
+  type PoliticaItem,
+} from "@/lib/flota/inventario-politica"
+import type { MantenimientoProveedor } from "@/types/database"
 
 function hoyISO(): string {
   return new Date().toISOString().slice(0, 10)
@@ -115,6 +130,10 @@ interface Props {
   conteos: ConteoResumen[]
   /** Consumo real por pieza: respalda la política de stock declarada. */
   consumos: ConsumoRepuesto[]
+  /** Política completa del pañol: sugeridos, FUERA/SOBRE, criticidad, valor (DPO 2.3). */
+  politica: PoliticaInventario
+  /** Proveedores (repuestos y talleres), para el maestro y la solapa Proveedores. */
+  proveedores: MantenimientoProveedor[]
   /** Cada cuántos días se declaró el recuento físico. null = sin declarar. */
   recuentoFrecuenciaDias: number | null
   /** OT recientes y programadas, para colgar un pedido de la que lo espera. */
@@ -122,16 +141,53 @@ interface Props {
   puedeEditar: boolean
 }
 
+const ESTADO_STOCK_BADGE: Record<PoliticaItem["estado"], string> = {
+  fuera: "border-destructive/30 bg-destructive/10 text-destructive",
+  sobre: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  ok: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  sin_politica: "border-border bg-muted text-muted-foreground",
+}
+
+const CRITICIDAD_BADGE: Record<PoliticaItem["criticidad"]["nivel"], string> = {
+  ALTA: "border-destructive/30 bg-destructive/10 text-destructive",
+  MEDIA: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  BAJA: "border-border bg-muted text-muted-foreground",
+}
+
+const fmtMoney = (v: number) =>
+  new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(v)
+
 export function GestionMtto({
   dominios,
   repuestos,
   residuos,
   conteos,
   consumos,
+  politica,
+  proveedores,
   recuentoFrecuenciaDias,
   otsParaPedido,
   puedeEditar,
 }: Props) {
+  const provNombre = useMemo(() => new Map(proveedores.map((p) => [p.id, p.nombre])), [proveedores])
+  const [adoptando, setAdoptando] = useState(false)
+  const adoptarTodos = async () => {
+    if (!confirm("¿Adoptar la política sugerida (mínimo, objetivo, máximo y ABC) en todas las piezas del pañol?")) return
+    setAdoptando(true)
+    const res = await adoptarPoliticaSugerida({ repuestoId: "todos" })
+    setAdoptando(false)
+    if ("error" in res) return toast.error(res.error)
+    if (res.warning) toast.warning(res.warning)
+    else toast.success(`Política adoptada en ${res.actualizados} piezas`)
+    refresh()
+  }
+  const adoptarUna = async (r: Repuesto) => {
+    const res = await adoptarPoliticaSugerida({ repuestoId: r.id })
+    if ("error" in res) return toast.error(res.error)
+    if (res.warning) toast.warning(res.warning)
+    else toast.success(`${r.nombre}: política adoptada`)
+    refresh()
+  }
   const router = useRouter()
   const [, startTransition] = useTransition()
   const refresh = () => startTransition(() => router.refresh())
@@ -193,8 +249,19 @@ export function GestionMtto({
         <TabsList>
           <TabsTrigger value="repuestos">Inventario</TabsTrigger>
           <TabsTrigger value="pedidos">Pedidos de repuestos</TabsTrigger>
+          <TabsTrigger value="proveedores">Proveedores</TabsTrigger>
           <TabsTrigger value="residuos">Residuos</TabsTrigger>
         </TabsList>
+
+        {/* ===== Proveedores de piezas y ANS (DPO 2.3, R2.3.1a) ===== */}
+        <TabsContent value="proveedores" className="space-y-3">
+          <ProveedoresRepuestos
+            proveedores={proveedores}
+            repuestos={repuestos}
+            puedeEditar={puedeEditar}
+            columnasNuevas={politica.columnasNuevas}
+          />
+        </TabsContent>
 
         {/* ===== Residuos de mantenimiento (DPO 1.4) ===== */}
         <TabsContent value="residuos" className="space-y-3">
@@ -348,26 +415,95 @@ export function GestionMtto({
                 )}
               </p>
             </div>
-            {puedeEditar && (
-              <div className="flex shrink-0 gap-2">
-                <Button size="sm" variant="outline" onClick={() => setDialog("frecuencia")}>
-                  <CalendarClock className="mr-1 size-4" /> Frecuencia
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setDialog("conteo")}>
-                  <ClipboardCheck className="mr-1 size-4" /> Conteo de stock
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setRepuestoEdit(null)
-                    setDialog("repuesto")
-                  }}
-                >
-                  <Plus className="mr-1 size-4" /> Nuevo repuesto
-                </Button>
-              </div>
-            )}
+            <div className="flex shrink-0 flex-wrap justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => window.open("/api/vehiculos/conteo-planilla", "_blank")}>
+                <Printer className="mr-1 size-4" /> Planilla de conteo
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => window.open("/api/vehiculos/inventario-2-3", "_blank")}>
+                <FileSpreadsheet className="mr-1 size-4" /> Planilla DPO 2.3
+              </Button>
+              {puedeEditar && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => setDialog("frecuencia")}>
+                    <CalendarClock className="mr-1 size-4" /> Frecuencia
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setDialog("conteo")}>
+                    <ClipboardCheck className="mr-1 size-4" /> Conteo de stock
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setRepuestoEdit(null)
+                      setDialog("repuesto")
+                    }}
+                  >
+                    <Plus className="mr-1 size-4" /> Nuevo repuesto
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
+
+          {/* Cabecera de la política (R2.3.2/R2.3.3): FUERA, SOBRE, capital
+              inmovilizado y la rutina de recuento, en una mirada. */}
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <TarjetaResumen
+              label="Valor del pañol"
+              valor={politica.resumen.itemsConPrecio > 0 ? fmtMoney(politica.resumen.valorTotal) : "—"}
+              sub={
+                politica.resumen.itemsConPrecio > 0
+                  ? `${politica.resumen.itemsConPrecio} de ${politica.resumen.items} piezas con precio`
+                  : politica.columnasNuevas
+                    ? "Cargá el precio unitario en cada pieza"
+                    : "Falta aplicar el SQL del 2.3"
+              }
+            />
+            <TarjetaResumen
+              label="FUERA (bajo mínimo)"
+              valor={String(politica.resumen.fuera)}
+              sub="piezas por debajo del mínimo"
+              tono={politica.resumen.fuera > 0 ? "critico" : "ok"}
+            />
+            <TarjetaResumen
+              label="SOBRE (sobre máximo)"
+              valor={String(politica.resumen.sobre)}
+              sub="piezas por encima del máximo"
+              tono={politica.resumen.sobre > 0 ? "alerta" : "ok"}
+            />
+            <TarjetaResumen
+              label="Sin política"
+              valor={String(politica.resumen.sinPolitica)}
+              sub="sin mínimo, objetivo o ABC"
+              tono={politica.resumen.sinPolitica > 0 ? "alerta" : "ok"}
+            />
+            <TarjetaResumen
+              label="Recuento"
+              valor={recuento.ultimo ? fmtFecha(recuento.ultimo) : "—"}
+              sub={
+                recuento.ultimo
+                  ? recuento.vencido
+                    ? `VENCIDO: hace ${recuento.dias} d (cada ${recuentoFrecuenciaDias})`
+                    : `hace ${recuento.dias} d · vence en ${
+                        recuentoFrecuenciaDias != null && recuento.dias != null ? recuentoFrecuenciaDias - recuento.dias : "?"
+                      } d`
+                  : "sin conteos"
+              }
+              tono={recuento.vencido ? "critico" : "ok"}
+            />
+          </div>
+          {puedeEditar && Object.values(politica.items).some((i) => i.difiere) && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-sky-500/30 bg-sky-500/5 p-3 text-sm">
+              <span>
+                El consumo real de los últimos 90 días sugiere otra política en{" "}
+                <strong>{Object.values(politica.items).filter((i) => i.difiere).length}</strong> piezas (mínimo,
+                objetivo, máximo o ABC). Adoptarla deja fecha y autor: es el «se actualiza con las salidas» del
+                R2.3.2.
+              </span>
+              <Button size="sm" variant="outline" onClick={adoptarTodos} disabled={adoptando}>
+                <Wand2 className="mr-1 size-4" /> {adoptando ? "Adoptando…" : "Adoptar sugeridos en todas"}
+              </Button>
+            </div>
+          )}
           <Card>
             <CardContent className="overflow-x-auto pt-6">
               {repuestos.length === 0 ? (
@@ -386,13 +522,19 @@ export function GestionMtto({
                       <TableHead className="text-right">Máx</TableHead>
                       <TableHead>ABC</TableHead>
                       <TableHead className="text-right">Cobertura</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Criticidad</TableHead>
+                      <TableHead className="text-right">Valor</TableHead>
+                      <TableHead>Sugerido</TableHead>
                       <TableHead>Ubicación</TableHead>
-                      {puedeEditar && <TableHead className="w-40" />}
+                      <TableHead>Proveedor</TableHead>
+                      {puedeEditar && <TableHead className="w-44" />}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {repuestos.map((r) => {
                       const bajo = r.stock_actual <= r.stock_min
+                      const p = politica.items[r.id]
                       return (
                         <TableRow key={r.id}>
                           <TableCell className="text-muted-foreground">{r.codigo || "—"}</TableCell>
@@ -449,10 +591,66 @@ export function GestionMtto({
                               return `${c.coberturaDias} d`
                             })()}
                           </TableCell>
+                          {/* FUERA / SOBRE / OK: la lectura del R2.3.2 en una palabra. */}
+                          <TableCell>
+                            {p ? (
+                              <Badge variant="outline" className={cn("whitespace-nowrap", ESTADO_STOCK_BADGE[p.estado])}>
+                                {ESTADO_STOCK_LABEL[p.estado].split(" ")[0]}
+                              </Badge>
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
+                          {/* Matriz de la planilla oficial: tipo + bajo mínimo + parada + reposición. */}
+                          <TableCell>
+                            {p ? (
+                              <Badge
+                                variant="outline"
+                                className={CRITICIDAD_BADGE[p.criticidad.nivel]}
+                                title={`Tipo ${p.criticidad.tipo} + bajo mínimo ${p.criticidad.bajoMinimo} + parada ${p.criticidad.parada} + reposición ${p.criticidad.reposicion} = ${p.criticidad.total}`}
+                              >
+                                {p.criticidad.nivel} {p.criticidad.total}
+                              </Badge>
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {p?.valor != null ? fmtMoney(p.valor) : "—"}
+                          </TableCell>
+                          {/* Lo que el consumo real sugiere, al lado de lo declarado. */}
+                          <TableCell className="text-xs text-muted-foreground">
+                            {p ? (
+                              p.difiere ? (
+                                <span title="mín / obj / máx / ABC sugeridos por el consumo de 90 días">
+                                  {p.minSugerido} / {p.objetivoSugerido} / {p.maxSugerido} · {p.claseSugerida}
+                                </span>
+                              ) : (
+                                <span className="text-emerald-600 dark:text-emerald-400">= declarado</span>
+                              )
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
                           <TableCell className="text-foreground">{r.ubicacion || "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {r.proveedor_id ? (provNombre.get(r.proveedor_id) ?? "—") : "—"}
+                            {r.lead_time_dias != null && <div>{r.lead_time_dias} d</div>}
+                          </TableCell>
                           {puedeEditar && (
                             <TableCell>
                               <div className="flex items-center gap-1">
+                                {p?.difiere && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-7 text-sky-600 dark:text-sky-400"
+                                    title="Adoptar la política sugerida en esta pieza"
+                                    onClick={() => adoptarUna(r)}
+                                  >
+                                    <Wand2 className="size-3.5" />
+                                  </Button>
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -595,6 +793,9 @@ export function GestionMtto({
       {dialog === "repuesto" && (
         <RepuestoDialog
           repuesto={repuestoEdit}
+          proveedores={proveedores}
+          politica={repuestoEdit ? (politica.items[repuestoEdit.id] ?? null) : null}
+          columnasNuevas={politica.columnasNuevas}
           consumo={repuestoEdit ? (consumoPorPieza.get(repuestoEdit.id) ?? null) : null}
           onClose={() => setDialog(null)}
           onSaved={() => {
@@ -656,6 +857,35 @@ export function GestionMtto({
   )
 }
 
+/** Tarjeta chica de la cabecera de Inventario (valor, FUERA, SOBRE, recuento). */
+function TarjetaResumen({
+  label,
+  valor,
+  sub,
+  tono = "neutro",
+}: {
+  label: string
+  valor: string
+  sub: string
+  tono?: "neutro" | "ok" | "alerta" | "critico"
+}) {
+  const color =
+    tono === "critico"
+      ? "text-destructive"
+      : tono === "alerta"
+        ? "text-amber-700 dark:text-amber-400"
+        : tono === "ok"
+          ? "text-emerald-700 dark:text-emerald-400"
+          : "text-foreground"
+  return (
+    <div className="rounded-md border bg-card p-3">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn("mt-0.5 text-lg font-semibold tabular-nums", color)}>{valor}</p>
+      <p className="text-xs text-muted-foreground">{sub}</p>
+    </div>
+  )
+}
+
 // ---------- Dialogs ----------
 
 function ConteoDialog({
@@ -672,30 +902,47 @@ function ConteoDialog({
   const [observaciones, setObservaciones] = useState("")
   // contado por repuesto: arranca vacío; vacío = no contado (no entra al conteo).
   const [contados, setContados] = useState<Record<string, string>>({})
-  const [ajustar, setAjustar] = useState(false)
+  // Causa y nota por repuesto, sólo si lo contado difiere del sistema (R2.3.2:
+  // "toda diferencia se explica; no alcanza con ajustar").
+  const [causas, setCausas] = useState<Record<string, CausaDiferencia | "">>({})
+  const [notas, setNotas] = useState<Record<string, string>>({})
+  const [ajustar, setAjustar] = useState(true)
   const [saving, setSaving] = useState(false)
 
   const items = repuestos
     .map((r) => ({ r, raw: contados[r.id] ?? "" }))
     .filter((x) => x.raw.trim() !== "")
-    .map((x) => ({ repuestoId: x.r.id, contado: parseNum(x.raw) }))
+    .map((x) => ({
+      repuestoId: x.r.id,
+      contado: parseNum(x.raw),
+      dif: parseNum(x.raw) != null ? parseNum(x.raw)! - x.r.stock_actual : 0,
+    }))
+  const sinCausa = items.filter((i) => i.dif !== 0 && !causas[i.repuestoId]).length
 
   const submit = async () => {
     if (!realizadoPor.trim()) return toast.error("Indicá quién hizo el conteo")
     if (items.length === 0) return toast.error("Cargá al menos un ítem contado")
     if (items.some((i) => i.contado == null || i.contado < 0))
       return toast.error("Hay cantidades inválidas")
+    if (sinCausa > 0)
+      return toast.error(`Falta la causa en ${sinCausa} diferencia${sinCausa === 1 ? "" : "s"}: el R2.3.2 pide explicar cada una`)
     setSaving(true)
     const res = await createConteo({
       fecha,
       realizadoPor,
       observaciones,
       ajustar,
-      items: items.map((i) => ({ repuestoId: i.repuestoId, contado: i.contado! })),
+      items: items.map((i) => ({
+        repuestoId: i.repuestoId,
+        contado: i.contado!,
+        causa: i.dif !== 0 ? (causas[i.repuestoId] || null) : null,
+        nota: i.dif !== 0 ? notas[i.repuestoId] || null : null,
+      })),
     })
     setSaving(false)
     if ("error" in res) return toast.error(res.error)
-    toast.success(ajustar ? "Conteo guardado y stock ajustado" : "Conteo guardado")
+    if (res.warning) toast.warning(res.warning)
+    else toast.success(ajustar ? "Conteo guardado y stock ajustado por movimiento" : "Conteo guardado")
     onSaved()
   }
 
@@ -726,7 +973,8 @@ function ConteoDialog({
                 <TableHead>Repuesto</TableHead>
                 <TableHead className="text-right">Sistema</TableHead>
                 <TableHead className="w-28 text-right">Contado</TableHead>
-                <TableHead className="w-24 text-right">Dif.</TableHead>
+                <TableHead className="w-20 text-right">Dif.</TableHead>
+                <TableHead className="w-64">Causa de la diferencia</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -742,6 +990,9 @@ function ConteoDialog({
                         <span className="ml-1 text-xs text-muted-foreground">
                           ({r.unidad})
                         </span>
+                      )}
+                      {r.ubicacion && (
+                        <div className="text-[11px] text-muted-foreground">{r.ubicacion}</div>
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -769,6 +1020,38 @@ function ConteoDialog({
                     >
                       {dif == null ? "—" : dif > 0 ? `+${fmtNum(dif)}` : fmtNum(dif)}
                     </TableCell>
+                    <TableCell>
+                      {dif != null && dif !== 0 ? (
+                        <div className="space-y-1">
+                          <Select
+                            value={causas[r.id] || "none"}
+                            onValueChange={(v) =>
+                              setCausas((prev) => ({ ...prev, [r.id]: !v || v === "none" ? "" : (v as CausaDiferencia) }))
+                            }
+                          >
+                            <SelectTrigger className={cn("h-7 text-xs", !causas[r.id] && "border-destructive/50")}>
+                              <SelectValue placeholder="Elegí la causa" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Elegí la causa…</SelectItem>
+                              {CAUSAS_DIFERENCIA.map((c) => (
+                                <SelectItem key={c} value={c}>
+                                  {CAUSA_DIFERENCIA_LABEL[c]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            value={notas[r.id] ?? ""}
+                            onChange={(e) => setNotas((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                            placeholder="Detalle (opcional)"
+                            className="h-7 text-xs"
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/50">—</span>
+                      )}
+                    </TableCell>
                   </TableRow>
                 )
               })}
@@ -790,7 +1073,7 @@ function ConteoDialog({
             onChange={(e) => setAjustar(e.target.checked)}
             className="size-4"
           />
-          Ajustar el stock del sistema a lo contado
+          Ajustar el stock del sistema a lo contado (cada diferencia queda como movimiento con su causa)
         </label>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -846,6 +1129,7 @@ function ConteoDetalleDialog({
                   <TableHead className="text-right">Sistema</TableHead>
                   <TableHead className="text-right">Contado</TableHead>
                   <TableHead className="text-right">Dif.</TableHead>
+                  <TableHead>Causa</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -869,6 +1153,10 @@ function ConteoDetalleDialog({
                         )}
                       >
                         {dif > 0 ? `+${fmtNum(dif)}` : fmtNum(dif)}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {dif === 0 ? "" : d.causa ? CAUSA_DIFERENCIA_LABEL[d.causa] : <span className="text-destructive">sin causa</span>}
+                        {d.nota && <div>{d.nota}</div>}
                       </TableCell>
                     </TableRow>
                   )
@@ -1218,11 +1506,18 @@ function ResiduoDialog({
 
 function RepuestoDialog({
   repuesto,
+  proveedores,
+  politica,
+  columnasNuevas,
   onClose,
   onSaved,
   consumo,
 }: {
   repuesto: Repuesto | null
+  proveedores: MantenimientoProveedor[]
+  /** Política calculada para esta pieza (sugeridos, criticidad). null = pieza nueva. */
+  politica: PoliticaItem | null
+  columnasNuevas: boolean
   /** Lo que dicen los egresos reales de esta pieza. null = pieza nueva. */
   consumo?: ConsumoRepuesto | null
   onClose: () => void
@@ -1242,6 +1537,12 @@ function RepuestoDialog({
     repuesto?.dias_stock != null ? String(repuesto.dias_stock) : ""
   )
   const [abc, setAbc] = useState<string>(repuesto?.clase_abc ?? "")
+  // Columnas del 2.3 (migración 20261105120000).
+  const [precio, setPrecio] = useState(repuesto?.precio_unitario != null ? String(repuesto.precio_unitario) : "")
+  const [proveedorId, setProveedorId] = useState<string>(repuesto?.proveedor_id ?? "none")
+  const [leadTime, setLeadTime] = useState(repuesto?.lead_time_dias != null ? String(repuesto.lead_time_dias) : "")
+  const [parada, setParada] = useState(!!repuesto?.parada_por_falta)
+  const [revisada, setRevisada] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
@@ -1258,11 +1559,26 @@ function RepuestoDialog({
       stock_objetivo: parseNum(objetivo),
       dias_stock: parseNum(dias),
       clase_abc: abc === "A" || abc === "B" || abc === "C" ? abc : null,
+      precio_unitario: parseNum(precio),
+      proveedor_id: proveedorId === "none" ? null : proveedorId,
+      lead_time_dias: parseNum(leadTime),
+      parada_por_falta: parada,
+      politica_revisada: revisada,
     })
     setSaving(false)
     if ("error" in res) return toast.error(res.error)
-    toast.success(repuesto ? "Repuesto actualizado" : "Repuesto cargado")
+    if (res.warning) toast.warning(res.warning)
+    else toast.success(repuesto ? "Repuesto actualizado" : "Repuesto cargado")
     onSaved()
+  }
+  const usarSugerido = () => {
+    if (!politica) return
+    setMin(String(politica.minSugerido))
+    setObjetivo(String(politica.objetivoSugerido))
+    setMax(String(politica.maxSugerido))
+    setAbc(politica.claseSugerida)
+    if (!dias) setDias("30")
+    setRevisada(true)
   }
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -1303,10 +1619,47 @@ function RepuestoDialog({
               <Input type="number" value={max} onChange={(e) => setMax(e.target.value)} />
             </div>
           </div>
-          <div>
-            <Label>Ubicación</Label>
-            <Input value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Ubicación (armario / estante / cajón)</Label>
+              <Input value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} placeholder="Armario 1 · estante 2" />
+            </div>
+            <div>
+              <Label>Precio unitario (ARS)</Label>
+              <Input type="number" value={precio} onChange={(e) => setPrecio(e.target.value)} disabled={!columnasNuevas} />
+            </div>
+            <div>
+              <Label>Proveedor habitual</Label>
+              <Select value={proveedorId} onValueChange={(v) => setProveedorId(v ?? "none")} disabled={!columnasNuevas}>
+                <SelectTrigger>
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin proveedor</SelectItem>
+                  {proveedores
+                    .filter((p) => p.activo)
+                    .map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.nombre}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Tiempo de reposición (días)</Label>
+              <Input type="number" min={0} value={leadTime} onChange={(e) => setLeadTime(e.target.value)} disabled={!columnasNuevas} />
+            </div>
           </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={parada} onCheckedChange={(c) => setParada(c === true)} disabled={!columnasNuevas} />
+            Alguna vez una unidad quedó parada por faltar esta pieza
+          </label>
+          {!columnasNuevas && (
+            <p className="text-xs text-amber-700">
+              Precio, proveedor, reposición y parada se habilitan al aplicar APLICAR_EN_PAMPEANA_INVENTARIO_2_3.sql.
+            </p>
+          )}
 
           {/*
             Política de stock (DPO 2.3 / R2.3.2). El verificador no pregunta sólo
@@ -1317,8 +1670,25 @@ function RepuestoDialog({
           <div className="rounded-md border border-dashed p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Label className="text-xs text-muted-foreground">Política de stock</Label>
-              <DpoResponde puntos={["2.3"]} requisitos={["R2.3.2"]} />
+              <div className="flex items-center gap-2">
+                {politica && (
+                  <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={usarSugerido}>
+                    <Wand2 className="mr-1 size-3.5" /> Usar sugerido ({politica.minSugerido} / {politica.objetivoSugerido} / {politica.maxSugerido} · {politica.claseSugerida})
+                  </Button>
+                )}
+                <DpoResponde puntos={["2.3"]} requisitos={["R2.3.2"]} />
+              </div>
             </div>
+            {politica && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Criticidad {politica.criticidad.nivel} ({politica.criticidad.total} pts) · estado {ESTADO_STOCK_LABEL[politica.estado]}
+                {repuesto?.politica_actualizada_at && ` · política revisada el ${fmtFecha(repuesto.politica_actualizada_at.slice(0, 10))}`}
+              </p>
+            )}
+            <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox checked={revisada} onCheckedChange={(c) => setRevisada(c === true)} />
+              Revisé la política con el consumo real (sella la fecha de revisión, R2.3.2)
+            </label>
             <div className="mt-1 grid grid-cols-3 gap-3">
               <div>
                 <Label className="text-[11px] text-muted-foreground">Objetivo</Label>

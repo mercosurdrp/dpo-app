@@ -30,6 +30,7 @@ import {
   ClipboardList,
   FileWarning,
   Loader2,
+  Package,
   Plus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -177,13 +178,29 @@ interface Props {
   programacion: ServiceGeneralUnidad[]
   documentos: DocumentoVencimiento[]
   unidadesBaja: UnidadBaja[]
+  /** Estado del pañol (DPO 2.3): piezas FUERA/SOBRE y rutina de recuento. */
+  inventario?: {
+    fuera: number
+    sobre: number
+    ultimoConteo: string | null
+    frecuenciaDias: number | null
+  }
   puedeEditar: boolean
   onNavigate: (tab: string, dominio?: string) => void
 }
 
-export function TableroOperativo({ programacion, documentos, unidadesBaja, puedeEditar, onNavigate }: Props) {
+export function TableroOperativo({ programacion, documentos, unidadesBaja, inventario, puedeEditar, onNavigate }: Props) {
   const [lecturaDe, setLecturaDe] = useState<ServiceGeneralUnidad | null>(null)
   const [verDocs, setVerDocs] = useState(true)
+  // Recuento del pañol: días desde el último conteo contra la frecuencia declarada.
+  const [hoyMs] = useState(() => Date.now())
+  const recuento = (() => {
+    if (!inventario?.ultimoConteo) return { dias: null as number | null, vencido: false }
+    const dias = Math.floor((hoyMs - Date.parse(`${inventario.ultimoConteo}T00:00:00`)) / 86_400_000)
+    return { dias, vencido: inventario.frecuenciaDias != null && dias > inventario.frecuenciaDias }
+  })()
+  const alertaInventario =
+    inventario && (inventario.fuera > 0 || inventario.sobre > 0 || recuento.vencido || !inventario.ultimoConteo)
 
   const progOrdenada = [...programacion].sort((a, b) => {
     const oe = ORDEN_ESTADO[a.estado] - ORDEN_ESTADO[b.estado]
@@ -342,6 +359,51 @@ export function TableroOperativo({ programacion, documentos, unidadesBaja, puede
       </Card>
 
       {lecturaDe && <CargarLecturaDialog unidad={lecturaDe} onClose={() => setLecturaDe(null)} />}
+
+      {/* ===== Pañol de repuestos (DPO 2.3): FUERA/SOBRE y recuento vencido ===== */}
+      {alertaInventario && inventario && (
+        <Card
+          className={cn(
+            "cursor-pointer",
+            recuento.vencido || inventario.fuera > 0
+              ? "border-amber-500/40 bg-amber-500/5"
+              : "border-border"
+          )}
+          onClick={() => onNavigate("repuestos")}
+        >
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base text-amber-700 dark:text-amber-400">
+              <Package className="size-4" /> Pañol de repuestos
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2 text-sm">
+            {inventario.fuera > 0 && (
+              <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">
+                {inventario.fuera} pieza{inventario.fuera === 1 ? "" : "s"} FUERA (bajo mínimo)
+              </Badge>
+            )}
+            {inventario.sobre > 0 && (
+              <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                {inventario.sobre} SOBRE máximo
+              </Badge>
+            )}
+            {!inventario.ultimoConteo ? (
+              <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">
+                Sin conteo físico
+              </Badge>
+            ) : recuento.vencido ? (
+              <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">
+                Recuento vencido: hace {recuento.dias} d (cada {inventario.frecuenciaDias})
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-muted-foreground">
+                Último recuento hace {recuento.dias} d
+              </Badge>
+            )}
+            <span className="text-xs text-muted-foreground">Ir a Repuestos →</span>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ===== Unidades dadas de baja (vendidas/retiradas) ===== */}
       {unidadesBaja.length > 0 && (

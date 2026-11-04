@@ -15,6 +15,7 @@ import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
 import { tasaFlota } from "@/lib/vehiculos/desgaste-neumaticos"
 import { getDesgasteNeumaticos } from "@/actions/neumaticos"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
+import { CAUSA_DIFERENCIA_LABEL, esAjusteConteo, type CausaDiferencia } from "@/lib/flota/inventario-politica"
 import {
   esCargaSinRegistrar,
   medianasPorDominio,
@@ -49,6 +50,8 @@ export type FlotaKpi =
   | "inventario_exactitud"
   | "repuestos_stock_minimo"
   | "repuestos_trazabilidad"
+  | "repuestos_demora_pieza"
+  | "valor_stock_panol"
   | "combustible_kml"
   | "co2_flota"
   | "cil_tareas"
@@ -173,21 +176,6 @@ export interface PuntoSerieKpi {
    */
   excluidos?: number | null
 }
-
-/**
- * Rubro de OT cuyas filas de repuesto NO entran en la trazabilidad de egresos.
- *
- * 🚨 Una cubierta no sale del pañol y nunca va a poder vincular: vive en el
- * módulo de Neumáticos con su número de fuego, proveedor, factura y costo. Con
- * las cubiertas adentro, el PI se movía según cuántas cubiertas cambiaste ese
- * mes y no según la trazabilidad — septiembre de 2026 daba 45 % (5 de 11) y 4
- * de las 6 filas sueltas eran las cuatro Dayton de la OT 1772. Sin ellas, 5 de
- * 7 = 71 %, que es la proporción que el PI dice medir.
- *
- * Se identifica por `rubro`, no por el texto de la descripción: el rubro es un
- * campo del sistema y "Cubierta …" escrito a mano no es un criterio.
- */
-const RUBRO_SIN_TRAZABILIDAD = "neumaticos"
 
 /**
  * Piso del PI de trazabilidad de egresos: antes de esta fecha el vínculo
@@ -458,13 +446,14 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       // Catálogo: hace falta para saber QUÉ unidad es cada dominio. Sin esto,
       // los días parado contaban equipos de depósito y unidades dadas de baja.
       supabase.from("catalogo_vehiculos").select("dominio, tipo, sector, active"),
-      // Trazabilidad de egresos (DPO 2.3): filas de repuesto de OT y si apuntan
-      // o no a un ítem del pañol. La fecha es la de la OT, no la de la fila.
+      // Trazabilidad de egresos (DPO 2.3, fórmula del 04/11/2026): los egresos
+      // del pañol del período; cuáles nacieron de una OT o de un plan del
+      // checklist se resuelve abajo con los `movimiento_id` de esas tablas.
       supabase
-        .from("mantenimiento_realizado_repuestos")
-        .select("repuesto_id, ot:mantenimiento_realizados!inner(fecha, estado, rubro)")
-        .neq("ot.estado", "cancelado")
-        .gte("ot.fecha", inicioVentana),
+        .from("mantenimiento_repuestos_movimientos")
+        .select("id, fecha, motivo")
+        .eq("tipo", "egreso")
+        .gte("fecha", inicioVentana),
       // Presupuesto vs. real por rubro y mes (DPO 3.2 / R3.2.3).
       supabase
         .from("presupuestos_tareas")
@@ -497,19 +486,74 @@ export async function getFlotaKpiSeriesExtra(): Promise<
      * Piso de fecha: antes del 25/08/2026 el vínculo no existía en la app, así
      * que los meses anteriores dan `null` (sin dato) y no 0 %.
      */
+    // Fórmula vigente (04/11/2026): egresos del pañol que nacieron de una OT o
+    // de un plan de acción del checklist ÷ egresos del pañol del mes, sin los
+    // ajustes por conteo. Mide la disciplina de registro —todo lo que sale del
+    // pañol sale contra un trabajo (SOP 4.2)— y no el mix de compras del taller.
+    // La fórmula anterior (filas de repuesto de OT vinculadas ÷ todas las filas
+    // de repuesto de OT) tenía meta 25 % y se movía con cuántas piezas compraba
+    // el taller contra la OT; quedó documentada en la justificación de la meta.
+    const [vincOtRes, vincPlanRes, pedidosRes, repValorRes] = await Promise.all([
+      supabase.from("mantenimiento_realizado_repuestos").select("movimiento_id").not("movimiento_id", "is", null),
+      supabase.from("checklist_planes_accion").select("movimiento_id").not("movimiento_id", "is", null),
+      // Pedidos demorados por piezas (R2.3.3): de la detección al retiro.
+      supabase
+        .from("mantenimiento_pedidos")
+        .select("fecha, fecha_retiro, estado")
+        .neq("estado", "anulado")
+        .gte("fecha", inicioVentana),
+      // Capital inmovilizado hoy: stock × precio (columna de la migración 20261105120000).
+      supabase.from("mantenimiento_repuestos").select("stock_actual, precio_unitario, en_panol"),
+    ])
+    const vinculados = new Set<string>()
+    for (const r of (vincOtRes.data || []) as Array<{ movimiento_id: string | null }>)
+      if (r.movimiento_id) vinculados.add(r.movimiento_id)
+    for (const r of (vincPlanRes.data || []) as Array<{ movimiento_id: string | null }>)
+      if (r.movimiento_id) vinculados.add(r.movimiento_id)
     const trazaMes = new Map<string, { total: number; vinculados: number }>()
-    for (const r of (repOtRes.data || []) as unknown as Array<{
-      repuesto_id: string | null
-      ot: { fecha: string; rubro: string | null } | null
+    for (const m of (repOtRes.data || []) as unknown as Array<{
+      id: string
+      fecha: string
+      motivo: string | null
     }>) {
-      const fecha = r.ot?.fecha
-      if (!fecha || fecha < INICIO_TRAZABILIDAD) continue
-      if (r.ot?.rubro === RUBRO_SIN_TRAZABILIDAD) continue
-      const ym = fecha.slice(0, 7)
+      if (!m.fecha || m.fecha < INICIO_TRAZABILIDAD) continue
+      if (esAjusteConteo(m.motivo)) continue
+      const ym = m.fecha.slice(0, 7)
       const acc = trazaMes.get(ym) ?? { total: 0, vinculados: 0 }
       acc.total++
-      if (r.repuesto_id) acc.vinculados++
+      if (vinculados.has(m.id)) acc.vinculados++
       trazaMes.set(ym, acc)
+    }
+
+    // Demora por pieza: días promedio de espera de los pedidos del mes (por
+    // fecha de detección); los abiertos cuentan hasta hoy.
+    const hoyISO = new Date().toISOString().slice(0, 10)
+    const demoraMes = new Map<string, { dias: number; n: number }>()
+    for (const p of (pedidosRes.data || []) as Array<{ fecha: string; fecha_retiro: string | null }>) {
+      const ym = p.fecha.slice(0, 7)
+      const hasta = p.fecha_retiro ?? hoyISO
+      const dias = Math.max(0, Math.round((Date.parse(hasta) - Date.parse(p.fecha)) / 86_400_000))
+      const acc = demoraMes.get(ym) ?? { dias: 0, n: 0 }
+      acc.dias += dias
+      acc.n++
+      demoraMes.set(ym, acc)
+    }
+
+    // Valor del pañol hoy. Si la columna no existe, `repValorRes.error` y queda null.
+    let valorPanol: number | null = null
+    let itemsConPrecio = 0
+    if (!repValorRes.error) {
+      valorPanol = 0
+      for (const r of (repValorRes.data || []) as Array<{
+        stock_actual: number
+        precio_unitario: number | null
+        en_panol: boolean | null
+      }>) {
+        if (r.en_panol === false || r.precio_unitario == null) continue
+        valorPanol += Number(r.stock_actual) * Number(r.precio_unitario)
+        itemsConPrecio++
+      }
+      if (itemsConPrecio === 0) valorPanol = null
     }
 
     /**
@@ -1019,6 +1063,24 @@ export async function getFlotaKpiSeriesExtra(): Promise<
             nTotal: t?.total ?? 0,
           }
         }),
+        // Pedidos demorados por piezas (DPO 2.3 / R2.3.3): días promedio que
+        // esperó la pieza cada pedido del mes. Mes sin pedidos = null.
+        repuestos_demora_pieza: meses.map((ym) => {
+          const d = demoraMes.get(ym)
+          return {
+            ym,
+            valor: d && d.n > 0 ? d.dias / d.n : null,
+            n: d?.n ?? 0,
+          }
+        }),
+        // Capital inmovilizado en el pañol (DPO 2.3 / R2.3.3): es una foto de
+        // hoy, por eso va sólo en el mes en curso; los meses cerrados salen de
+        // los snapshots del cron. Sin precios cargados = null.
+        valor_stock_panol: meses.map((ym) => ({
+          ym,
+          valor: ym === meses[meses.length - 1] ? valorPanol : null,
+          n: ym === meses[meses.length - 1] ? itemsConPrecio : null,
+        })),
         /**
          * Desgaste de cubiertas en mm por cada 1.000 km (DPO 3.4).
          *
@@ -1067,6 +1129,8 @@ export type FlotaKpiConDetalle =
   | "checklist_deteccion"
   | "checklist_resolucion"
   | "repuestos_trazabilidad"
+  | "inventario_exactitud"
+  | "repuestos_stock_minimo"
   | "presupuesto_desvio"
 
 export interface FilaDetalleKpi {
@@ -1358,48 +1422,159 @@ export async function getFlotaKpiDetalle(
       }
     }
 
-    // repuestos_trazabilidad
-    const { data, error } = await supabase
-      .from("mantenimiento_realizado_repuestos")
-      .select(
-        "descripcion, cantidad, repuesto_id, ot:mantenimiento_realizados!inner(numero_ot, dominio, fecha, estado, rubro)",
+    if (kpi === "inventario_exactitud" || kpi === "repuestos_stock_minimo") {
+      // Último conteo del mes, ítem por ítem, con la causa de cada diferencia.
+      const { data: conteos, error: cErr } = await supabase
+        .from("mantenimiento_conteos")
+        .select("id, fecha, realizado_por")
+        .gte("fecha", desde)
+        .lt("fecha", hasta)
+        .order("fecha", { ascending: false })
+        .limit(1)
+      if (cErr) return { error: cErr.message }
+      const conteo = (conteos || [])[0] as { id: string; fecha: string; realizado_por: string } | undefined
+      if (!conteo) return { data: { kpi, ym, numerador: 0, denominador: 0, excluidos: 0, filas: [] } }
+      const leer = (cols: string) =>
+        supabase.from("mantenimiento_conteo_items").select(cols).eq("conteo_id", conteo.id)
+      let { data: items, error: iErr } = await leer(
+        "stock_sistema, stock_contado, causa, nota, repuesto:mantenimiento_repuestos(nombre, stock_min)"
       )
-      .neq("ot.estado", "cancelado")
-      .gte("ot.fecha", desde)
-      .lt("ot.fecha", hasta)
-    if (error) return { error: error.message }
+      if (iErr && (iErr.code === "42703" || iErr.code === "PGRST204")) {
+        ;({ data: items, error: iErr } = await leer(
+          "stock_sistema, stock_contado, repuesto:mantenimiento_repuestos(nombre, stock_min)"
+        ))
+      }
+      if (iErr) return { error: iErr.message }
+      const filas: FilaDetalleKpi[] = []
+      let numerador = 0
+      let excluidos = 0
+      for (const it of (items || []) as unknown as Array<{
+        stock_sistema: number
+        stock_contado: number
+        causa?: CausaDiferencia | null
+        nota?: string | null
+        repuesto: { nombre: string; stock_min: number | null } | null
+      }>) {
+        const sistema = Number(it.stock_sistema)
+        const contado = Number(it.stock_contado)
+        const nombre = it.repuesto?.nombre ?? "(repuesto eliminado)"
+        if (kpi === "inventario_exactitud") {
+          const ok = sistema === contado
+          if (ok) numerador++
+          const causa = it.causa ? CAUSA_DIFERENCIA_LABEL[it.causa] : null
+          filas.push({
+            titulo: nombre,
+            subtitulo: `Sistema ${sistema} · contado ${contado}`,
+            fecha: conteo.fecha,
+            cuenta: ok,
+            motivo: ok
+              ? "Sin diferencia"
+              : `Diferencia ${contado - sistema > 0 ? "+" : ""}${contado - sistema}${causa ? ` — ${causa}` : " — sin causa cargada"}${it.nota ? `: ${it.nota}` : ""}`,
+            valor: contado - sistema,
+          })
+        } else {
+          const min = Number(it.repuesto?.stock_min ?? 0)
+          if (!(min > 0)) {
+            excluidos++
+            filas.push({
+              titulo: nombre,
+              subtitulo: `Contado ${contado} · sin mínimo definido`,
+              fecha: conteo.fecha,
+              cuenta: null,
+              motivo: "Sin mínimo definido: no tiene regla que cumplir (definirlo es parte del alta, SOP 7.1)",
+              valor: null,
+            })
+            continue
+          }
+          const cumple = contado >= min
+          if (cumple) numerador++
+          filas.push({
+            titulo: nombre,
+            subtitulo: `Contado ${contado} · mínimo ${min}`,
+            fecha: conteo.fecha,
+            cuenta: cumple,
+            motivo: cumple ? "En o por encima del mínimo" : `FUERA: ${min - contado} por debajo del mínimo`,
+            valor: contado - min,
+          })
+        }
+      }
+      return {
+        data: { kpi, ym, numerador, denominador: filas.length - excluidos, excluidos, filas },
+      }
+    }
+
+    // repuestos_trazabilidad (fórmula del 04/11/2026): cada egreso del pañol
+    // del mes y si nació de una OT / plan del checklist o se cargó a mano.
+    const [movRes, vincOtRes, vincPlanRes] = await Promise.all([
+      supabase
+        .from("mantenimiento_repuestos_movimientos")
+        .select("id, fecha, cantidad, motivo, repuesto:mantenimiento_repuestos(nombre)")
+        .eq("tipo", "egreso")
+        .gte("fecha", desde)
+        .lt("fecha", hasta),
+      supabase
+        .from("mantenimiento_realizado_repuestos")
+        .select("movimiento_id, ot:mantenimiento_realizados(numero_ot, dominio)")
+        .not("movimiento_id", "is", null),
+      supabase
+        .from("checklist_planes_accion")
+        .select("movimiento_id")
+        .not("movimiento_id", "is", null),
+    ])
+    if (movRes.error) return { error: movRes.error.message }
+    const origen = new Map<string, string>()
+    for (const r of (vincOtRes.data || []) as unknown as Array<{
+      movimiento_id: string | null
+      ot: { numero_ot: string | null; dominio: string } | null
+    }>) {
+      if (r.movimiento_id)
+        origen.set(r.movimiento_id, `OT${r.ot?.numero_ot ? ` ${r.ot.numero_ot}` : ""}${r.ot?.dominio ? ` · ${r.ot.dominio}` : ""}`)
+    }
+    for (const r of (vincPlanRes.data || []) as Array<{ movimiento_id: string | null }>) {
+      if (r.movimiento_id && !origen.has(r.movimiento_id)) origen.set(r.movimiento_id, "Plan de acción del checklist")
+    }
 
     const filas: FilaDetalleKpi[] = []
     let numerador = 0
-    for (const r of (data || []) as unknown as Array<{
-      descripcion: string | null
-      cantidad: number | null
-      repuesto_id: string | null
-      ot: {
-        numero_ot: number | null
-        dominio: string
-        fecha: string
-        rubro: string | null
-      } | null
+    let excluidos = 0
+    for (const m of (movRes.data || []) as unknown as Array<{
+      id: string
+      fecha: string
+      cantidad: number
+      motivo: string | null
+      repuesto: { nombre: string } | null
     }>) {
-      // Mismos criterios que la serie: piso de fecha y fuera las cubiertas.
-      if (!r.ot || r.ot.fecha < INICIO_TRAZABILIDAD) continue
-      if (r.ot.rubro === RUBRO_SIN_TRAZABILIDAD) continue
-      const vinculado = Boolean(r.repuesto_id)
-      if (vinculado) numerador++
+      if (m.fecha < INICIO_TRAZABILIDAD) continue
+      const nombre = m.repuesto?.nombre ?? "(repuesto eliminado)"
+      if (esAjusteConteo(m.motivo)) {
+        excluidos++
+        filas.push({
+          titulo: nombre,
+          subtitulo: `−${Number(m.cantidad)} · ${m.motivo}`,
+          fecha: m.fecha,
+          cuenta: null,
+          motivo: "Ajuste por conteo: no es un consumo",
+          valor: null,
+        })
+        continue
+      }
+      const vinc = origen.get(m.id)
+      if (vinc) numerador++
       filas.push({
-        titulo: r.ot.numero_ot ? `OT ${r.ot.numero_ot}` : "OT sin número",
-        subtitulo: `${r.ot.dominio} — ${r.descripcion ?? "sin descripción"}`,
-        fecha: r.ot.fecha,
-        cuenta: vinculado,
-        motivo: vinculado
-          ? "Vinculado al ítem del pañol: descuenta stock solo"
-          : "Suelto: no descuenta stock (comprado contra la OT o cargado a mano)",
+        titulo: nombre,
+        subtitulo: `−${Number(m.cantidad)} · ${m.motivo ?? "sin motivo"}`,
+        fecha: m.fecha,
+        cuenta: Boolean(vinc),
+        motivo: vinc
+          ? `Salió contra un trabajo: ${vinc}`
+          : "Egreso cargado a mano: descuenta stock pero no dice contra qué trabajo ni unidad",
         valor: null,
       })
     }
     filas.sort((a, b) => (a.fecha ?? "").localeCompare(b.fecha ?? ""))
-    return { data: { kpi, ym, numerador, denominador: filas.length, excluidos: 0, filas } }
+    return {
+      data: { kpi, ym, numerador, denominador: filas.length - excluidos, excluidos, filas },
+    }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

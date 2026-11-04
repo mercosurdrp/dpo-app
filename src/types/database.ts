@@ -1909,6 +1909,22 @@ export interface MantenimientoProveedor {
   nombre: string
   activo: boolean
   created_at: string
+  /**
+   * Datos del proveedor para el 2.3 (planilla "Listado de Proveedores" y ANS
+   * R2.3.1a). Opcionales: los agrega la migración 20261105120000.
+   */
+  razon_social?: string | null
+  cuit?: string | null
+  telefono?: string | null
+  email?: string | null
+  localidad?: string | null
+  /** "Camión", "Autoelevador", "Ambos"… texto libre como en la planilla oficial. */
+  tipo_vehiculo?: string | null
+  es_repuestos?: boolean | null
+  es_taller?: boolean | null
+  /** Días de reposición acordados (ANS). */
+  lead_time_dias?: number | null
+  notas?: string | null
 }
 
 /** Indisponibilidad de flota por causa NO de mantenimiento (estado IND). */
