@@ -3,6 +3,18 @@ import type { ArchivoAvance } from "@/lib/adjuntos-avance"
 
 export type MudanzaEstado = "pendiente" | "en_curso" | "hecha" | "bloqueada"
 export type MudanzaGastoEstado = "comprometido" | "pagado"
+/** Qué se paga en un gasto: un adelanto, el saldo que faltaba o el total de una vez. */
+export type MudanzaTipoPago = "adelanto" | "saldo" | "total"
+
+export const MUDANZA_TIPOS_PAGO: { value: MudanzaTipoPago; label: string }[] = [
+  { value: "adelanto", label: "Adelanto" },
+  { value: "saldo", label: "Saldo" },
+  { value: "total", label: "Totalidad" },
+]
+
+export function tipoPagoLabel(t: MudanzaTipoPago | null | undefined): string | null {
+  return MUDANZA_TIPOS_PAGO.find((x) => x.value === t)?.label ?? null
+}
 
 export const MUDANZA_ESTADOS: { value: MudanzaEstado; label: string }[] = [
   { value: "pendiente", label: "Pendiente" },
@@ -96,6 +108,9 @@ export interface MudanzaGasto {
   concepto: string
   monto: number
   estado: MudanzaGastoEstado
+  /** Fecha probable de pago mientras está "a pagar"; null una vez pagado. */
+  fecha_pago: string | null
+  tipo_pago: MudanzaTipoPago | null
   archivos: ArchivoAvance[]
   notas: string | null
   created_by: string | null

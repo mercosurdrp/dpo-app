@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select"
 import { AdjuntosInput } from "@/components/adjuntos-input"
 import { borrarGasto, guardarGasto } from "@/actions/mudanza"
-import type { MudanzaGasto, MudanzaPartida, MudanzaTarea } from "@/types/mudanza"
+import { MUDANZA_TIPOS_PAGO, type MudanzaGasto, type MudanzaPartida, type MudanzaTarea } from "@/types/mudanza"
 import { isoHoy } from "./formato"
 
 interface Props {
@@ -62,6 +62,7 @@ function GastoForm({
   const [partidaId, setPartidaId] = useState<string>(gasto?.partida_id ?? partidaInicial ?? SIN)
   const [tareaId, setTareaId] = useState<string>(gasto?.tarea_id ?? tareaInicial ?? SIN)
   const [estado, setEstado] = useState<string>(gasto?.estado ?? "pagado")
+  const [tipoPago, setTipoPago] = useState<string>(gasto?.tipo_pago ?? SIN)
   const [archivos, setArchivos] = useState<File[]>([])
   const [confirmarBorrar, setConfirmarBorrar] = useState(false)
 
@@ -84,6 +85,8 @@ function GastoForm({
       if (partidaId === SIN && t && !String(fd.get("rubro") ?? "").trim()) fd.set("rubro", t.rubro)
     } else fd.delete("tarea_id")
     fd.set("estado", estado)
+    if (tipoPago !== SIN) fd.set("tipo_pago", tipoPago)
+    else fd.delete("tipo_pago")
     for (const f of archivos) fd.append("archivo", f)
     startTransition(async () => {
       const r = await guardarGasto(fd)
@@ -149,7 +152,7 @@ function GastoForm({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="mg-fecha">Fecha</Label>
+              <Label htmlFor="mg-fecha">{estado === "comprometido" ? "Fecha del compromiso" : "Fecha de pago"}</Label>
               <Input
                 id="mg-fecha"
                 name="fecha"
@@ -165,11 +168,43 @@ function GastoForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="comprometido">Comprometido (orden o factura pendiente)</SelectItem>
+                  <SelectItem value="comprometido">A pagar (comprometido)</SelectItem>
                   <SelectItem value="pagado">Pagado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* Qué se paga y, si todavía no se pagó, cuándo habría que pagarlo. Con eso
+              el presupuesto arma el calendario de pagos. */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>{estado === "comprometido" ? "Qué se va a pagar" : "Qué se pagó"}</Label>
+              <Select value={tipoPago} onValueChange={(v: string | null) => setTipoPago(v ?? SIN)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sin especificar" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SIN}>Sin especificar</SelectItem>
+                  {MUDANZA_TIPOS_PAGO.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {estado === "comprometido" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="mg-fecha-pago">Fecha probable de pago</Label>
+                <Input
+                  id="mg-fecha-pago"
+                  name="fecha_pago"
+                  type="date"
+                  defaultValue={gasto?.fecha_pago ?? ""}
+                />
+              </div>
+            )}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
