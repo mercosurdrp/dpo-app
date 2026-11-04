@@ -1162,6 +1162,7 @@ export function MantenimientoClient({
             residuos={gestion.residuos}
             neumaticos={neumaticos}
             mantenimientos={mantenimientos}
+            dominiosBaja={dominiosBaja}
             puedeEditar={puedeEditar}
             onChanged={refresh}
           />

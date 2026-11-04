@@ -168,6 +168,8 @@ interface Props {
   residuos: Residuo[]
   neumaticos: Neumatico[]
   mantenimientos: MantenimientoRealizado[]
+  /** Unidades dadas de baja: sus services NO se listan ni cuentan en el KPI. */
+  dominiosBaja?: string[]
   puedeEditar: boolean
   onChanged: () => void
 }
@@ -176,6 +178,7 @@ export function DisposicionResiduos({
   residuos,
   neumaticos,
   mantenimientos,
+  dominiosBaja = [],
   puedeEditar,
   onChanged,
 }: Props) {
@@ -296,17 +299,65 @@ export function DisposicionResiduos({
     return [...s].sort().reverse()
   }, [mantenimientos, anioActual])
 
-  const services = useMemo(
-    () =>
-      mantenimientos
-        .filter((m) => m.es_service_general && m.fecha.slice(0, 4) === anio)
-        .map((m) => {
-          const reg = residuoPorOt.get(String(m.numero_ot ?? "")) ?? {}
-          return { ot: m, aceite: reg.aceite ?? null, filtros: reg.filtros ?? null }
-        })
-        .sort((a, b) => b.ot.fecha.localeCompare(a.ot.fecha)),
-    [mantenimientos, anio, residuoPorOt]
-  )
+  const bajas = useMemo(() => new Set(dominiosBaja), [dominiosBaja])
+
+  /**
+   * Services del año que hay que seguir.
+   *
+   * Quedan afuera dos cosas que ensuciaban la lectura:
+   *
+   * 1. 🚨 Las unidades DADAS DE BAJA. Los tres Toyota y el UR metían 7 filas
+   *    "sin registro" de unidades que ya no están en la flota, y el KPI del
+   *    1.4 nunca podía cerrar.
+   *
+   * 2. 🚨 Las OT **baseline** que duplican un service real. Son las que se
+   *    crearon desde la planilla "Próximo Service GRAL FLOTA" para fijar el
+   *    último service ($0 y sin taller) y caen el mismo día que la OT de
+   *    verdad. Figuraban vacías —el KY, el EI, el SU, el DH, el YB y el
+   *    OJA403— y cargarles el aceite lo habría contado DOS VECES, porque su
+   *    gemela ya lo tiene: 1707↔1628, 1709↔1630, 1710↔1692, 1711↔1693,
+   *    1704↔1449, 1705↔1487. El service sigue listado, con su OT real.
+   */
+  const services = useMemo(() => {
+    const delAnio = mantenimientos.filter(
+      (m) => m.es_service_general && m.fecha.slice(0, 4) === anio && !bajas.has(m.dominio)
+    )
+    const esBaseline = (m: MantenimientoRealizado) => /^\s*baseline/i.test(m.observaciones ?? "")
+    const dias = (a: string, b: string) =>
+      Math.abs(new Date(`${a}T12:00:00`).getTime() - new Date(`${b}T12:00:00`).getTime()) / 86400000
+    return delAnio
+      .filter(
+        (m) =>
+          !esBaseline(m) ||
+          // Sin gemela el baseline ES el único registro del service: se queda.
+          // 🚨 La gemela tiene que ser de la MISMA unidad: sin comparar dominio,
+          // el baseline del AJ del 14/02 lo tapaba el service del OJA403 del
+          // mismo día y la unidad desaparecía de la tabla.
+          !delAnio.some(
+            (o) =>
+              o.id !== m.id &&
+              o.dominio === m.dominio &&
+              !esBaseline(o) &&
+              dias(o.fecha, m.fecha) <= 7
+          )
+      )
+      .map((m) => {
+        const reg = residuoPorOt.get(String(m.numero_ot ?? "")) ?? {}
+        return { ot: m, aceite: reg.aceite ?? null, filtros: reg.filtros ?? null }
+      })
+      .sort((a, b) => b.ot.fecha.localeCompare(a.ot.fecha))
+  }, [mantenimientos, anio, residuoPorOt, bajas])
+
+  /** Lo que se dejó afuera, para no esconderlo. */
+  const excluidos = useMemo(() => {
+    const todos = mantenimientos.filter(
+      (m) => m.es_service_general && m.fecha.slice(0, 4) === anio
+    )
+    return {
+      baja: todos.filter((m) => bajas.has(m.dominio)).length,
+      duplicados: todos.length - services.length - todos.filter((m) => bajas.has(m.dominio)).length,
+    }
+  }, [mantenimientos, anio, bajas, services.length])
 
   const conRegistro = services.filter((s) => s.aceite || s.filtros).length
   const faltaConstancia = services.filter(
@@ -615,6 +666,27 @@ export function DisposicionResiduos({
                 los dispone el taller que hizo el service. El seguimiento es por orden de trabajo —
                 un service sin fila es un residuo que salió sin registro.
               </p>
+              {(excluidos.baja > 0 || excluidos.duplicados > 0) && (
+                <p className="max-w-3xl text-xs text-muted-foreground/80">
+                  Quedan afuera{" "}
+                  {excluidos.baja > 0 && (
+                    <>
+                      {excluidos.baja} {excluidos.baja === 1 ? "service" : "services"} de unidades
+                      dadas de baja
+                    </>
+                  )}
+                  {excluidos.baja > 0 && excluidos.duplicados > 0 && " y "}
+                  {excluidos.duplicados > 0 && (
+                    <>
+                      {excluidos.duplicados}{" "}
+                      {excluidos.duplicados === 1 ? "orden" : "órdenes"} de la planilla que
+                      duplican un service ya listado — su aceite está cargado en la OT real, no
+                      corresponde contarlo dos veces
+                    </>
+                  )}
+                  .
+                </p>
+              )}
             </div>
             <Select value={anio} onValueChange={(v) => setAnio(v ?? anio)}>
               <SelectTrigger className="w-28">
