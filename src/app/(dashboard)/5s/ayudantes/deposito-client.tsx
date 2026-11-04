@@ -261,7 +261,12 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
     peso_reportes: String(data.config.peso_reportes),
     tope_reportes: String(data.config.tope_reportes),
     meses_ventana: String(data.config.meses_ventana),
+    tope_errores_x1000: String(data.config.tope_errores_x1000 ?? 2),
   })
+  // Período desde el que los errores se califican por tasa ("" = nunca).
+  const [erroresX1000Desde, setErroresX1000Desde] = useState<string>(
+    data.config.errores_x1000_desde ?? "",
+  )
 
   const ventana = data.meses.length || 2
 
@@ -369,13 +374,23 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
       peso_reportes: Number(cfg.peso_reportes),
       tope_reportes: Number(cfg.tope_reportes),
       meses_ventana: Number(cfg.meses_ventana),
+      tope_errores_x1000: Number(cfg.tope_errores_x1000),
     }
     if (Object.values(nums).some((n) => !Number.isFinite(n))) {
       toast.error("Revisá los valores de la fórmula")
       return
     }
+    // El input es type=month ("YYYY-MM"); el server espera el día 1.
+    const desde = erroresX1000Desde.trim()
+    if (desde && !/^\d{4}-\d{2}$/.test(desde)) {
+      toast.error("El mes desde el que se usa la tasa no es válido")
+      return
+    }
     startTransition(async () => {
-      const res = await updateAyudantesConfig(nums)
+      const res = await updateAyudantesConfig({
+        ...nums,
+        errores_x1000_desde: desde ? `${desde}-01` : null,
+      })
       if ("error" in res) {
         toast.error(res.error)
         return
@@ -572,9 +587,29 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                 Cada componente muestra su valor, entre paréntesis su puntaje
                 0–100, y abajo en <span className="text-emerald-600">verde</span> lo
                 que <strong>aporta al Score</strong>. Los tres aportes suman el Score.
-                {" "}Errores: <strong>0 errores = 100 pts</strong> y baja lineal hasta{" "}
-                <strong>{data.config.tope_errores} por mes = 0 pts</strong>. Quien
-                pickeó y no tiene errores cargados cuenta como cero.
+                {data.errores_modo === "x1000" ? (
+                  <>
+                    {" "}Errores: se miden <strong>cada 1.000 bultos pickeados</strong>{" "}
+                    (errores ÷ bultos del período × 1.000, así se compara parejo a quien
+                    pickeó más y menos días): <strong>0 = 100 pts</strong> y baja lineal
+                    hasta <strong>{data.config.tope_errores_x1000} c/1.000 = 0 pts</strong>.
+                    Si un operario no tiene bultos cargados se usa el conteo absoluto
+                    ({data.config.tope_errores} por mes = 0 pts).
+                  </>
+                ) : (
+                  <>
+                    {" "}Errores: <strong>0 errores = 100 pts</strong> y baja lineal hasta{" "}
+                    <strong>{data.config.tope_errores} por mes = 0 pts</strong>
+                    {data.config.errores_x1000_desde ? (
+                      <>
+                        {" "}(desde {data.config.errores_x1000_desde.slice(0, 7)} se miden
+                        cada 1.000 bultos; este período conserva el conteo)
+                      </>
+                    ) : null}
+                    .
+                  </>
+                )}{" "}
+                Quien pickeó y no tiene errores cargados cuenta como cero.
                 {" "}Reportes: actos inseguros cargados por el ayudante en la app;{" "}
                 <strong>{topeReportesVentana} en el período = 100 pts</strong>, sin
                 reportes = 0. Quien tuvo <strong>ausentismo</strong> en el período
@@ -586,7 +621,9 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                     <TableHead className="w-10">#</TableHead>
                     <TableHead>Ayudante</TableHead>
                     <TableHead className="text-right">5S</TableHead>
-                    <TableHead className="text-right">Errores (cant.)</TableHead>
+                    <TableHead className="text-right">
+                      {data.errores_modo === "x1000" ? "Errores c/1.000 bultos" : "Errores (cant.)"}
+                    </TableHead>
                     <TableHead className="text-right">Productividad</TableHead>
                     <TableHead className="text-right">Reportes seg.</TableHead>
                     <TableHead className="text-right">Score</TableHead>
@@ -648,11 +685,25 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                         {r.errores_cant != null ? (
                           <>
                             <div>
-                              {r.errores_cant}
+                              {r.errores_x1000 != null
+                                ? r.errores_x1000.toLocaleString("es-AR", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })
+                                : r.errores_cant}
                               <span className="ml-1 text-xs text-muted-foreground">
                                 ({r.errores_score?.toFixed(0)})
                               </span>
                             </div>
+                            {r.errores_x1000 != null ? (
+                              <div className="text-[11px] text-muted-foreground">
+                                {r.errores_cant} err. / {r.bultos_cant?.toLocaleString("es-AR")} bultos
+                              </div>
+                            ) : data.errores_modo === "x1000" ? (
+                              <div className="text-[11px] text-muted-foreground">
+                                sin bultos: por conteo
+                              </div>
+                            ) : null}
                             {ap.e != null && (
                               <div className="text-[11px] text-emerald-600">+{ap.e.toFixed(1)}</div>
                             )}
@@ -725,7 +776,8 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                   ["peso_errores", "Peso errores"],
                   ["peso_5s", "Peso 5S"],
                   ["peso_productividad", "Peso productividad"],
-                  ["tope_errores", "Tope errores POR MES (= 0 pts)"],
+                  ["tope_errores", "Tope errores POR MES (= 0 pts, períodos por conteo)"],
+                  ["tope_errores_x1000", "Tope errores c/1.000 bultos (= 0 pts)"],
                   ["prod_target", "Target picking (bul/HH = 100)"],
                   ["prod_target_maq", "Target maquinista (Pal/HH = 100)"],
                   ["peso_reportes", "Peso reportes de seguridad"],
@@ -742,6 +794,18 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                     />
                   </div>
                 ))}
+                <div className="space-y-1">
+                  <Label className="text-xs">Errores c/1.000 bultos desde (mes)</Label>
+                  <Input
+                    type="month"
+                    value={erroresX1000Desde.slice(0, 7)}
+                    onChange={(e) => setErroresX1000Desde(e.target.value)}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Los bimestres anteriores a ese mes siguen por conteo absoluto (no
+                    se mueven podios ya entregados). Vacío = siempre por conteo.
+                  </p>
+                </div>
               </div>
               <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
                 <Info className="mt-0.5 size-3.5 shrink-0" />

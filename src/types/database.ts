@@ -2851,6 +2851,13 @@ export interface S5AyudantesConfig {
   /** Reportes POR MES que valen 100 puntos (se escala por la ventana). */
   tope_reportes: number
   meses_ventana: number
+  /** Errores cada 1.000 bultos pickeados (en la ventana) que valen 0 puntos. */
+  tope_errores_x1000: number
+  /**
+   * Primer período (periodo_desde, "YYYY-MM-01") que se califica por errores
+   * cada 1.000 bultos. Los anteriores siguen por conteo absoluto. null = nunca.
+   */
+  errores_x1000_desde: string | null
 }
 
 export interface S5AyudanteDepositoRow {
@@ -2864,6 +2871,10 @@ export interface S5AyudanteDepositoRow {
   nota_5s: number | null
   /** Cantidad de errores HUMANOS (filas del Sheet) acumulados en la ventana. */
   errores_cant: number | null
+  /** Bultos pickeados en la ventana (blob bultos-picking-operario) o null si no hay dato. */
+  bultos_cant: number | null
+  /** Errores cada 1.000 bultos; null si el período se califica por conteo o no hay bultos. */
+  errores_x1000: number | null
   errores_score: number | null
   /** bul/HH promedio de picking en la ventana. */
   productividad: number | null
@@ -2901,6 +2912,8 @@ export interface S5RankingDepositoData {
   periodo_hasta: string
   meses: string[]
   ranking: S5AyudanteDepositoRow[]
+  /** Cómo se calificaron los errores en este período (ver config.errores_x1000_desde). */
+  errores_modo: "cantidad" | "x1000"
   premios_deposito: S5AyudantePremio[]
   premios_distribucion: S5AyudantePremio[]
   fotos_ganadores: { deposito: string | null; distribucion: string | null }

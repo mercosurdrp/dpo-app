@@ -27,6 +27,13 @@ const ERRORES_SHEET_URL =
 const PRODUCTIVIDAD_URL =
   "https://deposito-regionpampeana.vercel.app/api/shared/load?module=productividad-picking"
 
+// Bultos absolutos pickeados por operario y día (SQL del WMS, PrdTarea=5),
+// publicados por el pusher del tablero de depósito. Es el denominador de
+// "errores cada 1.000 bultos": el blob de productividad-picking sólo trae
+// tasas (bul/HH), sin bultos ni horas.
+const BULTOS_PICKING_URL =
+  "https://deposito-regionpampeana.vercel.app/api/shared/load?module=bultos-picking-operario"
+
 // Productividad de maquinistas (Pal/HH) — deposito-esteban. Trae filas por
 // (fecha, operario, actividad); para el ranking solo cuenta la actividad
 // DESPACHO — la actividad "MAQUINISTA" del WMS es reubicación/acarreos y
@@ -48,6 +55,14 @@ const DEFAULT_CONFIG: S5AyudantesConfig = {
   peso_reportes: 0.2,
   tope_reportes: 1.5,
   meses_ventana: 2,
+  // Errores cada 1.000 bultos pickeados en la ventana que dejan el componente
+  // en 0 pts (es una tasa: no se escala por la ventana). 2 c/1.000 equivale a
+  // los 50/mes del tope absoluto con ~20.000 bultos por mes.
+  tope_errores_x1000: 2,
+  // Primer período (periodo_desde) que se califica por tasa. Los anteriores
+  // siguen con el conteo absoluto para no mover podios ya entregados. Se fijó
+  // en sep-oct 2026 porque con ese tope el podio de ese bimestre no cambia.
+  errores_x1000_desde: "2026-09-01",
 }
 
 // Tipos de reporte de seguridad que suman en el ranking. Criterio del usuario
@@ -275,6 +290,34 @@ async function fetchProductividadPorOperario(
   return out
 }
 
+// ── Bultos pickeados por operario (suma en la ventana) ──
+async function fetchBultosPorOperario(
+  prefijosMes: string[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  try {
+    const res = await fetch(BULTOS_PICKING_URL, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(9000),
+    })
+    if (!res.ok) return out
+    const json = (await res.json()) as {
+      data?: { filas?: Array<{ fecha?: string; operario?: string; bultos?: number }> }
+    }
+    for (const f of json.data?.filas ?? []) {
+      const fecha = String(f.fecha ?? "")
+      if (!prefijosMes.some((p) => fecha.startsWith(p))) continue
+      const op = (f.operario ?? "").trim()
+      const b = Number(f.bultos)
+      if (!op || !Number.isFinite(b) || b <= 0) continue
+      out.set(op, (out.get(op) ?? 0) + b)
+    }
+  } catch {
+    /* best-effort: sin bultos el componente cae al conteo absoluto */
+  }
+  return out
+}
+
 // ── Productividad de maquinistas (promedio Pal/HH en la ventana) ──
 async function fetchProductividadMaquinistas(
   prefijosMes: string[],
@@ -431,6 +474,13 @@ async function readConfig(supabase: any): Promise<S5AyudantesConfig> {
     peso_reportes: Number(data.peso_reportes ?? DEFAULT_CONFIG.peso_reportes),
     tope_reportes: Number(data.tope_reportes ?? DEFAULT_CONFIG.tope_reportes),
     meses_ventana: Number(data.meses_ventana ?? DEFAULT_CONFIG.meses_ventana),
+    tope_errores_x1000: Number(
+      data.tope_errores_x1000 ?? DEFAULT_CONFIG.tope_errores_x1000,
+    ),
+    errores_x1000_desde:
+      data.errores_x1000_desde === null
+        ? null
+        : String(data.errores_x1000_desde ?? DEFAULT_CONFIG.errores_x1000_desde),
   }
 }
 
@@ -467,6 +517,7 @@ export async function getRankingDeposito(
       premiosRes,
       reportes,
       ausentismo,
+      bultosMap,
     ] = await Promise.all([
         supabase
           .from("s5_auditorias")
@@ -491,7 +542,15 @@ export async function getRankingDeposito(
           .eq("periodo_desde", desde),
         fetchReportesPorAutor(desde, hastaExclusivo),
         fetchAusentismoVentana(desde, hastaExclusivo),
+        fetchBultosPorOperario(prefijos),
       ])
+
+    // Errores por tasa (cada 1.000 bultos) sólo desde el período configurado:
+    // los bimestres anteriores ya tienen el podio entregado con el conteo.
+    const erroresModo: "cantidad" | "x1000" =
+      config.errores_x1000_desde && desde >= config.errores_x1000_desde
+        ? "x1000"
+        : "cantidad"
 
     // Nombre de sectores
     const sectorNombre = new Map<number, string>()
@@ -526,6 +585,7 @@ export async function getRankingDeposito(
       notas5s: number[]
       sectores: Set<string>
       errores_cant: number | null
+      bultos_cant: number | null
       productividad: number | null
       productividad_maq: number | null
       reportes_cant: number
@@ -551,6 +611,7 @@ export async function getRankingDeposito(
           notas5s: [],
           sectores: new Set<string>(),
           errores_cant: null,
+          bultos_cant: null,
           productividad: null,
           productividad_maq: null,
           reportes_cant: 0,
@@ -580,6 +641,7 @@ export async function getRankingDeposito(
           notas5s: [],
           sectores: new Set<string>(),
           errores_cant: null,
+          bultos_cant: null,
           productividad: null,
           productividad_maq: null,
           reportes_cant: 0,
@@ -610,6 +672,15 @@ export async function getRankingDeposito(
       const c = matchOCrear(operario)
       c.es_picker = true
       c.productividad = bulhh
+      if (c.errores_cant == null) c.errores_cant = 0
+    }
+
+    // Bultos pickeados en la ventana (denominador de la tasa). Mismo criterio
+    // que la productividad: haber pickeado sin errores cargados es CERO.
+    for (const [operario, bultos] of bultosMap.entries()) {
+      const c = matchOCrear(operario)
+      c.es_picker = true
+      c.bultos_cant = (c.bultos_cant ?? 0) + bultos
       if (c.errores_cant == null) c.errores_cant = 0
     }
 
@@ -675,9 +746,14 @@ export async function getRankingDeposito(
     // El tope se configura por mes y se escala a la ventana (20/mes = 40 en un
     // bimestre), para que el puntaje no dependa del largo del período.
     const tope = Math.max(1, config.tope_errores * ventana)
+    // Tasa: errores cada 1.000 bultos de la ventana. No se escala (más meses
+    // = más errores y más bultos). Si el operario no tiene bultos en el blob,
+    // cae al conteo absoluto para que no quede sin componente.
+    const topeX1000 = Math.max(0.1, config.tope_errores_x1000)
     const topeReportes = Math.max(0.5, config.tope_reportes * ventana)
     function scoreOf(c: Cand): {
       nota_5s: number | null
+      errores_x1000: number | null
       errores_score: number | null
       productividad: number | null
       productividad_maq: number | null
@@ -688,10 +764,20 @@ export async function getRankingDeposito(
       const nota_5s = c.notas5s.length
         ? c.notas5s.reduce((a, b) => a + b, 0) / c.notas5s.length
         : null
+      const porTasa =
+        erroresModo === "x1000" &&
+        c.errores_cant != null &&
+        c.bultos_cant != null &&
+        c.bultos_cant > 0
+      const errores_x1000 = porTasa
+        ? (c.errores_cant! / c.bultos_cant!) * 1000
+        : null
       const errores_score =
-        c.errores_cant != null
-          ? clamp(100 * (1 - c.errores_cant / tope), 0, 100)
-          : null
+        errores_x1000 != null
+          ? clamp(100 * (1 - errores_x1000 / topeX1000), 0, 100)
+          : c.errores_cant != null
+            ? clamp(100 * (1 - c.errores_cant / tope), 0, 100)
+            : null
       // Productividad: cada actividad se normaliza contra su propio target
       // (picking bul/HH vs prod_target; maquinista Pal/HH vs prod_target_maq)
       // y el puntaje es el promedio de las que tenga el operario. Solo afecta
@@ -727,6 +813,7 @@ export async function getRankingDeposito(
       const score = tw > 0 ? parts.reduce((a, [w, v]) => a + w * v, 0) / tw : 0
       return {
         nota_5s,
+        errores_x1000,
         errores_score,
         productividad,
         productividad_maq,
@@ -748,6 +835,9 @@ export async function getRankingDeposito(
         nota_5s: s.nota_5s != null ? Number(s.nota_5s.toFixed(1)) : null,
         errores_cant:
           c.errores_cant != null ? Number(c.errores_cant.toFixed(1)) : null,
+        bultos_cant: c.bultos_cant != null ? Math.round(c.bultos_cant) : null,
+        errores_x1000:
+          s.errores_x1000 != null ? Number(s.errores_x1000.toFixed(2)) : null,
         errores_score:
           s.errores_score != null ? Number(s.errores_score.toFixed(1)) : null,
         productividad: s.productividad,
@@ -787,6 +877,7 @@ export async function getRankingDeposito(
         periodo_hasta: hasta,
         meses,
         ranking: rows,
+        errores_modo: erroresModo,
         premios_deposito: premios.filter((p) => p.area === "deposito"),
         premios_distribucion: premios.filter((p) => p.area === "distribucion"),
         fotos_ganadores,
@@ -811,10 +902,17 @@ export async function updateAyudantesConfig(input: {
   peso_reportes: number
   tope_reportes: number
   meses_ventana: number
+  tope_errores_x1000: number
+  /** "YYYY-MM-01" o null para calificar siempre por conteo absoluto. */
+  errores_x1000_desde: string | null
 }): Promise<{ ok: true } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "auditor"])
     const supabase = await createClient()
+    const desde = input.errores_x1000_desde?.trim() || null
+    if (desde && !/^\d{4}-\d{2}-01$/.test(desde)) {
+      return { error: "El período desde el que se usa la tasa debe ser el día 1 de un mes (AAAA-MM-01)" }
+    }
     const { error } = await supabase
       .from("s5_ayudantes_config")
       .update({
@@ -827,10 +925,21 @@ export async function updateAyudantesConfig(input: {
         peso_reportes: input.peso_reportes,
         tope_reportes: input.tope_reportes,
         meses_ventana: Math.max(1, Math.min(6, Math.round(input.meses_ventana))),
+        tope_errores_x1000: Math.max(0.1, input.tope_errores_x1000),
+        errores_x1000_desde: desde,
         updated_by: profile.id,
       })
       .eq("id", 1)
-    if (error) return { error: error.message }
+    if (error) {
+      // 42703 = columna inexistente: falta correr la migración en Supabase.
+      if (error.code === "42703") {
+        return {
+          error:
+            "La tabla s5_ayudantes_config no tiene las columnas nuevas: hay que aplicar las migraciones 20260915120000 y 20261104120000 en Supabase (hasta entonces rigen los valores por defecto).",
+        }
+      }
+      return { error: error.message }
+    }
     revalidatePath(PAGE_PATH)
     return { ok: true }
   } catch (err) {
