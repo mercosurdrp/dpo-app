@@ -2696,8 +2696,152 @@ export interface Residuo {
    * retiros contra este número. null = el certificado no declara cantidad.
    */
   certificado_unidades: number | null
+  /**
+   * Cuándo se le reclamó la constancia al operador. null = nadie la pidió
+   * todavía. Ante el auditor no es lo mismo "falta" que "falta y está pedida".
+   */
+  constancia_solicitada_at?: string | null
+  /**
+   * Comprobante de que la constancia está EN TRÁMITE (el remito, el mail, la
+   * foto del pedido). 🚨 No es el certificado: si esto viviera en
+   * `certificado_path` el registro figuraría como amparado sin estarlo.
+   */
+  tramite_path?: string | null
+  tramite_url?: string | null
+  tramite_nombre?: string | null
+  tramite_mime?: string | null
   observaciones: string | null
   created_at: string
+}
+
+/** El error que tira PostgREST cuando la migración del trámite no se corrió. */
+function faltaMigracionTramite(code?: string): boolean {
+  return code === "42703" || code === "PGRST204"
+}
+
+const AVISO_MIGRACION_TRAMITE =
+  "Falta correr en la base el archivo APLICAR_EN_PAMPEANA_RESIDUOS_TRAMITE.sql (agrega las columnas del trámite)."
+
+/**
+ * Marca —o desmarca— que la constancia de disposición final ya se le pidió al
+ * operador. Guarda la fecha del reclamo, que es lo que después se le muestra al
+ * auditor para explicar un registro sin certificado.
+ */
+export async function marcarConstanciaSolicitada(input: {
+  id: string
+  solicitada: boolean
+  fecha?: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    if (!input.id) return { error: "ID de residuo inválido" }
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("mantenimiento_residuos")
+      .update({
+        constancia_solicitada_at: input.solicitada
+          ? (input.fecha ?? new Date().toISOString().slice(0, 10))
+          : null,
+      })
+      .eq("id", input.id)
+    if (error) {
+      return { error: faltaMigracionTramite(error.code) ? AVISO_MIGRACION_TRAMITE : error.message }
+    }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Adjunta el comprobante de que la constancia está en trámite. FormData:
+ * `archivo` (foto o PDF del remito / del pedido al taller).
+ *
+ * 🚨 Va a columnas propias, no a `certificado_url`: un trámite no ampara nada y
+ * el panel tiene que poder seguir diciendo que a ese residuo le falta el papel.
+ */
+export async function subirConstanciaTramite(
+  id: string,
+  formData: FormData
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    if (!id) return { error: "ID de residuo inválido" }
+    const file = formData.get("archivo")
+    if (!(file instanceof File) || file.size === 0) return { error: "Elegí un archivo" }
+
+    const supabase = await createClient()
+    const clean = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80)
+    const path = `residuos/tramite/${id}/${Date.now()}-${clean}`
+    const { error: upErr } = await supabase.storage
+      .from(RESIDUOS_BUCKET)
+      .upload(path, await file.arrayBuffer(), {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      })
+    if (upErr) return { error: upErr.message }
+    const { data: pub } = supabase.storage.from(RESIDUOS_BUCKET).getPublicUrl(path)
+
+    // El anterior se reemplaza: el trámite es uno solo, el último estado.
+    const { data: previo } = await supabase
+      .from("mantenimiento_residuos")
+      .select("tramite_path")
+      .eq("id", id)
+      .single()
+
+    const { error } = await supabase
+      .from("mantenimiento_residuos")
+      .update({
+        tramite_path: path,
+        tramite_url: pub.publicUrl,
+        tramite_nombre: file.name,
+        tramite_mime: file.type || null,
+      })
+      .eq("id", id)
+    if (error) {
+      await supabase.storage.from(RESIDUOS_BUCKET).remove([path])
+      return { error: faltaMigracionTramite(error.code) ? AVISO_MIGRACION_TRAMITE : error.message }
+    }
+    const anterior = (previo as { tramite_path?: string | null } | null)?.tramite_path
+    if (anterior && anterior !== path) {
+      await supabase.storage.from(RESIDUOS_BUCKET).remove([anterior])
+    }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function quitarConstanciaTramite(
+  id: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    if (!id) return { error: "ID de residuo inválido" }
+    const supabase = await createClient()
+    const { data: previo } = await supabase
+      .from("mantenimiento_residuos")
+      .select("tramite_path")
+      .eq("id", id)
+      .single()
+    const { error } = await supabase
+      .from("mantenimiento_residuos")
+      .update({
+        tramite_path: null,
+        tramite_url: null,
+        tramite_nombre: null,
+        tramite_mime: null,
+      })
+      .eq("id", id)
+    if (error) {
+      return { error: faltaMigracionTramite(error.code) ? AVISO_MIGRACION_TRAMITE : error.message }
+    }
+    const path = (previo as { tramite_path?: string | null } | null)?.tramite_path
+    if (path) await supabase.storage.from(RESIDUOS_BUCKET).remove([path])
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
 }
 
 /**

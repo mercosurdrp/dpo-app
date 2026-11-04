@@ -36,8 +36,12 @@ import {
   Droplets,
   FileText,
   Filter as FilterIcon,
+  Hourglass,
+  Image as ImageIcon,
   Recycle,
+  Send,
   Truck,
+  X,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -61,7 +65,13 @@ import {
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 
-import { setResiduoCantidad, type Residuo } from "@/actions/mantenimiento-vehiculos"
+import {
+  marcarConstanciaSolicitada,
+  quitarConstanciaTramite,
+  setResiduoCantidad,
+  subirConstanciaTramite,
+  type Residuo,
+} from "@/actions/mantenimiento-vehiculos"
 import { getEstadoDpoFlota, type PuntoEstadoDpo } from "@/actions/estado-dpo-flota"
 import type { MantenimientoRealizado } from "@/types/database"
 import type { Neumatico } from "@/lib/vehiculos/neumaticos-tipos"
@@ -299,8 +309,20 @@ export function DisposicionResiduos({
   )
 
   const conRegistro = services.filter((s) => s.aceite || s.filtros).length
-  const sinConstancia = services.filter(
-    (s) => (s.aceite && !s.aceite.certificado_url) || (s.filtros && !s.filtros.certificado_url)
+  const faltaConstancia = services.filter(
+    (s) =>
+      (s.aceite || s.filtros) &&
+      !(s.aceite?.certificado_url ?? s.filtros?.certificado_url)
+  )
+  const sinConstancia = faltaConstancia.length
+  // De los que no tienen el papel, cuántos están al menos reclamados o con el
+  // comprobante del trámite: ante el auditor no es lo mismo que no hacer nada.
+  const sinConstanciaGestionados = faltaConstancia.filter(
+    (s) =>
+      s.aceite?.constancia_solicitada_at ||
+      s.filtros?.constancia_solicitada_at ||
+      s.aceite?.tramite_url ||
+      s.filtros?.tramite_url
   ).length
   const litrosDeclarados = services.reduce(
     (a, s) => a + (s.aceite?.cantidad ?? 0),
@@ -349,8 +371,18 @@ export function DisposicionResiduos({
           label="Registros sin constancia"
           valor={fmtNum(sinConstancia)}
           dpo="1.4"
-          estado={sinConstancia > 0 ? "alerta" : "ok"}
-          sub="Services cuyo residuo está registrado pero sin certificado del operador"
+          estado={
+            sinConstancia === 0
+              ? "ok"
+              : sinConstanciaGestionados === sinConstancia
+                ? "alerta"
+                : "critico"
+          }
+          sub={
+            sinConstancia === 0
+              ? "Todos los residuos registrados tienen el certificado del operador"
+              : `${sinConstanciaGestionados} de ${sinConstancia} ya reclamados o con el trámite adjunto`
+          }
         />
       </div>
 
@@ -674,19 +706,12 @@ export function DisposicionResiduos({
                           >
                             sin registro
                           </Badge>
-                        ) : (aceite?.certificado_url ?? filtros?.certificado_url) ? (
-                          <a
-                            href={(aceite?.certificado_url ?? filtros?.certificado_url) as string}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-primary hover:underline"
-                          >
-                            <Check className="size-3.5" /> amparado
-                          </a>
                         ) : (
-                          <span className="text-xs italic text-amber-600 dark:text-amber-400">
-                            falta constancia
-                          </span>
+                          <ConstanciaCell
+                            residuos={[aceite, filtros].filter(Boolean) as Residuo[]}
+                            puedeEditar={puedeEditar}
+                            onChanged={onChanged}
+                          />
                         )}
                       </TableCell>
                     </TableRow>
@@ -763,6 +788,180 @@ export function DisposicionResiduos({
           </Table>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+/**
+ * El estado de la constancia de disposición final de un service.
+ *
+ * Mientras el papel no está, "falta" no alcanza: ante el auditor no es lo mismo
+ * un residuo que nadie reclamó que uno pedido hace dos semanas y con el remito
+ * del taller adjunto. Por eso hay tres estados y no dos — falta / solicitada /
+ * en trámite con comprobante — y el certificado sigue siendo el único que pone
+ * el registro en verde.
+ *
+ * 🚨 El comprobante del trámite NO se guarda en `certificado_url`: si lo
+ * hiciera, el registro figuraría como amparado sin estarlo.
+ *
+ * Un service deja dos filas de residuo (aceite y filtros) y la constancia es la
+ * misma para las dos, así que las acciones se aplican a todas.
+ */
+function ConstanciaCell({
+  residuos,
+  puedeEditar,
+  onChanged,
+}: {
+  residuos: Residuo[]
+  puedeEditar: boolean
+  onChanged: () => void
+}) {
+  const [pend, setPend] = useState(false)
+  const inputId = `tramite-${residuos[0]?.id ?? "x"}`
+
+  const certificado = residuos.find((r) => r.certificado_url)?.certificado_url ?? null
+  const conTramite = residuos.find((r) => r.tramite_url) ?? null
+  const solicitada = residuos.find((r) => r.constancia_solicitada_at) ?? null
+
+  if (certificado) {
+    return (
+      <a
+        href={certificado}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 text-primary hover:underline"
+      >
+        <Check className="size-3.5" /> amparado
+      </a>
+    )
+  }
+
+  const correrEnTodas = async (fn: (id: string) => Promise<{ success: true } | { error: string }>) => {
+    setPend(true)
+    for (const r of residuos) {
+      const res = await fn(r.id)
+      if ("error" in res) {
+        setPend(false)
+        toast.error(res.error)
+        return false
+      }
+    }
+    setPend(false)
+    onChanged()
+    return true
+  }
+
+  const toggleSolicitada = async () => {
+    const quiere = !solicitada
+    const ok = await correrEnTodas((id) =>
+      marcarConstanciaSolicitada({ id, solicitada: quiere })
+    )
+    if (ok) toast.success(quiere ? "Marcada como solicitada" : "Se quitó la marca")
+  }
+
+  const subirTramite = async (file: File) => {
+    setPend(true)
+    for (const r of residuos) {
+      const fd = new FormData()
+      fd.set("archivo", file)
+      const res = await subirConstanciaTramite(r.id, fd)
+      if ("error" in res) {
+        setPend(false)
+        toast.error(res.error)
+        return
+      }
+    }
+    setPend(false)
+    toast.success("Comprobante del trámite cargado")
+    onChanged()
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-1">
+        {conTramite ? (
+          <a
+            href={conTramite.tramite_url as string}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-px text-[11px] font-medium text-sky-700 hover:underline dark:text-sky-300"
+            title={conTramite.tramite_nombre ?? "Comprobante del trámite"}
+          >
+            <Hourglass className="size-3" /> en trámite
+          </a>
+        ) : (
+          <span className="text-xs italic text-amber-600 dark:text-amber-400">
+            falta constancia
+          </span>
+        )}
+        {solicitada && (
+          <span
+            className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-px text-[11px] font-medium text-amber-700 dark:text-amber-400"
+            title={`Reclamada el ${fmtFecha(solicitada.constancia_solicitada_at)}`}
+          >
+            solicitada {fmtFecha(solicitada.constancia_solicitada_at)}
+          </span>
+        )}
+      </div>
+
+      {puedeEditar && (
+        <div className="flex flex-wrap items-center gap-1">
+          <Button
+            size="sm"
+            variant={solicitada ? "secondary" : "outline"}
+            className="h-6 px-2 text-[11px]"
+            disabled={pend}
+            onClick={toggleSolicitada}
+            title={
+              solicitada
+                ? "Quitar la marca de solicitada"
+                : "Dejar registrado que ya se le pidió la constancia al taller"
+            }
+          >
+            <Send className="mr-1 size-3" />
+            {solicitada ? "Solicitada ✓" : "Solicitada"}
+          </Button>
+
+          <label
+            htmlFor={inputId}
+            className={cn(
+              "inline-flex h-6 cursor-pointer items-center rounded-md border px-2 text-[11px] font-medium",
+              "border-input bg-background hover:bg-accent hover:text-accent-foreground",
+              pend && "pointer-events-none opacity-50"
+            )}
+          >
+            <ImageIcon className="mr-1 size-3" />
+            {conTramite ? "Cambiar" : "Adjuntar trámite"}
+          </label>
+          <input
+            id={inputId}
+            type="file"
+            accept="image/*,application/pdf,.pdf"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ""
+              if (f) subirTramite(f)
+            }}
+          />
+
+          {conTramite && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-1.5 text-[11px] text-destructive"
+              disabled={pend}
+              onClick={async () => {
+                const ok = await correrEnTodas((id) => quitarConstanciaTramite(id))
+                if (ok) toast.success("Comprobante quitado")
+              }}
+              title="Quitar el comprobante del trámite"
+            >
+              <X className="size-3" />
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
