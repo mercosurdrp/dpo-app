@@ -64,6 +64,12 @@ export interface SeccionFlota {
   requisitos?: string[]
   /** Qué demuestra la sección, en el lenguaje del auditor. */
   aporta: string
+  /**
+   * Pantalla FUERA del módulo de mantenimiento que responde el punto (ej. el
+   * análisis de combustible o /presupuesto). No es una solapa: no entra en la
+   * barra de secciones, pero el Estado DPO la enlaza como evidencia.
+   */
+  href?: string
 }
 
 export const SECCIONES_FLOTA: SeccionFlota[] = [
@@ -165,6 +171,34 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     requisitos: ["R2.1.3", "R2.1.4", "R4.3.2"],
     aporta:
       "PIs de flota con meta, serie histórica y planes de acción asociados. Incluye la huella de CO₂.",
+  },
+  {
+    // 🚨 El 3.3 no tenía ninguna sección y el Estado DPO lo mostraba «sin
+    // solapa» aunque el km/l se sigue desde abril. El módulo vive fuera de
+    // mantenimiento (/vehiculos/combustible), por eso va con `href`.
+    // La auditoría H1 2026 puntuó 3 y pidió «realizar SOP»: la política está
+    // en SOP y SLA y en /sops (pilar Flota).
+    id: "combustible",
+    label: "Combustible",
+    grupo: "analisis",
+    puntos: ["3.3"],
+    requisitos: ["R3.3.3", "R3.3.4"],
+    aporta:
+      "Rendimiento km/l por camión y por chofer mes a mes contra la meta (3,75) y el piso por unidad (3,50), con la limpieza de cargas sin registrar, los litros sin registrar y los camiones con más de 7 días sin carga como PI de pérdida, y el presupuesto vs real del rubro Combustible; de cada mes fuera de meta sale el plan de acción en Indicadores.",
+    href: "/vehiculos/combustible/analisis",
+  },
+  {
+    // El 3.2 se responde desde /presupuesto con el filtro de pilar en Flota:
+    // real vs presupuestado por rubro y el gasto de mantenimiento segregado en
+    // preventivo / correctivo / proactivo (R3.2.2).
+    id: "presupuesto-flota",
+    label: "Presupuesto · Flota",
+    grupo: "gestion",
+    puntos: ["3.2"],
+    requisitos: ["R3.2.1", "R3.2.2", "R3.2.3"],
+    aporta:
+      "Tareas de análisis de desvíos del EERR filtradas por el pilar Flota (presupuestado, real y desvío por rubro) y el gasto de mantenimiento del período segregado en preventivo, correctivo y proactivo desde las órdenes de trabajo, con el correctivo por unidad.",
+    href: "/presupuesto",
   },
   {
     id: "seguimiento",
@@ -307,8 +341,9 @@ export function seccionesDeFlotaPorPunto(numero: string): SeccionFlota[] {
   return SECCIONES_FLOTA.filter((s) => s.puntos.includes(numero))
 }
 
+/** Solapas del módulo de un grupo (las secciones con `href` viven afuera y no son solapas). */
 export function seccionesDeGrupo(g: GrupoFlota): SeccionFlota[] {
-  return SECCIONES_FLOTA.filter((s) => s.grupo === g)
+  return SECCIONES_FLOTA.filter((s) => s.grupo === g && !s.href)
 }
 
 /** Link a la evidencia cargada del punto (bucket dpo-evidencia). El punto viaja

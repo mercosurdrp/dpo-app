@@ -3,6 +3,11 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { validarLitros } from "@/lib/vehiculos/combustible-limites"
+import {
+  esCargaSinRegistrar,
+  FACTOR_CARGA_FALTANTE,
+  medianasPorDominio,
+} from "@/lib/vehiculos/combustible-limpio"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 import { validarLectura } from "@/lib/vehiculos/validar-lectura"
 import { addDays, fetchLecturas, kmActualPorDominio } from "@/lib/vehiculos/lecturas"
@@ -27,9 +32,35 @@ interface CreateCombustibleInput {
   observaciones?: string
 }
 
+/**
+ * Aviso que vuelve con la carga guardada cuando el tramo rinde más de 1,4× la
+ * mediana del camión: casi siempre es una carga anterior que no se anotó
+ * (DPO Flota 3.3, SOP de Combustible: el chofer la registra en el momento).
+ * La carga se guarda igual, con la sospecha anotada en `observaciones`, y el
+ * formulario ofrece registrar la que faltó.
+ */
+export interface AvisoCargaFaltante {
+  rendimiento: number
+  /** km/l habitual del camión (mediana de los tramos plausibles). */
+  mediana: number
+}
+
+export interface CreateCombustibleResult {
+  data: RegistroCombustible
+  cargaFaltante: AvisoCargaFaltante | null
+  /**
+   * true cuando esta carga se metió ENTRE dos cargas ya registradas (una que
+   * faltaba) y se recalculó el km/l de la siguiente.
+   */
+  recalculoSiguiente: boolean
+}
+
+/** Días de historial del camión para la mediana de rendimiento. */
+const HISTORIAL_MEDIANA_DIAS = 120
+
 export async function createRegistroCombustible(
   input: CreateCombustibleInput
-): Promise<{ data: RegistroCombustible } | { error: string }> {
+): Promise<CreateCombustibleResult | { error: string }> {
   try {
     const profile = await requireAuth()
     const errorLitros = validarLitros(input.litros)
@@ -76,11 +107,40 @@ export async function createRegistroCombustible(
       }
     }
 
+    // ¿Falta una carga en el medio? Un tramo que rinde mucho más que lo
+    // habitual del camión no es un chofer eficiente: son litros que entraron
+    // al tanque sin pasar por la app. Se avisa en el momento, que es cuando el
+    // chofer todavía se acuerda de la carga que no anotó.
+    let cargaFaltante: AvisoCargaFaltante | null = null
+    let observaciones = input.observaciones?.trim() || null
+    if (tipoCarga === TIPO_CARGA_GASOIL && kmRecorridos != null && kmRecorridos > 0) {
+      const { data: historial } = await supabase
+        .from("registro_combustible")
+        .select("dominio, litros, km_recorridos")
+        .eq("dominio", dominioNorm)
+        .eq("tipo_combustible", TIPO_CARGA_GASOIL)
+        .gte("fecha", addDays(input.fecha, -HISTORIAL_MEDIANA_DIAS))
+        .lte("fecha", input.fecha)
+      const medianas = medianasPorDominio(historial ?? [])
+      const tramo = { dominio: dominioNorm, litros: input.litros, km_recorridos: kmRecorridos }
+      if (esCargaSinRegistrar(tramo, medianas)) {
+        const mediana = medianas.get(dominioNorm) ?? null
+        cargaFaltante = {
+          rendimiento: Math.round((kmRecorridos / input.litros) * 100) / 100,
+          mediana: mediana != null ? Math.round(mediana * 100) / 100 : 0,
+        }
+        const nota = mediana != null
+          ? `Posible carga anterior sin registrar: ${cargaFaltante.rendimiento} km/l contra ${cargaFaltante.mediana} habitual (más de ${FACTOR_CARGA_FALTANTE}×).`
+          : `Posible carga anterior sin registrar: ${cargaFaltante.rendimiento} km/l, fuera del rango plausible.`
+        observaciones = observaciones ? `${observaciones} · ${nota}` : nota
+      }
+    }
+
     const { data, error } = await supabase
       .from("registro_combustible")
       .insert({
         fecha: input.fecha,
-        dominio: input.dominio.trim().toUpperCase(),
+        dominio: dominioNorm,
         chofer: input.chofer.trim().toUpperCase(),
         odometro: input.odometro,
         litros: input.litros,
@@ -90,16 +150,87 @@ export async function createRegistroCombustible(
         proveedor: input.proveedor?.trim() || null,
         numero_remito: input.numero_remito?.trim() || null,
         costo_total: input.costo_total || null,
-        observaciones: input.observaciones?.trim() || null,
+        observaciones,
         created_by: profile.id,
       })
       .select()
       .single()
 
     if (error) return { error: error.message }
-    return { data: data as RegistroCombustible }
+
+    // Carga que se registra DESPUÉS de la siguiente (la que faltaba): el tramo
+    // de la carga posterior quedó medido contra una carga más vieja y hay que
+    // partirlo. Sin esto, registrar la carga olvidada no arreglaba el km/l.
+    let recalculoSiguiente = false
+    const { data: siguiente } = await supabase
+      .from("registro_combustible")
+      .select("id, odometro, litros")
+      .eq("dominio", dominioNorm)
+      .eq("tipo_combustible", tipoCarga)
+      .gt("odometro", input.odometro)
+      .order("odometro", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (siguiente) {
+      const kmSig = Number(siguiente.odometro) - input.odometro
+      const litrosSig = Number(siguiente.litros)
+      await supabase
+        .from("registro_combustible")
+        .update({
+          km_recorridos: kmSig,
+          rendimiento:
+            kmSig > 0 && litrosSig > 0 ? Math.round((kmSig / litrosSig) * 100) / 100 : null,
+        })
+        .eq("id", siguiente.id)
+      recalculoSiguiente = true
+    }
+
+    return { data: data as RegistroCombustible, cargaFaltante, recalculoSiguiente }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== ÚLTIMO PRECIO POR LITRO ====================
+
+export interface PrecioLitroReciente {
+  precioLitro: number
+  fecha: string
+}
+
+/**
+ * Último precio pagado por litro de gasoil, por camión y para la flota, a
+ * partir de las cargas que tienen costo. Sirve para sugerir el costo del
+ * ticket en el formulario (SOP de Combustible: cada carga con su costo).
+ */
+export async function getUltimosPreciosLitro(): Promise<{
+  porDominio: Record<string, PrecioLitroReciente>
+  flota: PrecioLitroReciente | null
+}> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from("registro_combustible")
+      .select("dominio, fecha, litros, costo_total")
+      .eq("tipo_combustible", TIPO_CARGA_GASOIL)
+      .not("costo_total", "is", null)
+      .gt("litros", 0)
+      .order("fecha", { ascending: false })
+      .limit(200)
+    const porDominio: Record<string, PrecioLitroReciente> = {}
+    let flota: PrecioLitroReciente | null = null
+    for (const r of data ?? []) {
+      const costo = Number(r.costo_total)
+      const litros = Number(r.litros)
+      if (!(costo > 0) || !(litros > 0)) continue
+      const precioLitro = Math.round((costo / litros) * 100) / 100
+      if (!flota) flota = { precioLitro, fecha: r.fecha }
+      if (!porDominio[r.dominio]) porDominio[r.dominio] = { precioLitro, fecha: r.fecha }
+    }
+    return { porDominio, flota }
+  } catch {
+    return { porDominio: {}, flota: null }
   }
 }
 

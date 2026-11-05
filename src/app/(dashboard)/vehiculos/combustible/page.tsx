@@ -1,5 +1,6 @@
 import { getVehiculos, getChoferes } from "@/actions/registros-vehiculos"
 import { getUltimasLecturasFlota } from "@/actions/checklist-vehiculos"
+import { getUltimosPreciosLitro } from "@/actions/combustible"
 import { CombustibleFormClient } from "./combustible-form-client"
 import Link from "next/link"
 import { ArrowLeft, BarChart3 } from "lucide-react"
@@ -8,11 +9,17 @@ import { getProfile } from "@/lib/session"
 export default async function CombustiblePage() {
   // El empleado no puede entrar a /vehiculos ni al análisis (es de gestión):
   // vuelve a su Inicio y no ve el botón.
-  const esEmpleado = (await getProfile())?.role === "empleado"
-  const [vehiculosRes, choferesRes, ultimasLecturas] = await Promise.all([
+  const profile = await getProfile()
+  const esEmpleado = profile?.role === "empleado"
+  // El nombre escrito a mano lo habilita sólo gestión: el chofer elige de la
+  // lista (DPO 3.3: el km/l por chofer cruza por texto y un nombre con otra
+  // grafía es otra persona). Las camionetas siguen libres en el propio form.
+  const puedeTextoLibre = profile?.role === "admin" || profile?.role === "supervisor"
+  const [vehiculosRes, choferesRes, ultimasLecturas, precios] = await Promise.all([
     getVehiculos(),
     getChoferes(),
     getUltimasLecturasFlota(),
+    getUltimosPreciosLitro(),
   ])
 
   const vehiculos = "data" in vehiculosRes ? vehiculosRes.data : []
@@ -40,6 +47,9 @@ export default async function CombustiblePage() {
         vehiculos={vehiculos}
         choferes={choferes}
         ultimasLecturas={ultimasLecturas}
+        puedeTextoLibre={puedeTextoLibre}
+        precios={precios}
+        volverA={esEmpleado ? "/mis-capacitaciones" : "/vehiculos"}
       />
     </div>
   )

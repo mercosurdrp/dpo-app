@@ -179,7 +179,18 @@ const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
   neumaticos_medicion: { tab: "neumaticos", label: "Ver las mediciones del mes" },
   neumaticos_conformidad: { tab: "neumaticos", label: "Ver las mediciones del mes" },
   neumaticos_desgaste: { tab: "neumaticos", label: "Ver el desgaste por km" },
-  combustible_kml: { href: "/vehiculos/combustible", label: "Ver el módulo de Combustible" },
+  combustible_kml: {
+    href: "/vehiculos/combustible/analisis",
+    label: "Ver el análisis por camión y por chofer",
+  },
+  combustible_sin_registrar_l: {
+    href: "/vehiculos/combustible/analisis",
+    label: "Ver qué camiones tienen cargas sin registrar",
+  },
+  combustible_camiones_sin_carga_7d: {
+    href: "/vehiculos/combustible/analisis",
+    label: "Ver los días desde la última carga",
+  },
   co2_flota: { href: "/vehiculos/combustible", label: "Ver el módulo de Combustible" },
   checklist_adherencia: {
     tab: "checklists",
@@ -549,10 +560,33 @@ const KPI_DEFS: KpiDef[] = [
     kpi: "combustible_kml",
     label: "Rendimiento de combustible",
     descripcion:
-      "Σ km recorridos ÷ Σ litros con medición del mes (mismo criterio que el módulo Combustible)",
+      "Σ km recorridos ÷ Σ litros con medición del mes, flota de reparto, sin los tramos con carga faltante (mismo criterio que el módulo Combustible). KPI principal del DPO 3.3",
     fmt: (v) => `${v.toFixed(2)} km/l`,
     conSerie: true,
     dpo: "3.3",
+  },
+  {
+    // PI de pérdida de combustible (R3.3.3). Mientras haya litros sin
+    // registrar el km/l de arriba está inflado: este número dice cuánto.
+    kpi: "combustible_sin_registrar_l",
+    label: "Litros sin registrar",
+    descripcion:
+      "Litros de las cargas cuyo tramo rinde más de 1,4× lo habitual del camión: entraron al tanque sin pasar por la app. Meta 0; la política de combustible exige registrar cada carga en el momento",
+    fmt: (v) => `${Math.round(v).toLocaleString("es-AR")} L`,
+    conSerie: true,
+    dpo: "3.3",
+    acumulativo: true,
+  },
+  {
+    // Condición de la meta 3,75: una carga cada ≤ 7 días por camión.
+    kpi: "combustible_camiones_sin_carga_7d",
+    label: "Camiones con +7 días sin carga",
+    descripcion:
+      "Camiones de reparto con algún hueco de más de 7 días entre cargas en el mes: un camión parado sin avisar o una carga que no pasó por la app. Meta 0",
+    fmt: (v) => String(Math.round(v)),
+    conSerie: true,
+    dpo: "3.3",
+    nLabel: { sing: "camión", plural: "camiones" },
   },
   {
     kpi: "co2_flota",

@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { ChevronDown, ShieldCheck } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -130,14 +131,27 @@ export function EstadoDpoPanel() {
                           {secciones.length > 0 ? (
                             <>
                               <span>Evidencia en</span>
-                              {secciones.map((s) => (
-                                <span
-                                  key={s.id}
-                                  className="rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[11px] font-medium text-foreground/80"
-                                >
-                                  {s.label}
-                                </span>
-                              ))}
+                              {secciones.map((s) =>
+                                s.href ? (
+                                  // Pantalla fuera del módulo (combustible,
+                                  // presupuesto): se abre, no es una solapa.
+                                  <Link
+                                    key={s.id}
+                                    href={s.href}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[11px] font-medium text-primary hover:underline"
+                                  >
+                                    {s.label} ↗
+                                  </Link>
+                                ) : (
+                                  <span
+                                    key={s.id}
+                                    className="rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[11px] font-medium text-foreground/80"
+                                  >
+                                    {s.label}
+                                  </span>
+                                ),
+                              )}
                             </>
                           ) : (
                             <span className="text-amber-600 dark:text-amber-400">

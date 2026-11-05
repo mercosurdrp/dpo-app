@@ -54,6 +54,8 @@ export type FlotaKpi =
   | "repuestos_demora_pieza"
   | "valor_stock_panol"
   | "combustible_kml"
+  | "combustible_sin_registrar_l"
+  | "combustible_camiones_sin_carga_7d"
   | "co2_flota"
   | "cil_tareas"
   | "cil_defectos_anticipables"
@@ -801,6 +803,11 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     // toda la ventana): sus litros son reales y cuentan para el CO2, pero el
     // tramo no entra al km/l porque infla el indicador (ver combustible-limpio).
     const medianasComb = medianasPorDominio(cargasRuta)
+    // PI de pérdida (DPO 3.3): litros del mes que entraron sin registrar. El
+    // tramo sospechoso no dice cuántos litros faltaron; se cuentan los litros
+    // de la carga que lo cerró como orden de magnitud de lo que no pasó por
+    // la app. Meta 0.
+    const sinRegistrarLitros = new Map<string, number>()
     for (const c of cargasRuta) {
       const ym = String(c.fecha).slice(0, 7)
       if (!meses.includes(ym)) continue
@@ -808,11 +815,58 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       const litros = Number(c.litros ?? 0)
       const km = Number(c.km_recorridos ?? 0)
       acc.litros += litros
-      if (km > 0 && !esCargaSinRegistrar(c, medianasComb)) {
+      const sinRegistrar = km > 0 && esCargaSinRegistrar(c, medianasComb)
+      if (km > 0 && !sinRegistrar) {
         acc.km += km
         acc.litrosConKm += litros
       }
+      if (sinRegistrar) sinRegistrarLitros.set(ym, (sinRegistrarLitros.get(ym) ?? 0) + litros)
       combustible.set(ym, acc)
+    }
+
+    // PI de frecuencia (DPO 3.3): camiones de reparto con un hueco de más de 7
+    // días entre cargas dentro del mes (condición de la meta 3,75 del
+    // 31/08/2026). Se mira cada camión activo: de la última carga previa al
+    // mes a la primera del mes, entre cargas, y de la última carga al cierre
+    // del mes (o a hoy, si el mes está en curso). En el primer mes de la
+    // ventana no hay carga previa: ese hueco inicial no se cuenta.
+    const DIAS_MAX_SIN_CARGA = 7
+    const hoyCombISO = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Argentina/Buenos_Aires",
+    }).format(new Date())
+    const fechasPorDominio = new Map<string, string[]>()
+    for (const c of cargasRuta) {
+      const arr = fechasPorDominio.get(c.dominio) ?? []
+      arr.push(String(c.fecha).slice(0, 10))
+      fechasPorDominio.set(c.dominio, arr)
+    }
+    const diasEntre = (a: string, b: string) =>
+      Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000)
+    const finDeMes = (ym: string) => {
+      const [y, m] = ym.split("-").map(Number)
+      return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+    }
+    const camionesSinCarga7d = new Map<string, number>()
+    for (const ym of meses) {
+      const desde = `${ym}-01`
+      const hasta = finDeMes(ym) < hoyCombISO ? finDeMes(ym) : hoyCombISO
+      let n = 0
+      for (const dominio of esFlotaDeRuta) {
+        const fechas = [...new Set(fechasPorDominio.get(dominio) ?? [])].sort()
+        const previa = fechas.filter((f) => f < desde).at(-1) ?? null
+        const delMes = fechas.filter((f) => f >= desde && f <= hasta)
+        const hitos = [...(previa ? [previa] : []), ...delMes]
+        let hueco = false
+        for (let i = 1; i < hitos.length; i++) {
+          if (diasEntre(hitos[i - 1], hitos[i]) > DIAS_MAX_SIN_CARGA) hueco = true
+        }
+        // Del último hito al cierre: un camión sin ninguna carga en el mes
+        // también cuenta, siempre que haya una previa que marque desde cuándo.
+        const ultimo = hitos.at(-1)
+        if (ultimo && diasEntre(ultimo, hasta) > DIAS_MAX_SIN_CARGA) hueco = true
+        if (hueco) n++
+      }
+      camionesSinCarga7d.set(ym, n)
     }
 
     // Tareas CIL completadas por mes.
@@ -1053,6 +1107,18 @@ export async function getFlotaKpiSeriesExtra(): Promise<
           const c = combustible.get(ym)
           return { ym, valor: c && c.litros > 0 ? c.litros * CO2_KG_POR_LITRO : null }
         }),
+        // Un mes con cargas y sin sospechas vale 0 (es el mejor resultado); sin
+        // cargas no hay dato.
+        combustible_sin_registrar_l: meses.map((ym) => {
+          const c = combustible.get(ym)
+          return { ym, valor: c && c.litros > 0 ? sinRegistrarLitros.get(ym) ?? 0 : null }
+        }),
+        combustible_camiones_sin_carga_7d: meses.map((ym) => ({
+          ym,
+          valor: camionesSinCarga7d.get(ym) ?? null,
+          n: camionesSinCarga7d.get(ym) ?? null,
+          nTotal: esFlotaDeRuta.size,
+        })),
         checklist_deteccion: meses.map((ym) => {
           const a = anticipadas.get(ym)
           return {
