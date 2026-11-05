@@ -6,6 +6,7 @@ export const ACARREO_OPERADORES = [
   "107@dpo.local", // Pedro Martinez (maquinista)
   "30@dpo.local", // Diego Cerbin (maquinista)
   "173@dpo.local", // Pablo Selenzo (maquinista)
+  "159@dpo.local", // Ruben Galvez (maquinista, desde 05-11-2026)
   "135@dpo.local", // German Veidoski
   "110@dpo.local", // Marcos Sala
 ]
@@ -33,6 +34,7 @@ export const MAQUINISTAS_DESCARGA = [
   { email: "30@dpo.local", nombre: "Diego Cerbin" },
   { email: "107@dpo.local", nombre: "Pedro Martinez" },
   { email: "173@dpo.local", nombre: "Pablo Selenzo" },
+  { email: "159@dpo.local", nombre: "Ruben Galvez" },
   { email: "110@dpo.local", nombre: "Marcos Sala" },
   { email: "135@dpo.local", nombre: "German Veidoski" },
 ] as const
