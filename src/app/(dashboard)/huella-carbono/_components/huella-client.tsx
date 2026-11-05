@@ -131,9 +131,11 @@ export function HuellaClient({
           </p>
         </div>
         <div className="flex gap-2">
-          {/* Informe con gráficos y conclusión, generado con el corte ene–jul 2026 */}
+          {/* Línea de base: informe con gráficos y conclusión, corte ene–jul 2026.
+              Queda fijo como primera medición; el informe vigente se saca con
+              «Imprimir / PDF» (pestaña Informe, siempre al mes actual). */}
           <Button variant="outline" onClick={() => window.open("/huella/Huella_Carbono_Pampeana_EneJul2026.pdf", "_blank")}>
-            <FileDown className="size-4" /> Descargar PDF
+            <FileDown className="size-4" /> Línea de base ene–jul 2026 (PDF)
           </Button>
           <Button variant="outline" onClick={() => { setTab("informe"); setTimeout(() => window.print(), 300) }}>
             <Printer className="size-4" /> Imprimir / PDF
