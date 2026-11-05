@@ -13,6 +13,13 @@ import {
 } from "@/lib/flota/neumaticos-control"
 import { horasEntre } from "@/lib/vehiculos/tiempo-resolucion"
 import { tasaFlota } from "@/lib/vehiculos/desgaste-neumaticos"
+import {
+  armarLineasGasto,
+  gastoAcumuladoAlMes,
+  gastoPor1000Km,
+  type NeumaticoGasto,
+  type RecapadoGasto,
+} from "@/lib/vehiculos/gasto-neumaticos"
 import { getDesgasteNeumaticos } from "@/actions/neumaticos"
 import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 import { CAUSA_DIFERENCIA_LABEL, esAjusteConteo, type CausaDiferencia } from "@/lib/flota/inventario-politica"
@@ -66,6 +73,7 @@ export type FlotaKpi =
   | "neumaticos_conformidad"
   | "neumaticos_medicion"
   | "neumaticos_desgaste"
+  | "neumaticos_gasto_km"
   | "presupuesto_desvio"
 
 export type PlanFlotaEstado = "abierto" | "en_progreso" | "cerrado"
@@ -399,7 +407,12 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .map((it) => it.id),
     )
 
-    const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes, vehRes, repOtRes, presupRes] = await Promise.all([
+    // Gasto de neumáticos (DPO 3.4 / R3.4.4): el PI se mira ACUMULADO DEL AÑO,
+    // así que la plata y los km no alcanzan con la ventana de 3 meses — van
+    // desde el 1 de enero del año más viejo que la ventana toca.
+    const inicioAnio = `${meses[0].slice(0, 4)}-01-01`
+
+    const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes, vehRes, repOtRes, presupRes, neumGastoRes, recapGastoRes, cargasAnioRes] = await Promise.all([
       supabase
         .from("mantenimiento_realizados")
         .select("id, dominio, fecha, rubro")
@@ -465,6 +478,27 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .from("presupuestos_tareas")
         .select("anio, mes, rubro, monto_presupuestado, monto_real")
         .gte("anio", Number(meses[0].slice(0, 4))),
+      // Gasto de neumáticos: las dos fuentes de plata de goma (compra de
+      // cubiertas y servicio de recapado), las mismas que el panel "Costo de
+      // neumáticos por unidad". El agregado está en `gasto-neumaticos.ts` para
+      // que el KPI y el panel no abran dos totales distintos.
+      supabase
+        .from("mantenimiento_neumaticos")
+        .select("id, numero, tipo, marca, medida, dominio, proveedor, costo_unitario, fecha_compra")
+        .not("costo_unitario", "is", null)
+        .gte("fecha_compra", inicioAnio),
+      supabase
+        .from("mantenimiento_recapados")
+        .select(
+          "numero_remito, proveedor, fecha_envio, fecha_retorno, items:mantenimiento_recapado_items(id, numero_envio, numero_retorno, dominio_origen, costo)"
+        )
+        .or(`fecha_retorno.gte.${inicioAnio},and(fecha_retorno.is.null,fecha_envio.gte.${inicioAnio})`),
+      // Km del año para el denominador del gasto por 1.000 km.
+      supabase
+        .from("registro_combustible")
+        .select("dominio, fecha, km_recorridos")
+        .eq("tipo_combustible", TIPO_CARGA_GASOIL)
+        .gte("fecha", inicioAnio),
     ])
     if (otRes.error) return { error: otRes.error.message }
     if (otParadaRes.error) return { error: otParadaRes.error.message }
@@ -476,6 +510,9 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     if (cilRes.error) return { error: cilRes.error.message }
     if (vehRes.error) return { error: vehRes.error.message }
     if (repOtRes.error) return { error: repOtRes.error.message }
+    if (neumGastoRes.error) return { error: neumGastoRes.error.message }
+    if (recapGastoRes.error) return { error: recapGastoRes.error.message }
+    if (cargasAnioRes.error) return { error: cargasAnioRes.error.message }
 
     /**
      * Trazabilidad de egresos de pañol (DPO 2.3, R2.3.2): de los repuestos que
@@ -824,6 +861,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       combustible.set(ym, acc)
     }
 
+
     // PI de frecuencia (DPO 3.3): camiones de reparto con un hueco de más de 7
     // días entre cargas dentro del mes (condición de la meta 3,75 del
     // 31/08/2026). Se mira cada camión activo: de la última carga previa al
@@ -867,6 +905,47 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         if (hueco) n++
       }
       camionesSinCarga7d.set(ym, n)
+    }
+
+    /**
+     * Gasto de neumáticos por 1.000 km (DPO 3.4 / R3.4.4), acumulado del año.
+     *
+     * El auditor del H1 2026 lo pidió con estas palabras: "Comenzar a seguir
+     * KPI de consumo de neumaticos". El requisito nombra "Gasto de Neumáticos"
+     * como uno de los PI válidos del punto, y es el único de los cuatro que
+     * faltaba: presión y medición ya se siguen.
+     *
+     * 🚨 Acumulado y no mes a mes: las cubiertas se compran por juego, así que
+     * el mensual puro da $0 los meses sin compra y un pico el mes que se
+     * compra. La guía del punto pide tendencia contra la línea de base de los
+     * últimos 3 meses, y una serie que alterna 0 y 120.000 no es una tendencia.
+     *
+     * 🚨 El denominador son TODOS los km de `km_recorridos` de la flota de
+     * ruta, sin el filtro de "carga sin registrar" que sí usa el km/l. Ahí el
+     * filtro existe porque los litros faltantes inflan el rendimiento; acá los
+     * km del tramo son reales y descartarlos sólo encarecería el peso de la
+     * goma. Los autoelevadores quedan afuera porque miden horas, no km: su
+     * gasto de goma se ve en el panel de costos, no en este PI.
+     */
+    const lineasGasto = armarLineasGasto(
+      (neumGastoRes.data || []) as NeumaticoGasto[],
+      (recapGastoRes.data || []) as unknown as RecapadoGasto[],
+    )
+    const kmAnioAlMes = new Map<string, number>()
+    for (const ym of meses) {
+      const anio = ym.slice(0, 4)
+      let km = 0
+      for (const c of (cargasAnioRes.data || []) as Array<{
+        dominio: string
+        fecha: string
+        km_recorridos: number | null
+      }>) {
+        if (!esFlotaDeRuta.has(c.dominio)) continue
+        const f = String(c.fecha)
+        if (f.slice(0, 4) !== anio || f.slice(0, 7) > ym) continue
+        km += Number(c.km_recorridos ?? 0)
+      }
+      kmAnioAlMes.set(ym, km)
     }
 
     // Tareas CIL completadas por mes.
@@ -1251,6 +1330,19 @@ export async function getFlotaKpiSeriesExtra(): Promise<
             nTotal: instaladas,
           }
         }),
+        /**
+         * Lo que pidió el auditor: el gasto de goma normalizado por kilómetro.
+         *
+         * `n` y `nTotal` viajan con el valor para que la tarjeta pueda mostrar
+         * de dónde sale el número: pesos acumulados del año y km acumulados del
+         * mismo tramo. Sin eso, un $/1.000 km es un número sin auditoría.
+         */
+        neumaticos_gasto_km: meses.map((ym) => ({
+          ym,
+          valor: gastoPor1000Km(lineasGasto, ym, kmAnioAlMes.get(ym) ?? 0),
+          n: Math.round(gastoAcumuladoAlMes(lineasGasto, ym)),
+          nTotal: Math.round(kmAnioAlMes.get(ym) ?? 0),
+        })),
       },
     }
   } catch (e) {

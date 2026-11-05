@@ -179,6 +179,11 @@ const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
   neumaticos_medicion: { tab: "neumaticos", label: "Ver las mediciones del mes" },
   neumaticos_conformidad: { tab: "neumaticos", label: "Ver las mediciones del mes" },
   neumaticos_desgaste: { tab: "neumaticos", label: "Ver el desgaste por km" },
+  neumaticos_gasto_km: {
+    tab: "neumaticos",
+    label: "Ver el costo de neumáticos por unidad",
+    labelSinDato: "Sin km cargados este año",
+  },
   combustible_kml: {
     href: "/vehiculos/combustible/analisis",
     label: "Ver el análisis por camión y por chofer",
@@ -704,6 +709,21 @@ const KPI_DEFS: KpiDef[] = [
     conSerie: false,
     dpo: "3.4",
     nLabel: { sing: "cubierta en el ajuste", plural: "cubiertas en el ajuste" },
+  },
+  // El PI que pidió el auditor del H1 2026 ("Comenzar a seguir KPI de consumo
+  // de neumaticos"). R3.4.4 nombra "Gasto de Neumáticos" como uno de los PI
+  // válidos del punto: es el único de los cuatro que faltaba.
+  {
+    kpi: "neumaticos_gasto_km",
+    label: "Gasto de neumáticos por km",
+    descripcion:
+      "Plata de goma (cubiertas nuevas + recapados) ÷ km de la flota, acumulado del año y expresado por cada 1.000 km. Menos es mejor. Se mira acumulado porque las cubiertas se compran por juego: mes a mes daría $0 los meses sin compra y un pico el mes que se compra. Excluye los autoelevadores, que miden horas y no km",
+    fmt: (v) => `${fmtMoney(v)} /1.000 km`,
+    conSerie: true,
+    dpo: "3.4",
+    // 🚨 Acumulativo: el numerador y el denominador se van juntando durante el
+    // año, así que en enero el número todavía no se puede juzgar contra la meta.
+    acumulativo: true,
   },
 ]
 

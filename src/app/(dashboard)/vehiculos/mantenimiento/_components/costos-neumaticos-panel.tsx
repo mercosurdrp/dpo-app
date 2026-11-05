@@ -33,6 +33,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { Neumatico, Recapado } from "@/lib/vehiculos/neumaticos-tipos"
+import {
+  armarLineasGasto,
+  type ConceptoGasto,
+  type LineaGastoNeumatico,
+} from "@/lib/vehiculos/gasto-neumaticos"
 import type { VehiculoTipo } from "@/types/database"
 
 import { KpiCard } from "./kpi-card"
@@ -72,84 +77,14 @@ const TIPO_UNIDAD_LABEL: Record<string, string> = {
   autoelevador: "Autoelevador",
 }
 
-type Concepto = "nueva" | "recapado"
-
-const CONCEPTO_LABEL: Record<Concepto, string> = {
+const CONCEPTO_LABEL: Record<ConceptoGasto, string> = {
   nueva: "Cubierta nueva",
   recapado: "Recapado",
-}
-
-interface LineaCosto {
-  id: string
-  /** Compra: fecha de factura. Recapado: fecha en que volvió del recapador. */
-  fecha: string | null
-  dominio: string | null
-  concepto: Concepto
-  detalle: string
-  proveedor: string | null
-  monto: number
 }
 
 interface UnidadFlota {
   dominio: string
   tipo: VehiculoTipo | null
-}
-
-/**
- * Las dos fuentes de plata de goma, pasadas a una lista plana de líneas.
- *
- * La cubierta se imputa a la unidad que la tiene puesta (`dominio`); si está en
- * stock o ya se dio de baja queda en "sin unidad". El recapado se imputa a la
- * unidad de la que se desmontó (`dominio_origen`), que es la que gastó la goma.
- */
-function armarLineas(neumaticos: Neumatico[], recapados: Recapado[]): LineaCosto[] {
-  const lineas: LineaCosto[] = []
-
-  for (const n of neumaticos) {
-    if (n.costo_unitario == null) continue
-    const monto = Number(n.costo_unitario)
-    if (!(monto > 0)) continue
-    const cubierta = [n.marca, n.medida].filter(Boolean).join(" ")
-    lineas.push({
-      id: `cub-${n.id}`,
-      fecha: n.fecha_compra,
-      dominio: n.dominio,
-      // Una cubierta comprada ya recapada es gasto de recapado, no de goma nueva.
-      concepto: n.tipo === "recapado" ? "recapado" : "nueva",
-      detalle: [cubierta || "Cubierta", n.numero ? `N° ${n.numero}` : null]
-        .filter(Boolean)
-        .join(" · "),
-      proveedor: n.proveedor,
-      monto,
-    })
-  }
-
-  for (const r of recapados) {
-    for (const it of r.items ?? []) {
-      if (it.costo == null) continue
-      const monto = Number(it.costo)
-      if (!(monto > 0)) continue
-      const numero = it.numero_retorno ?? it.numero_envio
-      lineas.push({
-        id: `rec-${it.id}`,
-        // El costo se conoce cuando vuelve con la factura; si todavía está en el
-        // recapador, se imputa a la fecha en que salió.
-        fecha: r.fecha_retorno ?? r.fecha_envio,
-        dominio: it.dominio_origen,
-        concepto: "recapado",
-        detalle: [
-          numero ? `Cubierta N° ${numero}` : "Cubierta sin numerar",
-          r.numero_remito ? `remito ${r.numero_remito}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · "),
-        proveedor: r.proveedor,
-        monto,
-      })
-    }
-  }
-
-  return lineas.sort((a, b) => (b.fecha ?? "").localeCompare(a.fecha ?? ""))
 }
 
 interface Totales {
@@ -161,7 +96,7 @@ interface Totales {
 
 const totalesVacios = (): Totales => ({ nueva: 0, recapado: 0, total: 0, cubiertas: 0 })
 
-function sumar(acc: Totales, l: LineaCosto): Totales {
+function sumar(acc: Totales, l: LineaGastoNeumatico): Totales {
   acc[l.concepto] += l.monto
   acc.total += l.monto
   acc.cubiertas++
@@ -183,7 +118,10 @@ export function CostosNeumaticosPanel({
   const [agrupar, setAgrupar] = useState<"unidad" | "mes">("unidad")
   const [verDetalle, setVerDetalle] = useState(false)
 
-  const todas = useMemo(() => armarLineas(neumaticos, recapados), [neumaticos, recapados])
+  const todas = useMemo(
+    () => armarLineasGasto(neumaticos, recapados),
+    [neumaticos, recapados]
+  )
 
   const anios = useMemo(
     () =>

@@ -10,8 +10,8 @@ th{background:#eef3f8}
 </style></head><body>
 
 <h1>SOP — Políticas y Gestión de Neumáticos</h1>
-<p><b>Pilar:</b> Flota · <b>Punto DPO:</b> 3.4 · <b>Requisitos:</b> R3.4.3, R3.4.4<br>
-<b>Estado:</b> BORRADOR para revisión · <b>Elaborado:</b> 25/08/2026 · <b>Revisión:</b> 0</p>
+<p><b>Pilar:</b> Flota · <b>Punto DPO:</b> 3.4 · <b>Requisitos:</b> R3.4.1, R3.4.3, R3.4.4, R3.4.5<br>
+<b>Estado:</b> BORRADOR para revisión · <b>Elaborado:</b> 25/08/2026 · <b>Revisión:</b> 2 del 05/11/2026</p>
 
 <h2>1. Objetivo</h2>
 <p>Definir cómo se controla, se rota, se recapa y se da de baja cada cubierta de la flota, con medición mensual de profundidad y presión, para que el reemplazo se decida por el estado real de la goma y no por el km teórico, y para que un desgaste anormal se detecte como síntoma de alineación, presión o carga.</p>
@@ -96,12 +96,30 @@ th{background:#eef3f8}
 </ul>
 <p>Con dos rondas la tasa todavía no significa nada: la dispersión del calibre es más grande que el desgaste de un mes. Se necesitan entre 5 y 8 rondas mensuales seguidas con la flota completa para que el número sea utilizable.</p>
 
+<h3>7.8 Consumo y gasto de neumáticos</h3>
+<p>El desgaste por km dice cuánta goma se consume; el gasto dice cuánto cuesta. Son el mismo consumo medido en dos monedas, y el indicador que se reporta es el segundo: <b>pesos de goma por cada 1.000 km recorridos</b>.</p>
+<table>
+<tr><th>Término</th><th>De dónde sale</th></tr>
+<tr><td>Numerador</td><td>Cubiertas nuevas al costo de la factura (fecha de compra) <b>más</b> el costo de los recapados (fecha en que la cubierta volvió del recapador), acumulado desde el 1 de enero.</td></tr>
+<tr><td>Denominador</td><td>Km recorridos por la flota de ruta en el mismo tramo del año, de los registros de combustible — la misma fuente que el indicador de km/litro.</td></tr>
+<tr><td>Alcance</td><td>Camiones. Los autoelevadores quedan afuera porque se miden en horas, no en kilómetros: su gasto de goma se sigue en el panel de costos, no en este indicador.</td></tr>
+</table>
+<p><b>Se lee acumulado del año, no mes a mes.</b> Las cubiertas se compran por juego: el mes a mes daría cero los meses sin compra y un pico el mes que se compra un juego de cuatro, y eso no es una tendencia. El acumulado baja cuando la flota rueda sin gastar goma y sube el mes de la compra, que es exactamente lo que el indicador tiene que mostrar.</p>
+<p><b>Dos reglas de carga sin las cuales el indicador no existe:</b></p>
+<ul>
+<li><b>Ninguna cubierta se da de alta sin factura y costo unitario.</b> La cubierta sin precio no desaparece del indicador: lo abarata. El módulo muestra el contador de "sin costo cargado" justamente para que ese agujero se vea.</li>
+<li><b>El fierro se imputa en Neumáticos y la mano de obra en la OT.</b> Cargar la cubierta también como repuesto de la OT cuenta la misma plata dos veces y rompe los dos indicadores a la vez.</li>
+</ul>
+<p>Qué se hace con el número: se revisa en la reunión mensual contra la línea del presupuesto. Un gasto por km que sube sin que suba el kilometraje es compra anticipada, desgaste irregular o precio; las tres se resuelven distinto, y la que corresponda se sigue como plan de acción en el tablero de indicadores.</p>
+<p class="nota"><b>Línea de base.</b> La serie arranca en 2026: las cubiertas anteriores vinieron del traspaso de Cloudfleet sin comprobante y no tienen costo cargado. El acumulado de 2026 es el piso contra el que se comparan los meses siguientes.</p>
+
 <h2>8. Control e indicadores</h2>
 <table>
 <tr><th>Indicador</th><th>Cálculo</th><th>Meta</th><th>Frecuencia</th></tr>
 <tr><td>Medición de neumáticos (cobertura)</td><td>Cubiertas medidas en el mes ÷ cubiertas instaladas obligadas</td><td>100 %</td><td>Mensual</td></tr>
 <tr><td>Conformidad de neumáticos</td><td>Cubiertas medidas dentro de norma ÷ cubiertas medidas</td><td>100 %</td><td>Mensual</td></tr>
 <tr><td>Desgaste por 1.000 km</td><td>Pendiente de la recta ajustada sobre las rondas, por unidad y eje</td><td>A definir cuando haya 5 rondas</td><td>Mensual</td></tr>
+<tr><td><b>Gasto de neumáticos por km</b></td><td>Gasto de goma acumulado del año (cubiertas nuevas + recapados) ÷ km de la flota de ruta del mismo tramo × 1.000</td><td>Línea de neumáticos del presupuesto ÷ km proyectados</td><td>Mensual, acumulado del año</td></tr>
 <tr><td>Cubiertas fuera del promedio de sus pares</td><td>Cubiertas con desvío mayor a 40 % contra su unidad+eje</td><td>0</td><td>Mensual</td></tr>
 </table>
 
@@ -118,7 +136,8 @@ th{background:#eef3f8}
 <tr><th>N.º</th><th>Responsable</th><th>Cargo</th><th>Descripción</th><th>Fecha</th></tr>
 <tr><td>0</td><td>&nbsp;</td><td>SDF</td><td>Elaboración del procedimiento (borrador)</td><td>25/08/2026</td></tr>
 <tr><td>1</td><td>&nbsp;</td><td>SDF</td><td>Punto de apoyo del calibre en 7.2: canal del centro, nunca sobre el testigo de desgaste, y verificación del cero. Se agrega la nota con las dos rondas descartadas por leer bajo.</td><td>21/10/2026</td></tr>
-<tr><td>2</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>2</td><td>&nbsp;</td><td>SDF</td><td>Se agrega 7.8 Consumo y gasto de neumáticos, con el indicador de pesos de goma por 1.000 km, su alcance y las dos reglas de carga. Responde a la devolución del auditor del H1 2026: «Comenzar a seguir KPI de consumo de neumaticos. Realizar SOP.»</td><td>05/11/2026</td></tr>
+<tr><td>3</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
 </table>
 
 </body></html>
