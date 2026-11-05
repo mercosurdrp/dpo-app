@@ -28,6 +28,7 @@ import {
   type SustentabilidadPresupuesto,
 } from "@/actions/presupuesto-sustentabilidad"
 import { listPlanesAccion } from "@/actions/presupuesto-planes-accion"
+import { getMantenimientoPorTipo } from "@/actions/presupuesto-mantenimiento-tipo"
 import {
   getPresupuestoCapex,
   listInversiones,
@@ -104,6 +105,7 @@ export default async function PresupuestoPage({
     costoHlRes,
     sustentabilidadRes,
     capexRes,
+    mantenimientoTipoRes,
   ] = await Promise.all([
     getPresupuestoAnual(anioActivo),
     getEerrAnual(anioActivo),
@@ -148,6 +150,10 @@ export default async function PresupuestoPage({
     mostrarInversiones
       ? getPresupuestoCapex(anioActivo)
       : Promise.resolve<{ data: PresupuestoCapex | null }>({ data: null }),
+    // Gasto de mantenimiento por tipo (preventivo / correctivo / proactivo)
+    // desde las OT: lo pide el auditor en Flota 3.2 y se muestra con el
+    // filtro de pilar en Flota.
+    getMantenimientoPorTipo(anioActivo),
   ])
 
   // Fotos del cuadro mensual y del KPI de combustible que ya vencieron: el
@@ -194,6 +200,12 @@ export default async function PresupuestoPage({
       mostrarInversiones={mostrarInversiones}
       inversiones={"data" in inversionesRes ? inversionesRes.data : []}
       capex={"data" in capexRes ? capexRes.data : null}
+      mantenimientoTipo={
+        "data" in mantenimientoTipoRes ? mantenimientoTipoRes.data : null
+      }
+      mantenimientoTipoError={
+        "error" in mantenimientoTipoRes ? mantenimientoTipoRes.error : null
+      }
       fotosVencidas={fotosVencidas}
     />
   )

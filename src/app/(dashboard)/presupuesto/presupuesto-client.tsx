@@ -79,6 +79,8 @@ import type { KpiCombustible } from "@/actions/presupuesto-combustible-kpi"
 import type { CostoHlMes } from "@/actions/presupuesto-costo-hl"
 import type { SustentabilidadPresupuesto } from "@/actions/presupuesto-sustentabilidad"
 import { SustentabilidadSection } from "@/components/presupuesto/sustentabilidad-section"
+import { MantenimientoTipoSection } from "@/components/presupuesto/mantenimiento-tipo-section"
+import type { MantenimientoPorTipo } from "@/lib/presupuesto/mantenimiento-tipo"
 import type {
   EstadoPresupuestoTarea,
   IniciativaAhorroConDetalle,
@@ -118,6 +120,9 @@ interface Props {
   mostrarInversiones: boolean
   inversiones: InversionConDetalle[]
   capex: PresupuestoCapex | null
+  /** Gasto de mantenimiento por tipo (OT): se muestra con el filtro de pilar en Flota. */
+  mantenimientoTipo: MantenimientoPorTipo | null
+  mantenimientoTipoError?: string | null
   /** Fotos (cuadro mensual, KPI combustible) vencidas: se recalculan en segundo plano. */
   fotosVencidas?: string[]
 }
@@ -221,6 +226,8 @@ export function PresupuestoClient({
   mostrarInversiones,
   inversiones,
   capex,
+  mantenimientoTipo,
+  mantenimientoTipoError = null,
   fotosVencidas = [],
 }: Props) {
   const router = useRouter()
@@ -824,6 +831,20 @@ export function PresupuestoClient({
             </SelectContent>
           </Select>
         </div>
+
+        {/* Flota 3.2 (R3.2.2): con el filtro en Flota, el gasto de mantenimiento
+            segregado en preventivo / correctivo / proactivo, que sale de las OT. */}
+        {filtroPilar === "flota" && (
+          <div className="mb-4">
+            <MantenimientoTipoSection
+              data={mantenimientoTipo}
+              error={mantenimientoTipoError}
+              anio={anioActivo}
+              mes={mesActivo}
+              ejecucionRubros={ejecucionRubros}
+            />
+          </div>
+        )}
 
         {/* Tabla */}
         <div className="rounded-lg border bg-white">
