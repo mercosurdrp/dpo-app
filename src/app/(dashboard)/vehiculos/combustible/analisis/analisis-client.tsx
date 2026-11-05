@@ -12,8 +12,10 @@ import {
   type AnalisisCombustible,
   type CombustibleCamion,
   type CombustibleChofer,
+  type SerieCombustible,
 } from "@/actions/combustible-analisis"
 import { ConsumoUrea } from "../consumo-urea"
+import { SerieMensualCombustible } from "./serie-mensual"
 
 const MESES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -37,7 +39,13 @@ function semaforo(desvio: number | null): { label: string; cls: string } {
   return { label: "Crítico", cls: "bg-rose-100 text-rose-700" }
 }
 
-export function AnalisisCombustibleClient({ inicial }: { inicial: AnalisisCombustible }) {
+export function AnalisisCombustibleClient({
+  inicial,
+  serie,
+}: {
+  inicial: AnalisisCombustible
+  serie: SerieCombustible | null
+}) {
   const [data, setData] = useState(inicial)
   const [mes, setMes] = useState(inicial.mes)
   const [cargando, startCarga] = useTransition()
@@ -149,6 +157,9 @@ export function AnalisisCombustibleClient({ inicial }: { inicial: AnalisisCombus
           tono={desvioEerr == null ? "neutro" : desvioEerr > 0 ? "mal" : "ok"}
         />
       </div>
+
+      {/* Serie mensual: flota + hasta 4 camiones elegidos, en un solo gráfico */}
+      <SerieMensualCombustible serie={serie} />
 
       {/* Justificación del KPI (R3.3.3) */}
       {data.justificacion_kpi && (

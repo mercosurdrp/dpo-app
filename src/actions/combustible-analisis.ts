@@ -164,6 +164,106 @@ async function eerrGasoilDelMes(mes: string): Promise<{ presup: number; real: nu
   }
 }
 
+export interface SerieCombustibleMes {
+  /** "YYYY-MM" */
+  ym: string
+  /** km/l de la flota de reparto del mes (Σ km ÷ Σ litros, sin cargas faltantes). */
+  flota: number | null
+  /** km/l por camión de reparto; null si no tuvo tramos válidos ese mes. */
+  porDominio: Record<string, number | null>
+  /** Litros de gasoil cargados por la flota de reparto en el mes. */
+  litros: number
+}
+
+export interface SerieCombustible {
+  meses: SerieCombustibleMes[]
+  /** Camiones de reparto activos, ordenados por patente. */
+  dominios: string[]
+  meta: number | null
+  piso: number
+}
+
+/**
+ * Serie mensual de rendimiento (km/l) de la flota de reparto y de cada camión,
+ * desde la primera carga registrada, con la misma limpieza que el análisis del
+ * mes (tramos plausibles, cargas sin registrar excluidas; la mediana de cada
+ * camión se toma sobre los 90 días previos a cada mes). Alimenta el gráfico de
+ * consumo promedio por mes de /vehiculos/combustible/analisis.
+ */
+export async function getSerieCombustibleMensual(): Promise<
+  { data: SerieCombustible } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supa = await createClient()
+    const [cargasRes, catRes, metaRes] = await Promise.all([
+      supa
+        .from("registro_combustible")
+        .select("dominio, fecha, litros, km_recorridos")
+        .eq("tipo_combustible", TIPO_CARGA_GASOIL)
+        .order("fecha")
+        .limit(10000),
+      supa.from("catalogo_vehiculos").select("dominio, tipo, sector, active"),
+      supa.from("flota_metas").select("meta").eq("kpi", "combustible_kml").maybeSingle(),
+    ])
+    if (cargasRes.error) return { error: cargasRes.error.message }
+
+    const flotaReparto = new Set(
+      (catRes.data ?? [])
+        .filter((c) => c.active !== false && c.tipo === "camion" && c.sector !== "deposito")
+        .map((c) => c.dominio),
+    )
+    const todas = ((cargasRes.data ?? []) as Omit<CargaRow, "chofer">[]).filter(
+      (r): r is Omit<CargaRow, "chofer"> & { dominio: string } => !!r.dominio && flotaReparto.has(r.dominio),
+    )
+    const meses = [...new Set(todas.map((r) => r.fecha.slice(0, 7)))].sort()
+
+    const out: SerieCombustibleMes[] = []
+    for (const ym of meses) {
+      const desde = `${ym}-01`
+      const hasta = primerDiaMesSiguiente(ym)
+      const historial = todas.filter((r) => r.fecha >= restarDias(desde, HISTORIAL_MEDIANA_DIAS) && r.fecha < hasta)
+      const delMes = historial.filter((r) => r.fecha >= desde)
+      const { validas } = separarCargasSinRegistrar(delMes, historial)
+      const setValidas = new Set(validas)
+      const porDom = new Map<string, { km: number; l: number }>()
+      let km = 0
+      let l = 0
+      let litros = 0
+      for (const r of delMes) {
+        const lt = Number(r.litros ?? 0)
+        const k = Number(r.km_recorridos ?? 0)
+        litros += lt
+        if (!(k > 0) || !setValidas.has(r)) continue
+        km += k
+        l += lt
+        const a = porDom.get(r.dominio) ?? { km: 0, l: 0 }
+        a.km += k
+        a.l += lt
+        porDom.set(r.dominio, a)
+      }
+      const porDominio: Record<string, number | null> = {}
+      for (const d of flotaReparto) {
+        const a = porDom.get(d)
+        porDominio[d] = a && a.l > 0 ? round(a.km / a.l) : null
+      }
+      out.push({ ym, flota: l > 0 ? round(km / l) : null, porDominio, litros: round(litros, 0) })
+    }
+
+    const metaRow = metaRes.data as { meta: number | null } | null
+    return {
+      data: {
+        meses: out,
+        dominios: [...flotaReparto].sort(),
+        meta: metaRow?.meta != null ? Number(metaRow.meta) : null,
+        piso: PISO_UNIDAD_KML,
+      },
+    }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando la serie" }
+  }
+}
+
 /**
  * Análisis de combustible del mes: consumo, km y rendimiento (km/l) por camión
  * y por chofer, comparado contra el promedio de la flota, la meta y el piso.

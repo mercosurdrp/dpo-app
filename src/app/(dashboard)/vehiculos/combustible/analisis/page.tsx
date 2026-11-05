@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
-import { getAnalisisCombustible } from "@/actions/combustible-analisis"
+import { getAnalisisCombustible, getSerieCombustibleMensual } from "@/actions/combustible-analisis"
 import { AnalisisCombustibleClient } from "./analisis-client"
 
 export const dynamic = "force-dynamic"
@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic"
  * (km/l) por camión vs el promedio de la flota, para armar el plan de acción.
  */
 export default async function AnalisisCombustiblePage() {
-  const res = await getAnalisisCombustible()
+  const [res, serieRes] = await Promise.all([getAnalisisCombustible(), getSerieCombustibleMensual()])
+  const serie = "data" in serieRes ? serieRes.data : null
 
   return (
     <div className="space-y-4">
@@ -25,7 +26,7 @@ export default async function AnalisisCombustiblePage() {
           No se pudo cargar el análisis: {res.error}
         </div>
       ) : (
-        <AnalisisCombustibleClient inicial={res.data} />
+        <AnalisisCombustibleClient inicial={res.data} serie={serie} />
       )}
     </div>
   )
