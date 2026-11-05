@@ -59,6 +59,7 @@ import {
   Loader2,
   Clock,
   Fuel,
+  BarChart3,
   Droplets,
   QrCode,
   Gauge,
@@ -876,11 +877,21 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Últimas Cargas de Combustible</CardTitle>
-              <Link href="/vehiculos/combustible">
-                <Button variant="outline" size="sm">
-                  <Fuel className="mr-1 h-4 w-4" /> Nueva Carga
-                </Button>
-              </Link>
+              <div className="flex flex-wrap gap-2">
+                {/* El análisis (km/l por camión y por chofer, PIs del DPO 3.3)
+                    sólo se llegaba desde el form de carga o desde Indicadores:
+                    acá, que es donde se miran las cargas, no había cómo. */}
+                <Link href="/vehiculos/combustible/analisis">
+                  <Button size="sm" className="bg-sky-600 text-white hover:bg-sky-700">
+                    <BarChart3 className="mr-1 h-4 w-4" /> Análisis del mes
+                  </Button>
+                </Link>
+                <Link href="/vehiculos/combustible">
+                  <Button variant="outline" size="sm">
+                    <Fuel className="mr-1 h-4 w-4" /> Nueva Carga
+                  </Button>
+                </Link>
+              </div>
             </CardHeader>
             <CardContent>
               {combustibleTipo.length === 0 ? (
