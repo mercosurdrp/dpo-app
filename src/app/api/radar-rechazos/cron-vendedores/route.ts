@@ -1,12 +1,15 @@
 /**
- * Aviso de las 15:00 del Radar de Rechazos por WhatsApp, el DÍA ANTERIOR a la
- * entrega (Fausto 27/10/2026: a las 07:00 del mismo día ya era tarde; a la
- * tarde el vendedor llama y, si el cliente no va a tener la plata, se
- * reprograma antes de cargar el camión).
+ * Aviso de las 15:00 del Radar de Rechazos por WhatsApp, el DÍA QUE SE CARGA EL
+ * PEDIDO, para la entrega a 2 días de reparto (Fausto 5/11/2026: el aviso al
+ * promotor tiene que salir junto con la vespertina de los supervisores, que ya
+ * trabaja esos clientes, y no un día después con el pedido emitido y ruteado.
+ * Antes: 27/10 a las 07:00 del día de entrega; 27/10 tarde, 15:00 del día
+ * anterior). Ejemplo: el jueves avisa por la entrega del sábado.
  *
- * Toma la foto del radar del PRÓXIMO día de reparto (la armó el cron de ayer a
- * 2 días vista), se queda con los clientes CRÍTICOS (criterio único de
- * `criterio.ts`) y le manda:
+ * Primero REARMA la foto de esa entrega desde Chess (la de las 09:30 no tiene
+ * los pedidos que entraron durante el día) y la guarda, así la pantalla del
+ * radar y el WhatsApp muestran lo mismo. Se queda con los clientes CRÍTICOS
+ * (criterio único de `criterio.ts`) y le manda:
  *   * a cada vendedor que atiende al cliente (preventista + repositor, desde
  *     las rutas de venta de Chess; fallback el promotor de la foto) su lista;
  *   * a cada supervisor el resumen de su equipo. Los críticos sin vendedor con
@@ -20,10 +23,11 @@
  * Auth: Bearer CRON_SECRET (Vercel cron) o header x-api-key=CRON_SECRET.
  * Query:
  *   ?dry=1          arma los mensajes y los devuelve, no envía ni registra
- *   ?fecha=YYYY-MM-DD  foto a usar (default: próximo día de reparto)
+ *   ?fecha=YYYY-MM-DD  entrega a avisar (default: 2 días de reparto vista)
+ *   ?sin_rearmar=1  usa la foto guardada tal cual, sin volver a Chess
  *   ?solo=549...    manda TODO a ese número (prueba), sin registrar
- * Domingos y feriados no corre: el día hábil anterior ya avisó por la entrega
- * que sigue (el sábado avisa por el lunes).
+ * Domingos y feriados no corre (no se cargan pedidos). El viernes avisa por el
+ * lunes y el sábado por el martes, igual que la foto del radar.
  */
 import { NextRequest, NextResponse } from "next/server"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -31,7 +35,8 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { sendText } from "@/lib/wa-bot/evolution"
 import { esPersonalExcluido, promotoresPorCliente } from "@/lib/foxtrot-alertas/destinatarios"
 import type { VendedorWa } from "@/lib/foxtrot-alertas/types"
-import { hayReparto, hoyART, proximoDiaRepartoART } from "@/lib/radar-rechazos/build"
+import { buildRadarRechazos, fechaObjetivoART, hayReparto, hoyART } from "@/lib/radar-rechazos/build"
+import { persistRadarSnapshot } from "@/lib/radar-rechazos/persist"
 import { detallePedidos, type DetallePedido } from "@/lib/radar-rechazos/pedido-cliente"
 import {
   RESUMEN_TOTAL_RADAR,
@@ -84,6 +89,7 @@ async function handle(request: NextRequest) {
   const dry = url.searchParams.get("dry") === "1"
   const qFecha = url.searchParams.get("fecha")
   const solo = url.searchParams.get("solo")?.trim() || null
+  const sinRearmar = url.searchParams.get("sin_rearmar") === "1"
   if (solo && !PHONE_RE.test(solo)) {
     return NextResponse.json({ error: "?solo= tiene que ser un número 549..." }, { status: 400 })
   }
@@ -92,10 +98,31 @@ async function handle(request: NextRequest) {
   if (!qFecha && !hayReparto(hoy)) {
     return NextResponse.json({ success: true, skipped: "hoy-sin-reparto", hoy })
   }
-  const fecha = qFecha && FECHA_RE.test(qFecha) ? qFecha : proximoDiaRepartoART(hoy)
+  const fecha = qFecha && FECHA_RE.test(qFecha) ? qFecha : fechaObjetivoART(hoy)
 
   try {
     const supabase = createAdminClient()
+    const creds = {
+      baseUrl: (process.env.CHESS_API_BASE_URL ?? "").trim(),
+      user: (process.env.CHESS_API_USER ?? "").trim(),
+      pass: (process.env.CHESS_API_PASS ?? "").trim(),
+    }
+
+    // ---- Foto actualizada con los pedidos cargados hasta ahora ----
+    // La del cron de las 09:30 se arma antes de que entre la preventa del día.
+    // En ?dry=1 se arma pero no se guarda. Si Chess falla se sigue con la foto
+    // guardada: es mejor avisar con la de la mañana que no avisar.
+    let rearmada: { clientes: number; guardada: boolean } | string = "no"
+    if (!sinRearmar && creds.baseUrl && creds.user && creds.pass) {
+      try {
+        const snap = await buildRadarRechazos(supabase, creds, fecha)
+        if (!dry) await persistRadarSnapshot(supabase, snap)
+        rearmada = { clientes: snap.clientes.length, guardada: !dry }
+      } catch (err) {
+        rearmada = `error: ${err instanceof Error ? err.message : String(err)}`
+        console.error(`[radar-wa] rearmar foto ${fecha}: ${rearmada}`)
+      }
+    }
 
     // ---- Foto + críticos ----
     const { data: filas, error: fErr } = await supabase
@@ -106,18 +133,13 @@ async function handle(request: NextRequest) {
       .eq("fecha_entrega", fecha)
     if (fErr) throw new Error(`leer foto: ${fErr.message}`)
     if (!filas?.length) {
-      return NextResponse.json({ success: true, fecha, skipped: "sin-foto" })
+      return NextResponse.json({ success: true, fecha, rearmada, skipped: "sin-foto" })
     }
     const criticos = soloCriticos(filas as Omit<ClienteCritico, "criticidad">[])
 
-    // ---- Detalle del pedido (productos + total facturado) ----
+    // ---- Detalle del pedido (productos + total estimado) ----
     // Si Chess falla, los avisos salen igual, sin el mensaje para el cliente.
     let detalles = new Map<number, DetallePedido>()
-    const creds = {
-      baseUrl: (process.env.CHESS_API_BASE_URL ?? "").trim(),
-      user: (process.env.CHESS_API_USER ?? "").trim(),
-      pass: (process.env.CHESS_API_PASS ?? "").trim(),
-    }
     if (criticos.length && creds.baseUrl && creds.user && creds.pass) {
       try {
         detalles = await detallePedidos(
@@ -129,9 +151,11 @@ async function handle(request: NextRequest) {
         console.error(`[radar-wa] detalle pedidos: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
-    // El monto de la foto (precio × unidades) no sirve: se muestra el facturado o nada.
+    // Total aproximado con impuestos (el pedido todavía no está facturado). La
+    // foto ya lo trae; el detalle lo recalcula con el pedido recién leído.
     for (const c of criticos) {
-      c.monto_pedido = (c.id_cliente != null && detalles.get(Number(c.id_cliente))?.total) || 0
+      const det = c.id_cliente != null ? detalles.get(Number(c.id_cliente)) : undefined
+      if (det?.total) c.monto_pedido = det.total
     }
 
     // ---- Equipo ----
@@ -216,6 +240,7 @@ async function handle(request: NextRequest) {
       success: true,
       fecha,
       hoy,
+      rearmada,
       clientes_foto: filas.length,
       criticos: criticos.length,
       sin_vendedor: sinVendedor.map((c) => `${c.nombre_cliente} (${c.id_cliente}) promotor ${c.id_promotor}`),

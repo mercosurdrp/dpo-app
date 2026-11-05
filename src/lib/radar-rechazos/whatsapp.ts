@@ -1,10 +1,11 @@
 /**
  * Aviso por WhatsApp del Radar de Rechazos: arma los mensajes de las 15:00
- * del día anterior a la entrega.
+ * del DÍA QUE SE CARGA EL PEDIDO (5/11/2026; antes salía el día anterior a la
+ * entrega, con el pedido ya emitido y ruteado).
  *
  * Al vendedor le llegan SUS clientes críticos (criterio único de `criterio.ts`)
- * con entrega el próximo día de reparto, para que los llame antes de que salga
- * el camión. Al supervisor, el resumen de su equipo. Funciones puras: el cron
+ * con entrega a 2 días de reparto, los mismos que el supervisor ve en la
+ * vespertina, para que los llame antes de que el pedido se emita. Al supervisor, el resumen de su equipo. Funciones puras: el cron
  * (`/api/radar-rechazos/cron-vendedores`) resuelve destinatarios y envía.
  *
  * Pedido de Fausto 27/10/2026: el radar casi no se abría (1 uso en 7 días), así
@@ -81,7 +82,7 @@ const titulo = (s: string | null | undefined) =>
 function lineaCliente(c: ClienteCritico, i: number): string {
   const loc = c.localidad ? ` — ${titulo(c.localidad)}` : ""
   const pedido = [`${c.bultos_pedido} bultos`]
-  if (Number(c.monto_pedido) > 0) pedido.push(pesos(c.monto_pedido))
+  if (Number(c.monto_pedido) > 0) pedido.push(`≈ ${pesos(c.monto_pedido)}`)
   return [
     `${i + 1}. *${c.nombre_cliente ?? "Cliente"}* (${c.id_cliente ?? "s/n"})${loc}`,
     `   Pedido: ${pedido.join(" · ")}`,
@@ -129,12 +130,12 @@ function diaYFecha(fecha: string): string {
 
 /**
  * Mensaje para que el vendedor copie y le mande al cliente (formato de
- * Nicolás Lescoulie): total facturado, productos y envases vacíos.
+ * Nicolás Lescoulie): total aproximado del pedido, productos y envases vacíos.
  */
 export function mensajeCliente(c: ClienteCritico, det: DetallePedido, fechaEntrega: string): string {
   const cuando = diaYFecha(fechaEntrega)
   const dia = cuando.split(" ")[0]
-  const total = det.total != null && det.total > 0 ? ` por un total de *${pesos(det.total)}*` : ""
+  const total = det.total != null && det.total > 0 ? ` por un total aproximado de *${pesos(det.total)}*` : ""
   const vacios = det.cajones_retornables
   return [
     `¡Hola ${titulo(c.nombre_cliente) || ""}! 👋`,

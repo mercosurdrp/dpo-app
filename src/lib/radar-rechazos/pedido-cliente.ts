@@ -5,12 +5,14 @@
  *
  * Productos: de los ítems del pedido en Chess, sin la línea encabezado de los
  * combos (sus componentes vienen como líneas propias).
- * Total: de lo FACTURADO en `/ventas` (subtotalFinal: IVA + internos +
- * bonificaciones, lo que ve el cliente en la factura), también sin el
- * encabezado del combo, que repite la suma de sus componentes. Sumar
- * precioUnitario × cantidad daba cualquier cosa (combos contados dos veces,
- * $0 en pedidos por bulto). Si el pedido todavía no está facturado, no se
- * informa total: mejor nada que un número que no es.
+ * Total: ESTIMADO desde el pedido (5/11/2026: el aviso sale el día que se
+ * carga el pedido, antes de la emisión, así que todavía no hay factura). Ver
+ * `totalEstimadoPedido`: precio por bulto × bultos (las unidades sueltas como
+ * fracción del bulto), menos la bonificación de la línea, sin el encabezado de
+ * los combos, × 1,34 de IVA e impuestos internos. Calibrado contra lo
+ * facturado del 04 y 05/11/2026 (613 clientes): factura ÷ estimado da 1,28 a
+ * 1,38 con mediana 1,337. Antes se sumaba precioUnitario × cantUnidades, que
+ * daba $0 en los pedidos por bulto y contaba los combos dos veces.
  */
 import {
   chessFetch,
@@ -26,11 +28,26 @@ export interface ProductoPedido {
 
 export interface DetallePedido {
   productos: ProductoPedido[]
-  total: number | null // facturado; null = todavía sin facturar
+  total: number | null // estimado con impuestos; null = sin precio en el pedido
   cajones_retornables: number // envases vacíos que tiene que tener listos
 }
 
-interface ArticuloChess {
+/**
+ * Factura ÷ pedido (precio × cantidad − bonificación): IVA + impuestos
+ * internos. Mediana 1,337 sobre 613 clientes facturados el 04 y 05/11/2026.
+ */
+export const FACTOR_IMPUESTOS_PEDIDO = 1.34
+
+export interface ItemPedidoChess {
+  idArticulo: number | string
+  cantBultos?: number | string | null
+  cantUnidades?: number | string | null
+  precioUnitario?: number | string | null
+  bonificacion?: number | string | null
+  anulado?: boolean | string | null
+}
+
+export interface ArticuloChess {
   idArticulo: number
   desArticulo?: string | null
   desCortaArticulo?: string | null
@@ -39,16 +56,9 @@ interface ArticuloChess {
   esCombo?: boolean | string | null
 }
 
-interface VentaLinea {
-  idCliente: number | string
-  subtotalFinal?: number | string | null
-  anulado?: string | boolean | null
-  esCombo?: string | null
-}
-
 const si = (v: unknown) => v === true || String(v ?? "").toUpperCase() === "SI" || v === "true"
 
-async function fetchArticulos(creds: ChessCredentials, sessionId: string, ids: Set<number>) {
+export async function fetchArticulos(creds: ChessCredentials, sessionId: string, ids: Set<number>) {
   const out = new Map<number, ArticuloChess>()
   for (let lote = 1; lote <= 200 && out.size < ids.size; lote++) {
     const r = await chessFetch(`${creds.baseUrl}/articulos/?nroLote=${lote}`, {
@@ -63,22 +73,27 @@ async function fetchArticulos(creds: ChessCredentials, sessionId: string, ids: S
   return out
 }
 
-async function fetchTotalFacturado(creds: ChessCredentials, sessionId: string, fecha: string, ids: Set<number>) {
-  const out = new Map<number, number>()
-  const r = await chessFetch(
-    `${creds.baseUrl}/ventas/?fechaDesde=${fecha}&fechaHasta=${fecha}&detallado=true`,
-    { headers: { Accept: "application/json", Cookie: sessionId } },
-  )
-  if (!r.ok) return out
-  const d = (await r.json().catch(() => null)) as
-    | { dsReporteComprobantesApi?: { VentasResumen?: VentaLinea[] } }
-    | null
-  for (const v of d?.dsReporteComprobantesApi?.VentasResumen ?? []) {
-    const id = Number(v.idCliente)
-    if (!ids.has(id) || si(v.anulado) || si(v.esCombo)) continue
-    out.set(id, (out.get(id) ?? 0) + (Number(v.subtotalFinal) || 0))
+/**
+ * Total aproximado de un pedido, como lo va a ver el cliente en la factura.
+ * `precioUnitario` en Chess es por BULTO: las unidades sueltas entran como
+ * fracción del bulto (`unidadesBulto` del artículo). Las líneas anuladas y el
+ * encabezado de los combos (repite la suma de sus componentes) no suman.
+ */
+export function totalEstimadoPedido(
+  items: ItemPedidoChess[],
+  arts: Map<number, ArticuloChess>,
+): number {
+  let neto = 0
+  for (const it of items) {
+    if (String(it.anulado) === "true") continue
+    const a = arts.get(Number(it.idArticulo))
+    if (si(a?.esCombo)) continue
+    const porBulto = Number(a?.unidadesBulto) || 1
+    const cant = (Number(it.cantBultos) || 0) + (Number(it.cantUnidades) || 0) / porBulto
+    const bonif = Math.min(Math.max(Number(it.bonificacion) || 0, 0), 100)
+    neto += cant * (Number(it.precioUnitario) || 0) * (1 - bonif / 100)
   }
-  return out
+  return Math.round(neto * FACTOR_IMPUESTOS_PEDIDO)
 }
 
 /** "BRAHMA - X12 1000RET#" → "Brahma 1L retornable"; "BUDWEISER CAN 4X4 710CC" → "Budweiser lata 710cc". */
@@ -111,14 +126,16 @@ export async function detallePedidos(
     (p) => idSet.has(Number(p.idCliente)) && String(p.eliminado) !== "true",
   )
   const idsArt = new Set(pedidos.flatMap((p) => (p.items ?? []).map((it) => Number(it.idArticulo))))
-  const [arts, totales] = await Promise.all([
-    fetchArticulos(creds, sessionId, idsArt),
-    fetchTotalFacturado(creds, sessionId, fecha, idSet),
-  ])
+  const arts = await fetchArticulos(creds, sessionId, idsArt)
+  const totales = new Map<number, number>()
+  for (const p of pedidos) {
+    const id = Number(p.idCliente)
+    totales.set(id, (totales.get(id) ?? 0) + totalEstimadoPedido(p.items ?? [], arts))
+  }
 
   for (const p of pedidos) {
     const id = Number(p.idCliente)
-    const det = out.get(id) ?? { productos: [], total: totales.get(id) ?? null, cajones_retornables: 0 }
+    const det = out.get(id) ?? { productos: [], total: totales.get(id) || null, cajones_retornables: 0 }
     let fraccionRet = 0
     for (const it of p.items ?? []) {
       if (String(it.anulado) === "true") continue

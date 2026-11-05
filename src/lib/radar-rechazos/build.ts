@@ -20,6 +20,7 @@ import {
   type ChessCredentials,
   type ChessPedido,
 } from "@/lib/wa-bot/chess"
+import { fetchArticulos, totalEstimadoPedido, type ArticuloChess } from "./pedido-cliente"
 
 export const ID_CERRADO = 1
 export const ID_SIN_DINERO = 6
@@ -119,11 +120,7 @@ export function hayReparto(fecha: string): boolean {
  * Con feriado de por medio corre igual: el viernes 14-08-2026 —con San Martín el
  * lunes 17— apunta al martes 18, y el sábado 15 al miércoles 19.
  */
-/**
- * Próximo día CON reparto después de `desde` (sin contarlo). Es la foto que el
- * aviso de las 15:00 les manda a los vendedores: la armó el cron de ayer a 2
- * días vista, así que hoy queda a 1 (el sábado apunta al lunes).
- */
+/** Próximo día CON reparto después de `desde` (sin contarlo). */
 export function proximoDiaRepartoART(desde: string = hoyART()): string {
   let fecha = sumarDias(desde, 1)
   while (!hayReparto(fecha)) fecha = sumarDias(fecha, 1)
@@ -140,17 +137,24 @@ export function fechaObjetivoART(desde: string = hoyART()): string {
   return fecha
 }
 
-/** Agrega los pedidos (no eliminados, items no anulados) por cliente. */
-function agruparPedidos(pedidos: ChessPedido[]): Map<number, PedidoAgg> {
+/**
+ * Agrega los pedidos (no eliminados, items no anulados) por cliente. El monto
+ * es el total ESTIMADO con impuestos (`totalEstimadoPedido`): el pedido todavía
+ * no está facturado cuando se arma la foto.
+ */
+function agruparPedidos(
+  pedidos: ChessPedido[],
+  arts: Map<number, ArticuloChess>,
+): Map<number, PedidoAgg> {
   const map = new Map<number, PedidoAgg>()
   for (const p of pedidos) {
-    if (p.eliminado === "true") continue
-    let bultos = 0, monto = 0
+    if (String(p.eliminado) === "true") continue
+    let bultos = 0
     for (const it of p.items ?? []) {
-      if (it.anulado === "true") continue
+      if (String(it.anulado) === "true") continue
       bultos += Number(it.cantBultos ?? 0)
-      monto += Number(it.precioUnitario ?? 0) * Number(it.cantUnidades ?? 0)
     }
+    const monto = totalEstimadoPedido(p.items ?? [], arts)
     if (bultos === 0 && monto === 0) continue
     const id = Number(p.idCliente)
     const reparto = p.Reparto && p.Reparto.trim() ? p.Reparto.trim() : null
@@ -302,7 +306,13 @@ export async function buildRadarRechazos(
     }
   }
 
-  const pedidosPorCliente = agruparPedidos(pedidos)
+  const idsArt = new Set(
+    pedidos
+      .filter((p) => String(p.eliminado) !== "true")
+      .flatMap((p) => (p.items ?? []).map((it) => Number(it.idArticulo))),
+  )
+  const arts = await fetchArticulos(creds, sessionId, idsArt)
+  const pedidosPorCliente = agruparPedidos(pedidos, arts)
   const idsDia = [...pedidosPorCliente.keys()]
 
   // 2) Historial de rechazos (cerrado/sin dinero) + datos de cache en paralelo
