@@ -15,6 +15,7 @@ import {
   listarHerramientasActividad,
   listarHerramientasOt,
   listarHerramientasPlanFlota,
+  listarHerramientasObservacion,
 } from "@/actions/herramientas-gestion"
 import { HERRAMIENTA_GESTION_LABELS } from "@/lib/herramientas-gestion"
 import { HerramientaGestionDialog } from "./herramienta-gestion-dialog"
@@ -31,8 +32,10 @@ export function PlanHerramientasInline({
   reunionActividadId,
   mantenimientoId,
   flotaPlanId,
+  reunionObservacionId,
   tituloSugerido,
   puedeAplicar = true,
+  onSaved,
 }: {
   planId?: string
   reunionActividadId?: string
@@ -40,8 +43,12 @@ export function PlanHerramientasInline({
   mantenimientoId?: string
   /** Plan de acción de un KPI de flota en rojo. */
   flotaPlanId?: string
+  /** Observación de reunión (tablero, SLA o sección). */
+  reunionObservacionId?: string
   tituloSugerido?: string
   puedeAplicar?: boolean
+  /** Después de guardar (p.ej. refrescar el Action Log, donde cae la contramedida). */
+  onSaved?: () => void
 }) {
   const [items, setItems] = useState<HerramientaGestionConContexto[]>([])
   const [aplicar, setAplicar] = useState(false)
@@ -56,18 +63,23 @@ export function PlanHerramientasInline({
           ? listarHerramientasOt(mantenimientoId)
           : flotaPlanId
             ? listarHerramientasPlanFlota(flotaPlanId)
-            : null
+            : reunionObservacionId
+              ? listarHerramientasObservacion(reunionObservacionId)
+              : null
     p?.then((r) => {
       if ("data" in r) setItems(r.data)
     })
   }
 
   useEffect(() => {
-    if (!IS_MISIONES && (planId || reunionActividadId || mantenimientoId || flotaPlanId)) {
+    if (
+      !IS_MISIONES &&
+      (planId || reunionActividadId || mantenimientoId || flotaPlanId || reunionObservacionId)
+    ) {
       recargar()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planId, reunionActividadId, mantenimientoId, flotaPlanId])
+  }, [planId, reunionActividadId, mantenimientoId, flotaPlanId, reunionObservacionId])
 
   if (IS_MISIONES) return null
 
@@ -111,10 +123,14 @@ export function PlanHerramientasInline({
         reunionActividadId={reunionActividadId}
         mantenimientoId={mantenimientoId}
         flotaPlanId={flotaPlanId}
+        reunionObservacionId={reunionObservacionId}
         tituloSugerido={tituloSugerido}
         open={aplicar}
         onOpenChange={setAplicar}
-        onSaved={recargar}
+        onSaved={() => {
+          recargar()
+          onSaved?.()
+        }}
       />
 
       <Dialog open={ver !== null} onOpenChange={(o) => !o && setVer(null)}>

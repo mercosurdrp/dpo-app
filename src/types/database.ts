@@ -4346,6 +4346,8 @@ export interface HerramientaGestion {
   mantenimiento_id: string | null
   /** Plan de acción del KPI de flota en rojo. */
   flota_plan_accion_id: string | null
+  /** Observación de reunión (tablero, SLA o sección), desde el 06/11/2026. */
+  reunion_observacion_id: string | null
   tipo: HerramientaGestionTipo
   titulo: string
   contenido: HerramientaGestionContenido

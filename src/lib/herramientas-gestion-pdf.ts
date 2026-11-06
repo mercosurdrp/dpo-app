@@ -174,7 +174,7 @@ function encabezado(b: Builder, h: HerramientaGestion | HerramientaGestionConCon
 
   const partes: string[] = []
   if (h.reunion_actividad_id || ctx.actividad_descripcion) {
-    partes.push("Actividad de reunión")
+    partes.push(h.reunion_observacion_id ? "Observación de reunión" : "Actividad de reunión")
     if (ctx.reunion_tipo) partes.push(`Reunión: ${ctx.reunion_tipo}`)
     if (ctx.actividad_descripcion) partes.push(ctx.actividad_descripcion)
   } else {
@@ -296,7 +296,7 @@ async function generarPdfIshikawa(
   }
   const partes: string[] = []
   if (h.reunion_actividad_id || ctx.actividad_descripcion) {
-    partes.push("Actividad de reunión")
+    partes.push(h.reunion_observacion_id ? "Observación de reunión" : "Actividad de reunión")
     if (ctx.reunion_tipo) partes.push(`Reunión: ${ctx.reunion_tipo}`)
     if (ctx.actividad_descripcion) partes.push(ctx.actividad_descripcion)
   } else {

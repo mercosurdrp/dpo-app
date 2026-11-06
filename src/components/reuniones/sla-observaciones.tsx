@@ -33,6 +33,7 @@ import {
   TIPO_REUNION_LABEL,
 } from "@/lib/reuniones-sla-observaciones";
 import { ActividadFormDialog } from "./actividad-form-dialog";
+import { PlanHerramientasInline } from "@/components/herramientas-gestion/plan-herramientas-inline";
 import { formatFechaHora } from "./tablero-observaciones";
 import type {
   ReunionIndicadorObservacionConAutor,
@@ -326,6 +327,14 @@ export function SlaObservaciones({
                       </Link>
                     )}
                   </p>
+                  <div className="mt-1.5">
+                    <PlanHerramientasInline
+                      reunionObservacionId={obs.id}
+                      tituloSugerido={`${obs.indicador_nombre}: ${obs.texto.slice(0, 60)}`}
+                      puedeAplicar={puedeEditar && propia}
+                      onSaved={onChanged}
+                    />
+                  </div>
                 </div>
                 {puedeEditar && propia && editandoId !== obs.id && (
                   <div className="flex shrink-0 gap-1">

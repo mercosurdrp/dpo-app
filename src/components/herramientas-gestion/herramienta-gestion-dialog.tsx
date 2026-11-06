@@ -37,6 +37,7 @@ import {
   actualizarHerramientaGestion,
   crearHerramientaActividad,
   crearHerramientaReporte,
+  crearHerramientaObservacion,
   crearHerramientaOt,
   crearHerramientaPlanFlota,
 } from "@/actions/herramientas-gestion"
@@ -84,6 +85,8 @@ export interface HerramientaGestionDialogProps {
   reporteId?: string
   /** Target = OT de flota (la causa raíz del correctivo). */
   mantenimientoId?: string
+  /** Observación de reunión (tablero, SLA o sección). */
+  reunionObservacionId?: string
   /** Target = plan de acción de un KPI de flota. */
   flotaPlanId?: string
   /** Título prellenado al crear (nombre del plan / actividad / descripción del reporte). */
@@ -100,6 +103,7 @@ export function HerramientaGestionDialog({
   reporteId,
   mantenimientoId,
   flotaPlanId,
+  reunionObservacionId,
   tituloSugerido,
   open,
   onOpenChange,
@@ -123,8 +127,10 @@ export function HerramientaGestionDialog({
   // La marca de "contramedida completada" solo aplica cuando el destino es un
   // reporte de seguridad (es ahí donde la contramedida vuelca al plan de acción).
   const esReporte = !!reporteId || !!herramienta?.reporte_seguridad_id
+  const esObservacion =
+    !!reunionObservacionId || !!herramienta?.reunion_observacion_id
   const esActividad =
-    !!reunionActividadId || !!herramienta?.reunion_actividad_id
+    !!reunionActividadId || !!herramienta?.reunion_actividad_id || esObservacion
 
   // Sincronizar estado cuando cambia la herramienta o se reabre
   useEffect(() => {
@@ -178,6 +184,13 @@ export function HerramientaGestionDialog({
       } else if (reunionActividadId) {
         res = await crearHerramientaActividad(
           reunionActividadId,
+          tipo,
+          titulo.trim(),
+          contenido,
+        )
+      } else if (reunionObservacionId) {
+        res = await crearHerramientaObservacion(
+          reunionObservacionId,
           tipo,
           titulo.trim(),
           contenido,
@@ -335,8 +348,12 @@ export function HerramientaGestionDialog({
               <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                 Al guardar, la {tipo === "pdca" ? "acción del HACER" : "contramedida"} se crea
                 como una <span className="font-semibold">acción aparte</span> en el
-                Action Log, con el responsable de esta acción y vencimiento a 14 días
-                (se puede cambiar). Esta acción queda como el análisis.
+                Action Log, con{" "}
+                {esObservacion ? "vos como responsable" : "el responsable de esta acción"} y
+                vencimiento a 14 días (se puede cambiar).{" "}
+                {esObservacion
+                  ? "La observación queda como el análisis."
+                  : "Esta acción queda como el análisis."}
               </p>
             )}
 

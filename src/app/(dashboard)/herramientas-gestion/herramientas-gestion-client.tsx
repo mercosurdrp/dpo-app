@@ -121,7 +121,7 @@ export function HerramientasGestionClient({ items }: Props) {
                         {HERRAMIENTA_GESTION_LABELS[item.tipo]}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
-                        {item.reunion_actividad_id
+                        {item.reunion_actividad_id || item.reunion_observacion_id
                           ? `Reunión${item.reunion_tipo ? ` (${item.reunion_tipo})` : ""}${
                               item.actividad_descripcion
                                 ? ` · ${item.actividad_descripcion.slice(0, 50)}`

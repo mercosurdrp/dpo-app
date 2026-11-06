@@ -27,6 +27,7 @@ import {
   eliminarObservacionIndicador,
 } from "@/actions/reuniones-indicadores-observaciones";
 import { ActividadFormDialog } from "./actividad-form-dialog";
+import { PlanHerramientasInline } from "@/components/herramientas-gestion/plan-herramientas-inline";
 import { ActionLogSeccion } from "./action-log-seccion";
 import type {
   ReunionActividadConResponsable,
@@ -323,6 +324,14 @@ export function TableroObservaciones({
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
                   {obs.autor_nombre ?? "—"} · {formatFechaHora(obs.created_at)}
                 </p>
+                <div className="mt-1.5">
+                  <PlanHerramientasInline
+                    reunionObservacionId={obs.id}
+                    tituloSugerido={`${obs.indicador_nombre}: ${obs.texto.slice(0, 60)}`}
+                    puedeAplicar={puedeEditar}
+                    onSaved={onChanged}
+                  />
+                </div>
               </div>
               {puedeEditar && editandoId !== obs.id && (
                 <div className="flex shrink-0 gap-1">

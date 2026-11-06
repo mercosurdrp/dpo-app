@@ -135,6 +135,18 @@ function puedeIntervenirEnFlota(
   }
 }
 
+// Las observaciones de reunión sólo las escriben los editores (RLS de
+// reuniones_indicadores_observaciones), así que la herramienta también.
+function puedeIntervenirEnObservacion(
+  profileRole: string,
+): { ok: true } | { ok: false; error: string } {
+  if (isEditorRole(profileRole)) return { ok: true }
+  return {
+    ok: false,
+    error: "Solo editores pueden aplicar herramientas sobre una observación",
+  }
+}
+
 // Despacha al chequeo que corresponda según cuál de los cinco targets tenga
 // la herramienta.
 async function puedeIntervenirEnTarget(
@@ -147,11 +159,13 @@ async function puedeIntervenirEnTarget(
     reporte_seguridad_id: string | null
     mantenimiento_id?: string | null
     flota_plan_accion_id?: string | null
+    reunion_observacion_id?: string | null
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (tgt.mantenimiento_id || tgt.flota_plan_accion_id) {
     return puedeIntervenirEnFlota(profileRole)
   }
+  if (tgt.reunion_observacion_id) return puedeIntervenirEnObservacion(profileRole)
   if (tgt.plan_id) {
     return puedeIntervenirEnPlan(supabase, profileId, profileRole, tgt.plan_id)
   }
@@ -278,6 +292,29 @@ async function getActividadContexto(
   }
 }
 
+// Observación de reunión: se presenta con los mismos campos que una actividad
+// (reunión + descripción) para que el PDF, la vista y el listado la muestren
+// sin ramas nuevas.
+async function getObservacionContexto(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  observacionId: string,
+): Promise<Contexto> {
+  const { data: obs } = await supabase
+    .from("reuniones_indicadores_observaciones")
+    .select("reunion_id, indicador_nombre, texto, reunion:reuniones(id, tipo)")
+    .eq("id", observacionId)
+    .single()
+  if (!obs) return { ...CONTEXTO_VACIO }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const o = obs as any
+  return {
+    ...CONTEXTO_VACIO,
+    actividad_descripcion: `Observación ${o.indicador_nombre ?? ""}: ${o.texto ?? ""}`.trim(),
+    reunion_id: o.reunion_id ?? o.reunion?.id ?? null,
+    reunion_tipo: o.reunion?.tipo ?? null,
+  }
+}
+
 async function getReporteContexto(
   supabase: Awaited<ReturnType<typeof createClient>>,
   reporteId: string,
@@ -345,9 +382,12 @@ async function getContexto(
     reporte_seguridad_id: string | null
     mantenimiento_id?: string | null
     flota_plan_accion_id?: string | null
+    reunion_observacion_id?: string | null
   },
 ): Promise<Contexto> {
   if (row.plan_id) return getPlanContexto(supabase, row.plan_id)
+  if (row.reunion_observacion_id)
+    return getObservacionContexto(supabase, row.reunion_observacion_id)
   if (row.reunion_actividad_id)
     return getActividadContexto(supabase, row.reunion_actividad_id)
   if (row.reporte_seguridad_id)
@@ -371,6 +411,7 @@ function mapRow(row: any, ctx: Contexto, autorNombre: string | null): Herramient
     reporte_seguridad_id: row.reporte_seguridad_id ?? null,
     mantenimiento_id: row.mantenimiento_id ?? null,
     flota_plan_accion_id: row.flota_plan_accion_id ?? null,
+    reunion_observacion_id: row.reunion_observacion_id ?? null,
     tipo: row.tipo as HerramientaGestionTipo,
     titulo: row.titulo ?? "",
     contenido: row.contenido as HerramientaGestionContenido,
@@ -426,6 +467,7 @@ async function generarYGuardarPdf(
       herramienta.reporte_seguridad_id ??
       herramienta.mantenimiento_id ??
       herramienta.flota_plan_accion_id ??
+      herramienta.reunion_observacion_id ??
       "otros"
     const path = `${carpeta}/${herramienta.id}.pdf`
     const { error: upErr } = await supabase.storage
@@ -481,6 +523,7 @@ async function insertarHerramienta(
       reporte_seguridad_id: row.reporte_seguridad_id ?? null,
       mantenimiento_id: row.mantenimiento_id ?? null,
       flota_plan_accion_id: row.flota_plan_accion_id ?? null,
+      reunion_observacion_id: row.reunion_observacion_id ?? null,
       tipo: row.tipo as HerramientaGestionTipo,
       titulo: row.titulo ?? "",
       contenido: row.contenido as HerramientaGestionContenido,
@@ -562,7 +605,7 @@ export async function crearHerramientaActividad(
       getNombre(profile),
     )
     if (!("error" in res)) {
-      await sincronizarAccionContramedida(res.data.id, actividadId, tipo, contenido, profile.id)
+      await sincronizarAccionContramedida(res.data.id, { actividadId }, tipo, contenido, profile.id)
     }
     return res
   } catch (err) {
@@ -640,9 +683,17 @@ async function sincronizarPlanReporte(
 // si ya existe y sigue sin comenzar, se le actualiza el texto. No lanza.
 // ---------------------------------------------------------------------------
 
+// Sección de la reunión a la que va la acción que nace de una observación:
+// SLA → 'sla', sección → su slug, tablero → 'tablero'.
+function seccionDeObservacion(indicadorId: string): string {
+  if (indicadorId.startsWith("sla_")) return "sla"
+  if (indicadorId.startsWith("seccion_")) return indicadorId.slice("seccion_".length)
+  return "tablero"
+}
+
 async function sincronizarAccionContramedida(
   herramientaId: string,
-  actividadId: string,
+  origenRef: { actividadId: string } | { observacionId: string },
   tipo: HerramientaGestionTipo,
   contenido: HerramientaGestionContenido,
   autorId: string,
@@ -670,19 +721,44 @@ async function sincronizarAccionContramedida(
       return
     }
 
-    const { data: origen } = await admin
-      .from("reuniones_actividades")
-      .select("reunion_id, descripcion, responsable_id, seccion, indicador_id, indicador_nombre")
-      .eq("id", actividadId)
-      .single()
-    if (!origen) return
-    const o = origen as {
+    let o: {
       reunion_id: string
       descripcion: string
       responsable_id: string | null
       seccion: string | null
       indicador_id: string | null
       indicador_nombre: string | null
+    }
+    if ("actividadId" in origenRef) {
+      const { data: origen } = await admin
+        .from("reuniones_actividades")
+        .select("reunion_id, descripcion, responsable_id, seccion, indicador_id, indicador_nombre")
+        .eq("id", origenRef.actividadId)
+        .single()
+      if (!origen) return
+      o = origen as typeof o
+    } else {
+      // La observación no tiene responsable: va a quien aplicó la herramienta.
+      const { data: obs } = await admin
+        .from("reuniones_indicadores_observaciones")
+        .select("reunion_id, texto, indicador_id, indicador_nombre")
+        .eq("id", origenRef.observacionId)
+        .single()
+      if (!obs) return
+      const ob = obs as {
+        reunion_id: string
+        texto: string
+        indicador_id: string
+        indicador_nombre: string
+      }
+      o = {
+        reunion_id: ob.reunion_id,
+        descripcion: ob.texto,
+        responsable_id: null,
+        seccion: seccionDeObservacion(ob.indicador_id),
+        indicador_id: ob.indicador_id,
+        indicador_nombre: ob.indicador_nombre,
+      }
     }
 
     const vence = new Date(
@@ -789,7 +865,9 @@ export async function actualizarHerramientaGestion(
 
     const { data: actual, error: errH } = await supabase
       .from("plan_herramientas_gestion")
-      .select("plan_id, reunion_actividad_id, reporte_seguridad_id")
+      .select(
+        "plan_id, reunion_actividad_id, reporte_seguridad_id, mantenimiento_id, flota_plan_accion_id, reunion_observacion_id",
+      )
       .eq("id", id)
       .single()
     if (errH || !actual) {
@@ -799,6 +877,9 @@ export async function actualizarHerramientaGestion(
       plan_id: string | null
       reunion_actividad_id: string | null
       reporte_seguridad_id: string | null
+      mantenimiento_id: string | null
+      flota_plan_accion_id: string | null
+      reunion_observacion_id: string | null
     }
 
     const permiso = await puedeIntervenirEnTarget(supabase, profile.id, profile.role, tgt)
@@ -844,10 +925,12 @@ export async function actualizarHerramientaGestion(
       revalidatePath("/reportes-seguridad")
     }
 
-    if (tgt.reunion_actividad_id) {
+    if (tgt.reunion_actividad_id || tgt.reunion_observacion_id) {
       await sincronizarAccionContramedida(
         row.id,
-        tgt.reunion_actividad_id,
+        tgt.reunion_actividad_id
+          ? { actividadId: tgt.reunion_actividad_id }
+          : { observacionId: tgt.reunion_observacion_id! },
         row.tipo as HerramientaGestionTipo,
         row.contenido,
         profile.id,
@@ -866,6 +949,7 @@ export async function actualizarHerramientaGestion(
         reporte_seguridad_id: row.reporte_seguridad_id ?? null,
         mantenimiento_id: row.mantenimiento_id ?? null,
         flota_plan_accion_id: row.flota_plan_accion_id ?? null,
+        reunion_observacion_id: row.reunion_observacion_id ?? null,
         tipo: row.tipo as HerramientaGestionTipo,
         titulo: row.titulo ?? "",
         contenido: row.contenido as HerramientaGestionContenido,
@@ -1154,6 +1238,67 @@ export async function listarHerramientasReporte(
 // donde antes la causa raíz se escribía como texto suelto —o no se escribía.
 // Mismo criterio que los otros targets: sólo editores.
 // ---------------------------------------------------------------------------
+
+export async function crearHerramientaObservacion(
+  observacionId: string,
+  tipo: HerramientaGestionTipo,
+  titulo: string,
+  contenido: HerramientaGestionContenido,
+): Promise<Result<HerramientaGestion>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+    if (!observacionId) return { error: "ID de observación inválido" }
+
+    const permiso = puedeIntervenirEnObservacion(profile.role)
+    if (!permiso.ok) return { error: permiso.error }
+
+    const res = await insertarHerramienta(
+      supabase,
+      {
+        reunion_observacion_id: observacionId,
+        tipo,
+        titulo: titulo.trim() || null,
+        contenido,
+        autor_id: profile.id,
+      },
+      getNombre(profile),
+    )
+    if (!("error" in res)) {
+      await sincronizarAccionContramedida(res.data.id, { observacionId }, tipo, contenido, profile.id)
+    }
+    return res
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error creando la herramienta" }
+  }
+}
+
+export async function listarHerramientasObservacion(
+  observacionId: string,
+): Promise<Result<HerramientaGestionConContexto[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    if (!observacionId) return { error: "ID de observación inválido" }
+
+    const { data, error } = await supabase
+      .from("plan_herramientas_gestion")
+      .select(SELECT_CON_AUTOR)
+      .eq("reunion_observacion_id", observacionId)
+      .order("created_at", { ascending: false })
+    if (error) return { error: error.message }
+
+    const ctx = await getObservacionContexto(supabase, observacionId)
+    const items = ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = row as any
+      return mapRow(r, ctx, r.autor?.nombre ?? null)
+    })
+    return { data: items }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando herramientas de la observación" }
+  }
+}
 
 export async function crearHerramientaOt(
   mantenimientoId: string,
