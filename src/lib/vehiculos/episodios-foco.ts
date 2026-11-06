@@ -10,20 +10,26 @@
  * termina cuando hay prueba de que el defecto se fue. Todo reporte que caiga
  * mientras el episodio sigue abierto es una repetición: no abre nada nuevo,
  * hereda la gestión en curso y no vuelve a contar el tiempo de respuesta. Un
- * reporte posterior al cierre sí abre un episodio nuevo: ahí el defecto
+ * reporte bastante posterior al cierre sí abre un episodio nuevo: ahí el defecto
  * reapareció después de haberse arreglado, y eso es información, no ruido.
  *
  * ## Qué cuenta como prueba de que el defecto se fue
  *
- * **El plan cerrado por mantenimiento cierra el episodio, sin vueltas.** Es una
- * declaración de que se reparó.
+ * **El plan cerrado por mantenimiento cierra el episodio.** Es una declaración
+ * de que se atendió, y vale aunque el chofer lo vuelva a marcar: el AC165AJ del
+ * 05/11/2026 reportó la bocina en la liberación de las 10:37, mantenimiento
+ * cargó el plan a las 10:46 —"funciona, pero suena baja, se programa una OT
+ * para cambiarla"— y el retorno de las 19:07 la volvió a marcar NO OK. Eso no
+ * es un defecto nuevo: es el mismo, con la gestión ya hecha. Un reporte dentro
+ * de `GRACIA_CIERRE_HORAS` del cierre es **repetición del episodio cerrado**,
+ * se queda con ese plan y no pide uno propio ni otra OT.
  *
  * **La vuelta a OK del ítem cierra sólo si se sostiene.** El HELI1 carga DOS
  * checklists por día: el de las 10:30 marcó los frenos OK y el de las 12:20 los
  * volvió a marcar mal, los tres días. Tomando esa única lectura OK como cierre,
  * un defecto que sigue ahí se partía en tres focos de un reporte cada uno —cada
  * uno con su tiempo y pidiendo su plan—. Se exige entonces que el ítem se
- * mantenga OK al menos `GRACIA_OK_HORAS`: si el mismo defecto se reporta otra
+ * mantenga OK al menos `GRACIA_CIERRE_HORAS`: si el mismo defecto se reporta otra
  * vez dentro de esa ventana, el OK no probó nada y el episodio sigue siendo el
  * mismo.
  *
@@ -33,13 +39,15 @@
  */
 
 /**
- * Cuánto tiene que durar una vuelta a OK para creerle.
+ * Ventana de gracia del cierre: cuánto tiene que durar una vuelta a OK para
+ * creerle, y hasta cuándo un reporte posterior a un plan cerrado sigue siendo
+ * el mismo defecto en vez de una reincidencia.
  *
  * Dos días: cubre el caso de las dos cargas por día de la misma unidad y el del
  * checklist del día siguiente, sin llegar a pegar entre sí dos apariciones
  * realmente separadas del mismo defecto.
  */
-export const GRACIA_OK_HORAS = 48
+export const GRACIA_CIERRE_HORAS = 48
 
 /** Lo mínimo que hace falta de cada marca del checklist para armar episodios. */
 export interface ReporteFoco {
@@ -98,7 +106,7 @@ export function agruparEpisodios(reportes: ReporteFoco[]): Episodio[] {
     else porDefecto.set(k, [r])
   }
 
-  const gracia = GRACIA_OK_HORAS * 3_600_000
+  const gracia = GRACIA_CIERRE_HORAS * 3_600_000
   const out: Episodio[] = []
   for (const [, arr] of porDefecto) {
     const orden = [...arr].sort((a, b) => ms(a.hora, a.fecha) - ms(b.hora, b.fecha))
@@ -107,16 +115,19 @@ export function agruparEpisodios(reportes: ReporteFoco[]): Episodio[] {
     for (const r of orden) {
       const t = ms(r.hora, r.fecha)
       if (actual && t > cierreMs) {
-        if (actual.cierreFirme || t - cierreMs > gracia) {
-          // El defecto volvió después de haberse ido: episodio nuevo.
+        if (t - cierreMs > gracia) {
+          // El defecto volvió mucho después de haberse ido: episodio nuevo.
           actual = null
-        } else {
+        } else if (!actual.cierreFirme) {
           // Reportado de vuelta enseguida: ese OK no probó nada. Se descarta el
           // cierre y el episodio sigue abierto desde el primer reporte.
           actual.cierre = null
           actual.cierreFirme = false
           cierreMs = Infinity
         }
+        // Cierre firme + reporte dentro de la gracia: es una repetición del
+        // episodio ya cerrado. No reabre nada ni abre un episodio nuevo, y el
+        // foco se queda con el plan que cargó mantenimiento.
       }
       if (!actual) {
         actual = {
