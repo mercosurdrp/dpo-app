@@ -127,6 +127,8 @@ import type { DesgasteFlota } from "@/actions/neumaticos"
 import type { SustentabilidadFlota } from "@/lib/vehiculos/sustentabilidad"
 import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
+import { PiramideResultados } from "./piramide-resultados"
+import { AvisoRechazoRotura } from "./_components/aviso-rechazo-rotura"
 import { Sustentabilidad } from "./sustentabilidad"
 import { ProveedorPicker } from "./_components/proveedor-picker"
 import {
@@ -1077,10 +1079,27 @@ export function MantenimientoClient({
         </TabsContent>
 
         <TabsContent value="piramide" className="space-y-6">
-          <PiramideDefectos
-            itemsNoOk={checklists.itemsNoOk}
-            mantenimientos={mantenimientos}
+          <PiramideResultados
+            puedeEditar={puedeEditar}
+            onVerOt={(id) => {
+              const m = mantenimientos.find((x) => x.id === id)
+              if (m) setVerMant(m)
+            }}
           />
+          {/* El detalle de los defectos del checklist (torta, ranking, export)
+              queda abajo y plegado: es la apertura del nivel «Detección». */}
+          <details className="group rounded-lg border bg-card">
+            <summary className="cursor-pointer select-none p-3 text-sm font-semibold text-foreground">
+              Detalle de los defectos de checklist por unidad
+            </summary>
+            <div className="border-t p-3">
+              <PiramideDefectos
+                itemsNoOk={checklists.itemsNoOk}
+                mantenimientos={mantenimientos}
+                soloDetalle
+              />
+            </div>
+          </details>
         </TabsContent>
 
         {/* ============ TAB: Sustentabilidad ============ */}
@@ -2426,6 +2445,13 @@ function NuevoMantenimientoDialog({
           </div>
 
 
+          <AvisoRechazoRotura
+            dominio={dominio}
+            fecha={fecha}
+            tipo={tipo}
+            auxilio={auxilioRuta}
+            onMarcar={() => setAuxilioRuta(true)}
+          />
           <label className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50/60 p-3 text-sm dark:border-red-900 dark:bg-red-950/30">
             <Checkbox
               className="mt-0.5"
@@ -3874,6 +3900,13 @@ function EditarMantenimientoDialog({
           </div>
 
 
+          <AvisoRechazoRotura
+            dominio={m.dominio}
+            fecha={fecha}
+            tipo={m.tipo}
+            auxilio={auxilioRuta}
+            onMarcar={() => setAuxilioRuta(true)}
+          />
           <label className="col-span-2 flex items-start gap-2 rounded-md border border-red-200 bg-red-50/60 p-3 text-sm dark:border-red-900 dark:bg-red-950/30">
             <Checkbox
               className="mt-0.5"

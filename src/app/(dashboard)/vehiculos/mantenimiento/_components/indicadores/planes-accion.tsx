@@ -4,6 +4,7 @@
 // primero lo que falta (meses fuera de meta sin plan), después los planes con
 // acciones vencidas, los que están en curso, y los cerrados plegados.
 
+import { labelFocoKpi } from "@/lib/flota/piramide-planes"
 import { useState } from "react"
 import { ChevronDown, ClipboardList, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -69,7 +70,7 @@ function FilaPlan({
       >
         <div className="min-w-0">
           <p className="text-sm font-medium text-foreground">
-            {def?.label ?? plan.kpi}
+            {def?.label ?? labelFocoKpi(plan.kpi)}
             <span className="ml-2 text-xs font-normal text-muted-foreground">
               {def?.dpo ? `DPO ${def.dpo} · ` : ""}
               {fmtMesLargo(`${plan.year}-${pad(plan.mes)}`)}

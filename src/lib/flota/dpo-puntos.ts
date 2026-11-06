@@ -127,10 +127,10 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     id: "historial",
     label: "Órdenes de Trabajo",
     grupo: "operacion",
-    puntos: ["2.4"],
-    requisitos: ["R2.4.1", "R2.4.2"],
+    puntos: ["2.4", "4.2"],
+    requisitos: ["R2.4.1", "R2.4.2", "R4.2.1"],
     aporta:
-      "Registro digital de todas las órdenes de servicio correctivo, estratificable por unidad, tipo y estado.",
+      "Registro digital de todas las órdenes de trabajo preventivas, proactivas y correctivas (sistema de gestión de flota), estratificable por unidad, tipo, sistema y estado.",
   },
   {
     // 🚨 El id es el estado de la solapa en la URL: no renombrarlo.
@@ -158,8 +158,8 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     id: "analisis-correctivos",
     label: "Análisis de correctivos",
     grupo: "analisis",
-    puntos: ["2.4"],
-    requisitos: ["R2.4.1", "R2.4.2", "R2.4.3", "R2.4.4"],
+    puntos: ["2.4", "4.2"],
+    requisitos: ["R2.4.1", "R2.4.2", "R2.4.3", "R2.4.4", "R4.2.2"],
     aporta:
       "Estratificación de las OT correctivas (externas e internas) por sistema del vehículo, unidad, mes y taller, con Pareto de OT y de costo, la matriz unidad × sistema, y por cada sistema la conclusión escrita y la acción tomada; desde cada sistema se abre el 5 Porqués sobre la OT más cara.",
   },
@@ -211,12 +211,12 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
   },
   {
     id: "piramide",
-    label: "Pirámide de defectos",
+    label: "Pirámide y resultados",
     grupo: "analisis",
     puntos: ["4.2"],
-    requisitos: ["R4.2.3"],
+    requisitos: ["R4.2.1", "R4.2.2", "R4.2.3"],
     aporta:
-      "Pirámide de flota: roturas arriba y preventivo abajo, para atacar la causa raíz del correctivo.",
+      "Pirámide de mantenimiento DPO (roturas → correctivo → detección por checklist/CIL → preventivo) con su balance, evolución mes a mes, análisis aperturado del histórico por unidad, sistema y taller (con ANS y retrabajo), planes con herramienta de gestión sobre cada foco, lectura mensual registrada y PDF para el auditor.",
   },
   {
     id: "neumaticos",
@@ -321,8 +321,8 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     id: "plantillas",
     label: "Plan / Plantillas",
     grupo: "gestion",
-    puntos: ["2.2"],
-    requisitos: ["R2.2.2", "R2.2.5", "R2.2.6"],
+    puntos: ["2.2", "4.2"],
+    requisitos: ["R2.2.2", "R2.2.5", "R2.2.6", "R4.2.3"],
     aporta:
       "Plan preventivo por tipo de unidad según ciclo de km/horas/tiempo, con overrides por unidad, y la evolución del plan: cada cambio con su motivo y las OT correctivas recurrentes que lo originaron.",
   },

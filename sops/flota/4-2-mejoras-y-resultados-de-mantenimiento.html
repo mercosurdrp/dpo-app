@@ -10,19 +10,28 @@ th{background:#eef3f8}
 </style></head><body>
 
 <h1>SOP — Mejoras y Resultados de Mantenimiento</h1>
-<p><b>Pilar:</b> Flota · <b>Punto DPO:</b> 4.2 · <b>Requisito:</b> R4.2.3<br>
-<b>Estado:</b> BORRADOR para revisión · <b>Elaborado:</b> 25/08/2026 · <b>Revisión:</b> 0</p>
+<p><b>Pilar:</b> Flota · <b>Punto DPO:</b> 4.2 · <b>Requisitos:</b> R4.2.1, R4.2.2, R4.2.3<br>
+<b>Estado:</b> BORRADOR para revisión · <b>Elaborado:</b> 25/08/2026 · <b>Revisión:</b> 1 (06/11/2026)</p>
 
 <h2>1. Objetivo</h2>
-<p>Definir el ciclo de gestión de flota: cómo se lee el desempeño, cómo se elige qué atacar, con qué método se busca la causa raíz, cómo se sigue la contramedida y cómo se verifica que el resultado mejoró. El objetivo es que la mejora sea un proceso con cadencia, no una reacción a la rotura del día.</p>
+<p>Definir el ciclo de gestión de flota: cómo se lee el desempeño con la <b>pirámide de mantenimiento</b> y el <b>análisis aperturado del histórico</b>, cómo se elige qué atacar, con qué método se busca la causa raíz, cómo se sigue la contramedida y cómo se verifica que el resultado mejoró. El objetivo es que la mejora sea un proceso con cadencia, no una reacción a la rotura del día, y que el correctivo baje porque mejora el plan preventivo.</p>
 
 <h2>2. Alcance</h2>
-<p>Todos los indicadores del pilar Flota y todas las fallas recurrentes de la flota del CD.</p>
+<p>Todas las órdenes de trabajo (preventivas, proactivas y correctivas), los defectos del checklist y del CIL, y los rechazos de entrega por rotura de las unidades del CD. Todos los indicadores del pilar Flota y todas las fallas recurrentes de la flota.</p>
 
 <h2>3. Definiciones</h2>
 <table>
 <tr><th>Término</th><th>Significado</th></tr>
-<tr><td>Pirámide de defectos</td><td>Lectura de conjunto: roturas arriba, desvíos detectados en el medio, preventivo abajo. Una base angosta con punta ancha significa que se repara lo que se debería anticipar.</td></tr>
+<tr><td>Sistema de gestión de flota</td><td>La app DPO (Mantenimiento de camiones): todas las OT preventivas, proactivas y correctivas se registran ahí, con unidad, sistema del vehículo, taller, costo, entrada y salida de taller y período fuera de servicio (R4.2.1).</td></tr>
+<tr><td>Pirámide de mantenimiento</td><td>Lectura de conjunto en cuatro niveles. Cada evento cuenta una sola vez, en su nivel más alto. De la base a la punta:<br>
+<b>1. Preventivo:</b> OT preventivas y proactivas realizadas.<br>
+<b>2. Detección:</b> focos del checklist (un problema reportado varios días cuenta una vez) y hallazgos de aceite del CIL; el desvío se vio antes de fallar.<br>
+<b>3. Correctivo:</b> OT correctiva que no es rotura.<br>
+<b>4. Rotura:</b> ver la definición siguiente.</td></tr>
+<tr><td>Rotura de flota</td><td>OT correctiva con <b>auxilio en ruta</b> (tilde en la OT), o que dejó la unidad <b>fuera de servicio 1 día o más</b>, o con un rechazo de entrega «ROTURA DE CAMION - SINIESTRO» de esa unidad 3 días antes o después. Es la misma definición del KPI <i>roturas_flota</i>. Un rechazo por rotura sin OT correctiva cerca <b>no</b> suma a la punta: queda en la lista «Rechazos por rotura a revisar».</td></tr>
+<tr><td>Pirámide balanceada</td><td>Cada escalón es más angosto que el de abajo. Si un nivel de arriba es más ancho, la pirámide está invertida en ese tramo: por ejemplo, más correctivo que detección significa que hay fallas que llegan al taller sin aviso. Antes de abril de 2026 no había checklist digital; en esos meses se compara el preventivo directo con el correctivo.</td></tr>
+<tr><td>Análisis aperturado</td><td>El histórico del año cortado por <b>sistema del vehículo</b>, por <b>unidad</b> y por <b>taller</b>, con los cuatro niveles, el costo, los días parado y el Pareto de fallas (R4.2.2).</td></tr>
+<tr><td>Retrabajo</td><td>La misma unidad vuelve a correctivo por el mismo sistema dentro de los 90 días. Se le atribuye al taller de la primera reparación.</td></tr>
 <tr><td>5 Porqués</td><td>Herramienta para llegar a la causa raíz encadenando preguntas desde el problema observado.</td></tr>
 <tr><td>Causa-Efecto</td><td>Espina de pescado: agrupa causas posibles por familia antes de elegir cuál verificar.</td></tr>
 <tr><td>PDCA</td><td>Ciclo planificar–hacer–verificar–actuar, con revisión mensual. Es la herramienta para las mejoras que llevan más de un mes.</td></tr>
@@ -32,47 +41,52 @@ th{background:#eef3f8}
 <h2>4. RACI</h2>
 <table>
 <tr><th>Actividad</th><th>SDF</th><th>PM</th><th>JDL</th><th>Equipo</th></tr>
-<tr><td>Lectura mensual de indicadores</td><td>R</td><td>C</td><td>A</td><td>I</td></tr>
-<tr><td>Selección de los temas a atacar</td><td>R</td><td>C</td><td>A</td><td>C</td></tr>
+<tr><td>Registro de la OT completa (sistema, taller, costo, entrada/salida, auxilio)</td><td>A</td><td>R</td><td>I</td><td>C</td></tr>
+<tr><td>Lectura mensual de la pirámide e indicadores</td><td>R</td><td>C</td><td>A</td><td>I</td></tr>
+<tr><td>Selección de los focos a atacar</td><td>R</td><td>C</td><td>A</td><td>C</td></tr>
 <tr><td>Aplicación de la herramienta de gestión</td><td>R</td><td>C</td><td>A</td><td>C</td></tr>
 <tr><td>Ejecución de la contramedida</td><td>A</td><td>R</td><td>I</td><td>R</td></tr>
 <tr><td>Verificación del resultado</td><td>R</td><td>I</td><td>A</td><td>I</td></tr>
 <tr><td>Estandarización de lo que funcionó</td><td>R</td><td>C</td><td>A</td><td>I</td></tr>
+<tr><td>Revisión anual del histórico (año completo)</td><td>R</td><td>C</td><td>A</td><td>I</td></tr>
 </table>
-<p style="font-size:10pt"><b>R</b> el que hace · <b>A</b> el dueño del indicador · <b>C</b> consultado · <b>I</b> informado.</p>
+<p style="font-size:10pt"><b>SDF</b> supervisor de flota · <b>PM</b> pañolero / mecánico · <b>JDL</b> jefe de distribución y logística. <b>R</b> el que hace · <b>A</b> el dueño del indicador · <b>C</b> consultado · <b>I</b> informado.</p>
 
 <h2>5. Flujograma</h2>
 <ol>
-<li>Cierre del mes → se leen los PI de flota con su meta y su serie.</li>
-<li>¿Algún indicador por debajo de la meta, o alguna falla reincidente? <b>No</b> → se informa y sigue. <b>Sí</b> → sigue.</li>
-<li>Se abre plan de acción sobre ese indicador o esa OT.</li>
+<li>Cierre del mes → en la app, solapa <b>Pirámide y resultados</b>: se lee la pirámide del mes y del acumulado, su balance y los PI de flota con su meta.</li>
+<li>¿Pirámide invertida, algún indicador por debajo de la meta, o algún foco que cumple el criterio 7.2? <b>No</b> → se registra la lectura y sigue. <b>Sí</b> → sigue.</li>
+<li>Desde el análisis aperturado se abre un plan sobre el foco (sistema, unidad o taller) con el botón «Plan».</li>
 <li>Se aplica la herramienta que corresponda (5 Porqués, Causa-Efecto o PDCA) y se define la contramedida.</li>
 <li>Se cargan las acciones con responsable y fecha de compromiso.</li>
+<li>Se registra la <b>lectura mensual</b> con la decisión tomada (queda con la foto de los números).</li>
 <li>Seguimiento semanal en la reunión de flota.</li>
-<li>Al mes siguiente se verifica el indicador. ¿Mejoró? <b>Sí</b> → se estandariza (cambio de SOP, de plan preventivo o de OPL) y se cierra. <b>No</b> → vuelve al paso 4 con la causa revisada.</li>
+<li>En los meses siguientes se verifica el efecto (fallas del foco antes y después del plan). ¿Mejoró? <b>Sí</b> → se estandariza (cambio de plan preventivo, SOP u OPL) y se cierra el plan con el resultado. <b>No</b> → vuelve al paso 4 con la causa revisada.</li>
 </ol>
 
 <h2>6. Campo de aplicación</h2>
-<p>Reunión semanal de flota y cierre mensual de indicadores del CD.</p>
+<p>Reunión semanal de flota, cierre mensual de indicadores del CD y revisión anual del plan preventivo.</p>
 
 <h2>7. Desarrollo</h2>
 
 <h3>7.1 Cadencia</h3>
 <table>
 <tr><th>Instancia</th><th>Frecuencia</th><th>Qué se mira</th><th>Qué sale</th></tr>
-<tr><td>Reunión de flota</td><td>Semanal</td><td>OT abiertas, unidades fuera de servicio, defectos de checklist sin cerrar, acciones vencidas</td><td>Acciones con responsable y fecha</td></tr>
-<tr><td>Cierre de indicadores</td><td>Mensual</td><td>PI de flota contra meta, pirámide de defectos, costo por motivo</td><td>Planes de acción sobre los indicadores en rojo</td></tr>
-<tr><td>Revisión de PDCA</td><td>Mensual</td><td>Avance de cada ciclo abierto</td><td>Ajuste o cierre del ciclo</td></tr>
-<tr><td>Revisión de SOP y plan preventivo</td><td>Anual</td><td>Todo lo que se estandarizó en el año</td><td>Nueva revisión de los documentos</td></tr>
+<tr><td>Reunión de flota</td><td>Semanal</td><td>OT abiertas, unidades fuera de servicio, defectos de checklist sin cerrar, acciones vencidas, rechazos por rotura sin OT</td><td>Acciones con responsable y fecha</td></tr>
+<tr><td>Lectura de la pirámide</td><td>Mensual (primeros 5 días hábiles)</td><td>Pirámide del mes y del acumulado, balance, evolución mes a mes, KPIs, análisis aperturado</td><td>Lectura registrada en la app + planes sobre los focos</td></tr>
+<tr><td>Revisión de planes y PDCA</td><td>Mensual</td><td>Avance de cada plan abierto y efecto antes/después</td><td>Ajuste o cierre del plan con resultado</td></tr>
+<tr><td>Revisión anual del histórico</td><td>Anual (diciembre)</td><td>Año completo: pirámide, Pareto por sistema y unidad, talleres contra ANS, costo</td><td>Cambios al plan preventivo, a los ANS con talleres y metas del año siguiente; PDF de la pirámide firmado</td></tr>
 </table>
 
 <h3>7.2 Criterio para elegir qué atacar</h3>
-<p>No todo desvío merece un análisis formal. Se abre plan de acción con herramienta cuando se cumple alguna de estas condiciones:</p>
+<p>No todo desvío merece un análisis formal. Se abre plan con herramienta cuando se cumple alguna de estas condiciones:</p>
 <ul>
+<li>La pirámide queda invertida en algún tramo dos meses seguidos.</li>
 <li>Un PI queda por debajo de su meta dos meses seguidos.</li>
-<li>La misma falla se repite en la misma unidad dentro de los 90 días.</li>
+<li>Un sistema tiene más fallas que preventivos en el año (marca «más fallas que preventivo» en el análisis).</li>
+<li>La misma falla se repite en la misma unidad dentro de los 90 días (retrabajo).</li>
 <li>La misma falla aparece en tres o más unidades en el mes.</li>
-<li>Un correctivo dejó una unidad parada más de dos días.</li>
+<li>Hubo una rotura (auxilio en ruta o unidad parada 1 día o más).</li>
 <li>Falló un componente que tenía su preventivo al día: si el plan estaba cumplido y falló igual, el plan está mal.</li>
 </ul>
 
@@ -83,39 +97,53 @@ th{background:#eef3f8}
 <tr><td>Problema con varias causas posibles que hay que ordenar antes de verificar</td><td>Causa-Efecto</td></tr>
 <tr><td>Mejora que lleva más de un mes y necesita seguimiento</td><td>PDCA con revisión mensual</td></tr>
 </table>
-<p>La herramienta se abre desde el lugar donde vive el problema: desde la <b>OT</b> cuando es una falla, y desde el <b>plan de acción del indicador</b> cuando es un KPI en rojo. Queda asociada ahí, con su PDF, para que el auditor vea el análisis junto al hecho y no en una carpeta aparte.</p>
+<p>La herramienta se abre desde el lugar donde vive el problema: desde la <b>OT</b> cuando es una falla puntual, desde el <b>plan de la pirámide</b> cuando es un foco (sistema, unidad o taller), y desde el <b>plan del indicador</b> cuando es un KPI en rojo. Queda asociada ahí, con su PDF, para que el auditor vea el análisis junto al hecho.</p>
 
 <h3>7.4 De la contramedida al estándar</h3>
-<p>Una contramedida que funcionó y no se estandariza se pierde cuando cambia la persona. El cierre del análisis incluye definir qué documento cambia:</p>
+<p>Una contramedida que funcionó y no se estandariza se pierde cuando cambia la persona. El cierre del plan incluye definir qué documento cambia:</p>
 <ul>
-<li>Cambio en el <b>plan preventivo</b> (frecuencia, tarea nueva, tarea que se saca).</li>
+<li>Cambio en el <b>plan preventivo</b> (frecuencia, tarea nueva, tarea que se saca), cargado desde Plan/Plantillas con su motivo y las OT que lo originaron («Llevar al plan», R2.2.6).</li>
 <li>Cambio en el <b>SOP</b> correspondiente.</li>
 <li><b>OPL nueva</b> para el que hace el trabajo, publicada y alcanzable por el QR de la unidad.</li>
 <li>Cambio en el <b>checklist</b> si hace falta detectar antes el desvío.</li>
+<li>Cambio en el <b>ANS</b> con el taller cuando la causa es el tiempo de reparación o el retrabajo.</li>
+</ul>
+
+<h3>7.5 Calidad del dato de la pirámide</h3>
+<ul>
+<li>Toda OT correctiva lleva sistema del vehículo, taller, entrada y salida de taller. Sin entrada y salida no se puede medir el MTTR ni el tiempo del taller contra el ANS.</li>
+<li>Si la unidad quedó parada en la calle, se marca el tilde <b>auxilio en ruta</b>. La app avisa al cargar la OT cuando la unidad tuvo rechazos por rotura cerca de esa fecha.</li>
+<li>Los rechazos por rotura sin OT se revisan en la reunión semanal: o falta cargar la OT, o el motivo del rechazo está mal elegido en Chess y se corrige con Distribución.</li>
 </ul>
 
 <h2>8. Control e indicadores</h2>
 <table>
 <tr><th>Indicador</th><th>Cálculo</th><th>Meta</th><th>Frecuencia</th></tr>
-<tr><td>Planes con causa raíz analizada</td><td>Planes con herramienta aplicada ÷ planes abiertos por indicador en rojo</td><td>100 %</td><td>Mensual</td></tr>
-<tr><td>Acciones cumplidas en fecha</td><td>Acciones completadas en o antes del compromiso ÷ acciones vencidas</td><td>≥ 90 %</td><td>Mensual</td></tr>
-<tr><td>Mejoras estandarizadas</td><td>Contramedidas que terminaron en un cambio de SOP, plan u OPL ÷ contramedidas cerradas</td><td>≥ 80 %</td><td>Trimestral</td></tr>
-<tr><td>Relación preventivo / correctivo</td><td>Base sobre punta de la pirámide de defectos</td><td>Creciente</td><td>Mensual</td></tr>
+<tr><td>% preventivo por cantidad</td><td>OT preventivas + proactivas ÷ total de OT</td><td>≥ 70 %</td><td>Mensual</td></tr>
+<tr><td>% preventivo por costo</td><td>Costo de OT preventivas + proactivas ÷ costo total</td><td>≥ 60 %</td><td>Mensual</td></tr>
+<tr><td>Roturas de flota</td><td>OT correctivas que son rotura (definición del punto 3)</td><td>≤ 1 por mes</td><td>Mensual</td></tr>
+<tr><td>MTBF</td><td>Unidades activas × días del período ÷ fallas (correctivo + rotura)</td><td>Creciente (línea de base 2026: ~69 días-unidad)</td><td>Mensual</td></tr>
+<tr><td>MTTR</td><td>Mediana de horas entre entrada y salida de taller de las fallas</td><td>Según ANS con cada taller</td><td>Mensual</td></tr>
+<tr><td>Fallas con aviso</td><td>Fallas con defecto de checklist o CIL de la unidad en los 15 días previos ÷ fallas</td><td>Creciente</td><td>Mensual</td></tr>
+<tr><td>Planes con causa raíz analizada</td><td>Planes con herramienta aplicada ÷ planes abiertos</td><td>100 %</td><td>Mensual</td></tr>
+<tr><td>Mejoras estandarizadas</td><td>Contramedidas que terminaron en un cambio de plan, SOP, OPL o ANS ÷ contramedidas cerradas</td><td>≥ 80 %</td><td>Trimestral</td></tr>
 </table>
 
 <h2>9. Registros</h2>
 <ul>
-<li>Planes de acción de flota con causa raíz y acciones (app).</li>
+<li>Órdenes de trabajo en la app (sistema de gestión de flota).</li>
+<li>Solapa <b>Pirámide y resultados</b>: pirámide, evolución mensual, análisis aperturado, planes y lecturas mensuales (app).</li>
+<li>PDF «Pirámide de mantenimiento y resultados», exportado al cierre de cada trimestre y del año, firmado y cargado en Evidencia · Flota 4.2.</li>
 <li>Herramientas de gestión aplicadas, con su PDF, asociadas a la OT o al plan (app).</li>
+<li>Historial del plan preventivo con el motivo de cada cambio (app).</li>
 <li>Actas de la reunión semanal de flota.</li>
-<li>Revisiones de SOP, plan preventivo y OPL generadas por las contramedidas.</li>
 </ul>
 
 <h2>10. Control de revisiones</h2>
 <table>
 <tr><th>N.º</th><th>Responsable</th><th>Cargo</th><th>Descripción</th><th>Fecha</th></tr>
 <tr><td>0</td><td>&nbsp;</td><td>SDF</td><td>Elaboración del procedimiento (borrador)</td><td>25/08/2026</td></tr>
-<tr><td>1</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>1</td><td>&nbsp;</td><td>SDF</td><td>Pirámide de mantenimiento de cuatro niveles y definición única de rotura; análisis aperturado por sistema, unidad y taller; lectura mensual registrada; revisión anual del histórico; KPIs MTBF, MTTR y % preventivo por cantidad; calidad del dato (auxilio en ruta, rechazos por rotura). Responde a la devolución H1 del punto 4.2.</td><td>06/11/2026</td></tr>
 </table>
 
 </body></html>

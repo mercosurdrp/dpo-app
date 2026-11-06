@@ -4,6 +4,7 @@
 // indicadores-flota.tsx): detalle de un PI, crear plan y detalle de plan con
 // los comentarios y fotos de cada acción.
 
+import { labelFocoKpi } from "@/lib/flota/piramide-planes"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -426,7 +427,7 @@ export function DetallePlanDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {def?.label ?? plan.kpi} · {fmtMesLargo(`${plan.year}-${pad(plan.mes)}`)}
+            {def?.label ?? labelFocoKpi(plan.kpi)} · {fmtMesLargo(`${plan.year}-${pad(plan.mes)}`)}
             <EstadoPlanBadge estado={plan.estado} />
           </DialogTitle>
           <DialogDescription>

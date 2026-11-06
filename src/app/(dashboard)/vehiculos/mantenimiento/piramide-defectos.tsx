@@ -30,6 +30,7 @@ import type { MantenimientoRealizado } from "@/types/database"
 import type { ChecklistItemNoOk } from "@/actions/mantenimiento-vehiculos"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
+import { MIN_DIAS_ROTURA } from "@/lib/flota/rotura"
 import { KpiCard } from "./_components/kpi-card"
 import {
   FiltroPeriodo,
@@ -49,6 +50,13 @@ import {
 interface Props {
   itemsNoOk: ChecklistItemNoOk[]
   mantenimientos: MantenimientoRealizado[]
+  /**
+   * Sólo el detalle de los defectos (torta, ranking, export), sin la pirámide
+   * ni los KPIs: desde el 06/11/2026 la pirámide de la solapa es la de
+   * `piramide-resultados.tsx` (DPO 4.2), y dos pirámides con cortes distintos
+   * no pueden convivir en la misma pantalla.
+   */
+  soloDetalle?: boolean
 }
 
 const fmtNum = (v: number) => new Intl.NumberFormat("es-AR").format(v)
@@ -78,7 +86,7 @@ const NIVELES = [
     // pasa por el taller, así que entraban un reemplazo de foco de 1 hora, una
     // reparación de neumático y una guía de lona. Lo que hace grave a la falla
     // es que la unidad perdió días de calle: ver MIN_DIAS_PARADA.
-    detalle: "Correctivo que dejó la unidad parada 2 días o más",
+    detalle: "Correctivo que dejó la unidad parada 1 día o más",
     color: "#a63a2a",
   },
   {
@@ -208,7 +216,7 @@ function urlExport(r: { desde: string | null; hasta: string | null }): string {
   return `/api/vehiculos/checklist/export${qs ? `?${qs}` : ""}`
 }
 
-export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
+export function PiramideDefectos({ itemsNoOk, mantenimientos, soloDetalle = false }: Props) {
   const [periodo, setPeriodo] = useState<PeriodoState>(() => periodoInicial())
   const paleta = usePaletaViz()
   // Cuántos checklists tuvo cada unidad en el período: sin ese denominador, la
@@ -257,10 +265,11 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
     /**
      * El corte de la avería grave. Tener período fuera de servicio cargado no
      * alcanza: eso lo tiene cualquier OT que entró al taller, aunque haya
-     * entrado y salido en 4 horas. Grave es cuando la unidad no volvió a la
-     * calle al día siguiente, o sea 2 días o más de parada.
+     * entrado y salido en 4 horas. Grave es cuando la unidad perdió al menos
+     * un día de calle. Era 2 días hasta el 06/11/2026; se unificó con el KPI
+     * `roturas_flota` y la pirámide DPO 4.2 (ver `lib/flota/rotura.ts`).
      */
-    const MIN_DIAS_PARADA = 2
+    const MIN_DIAS_PARADA = MIN_DIAS_ROTURA
     const esAveriaGrave = (m: MantenimientoRealizado) => {
       const d = diasParada(m)
       return d !== null && d >= MIN_DIAS_PARADA
@@ -560,9 +569,9 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1.5">
           <h2 className="text-sm font-semibold text-foreground">
-            Pirámide de defectos de flota
+            {soloDetalle ? "Defectos de checklist por unidad" : "Pirámide de defectos de flota"}
           </h2>
-          <DpoSeccionCinta seccionId="piramide" />
+          {!soloDetalle && <DpoSeccionCinta seccionId="piramide" />}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <FiltroPeriodo
@@ -581,6 +590,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       </div>
 
       {/* Pirámide */}
+      {!soloDetalle && (
       <div className="rounded-lg border bg-card p-3 sm:p-4">
         <div className="mx-auto max-w-4xl">
           <svg
@@ -772,7 +782,10 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
         </p>
       </div>
 
+      )}
+
       {/* Indicadores */}
+      {!soloDetalle && (
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <KpiCard
           label="Defectos"
@@ -820,6 +833,8 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
           onClick={() => setDetalleKpi("ratio")}
         />
       </div>
+
+      )}
 
       {/* Torta: reparto de los defectos entre las unidades */}
       <Card>

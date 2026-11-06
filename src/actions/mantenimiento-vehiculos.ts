@@ -1,5 +1,6 @@
 "use server"
 
+import { IS_MISIONES } from "@/lib/empresa"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import { loadEstadoPlan } from "@/lib/vehiculos/plan-mantenimiento"
@@ -1031,6 +1032,12 @@ interface CreateMantenimientoInput {
   auxilio_ruta?: boolean
   /** Sistema del vehículo (carrocería, pérdidas, luces…): base de la recurrencia (R2.2.6). */
   sistema?: MantenimientoSistema | null
+  /**
+   * 'checklist' = OT interna creada al resolver el plan de acción de un ítem NO
+   * OK. Sin esto quedaban como 'manual' (default de la columna) y el análisis
+   * de correctivos y la pirámide 4.2 sólo las reconocían por el taller.
+   */
+  origen?: "manual" | "checklist"
   tareas: MantenimientoTareaInput[]
   repuestos?: MantenimientoRepuestoInput[]
   /** Comprobantes de la OT (proveedor + nº + monto + adjunto). */
@@ -1378,6 +1385,9 @@ export async function createMantenimiento(
         ...(input.sistema !== undefined && (await haySistemaOt(supabase))
           ? { sistema: input.sistema || null }
           : {}),
+        // 'checklist' requiere el CHECK de APLICAR_EN_*_CORRECTIVO_2_4.sql,
+        // que en Misiones todavía no está aplicado: allá queda el default.
+        ...(input.origen && !IS_MISIONES ? { origen: input.origen } : {}),
         created_by: profile.id,
       })
       .select()
@@ -2434,6 +2444,7 @@ export async function upsertPlanChecklist(
           taller: "Depósito",
           costo: null,
           sistema,
+          origen: "checklist",
           observaciones:
             `OT interna: sale del plan de acción del checklist del ${c.cv.fecha}${c.item ? ` — ${c.item.nombre}` : ""}. ` +
             `Hecha en depósito, sin taller.` +

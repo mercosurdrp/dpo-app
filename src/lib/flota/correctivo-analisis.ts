@@ -13,6 +13,7 @@
 import type { MantenimientoRealizado, MantenimientoSistema } from "@/types/database"
 import { labelSistema } from "./sistemas-ot"
 import { descripcionDeOt, sistemaDeOt } from "./recurrencia-correctivos"
+import { esRotura } from "./rotura"
 
 export type EjeEstratificacion = "sistema" | "unidad" | "mes" | "taller"
 
@@ -110,7 +111,7 @@ export function esOtInterna(m: Pick<MantenimientoRealizado, "taller" | "origen">
   return t === "" || t.startsWith("dep") || t === "casa" || t === "interno"
 }
 
-export function aOtCorrectiva(m: MantenimientoRealizado): OtCorrectiva {
+export function aOtCorrectiva(m: MantenimientoRealizado, hoy?: string): OtCorrectiva {
   const { sistema, sugerido } = sistemaDeOt(m)
   const tareas = (m.tareas ?? []).reduce((a, t) => a + Number(t.costo || 0), 0)
   const repuestos = (m.repuestos ?? []).reduce(
@@ -138,7 +139,8 @@ export function aOtCorrectiva(m: MantenimientoRealizado): OtCorrectiva {
     costo,
     diasParado,
     auxilio: !!m.auxilio_ruta,
-    rotura: diasParado >= 1 || !!m.auxilio_ruta,
+    // Misma definición que la pirámide DPO 4.2 y el KPI roturas_flota.
+    rotura: esRotura(m, hoy ?? new Date().toISOString().slice(0, 10)),
     horasTaller,
   }
 }
@@ -201,7 +203,7 @@ export function analizarCorrectivos(params: {
   const desde = restarMeses(params.hoy, meses)
   const ots = params.mantenimientos
     .filter((m) => m.tipo === "correctivo" && m.estado !== "cancelado")
-    .map(aOtCorrectiva)
+    .map((m) => aOtCorrectiva(m, params.hoy))
     .filter((o) => o.fecha >= desde && o.fecha <= params.hoy)
     .sort((a, b) => b.fecha.localeCompare(a.fecha))
 
