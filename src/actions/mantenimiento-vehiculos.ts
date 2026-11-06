@@ -24,6 +24,11 @@ import { esFocoDeMantenimiento } from "@/lib/vehiculos/focos-checklist"
 import { marcarEpisodios } from "@/lib/vehiculos/episodios-foco"
 import { TAREAS_CIL } from "@/lib/flota/cil-tareas"
 import {
+  TAREA_CONTROL_ACEITE,
+  leerControlAceite,
+  type ControlAceite,
+} from "@/lib/flota/cil-aceite"
+import {
   analizarPolitica,
   CAUSA_DIFERENCIA_LABEL,
   type CausaDiferencia,
@@ -3512,6 +3517,20 @@ export async function createTareaCil(
     if (!fecha || !dominio || tareas.length === 0 || !operario)
       return { error: "Completá fecha, unidad, tarea y operario" }
 
+    // Control de aceite (DPO 4.1): obligatorio con la I del CIL, igual que en
+    // /mi-cil. Ver `lib/flota/cil-aceite.ts`.
+    let aceite: ControlAceite | null = null
+    if (tareas.includes(TAREA_CONTROL_ACEITE)) {
+      const { data: veh } = await supabase
+        .from("catalogo_vehiculos")
+        .select("tipo")
+        .eq("dominio", dominio)
+        .maybeSingle()
+      const leido = leerControlAceite(formData, (veh?.tipo as string | null) ?? null)
+      if ("error" in leido) return { error: leido.error }
+      aceite = leido.data
+    }
+
     let fotoUrl: string | null = null
     let fotoPath: string | null = null
     const foto = formData.get("foto")
@@ -3542,6 +3561,7 @@ export async function createTareaCil(
         foto_url: fotoUrl,
         foto_path: fotoPath,
         created_by: profile.id,
+        ...(aceite && tarea === TAREA_CONTROL_ACEITE ? { ...aceite, origen: "app" } : {}),
       }))
     )
     if (error) {

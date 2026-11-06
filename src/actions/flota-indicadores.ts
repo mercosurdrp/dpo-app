@@ -25,6 +25,14 @@ import { TIPO_CARGA_GASOIL } from "@/lib/vehiculos/tipos-carga"
 import { CAUSA_DIFERENCIA_LABEL, esAjusteConteo, type CausaDiferencia } from "@/lib/flota/inventario-politica"
 import { MOTIVO_RECHAZO_ROTURA } from "@/lib/vehiculos/correctivo-kpis"
 import {
+  controlesAceite,
+  dominiosReincidentes,
+  esItemAceiteChecklist,
+  eventosFuga,
+  type FilaCilAceite,
+} from "@/lib/flota/kpi-aceite"
+import { resumenAceite } from "@/lib/flota/cil-aceite"
+import {
   esCargaSinRegistrar,
   medianasPorDominio,
 } from "@/lib/vehiculos/combustible-limpio"
@@ -66,6 +74,8 @@ export type FlotaKpi =
   | "co2_flota"
   | "cil_tareas"
   | "cil_defectos_anticipables"
+  | "cil_fugas_detectadas"
+  | "fugas_aceite_ruta"
   | "correctivo_dias_parado"
   | "roturas_flota"
   | "correctivo_tiempo_servicio"
@@ -300,8 +310,13 @@ const CATEGORIAS_POR_RUBRO: Record<string, readonly string[] | null> = {
  * mañana se suma un ítem a alguna familia.
  */
 const FAMILIAS_DEFECTO_CIL = {
-  /** MOTOR :: "Pérdida de fluidos y/o alarmas" (camión y autoelevador). */
-  fluidos: (it: ItemChecklist) => /p[ée]rdida de fluidos/i.test(it.nombre),
+  /**
+   * MOTOR :: "Pérdida de fluidos y/o alarmas" (camión y autoelevador) y, desde
+   * el 06/11/2026, "Nivel de aceite motor": el control de aceite del CIL
+   * existe para anticipar justamente ese ítem.
+   */
+  fluidos: (it: ItemChecklist) =>
+    /p[ée]rdida de fluidos/i.test(it.nombre) || /nivel de aceite/i.test(it.nombre),
   /** Toda la categoría LUCES: focos, destelladores, balizas y giros. */
   luces: (it: ItemChecklist) => it.categoria === "LUCES",
   /** CARROCERÍA :: "Estado de manijas, barandas, estribos y soldaduras". */
@@ -977,6 +992,52 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       }
     }
 
+    // Aceite (DPO 4.1, R4.1.4) — ver `lib/flota/kpi-aceite.ts`.
+    //
+    // `fugas_aceite_ruta`: eventos de pérdida que llegaron al checklist. A
+    // diferencia de `cil_defectos_anticipables`, entran los autoelevadores: la
+    // fuga hidráulica del HELI1 es el ejemplo textual del requisito, y agrupar
+    // por evento ya evita que una sola fuga infle el mes.
+    const nombreItem = new Map(
+      ((itemsRes.data || []) as ItemChecklist[]).map((it) => [it.id, it.nombre]),
+    )
+    const fugasRutaPorMes = new Map<string, number>(meses.map((ym) => [ym, 0]))
+    for (const ev of eventosFuga(
+      defectos
+        .filter((d) => d.itemId && esItemAceiteChecklist(nombreItem.get(d.itemId) ?? ""))
+        .map((d) => ({
+          fecha: d.fecha,
+          dominio: d.dominio,
+          item: nombreItem.get(d.itemId as string) ?? "",
+          valor: "",
+          comentario: null,
+        })),
+    )) {
+      const ym = ev.desde.slice(0, 7)
+      if (fugasRutaPorMes.has(ym)) fugasRutaPorMes.set(ym, (fugasRutaPorMes.get(ym) ?? 0) + 1)
+    }
+
+    // `cil_fugas_detectadas`: hallazgos del control de aceite del CIL. Consulta
+    // aparte y tolerante: si la migración del 06/11 todavía no corrió (42703),
+    // la serie queda sin dato en vez de romper la pantalla entera.
+    const fugasCilPorMes = new Map<string, number | null>(meses.map((ym) => [ym, null]))
+    const cilAceiteRes = await supabase
+      .from("mantenimiento_cil")
+      .select("fecha, dominio, aceite_nivel, aceite_litros, perdida_detectada")
+      .gte("fecha", inicioVentana)
+    if (cilAceiteRes.error) {
+      if (cilAceiteRes.error.code !== "42703") return { error: cilAceiteRes.error.message }
+    } else {
+      const { controles, hallazgos } = controlesAceite(
+        (cilAceiteRes.data || []) as unknown as FilaCilAceite[],
+      )
+      for (const ym of meses) {
+        // Mes sin ningún control cargado = sin dato, no "cero hallazgos".
+        if (!controles.some((c) => String(c.fecha).startsWith(ym))) continue
+        fugasCilPorMes.set(ym, hallazgos.filter((h) => String(h.fecha).startsWith(ym)).length)
+      }
+    }
+
     // Días parado por correctivo: por cada mes, suma del solapamiento de los
     // rangos fuera de servicio con el mes (una OT que cruza meses reparte sus
     // días). Rango abierto (sin fecha de alta) = sigue parado hasta hoy.
@@ -1178,6 +1239,8 @@ export async function getFlotaKpiSeriesExtra(): Promise<
           ym,
           valor: defectosCilPorMes.get(ym) ?? null,
         })),
+        cil_fugas_detectadas: meses.map((ym) => ({ ym, valor: fugasCilPorMes.get(ym) ?? null })),
+        fugas_aceite_ruta: meses.map((ym) => ({ ym, valor: fugasRutaPorMes.get(ym) ?? 0 })),
         combustible_kml: meses.map((ym) => {
           const c = combustible.get(ym)
           return { ym, valor: c && c.litrosConKm > 0 ? c.km / c.litrosConKm : null }
@@ -1365,6 +1428,8 @@ export type FlotaKpiConDetalle =
   | "inventario_exactitud"
   | "repuestos_stock_minimo"
   | "presupuesto_desvio"
+  | "cil_fugas_detectadas"
+  | "fugas_aceite_ruta"
 
 export interface FilaDetalleKpi {
   /** Qué es la fila: "OT 1768", "AF028YB", … */
@@ -1653,6 +1718,106 @@ export async function getFlotaKpiDetalle(
           filas,
         },
       }
+    }
+
+    if (kpi === "cil_fugas_detectadas") {
+      // Todos los controles de aceite del mes: los hallazgos suman, los «OK»
+      // quedan a la vista como denominador (son la prueba de que se controló).
+      // Se traen 3 meses para marcar las unidades reincidentes.
+      const d0 = new Date(`${desde}T00:00:00`)
+      d0.setMonth(d0.getMonth() - 2)
+      const desdeReinc = `${d0.getFullYear()}-${pad2(d0.getMonth() + 1)}-01`
+      const { data, error } = await supabase
+        .from("mantenimiento_cil")
+        .select(
+          "id, fecha, dominio, operario, descripcion, aceite_nivel, aceite_litros, aceite_circuito, perdida_detectada, perdida_ubicacion, mantenimiento_id, origen",
+        )
+        .gte("fecha", desdeReinc)
+        .lt("fecha", hasta)
+        .order("fecha", { ascending: true })
+      if (error) {
+        if (error.code === "42703")
+          return { error: "Falta aplicar la migración del control de aceite (APLICAR_EN_PAMPEANA_CIL_ACEITE.sql)." }
+        return { error: error.message }
+      }
+      type Fila = FilaCilAceite & { operario: string; descripcion: string | null; origen: string | null }
+      const todas = (data || []) as unknown as Fila[]
+      const reincidentes = dominiosReincidentes(controlesAceite(todas).hallazgos)
+      const { controles, hallazgos } = controlesAceite(todas.filter((f) => String(f.fecha) >= desde))
+      const esHallazgo = new Set(hallazgos)
+      const filas: FilaDetalleKpi[] = controles.map((c) => {
+        const f = c as Fila
+        const hallazgo = esHallazgo.has(c)
+        const partes = [resumenAceite(c), f.operario]
+        if (f.origen === "backfill") partes.push("estructurado desde la descripción")
+        return {
+          titulo: c.dominio,
+          subtitulo: partes.filter(Boolean).join(" · "),
+          fecha: String(c.fecha),
+          cuenta: hallazgo,
+          motivo: !hallazgo
+            ? "Control hecho, sin hallazgo"
+            : c.mantenimiento_id
+              ? "Hallazgo con OT correctiva vinculada"
+              : reincidentes.has(c.dominio)
+                ? "Hallazgo REINCIDENTE (2 meses o más en 3): corresponde 5 Porqués"
+                : "Hallazgo sin OT todavía",
+          // `valor` lo pinta la tarjeta como días: los litros ya van en el subtítulo.
+          valor: null,
+        }
+      })
+      return {
+        data: { kpi, ym, numerador: hallazgos.length, denominador: controles.length, excluidos: 0, filas },
+      }
+    }
+
+    if (kpi === "fugas_aceite_ruta") {
+      // Desde 7 días antes: un reporte del día 2 puede ser la continuación de
+      // una fuga que arrancó el mes anterior (y entonces no es un evento nuevo).
+      const d0 = new Date(`${desde}T00:00:00`)
+      d0.setDate(d0.getDate() - 7)
+      const desdeEv = `${d0.getFullYear()}-${pad2(d0.getMonth() + 1)}-${pad2(d0.getDate())}`
+      const { data, error } = await supabase
+        .from("checklist_respuestas")
+        .select("valor, comentario, item:checklist_items!inner(nombre), cv:checklist_vehiculos!inner(fecha, dominio)")
+        .not("valor", "in", '("ok","bueno")')
+        .gte("cv.fecha", desdeEv)
+        .lt("cv.fecha", hasta)
+      if (error) return { error: error.message }
+      const reportes = ((data || []) as unknown as Array<{
+        valor: string
+        comentario: string | null
+        item: { nombre: string } | null
+        cv: { fecha: string; dominio: string } | null
+      }>)
+        .filter((r) => r.cv && r.item && esItemAceiteChecklist(r.item.nombre))
+        .map((r) => ({
+          fecha: r.cv!.fecha,
+          dominio: r.cv!.dominio,
+          item: r.item!.nombre,
+          valor: r.valor,
+          comentario: r.comentario,
+        }))
+      const filas: FilaDetalleKpi[] = eventosFuga(reportes)
+        .filter((ev) => ev.hasta >= desde)
+        .map((ev) => {
+          const delMes = ev.desde >= desde
+          return {
+            titulo: ev.dominio,
+            subtitulo:
+              `${ev.items.join(" / ")} · ${ev.reportes} reporte${ev.reportes === 1 ? "" : "s"}` +
+              (ev.desde !== ev.hasta ? ` (${ev.desde.split("-").reverse().join("/")} a ${ev.hasta.split("-").reverse().join("/")})` : "") +
+              (ev.comentario ? ` · «${ev.comentario}»` : ""),
+            fecha: ev.desde,
+            cuenta: delMes,
+            motivo: delMes
+              ? "Pérdida que llegó al checklist: el CIL no la anticipó"
+              : "Sigue una fuga que empezó el mes anterior: ya contó allá",
+            valor: null,
+          }
+        })
+      const numerador = filas.filter((f) => f.cuenta).length
+      return { data: { kpi, ym, numerador, denominador: numerador, excluidos: filas.length - numerador, filas } }
     }
 
     if (kpi === "inventario_exactitud" || kpi === "repuestos_stock_minimo") {

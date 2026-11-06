@@ -57,6 +57,14 @@ import { ScrollX } from "./_components/scroll-x"
 import { CoberturaCil } from "./cobertura-cil"
 import { ProgramacionCil } from "./programacion-cil"
 import { ArticulosLimpiezaSection } from "./articulos-limpieza"
+import { ControlAceite } from "./control-aceite"
+import { TAREA_CONTROL_ACEITE } from "@/lib/flota/cil-aceite"
+import {
+  CONTROL_ACEITE_VACIO,
+  ControlAceiteCampos,
+  appendControlAceite,
+  type ControlAceiteForm,
+} from "@/components/flota/control-aceite-campos"
 import {
   createTareaCil,
   deleteTareaCil,
@@ -111,6 +119,9 @@ export function Cil({ tareasCil, dominiosFlota, puedeEditar }: Props) {
       {/* Va después de la cobertura y antes del detalle: la cobertura dice CÓMO
           viene el mes y esto dice QUÉ hay que hacer hoy. */}
       <ProgramacionCil mesActual={mesActualArgentina()} />
+
+      {/* ===== Control de aceite: el PI de ATO del 4.1 y sus OT ===== */}
+      <ControlAceite puedeEditar={puedeEditar} />
 
       {/* ===== Tareas CIL / ATO (DPO 4.1) ===== */}
       <TareasCilSection
@@ -687,6 +698,11 @@ function TareaCilDialog({
   const [descripcion, setDescripcion] = useState("")
   const [foto, setFoto] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
+  const [aceite, setAceite] = useState<ControlAceiteForm>(CONTROL_ACEITE_VACIO)
+  const conAceite = tareas.includes(TAREA_CONTROL_ACEITE)
+  // El diálogo no conoce el tipo de cada unidad: los autoelevadores son los
+  // HELI. El server igual fuerza «motor» en las que no son autoelevador.
+  const esAutoelevador = dominio.toUpperCase().startsWith("HELI")
 
   const submit = async () => {
     if (!dominio) return toast.error("Elegí la unidad")
@@ -701,6 +717,7 @@ function TareaCilDialog({
       fd.set("operario", operario)
       fd.set("descripcion", descripcion)
       if (foto) fd.set("foto", foto)
+      if (conAceite) appendControlAceite(fd, aceite)
       const res = await createTareaCil(fd)
       if ("error" in res) return toast.error(res.error)
       toast.success(
@@ -781,6 +798,15 @@ function TareaCilDialog({
                 )
               })}
             </div>
+            {conAceite && (
+              <div className="mt-2">
+                <ControlAceiteCampos
+                  valor={aceite}
+                  onChange={setAceite}
+                  elegirCircuito={esAutoelevador}
+                />
+              </div>
+            )}
           </div>
           <div>
             <Label>Operario</Label>

@@ -176,6 +176,16 @@ const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
   },
   cil_tareas: { tab: "cil", label: "Ver las tareas CIL del mes" },
   cil_defectos_anticipables: { tab: "analisis-items", label: "Ver los defectos por ítem" },
+  cil_fugas_detectadas: {
+    detalle: "cil_fugas_detectadas",
+    label: "Ver los controles de aceite del mes",
+    // Gris no es "cero hallazgos": es que nadie cargó el control estructurado.
+    labelSinDato: "Sin controles de aceite cargados este mes",
+  },
+  fugas_aceite_ruta: {
+    detalle: "fugas_aceite_ruta",
+    label: "Ver las pérdidas que llegaron al checklist",
+  },
   neumaticos_medicion: { tab: "neumaticos", label: "Ver las mediciones del mes" },
   neumaticos_conformidad: { tab: "neumaticos", label: "Ver las mediciones del mes" },
   neumaticos_desgaste: { tab: "neumaticos", label: "Ver el desgaste por km" },
@@ -237,6 +247,11 @@ const RESUMEN_DETALLE: Record<FlotaKpiConDetalle, (d: DetalleKpi) => string> = {
     `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "ítem contado" : "ítems contados"} sin diferencia en el último conteo del mes`,
   repuestos_stock_minimo: (d) =>
     `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "ítem con mínimo" : "ítems con mínimo"} en o por encima del mínimo${d.excluidos > 0 ? ` · ${d.excluidos} sin mínimo definido` : ""}`,
+  cil_fugas_detectadas: (d) =>
+    `${d.numerador} ${d.numerador === 1 ? "hallazgo" : "hallazgos"} de aceite en ${d.denominador} ${d.denominador === 1 ? "control" : "controles"} del CIL`,
+  fugas_aceite_ruta: (d) =>
+    `${d.numerador} ${d.numerador === 1 ? "pérdida llegó" : "pérdidas llegaron"} al checklist diario` +
+    (d.excluidos > 0 ? ` · ${d.excluidos} venía${d.excluidos === 1 ? "" : "n"} del mes anterior` : ""),
   presupuesto_desvio: (d) =>
     `Gastado $${d.numerador.toLocaleString("es-AR")} contra $${d.denominador.toLocaleString("es-AR")} presupuestados` +
     (d.denominador > 0
@@ -617,7 +632,27 @@ const KPI_DEFS: KpiDef[] = [
     kpi: "cil_defectos_anticipables",
     label: "Defectos que el CIL anticipa",
     descripcion:
-      "Defectos de checklist de las familias que la limpieza e inspección autónoma previene: pérdida de fluidos, luces (focos y destelladores) y soldaduras de carrocería, sólo en la flota de reparto. Menos es mejor: es el resultado del CIL, no la actividad",
+      "Defectos de checklist de las familias que la limpieza e inspección autónoma previene: pérdida de fluidos y nivel de aceite, luces (focos y destelladores) y soldaduras de carrocería, sólo en la flota de reparto. Menos es mejor: es el resultado del CIL, no la actividad",
+    fmt: (v) => String(Math.round(v)),
+    conSerie: true,
+    dpo: "4.1",
+    acumulativo: true,
+  },
+  {
+    kpi: "cil_fugas_detectadas",
+    label: "Fugas de aceite que encontró el CIL",
+    descripcion:
+      "PI de ATO (R4.1.4): controles de aceite del CIL con nivel bajo o pasado, litros repuestos o pérdida a la vista, en camiones y autoelevadores. Cada hallazgo es una falla que no llegó a ruta. Se lee junto con «Pérdidas de aceite en ruta»",
+    fmt: (v) => String(Math.round(v)),
+    conSerie: true,
+    dpo: "4.1",
+    acumulativo: true,
+  },
+  {
+    kpi: "fugas_aceite_ruta",
+    label: "Pérdidas de aceite en ruta",
+    descripcion:
+      "Resultado del ATO: eventos de pérdida de fluidos o nivel de aceite NO OK que llegaron al checklist diario (la misma unidad con menos de 7 días entre reportes = 1 evento). Incluye autoelevadores. Menos es mejor",
     fmt: (v) => String(Math.round(v)),
     conSerie: true,
     dpo: "4.1",

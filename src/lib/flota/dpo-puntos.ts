@@ -138,9 +138,9 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
     label: "CIL / 5S",
     grupo: "operacion",
     puntos: ["4.1"],
-    requisitos: ["R4.1.1"],
+    requisitos: ["R4.1.1", "R4.1.4", "R4.1.5", "R4.1.6"],
     aporta:
-      "Limpieza, inspección y lubricación autónoma (CIL/ATO) por unidad: cobertura mensual, tareas registradas con evidencia fotográfica y entrega de artículos de limpieza. Estaba dentro de Check lists, que responde otro punto (1.3, la verificación previa a la salida).",
+      "Limpieza, inspección y lubricación autónoma (CIL/ATO) por unidad: cobertura mensual, tareas registradas con evidencia fotográfica y entrega de artículos de limpieza. El control de aceite mensual de la inspección es el PI de ATO (fugas encontradas por el CIL vs. pérdidas que llegaron al checklist) y cada hallazgo pasa a su OT correctiva. Estaba dentro de Check lists, que responde otro punto (1.3, la verificación previa a la salida).",
   },
   {
     id: "analisis-items",

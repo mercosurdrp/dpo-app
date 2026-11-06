@@ -31,6 +31,11 @@ import {
   DOMINIOS_CIL_EXCLUIDOS,
   tareaDelCiclo,
 } from "@/lib/flota/cil-tareas"
+import {
+  TAREA_CONTROL_ACEITE,
+  leerControlAceite,
+  type ControlAceite,
+} from "@/lib/flota/cil-aceite"
 
 const BUCKET = "mantenimiento-evidencias"
 
@@ -227,11 +232,20 @@ export async function createMiTareaCil(
     // no está en el catálogo queda huérfano y no suma al KPI de su unidad.
     const { data: veh } = await supabase
       .from("catalogo_vehiculos")
-      .select("dominio")
+      .select("dominio, tipo")
       .eq("dominio", dominio)
       .eq("active", true)
       .maybeSingle()
     if (!veh) return { error: "Esa unidad no está activa en el maestro de flota." }
+
+    // Control de aceite (PI de ATO, DPO 4.1): obligatorio cuando se marca la I
+    // del CIL. Se valida ANTES de subir la foto para no dejarla huérfana.
+    let aceite: ControlAceite | null = null
+    if (tareas.some((t) => t.id === TAREA_CONTROL_ACEITE)) {
+      const leido = leerControlAceite(formData, (veh.tipo as string | null) ?? null)
+      if ("error" in leido) return { error: leido.error }
+      aceite = leido.data
+    }
 
     const limpio = foto.name.replace(/[^a-zA-Z0-9._-]/g, "_")
     const path = `cil/${dominio}/${Date.now()}-${limpio}`
@@ -261,6 +275,9 @@ export async function createMiTareaCil(
         foto_url: pub.publicUrl,
         foto_path: path,
         created_by: profile.id,
+        // El control de aceite va SÓLO en la fila de la I: si viajara en las
+        // tres, el KPI contaría el mismo hallazgo tres veces.
+        ...(aceite && t.id === TAREA_CONTROL_ACEITE ? { ...aceite, origen: "app" } : {}),
       })),
     )
     if (error) {

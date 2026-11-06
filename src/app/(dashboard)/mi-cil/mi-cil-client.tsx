@@ -17,6 +17,14 @@ import { FotoInput } from "@/components/foto/foto-input"
 import { TAREAS_CIL, labelTareaCil } from "@/lib/flota/cil-tareas"
 import { fmtDiaConNombre } from "@/lib/flota/cil-programacion"
 import { cn } from "@/lib/utils"
+import { TAREA_CONTROL_ACEITE } from "@/lib/flota/cil-aceite"
+import {
+  CONTROL_ACEITE_VACIO,
+  ControlAceiteCampos,
+  appendControlAceite,
+  controlAceiteCompleto,
+  type ControlAceiteForm,
+} from "@/components/flota/control-aceite-campos"
 
 const TIPO_LABEL: Record<string, string> = {
   camion: "Camión",
@@ -49,6 +57,11 @@ export function MiCilClient({
   const [foto, setFoto] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<number | null>(null)
+  // Control de aceite (DPO 4.1): va con la I del CIL. Ver `lib/flota/cil-aceite`.
+  const [aceite, setAceite] = useState<ControlAceiteForm>(CONTROL_ACEITE_VACIO)
+  const conAceite = tareas.includes(TAREA_CONTROL_ACEITE)
+  const esAutoelevador =
+    data.unidades.find((u) => u.dominio === dominio)?.tipo === "autoelevador"
 
   /** Los nombres cargados, en una sola línea: así los guarda la tabla. */
   const nombres = operarios.map((n) => n.trim()).filter(Boolean)
@@ -72,6 +85,7 @@ export function MiCilClient({
     fd.set("operario", nombres.join(", "))
     fd.set("descripcion", descripcion)
     if (foto) fd.set("foto", foto)
+    if (conAceite) appendControlAceite(fd, aceite)
 
     iniciar(async () => {
       const res = await createMiTareaCil(fd)
@@ -84,6 +98,7 @@ export function MiCilClient({
       setTareas([])
       setDescripcion("")
       setFoto(null)
+      setAceite(CONTROL_ACEITE_VACIO)
       router.refresh()
       setTimeout(() => setOk(null), 4000)
     })
@@ -92,7 +107,12 @@ export function MiCilClient({
   // Los nombres NO se limpian al guardar: el que hace el CIL suele cargar varias
   // unidades seguidas y volver a escribirlos cada vez es lo que hace que se
   // abandone la carga por la mitad.
-  const listo = dominio && tareas.length > 0 && nombres.length > 0 && foto
+  const listo =
+    dominio &&
+    tareas.length > 0 &&
+    nombres.length > 0 &&
+    foto &&
+    (!conAceite || controlAceiteCompleto(aceite, esAutoelevador))
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5 pb-24">
@@ -251,6 +271,16 @@ export function MiCilClient({
               )
             })}
           </div>
+          {/* El control de aceite cuelga de la I: es el PI de ATO del 4.1. */}
+          {conAceite && (
+            <div className="mt-3">
+              <ControlAceiteCampos
+                valor={aceite}
+                onChange={setAceite}
+                elegirCircuito={esAutoelevador}
+              />
+            </div>
+          )}
         </div>
 
         <div>
