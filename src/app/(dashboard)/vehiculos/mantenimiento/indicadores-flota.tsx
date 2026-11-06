@@ -1,70 +1,30 @@
 "use client"
 
-// Tablero de Indicadores de Flota: cada KPI con valor actual, meta editable,
-// tendencia de los últimos 3 meses y plan de acción por mes fuera de meta
-// (patrón TML/TI adaptado con discriminador de KPI).
+// Tablero de Indicadores de Flota.
+//
+// Se lee de arriba a abajo por importancia: salud del tablero y lo que
+// necesita atención → lo que mira primero la auditoría (mandatorios + la
+// disponibilidad que siente el cliente) → confiabilidad → gestión y mejora →
+// planes de acción. Cada PI contra su meta, con su tendencia y su plan por mes
+// fuera de meta (patrón TML/TI adaptado con discriminador de KPI).
+//
+// La lógica vive en `_components/indicadores/`:
+//  - kpi-defs: qué es cada PI, su tier, tema y forma (con los 🚨 de negocio).
+//  - estado-kpi: el ÚNICO juicio contra la meta.
+//  - vistas: series por mes + la vista juzgada que consume toda la pantalla.
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { toast } from "sonner"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import { ArrowRight, ClipboardList, Pencil, Plus, Trash2 } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { createClient as createClientBrowser } from "@/lib/supabase/client"
-import { DpoSeccionCinta } from "./_components/dpo-badge"
-import { KpiCard, type EstadoKpi } from "./_components/kpi-card"
-import {
-  addFlotaPlanItem,
-  agregarAvanceFlotaPlan,
-  cerrarFlotaPlan,
-  createFlotaPlan,
-  deleteFlotaPlan,
-  deleteFlotaPlanItem,
-  eliminarAvanceFlotaPlan,
-  getFlotaKpiDetalle,
-  listarAvancesFlotaPlan,
-  updateFlotaMeta,
-  updateFlotaPlanItem,
-  type DetalleKpi,
-  type FlotaPlanAvance,
-  type FlotaKpi,
-  type FlotaKpiConDetalle,
-  type FlotaKpiSnapshot,
-  type FlotaMeta,
-  type FlotaPlanConItems,
-  type PuntoSerieKpi,
+import { CheckCircle2, SearchX } from "lucide-react"
+import type {
+  FlotaKpi,
+  FlotaKpiConDetalle,
+  FlotaKpiSnapshot,
+  FlotaMeta,
+  FlotaPlanConItems,
+  PuntoSerieKpi,
 } from "@/actions/flota-indicadores"
-import {
-  calcularDisponibilidadMes,
-  flotaDeRuta,
-  ruteoSetDe,
-  type UnidadFlota,
-} from "@/lib/vehiculos/disponibilidad-flota"
-import {
-  cumplimientoPlanDesdeEstados,
-  PLAN_COBERTURA_MINIMA,
-} from "@/lib/vehiculos/plan-cumplimiento"
+import type { UnidadFlota } from "@/lib/vehiculos/disponibilidad-flota"
 import type {
   CostosMantenimiento,
   DiaRuteo,
@@ -76,714 +36,33 @@ import type {
   DocumentoVencimiento,
   ServiceGeneralUnidad,
 } from "@/lib/vehiculos/service-general"
-import { conformidadDocumental } from "@/lib/vehiculos/documentos-conformidad"
-import { PlanHerramientasInline } from "@/components/herramientas-gestion/plan-herramientas-inline"
-
-const MESES_CORTO = [
-  "ene", "feb", "mar", "abr", "may", "jun",
-  "jul", "ago", "sep", "oct", "nov", "dic",
-]
-const MESES_LARGO = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-]
-
-const pad = (n: number) => String(n).padStart(2, "0")
-const hoyISO = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-const fmtMesCorto = (ym: string) => MESES_CORTO[Number(ym.slice(5, 7)) - 1] ?? ym
-const fmtMesLargo = (ym: string) =>
-  `${MESES_LARGO[Number(ym.slice(5, 7)) - 1] ?? ym} ${ym.slice(0, 4)}`
-
-const fmtMoney = (v: number) =>
-  new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    maximumFractionDigits: 0,
-  }).format(v)
-
-// ==================== Destino del click y panel de detalle ====================
-
-/**
- * A dónde lleva el click de cada tarjeta.
- *
- * 🚨 La regla es una sola: el click tiene que terminar donde el número se
- * puede AUDITAR, no en una pantalla parecida. Para casi todos los PI esa
- * pantalla ya existe en otra solapa y lo único que faltaba era el atajo; para
- * los tres que no la tienen (detección, resolución y trazabilidad) se abre el
- * panel con las filas que forman el numerador y el denominador. Un porcentaje
- * del que no se puede ver el detrás no se puede discutir en una reunión.
- */
-interface DestinoKpi {
-  /** Solapa del módulo de mantenimiento. */
-  tab?: string
-  /** Ruta de otra pantalla (el módulo de combustible vive fuera). */
-  href?: string
-  /** Panel propio con las filas del cálculo. */
-  detalle?: FlotaKpiConDetalle
-  label: string
-  /**
-   * Texto del botón cuando el mes en curso NO tiene valor.
-   *
-   * 🚨 Un "—" se lee como "la app no anda". Los dos PI de repuestos salen del
-   * conteo FÍSICO del mes, así que sin conteo no hay número — y eso no es una
-   * falla del tablero, es una tarea sin hacer. El botón lo dice y lleva a
-   * hacerla.
-   */
-  labelSinDato?: string
-}
-
-const DESTINO_KPI: Partial<Record<FlotaKpi, DestinoKpi>> = {
-  disponibilidad: { tab: "seguimiento", label: "Ver día a día por unidad" },
-  utilizacion: { tab: "seguimiento", label: "Ver día a día por unidad" },
-  correctivo_dias_parado: { tab: "seguimiento", label: "Ver las paradas del mes" },
-  costo_total: {
-    tab: "historial",
-    label: "Ver las órdenes de trabajo",
-    labelSinDato: "Sin OT cargadas este mes",
-  },
-  pct_preventivo: {
-    tab: "historial",
-    label: "Ver las órdenes de trabajo",
-    labelSinDato: "Sin OT cargadas este mes",
-  },
-  cumplimiento_plan: { tab: "tablero", label: "Ver el plan tarea por unidad" },
-  services_vencidos: { tab: "tablero", label: "Ver el plan tarea por unidad" },
-  docs_conformidad: { tab: "tablero", label: "Ver la documentación por unidad" },
-  estandares_mandatorios: { tab: "estandares", label: "Ver la matriz de estándares" },
-  estandares_excelencia: { tab: "estandares", label: "Ver la matriz de estándares" },
-  inventario_exactitud: {
-    detalle: "inventario_exactitud",
-    label: "Ver el conteo ítem por ítem, con la causa de cada diferencia",
-    labelSinDato: "Sin conteo este mes",
-  },
-  repuestos_stock_minimo: {
-    detalle: "repuestos_stock_minimo",
-    label: "Ver qué ítems quedaron FUERA del mínimo",
-    labelSinDato: "Sin conteo este mes",
-  },
-  repuestos_demora_pieza: {
-    tab: "repuestos",
-    label: "Ver los pedidos de repuestos",
-    labelSinDato: "Sin pedidos este mes",
-  },
-  valor_stock_panol: {
-    tab: "repuestos",
-    label: "Ver el valor por ítem en Inventario",
-    labelSinDato: "Sin precios cargados en el pañol",
-  },
-  cil_tareas: { tab: "cil", label: "Ver las tareas CIL del mes" },
-  cil_defectos_anticipables: { tab: "analisis-items", label: "Ver los defectos por ítem" },
-  cil_fugas_detectadas: {
-    detalle: "cil_fugas_detectadas",
-    label: "Ver los controles de aceite del mes",
-    // Gris no es "cero hallazgos": es que nadie cargó el control estructurado.
-    labelSinDato: "Sin controles de aceite cargados este mes",
-  },
-  fugas_aceite_ruta: {
-    detalle: "fugas_aceite_ruta",
-    label: "Ver las pérdidas que llegaron al checklist",
-  },
-  neumaticos_medicion: { tab: "neumaticos", label: "Ver las mediciones del mes" },
-  neumaticos_conformidad: { tab: "neumaticos", label: "Ver las mediciones del mes" },
-  neumaticos_desgaste: { tab: "neumaticos", label: "Ver el desgaste por km" },
-  neumaticos_gasto_km: {
-    tab: "neumaticos",
-    label: "Ver el costo de neumáticos por unidad",
-    labelSinDato: "Sin km cargados este año",
-  },
-  combustible_kml: {
-    href: "/vehiculos/combustible/analisis",
-    label: "Ver el análisis por camión y por chofer",
-  },
-  combustible_sin_registrar_l: {
-    href: "/vehiculos/combustible/analisis",
-    label: "Ver qué camiones tienen cargas sin registrar",
-  },
-  combustible_camiones_sin_carga_7d: {
-    href: "/vehiculos/combustible/analisis",
-    label: "Ver los días desde la última carga",
-  },
-  co2_flota: { href: "/vehiculos/combustible", label: "Ver el módulo de Combustible" },
-  checklist_adherencia: {
-    tab: "checklists",
-    label: "Ver los días que faltan y de quién",
-  },
-  checklist_deteccion: {
-    detalle: "checklist_deteccion",
-    label: "Ver las OT correctivas del mes",
-  },
-  checklist_resolucion: {
-    detalle: "checklist_resolucion",
-    label: "Ver los planes resueltos del mes",
-  },
-  repuestos_trazabilidad: {
-    detalle: "repuestos_trazabilidad",
-    label: "Ver los repuestos cargados en OT",
-  },
-  roturas_flota: { tab: "analisis-correctivos", label: "Ver el análisis de correctivos" },
-  correctivo_tiempo_servicio: { tab: "historial", label: "Ver las OT con entrada y salida de taller" },
-  rechazos_rotura_flota: { href: "/rechazos", label: "Ver los rechazos por rotura de camión" },
-  presupuesto_desvio: {
-    detalle: "presupuesto_desvio",
-    label: "Ver el desvío rubro por rubro",
-    // Gris no es "cero desvío": es que nadie cargó el control del mes. La
-    // tarjeta lo dice en vez de dejar al lector adivinando.
-    labelSinDato: "Sin control de presupuesto este mes",
-  },
-}
-
-/** Encabezado del panel: qué significan el numerador y el denominador. */
-const RESUMEN_DETALLE: Record<FlotaKpiConDetalle, (d: DetalleKpi) => string> = {
-  checklist_deteccion: (d) =>
-    `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "OT correctiva" : "OT correctivas"} venían anticipadas por un defecto de checklist`,
-  checklist_resolucion: (d) =>
-    `${d.denominador} ${d.denominador === 1 ? "plan resuelto" : "planes resueltos"}, ${(d.denominador > 0 ? d.numerador / d.denominador : 0).toFixed(1)} días promedio${d.excluidos > 0 ? ` · ${d.excluidos} sin tiempo medible` : ""}`,
-  repuestos_trazabilidad: (d) =>
-    `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "egreso" : "egresos"} del pañol salieron contra una OT o un plan del checklist${d.excluidos > 0 ? ` · ${d.excluidos} ajuste${d.excluidos === 1 ? "" : "s"} por conteo afuera` : ""}`,
-  inventario_exactitud: (d) =>
-    `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "ítem contado" : "ítems contados"} sin diferencia en el último conteo del mes`,
-  repuestos_stock_minimo: (d) =>
-    `${d.numerador} de ${d.denominador} ${d.denominador === 1 ? "ítem con mínimo" : "ítems con mínimo"} en o por encima del mínimo${d.excluidos > 0 ? ` · ${d.excluidos} sin mínimo definido` : ""}`,
-  cil_fugas_detectadas: (d) =>
-    `${d.numerador} ${d.numerador === 1 ? "hallazgo" : "hallazgos"} de aceite en ${d.denominador} ${d.denominador === 1 ? "control" : "controles"} del CIL`,
-  fugas_aceite_ruta: (d) =>
-    `${d.numerador} ${d.numerador === 1 ? "pérdida llegó" : "pérdidas llegaron"} al checklist diario` +
-    (d.excluidos > 0 ? ` · ${d.excluidos} venía${d.excluidos === 1 ? "" : "n"} del mes anterior` : ""),
-  presupuesto_desvio: (d) =>
-    `Gastado $${d.numerador.toLocaleString("es-AR")} contra $${d.denominador.toLocaleString("es-AR")} presupuestados` +
-    (d.denominador > 0
-      ? ` · ${(((d.numerador - d.denominador) / d.denominador) * 100).toFixed(0)} % de desvío`
-      : ""),
-}
-
-function DetalleKpiDialog({
-  kpi,
-  label,
-  ym,
-  onClose,
-}: {
-  kpi: FlotaKpiConDetalle
-  label: string
-  ym: string
-  onClose: () => void
-}) {
-  const [data, setData] = useState<DetalleKpi | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  // El diálogo se monta al abrirlo y se desmonta al cerrarlo (va con `key`),
-  // así que el efecto corre una sola vez y no hace falta limpiar el estado.
-  useEffect(() => {
-    let vivo = true
-    getFlotaKpiDetalle(kpi, ym).then((res) => {
-      if (!vivo) return
-      if ("error" in res) setError(res.error)
-      else setData(res.data)
-    })
-    return () => {
-      vivo = false
-    }
-  }, [kpi, ym])
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>{label}</DialogTitle>
-          <DialogDescription>
-            {fmtMesLargo(ym)}
-            {data ? ` · ${RESUMEN_DETALLE[kpi](data)}` : ""}
-          </DialogDescription>
-        </DialogHeader>
-        {error ? (
-          <p className="text-sm text-destructive">{error}</p>
-        ) : !data ? (
-          <p className="text-sm text-muted-foreground">Cargando…</p>
-        ) : data.filas.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No hubo casos en el mes: el PI no tiene sobre qué calcularse.
-          </p>
-        ) : (
-          <ul className="divide-y divide-border text-sm">
-            {data.filas.map((f, i) => (
-              <li key={i} className="flex items-start gap-3 py-2">
-                {/* El punto de color dice de una si la fila suma o no. */}
-                <span
-                  aria-hidden
-                  className={cn(
-                    "mt-1.5 size-2 shrink-0 rounded-full",
-                    f.cuenta === true
-                      ? "bg-emerald-500"
-                      : f.cuenta === false
-                        ? "bg-destructive"
-                        : "bg-muted-foreground/40"
-                  )}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-foreground">
-                    {f.titulo}
-                    {f.fecha && (
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">
-                        {f.fecha}
-                      </span>
-                    )}
-                    {f.valor != null && (
-                      <span className="ml-2 text-xs font-normal tabular-nums text-muted-foreground">
-                        {f.valor.toFixed(1)} d
-                      </span>
-                    )}
-                  </p>
-                  {f.subtitulo && (
-                    <p className="truncate text-xs text-muted-foreground">{f.subtitulo}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground">{f.motivo}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ==================== Definición de KPIs ====================
-
-interface KpiDef {
-  kpi: FlotaKpi
-  label: string
-  descripcion: string
-  /** Formatea el valor para mostrar. */
-  fmt: (v: number) => string
-  /** true = con serie mensual (tendencia); false = solo foto actual. */
-  conSerie: boolean
-  /** Punto del pilar Flota de DPO que este PI evidencia (ej. "2.1"). */
-  dpo?: string
-  /**
-   * true = el valor SE ACUMULA a lo largo del mes (tareas hechas, litros
-   * quemados, plata gastada, días parados).
-   *
-   * 🚨 En el mes en curso estos KPI no se comparan contra la meta: el día 7 un
-   * acumulativo lleva un cuarto de lo que va a terminar siendo, y eso da un
-   * semáforo falso en las DOS direcciones — falso rojo en los de "más es mejor"
-   * (el CIL con 8 de 30 tareas) y falso verde en los de "menos es mejor" (el CO2
-   * o el costo, que arrancan el mes en cero y cumplen cualquier tope).
-   * Los porcentuales de ESTADO (disponibilidad, conformidad) NO son
-   * acumulativos: valen igual el día 7 que el 30. Un porcentaje SÍ es
-   * acumulativo cuando el numerador se va juntando durante el mes contra un
-   * denominador fijo —la medición de neumáticos, que el día 3 da 4 % porque
-   * todavía no se midió, no porque la rutina esté incumplida—.
-   */
-  acumulativo?: boolean
-  /**
-   * Cómo se llama lo que cuenta el denominador ("OT", "plan"). Si está, la
-   * tarjeta muestra el `n` al lado del valor: "0 % (0 de 1 OT)".
-   *
-   * 🚨 Un porcentaje sobre 1 o 2 casos parece una medición y no lo es. Que el
-   * lector vea el tamaño de la muestra sin tener que ir a buscarlo.
-   */
-  nLabel?: { sing: string; plural: string }
-  /**
-   * Cobertura mínima (n ÷ nTotal, en %) para juzgar el KPI contra la meta.
-   * Por debajo el valor se muestra igual pero sin semáforo: no alcanza para
-   * afirmar nada. Ver `PLAN_COBERTURA_MINIMA`.
-   */
-  coberturaMinima?: number
-}
-
-const KPI_DEFS: KpiDef[] = [
-  {
-    kpi: "disponibilidad",
-    label: "Disponibilidad de flota",
-    descripcion: "Días disponibles ÷ días del período (unidades de ruta)",
-    fmt: (v) => `${v.toFixed(1)}%`,
-    conSerie: true,
-    dpo: "2.1",
-  },
-  {
-    kpi: "utilizacion",
-    label: "Utilización de flota",
-    descripcion: "Días ruteados ÷ días laborales disponibles (unidades en servicio)",
-    fmt: (v) => `${v.toFixed(1)}%`,
-    conSerie: true,
-    dpo: "2.1",
-  },
-  {
-    kpi: "costo_total",
-    label: "Costo de mantenimiento",
-    descripcion: "Costo mensual de OT: tareas + mano de obra + repuestos",
-    fmt: fmtMoney,
-    conSerie: true,
-    dpo: "3.2",
-    acumulativo: true,
-  },
-  {
-    kpi: "presupuesto_desvio",
-    label: "Desvío presupuestario de flota",
-    descripcion:
-      "Gasto real vs. presupuestado en los rubros de flota que el control mensual marcó con desvío: rodados, neumáticos, autoelevadores y combustible",
-    fmt: (v) => `${v > 0 ? "+" : ""}${v.toFixed(0)}%`,
-    conSerie: true,
-    dpo: "3.2",
-  },
-  {
-    kpi: "pct_preventivo",
-    label: "% preventivo del costo",
-    descripcion: "Costo preventivo + proactivo ÷ costo total del mes",
-    fmt: (v) => `${v.toFixed(0)}%`,
-    conSerie: true,
-    dpo: "3.2",
-  },
-  {
-    kpi: "cumplimiento_plan",
-    label: "Cumplimiento del plan preventivo",
-    descripcion:
-      "Tareas del plan al día ÷ tareas con datos. El n dice sobre cuántas de las tareas plan×unidad se calculó: una tarea que nunca se registró no entra en el denominador, así que con poca cobertura el porcentaje no representa al plan y queda sin semáforo",
-    fmt: (v) => `${v.toFixed(0)}%`,
-    conSerie: true,
-    dpo: "2.2",
-    nLabel: { sing: "tarea con dato", plural: "tareas con dato" },
-    coberturaMinima: PLAN_COBERTURA_MINIMA,
-  },
-  {
-    kpi: "services_vencidos",
-    label: "Services vencidos",
-    descripcion:
-      "Unidades con service general vencido. Meses cerrados: última foto diaria del mes",
-    fmt: (v) => String(Math.round(v)),
-    conSerie: true,
-    dpo: "2.2",
-  },
-  {
-    kpi: "docs_conformidad",
-    label: "Conformidad documental",
-    descripcion:
-      "Unidades activas sin documentos vencidos ÷ flota activa. Un doc vencido deja la unidad fuera de servicio hasta regularizar",
-    fmt: (v) => `${v.toFixed(0)}%`,
-    conSerie: true,
-    dpo: "1.1",
-  },
-  // 🚨 Acá estaba "Conformidad de estándares" (el global). SALE del tablero por
-  // decisión de Francisco (08/08/2026), y no por estar mal calculado:
-  //
-  //  - Es el promedio de los otros dos, así que no agrega información.
-  //  - Su meta de 100 % es CONTRADICTORIA con las que fijamos el 01/08: para
-  //    llegar a 100 % global haría falta 100 % de excelencia, que es justo lo
-  //    que decidimos NO exigir (meta 95 %). Cumpliendo las dos metas al pie de
-  //    la letra el global daría 98,3 % y seguiría en rojo: un indicador que no
-  //    se puede cumplir aunque hagas todo bien deja de significar algo.
-  //
-  // El número NO se borró: se sigue calculando, sigue guardándose en
-  // `flota_kpi_snapshots` y se muestra como badge informativo (sin semáforo) en
-  // la pantalla de Estándares. Su meta sigue en `flota_metas` por si se decide
-  // volver atrás.
-  {
-    kpi: "estandares_mandatorios",
-    label: "Conformidad de estándares — mandatorios",
-    descripcion:
-      "Ítems OK ÷ evaluables entre los mandatorios (exigidos por ley o cuya ausencia habilita un riesgo grave). Un desvío acá es hallazgo de auditoría",
-    fmt: (v) => `${v.toFixed(1)}%`,
-    conSerie: true,
-    dpo: "1.2",
-  },
-  {
-    kpi: "estandares_excelencia",
-    label: "Conformidad de estándares — excelencia",
-    descripcion:
-      "Ítems OK ÷ evaluables entre los de excelencia (mejoras de desempeño, ergonomía o eficiencia)",
-    fmt: (v) => `${v.toFixed(1)}%`,
-    conSerie: true,
-    dpo: "1.2",
-  },
-  {
-    kpi: "checklist_adherencia",
-    label: "Adherencia al checklist",
-    descripcion:
-      "Camión-día con liberación Y retorno ÷ camión-día que efectivamente repartieron (no los que cargaron checklist: ese denominador se infla solo). El R1.3.1a exige 100 % porque el checklist no impide usar la unidad, y el 1.3 es mandatorio",
-    fmt: (v) => `${v.toFixed(1)}%`,
-    conSerie: true,
-    dpo: "1.3",
-  },
-  {
-    kpi: "checklist_deteccion",
-    label: "Defectos anticipados por checklist",
-    descripcion:
-      "OTs correctivas del mes con defecto detectado en el checklist de la unidad en los 15 días previos ÷ OTs correctivas. Si la OT es de neumáticos, el defecto tiene que ser de neumáticos: un desperfecto de otro sistema no la anticipa",
-    fmt: (v) => `${v.toFixed(0)}%`,
-    conSerie: true,
-    dpo: "1.3",
-    nLabel: { sing: "OT", plural: "OT" },
-  },
-  {
-    kpi: "checklist_resolucion",
-    label: "Resolución de defectos de checklist",
-    descripcion:
-      "Días promedio entre que el chofer carga el defecto en el checklist y que mantenimiento cierra el plan (por mes de cierre). El reloj arranca en la observación, no en el alta del plan: cargar un plan ya resuelto no cuenta 0 días",
-    fmt: (v) => `${v.toFixed(1)} d`,
-    conSerie: true,
-    dpo: "1.3",
-    nLabel: { sing: "plan resuelto", plural: "planes resueltos" },
-  },
-  {
-    kpi: "inventario_exactitud",
-    label: "Exactitud de inventario",
-    descripcion:
-      "Ítems sin diferencia en el último conteo físico del mes ÷ ítems contados (Repuestos → Conteo de stock)",
-    fmt: (v) => `${v.toFixed(0)}%`,
-    conSerie: true,
-    dpo: "2.3",
-    nLabel: { sing: "repuesto contado", plural: "repuestos contados" },
-  },
-  {
-    kpi: "repuestos_stock_minimo",
-    label: "Cumplimiento del stock mínimo",
-    descripcion:
-      "Ítems del último conteo físico del mes que estaban en o por encima de su stock mínimo ÷ ítems contados CON mínimo definido. Los ítems sin mínimo cargado no entran: no tienen regla que cumplir, y contarlos daría 100 % sin haber hecho nada",
-    fmt: (v) => `${v.toFixed(0)}%`,
-    conSerie: true,
-    dpo: "2.3",
-    nLabel: { sing: "repuesto con mínimo", plural: "repuestos con mínimo" },
-  },
-  {
-    kpi: "repuestos_trazabilidad",
-    label: "Trazabilidad de egresos",
-    descripcion:
-      "Egresos del pañol que nacieron de una OT o de un plan de acción del checklist (descuento automático, atado al trabajo y a la unidad) ÷ egresos del pañol del mes, sin los ajustes por conteo. Mide la disciplina de registro: el SOP dice que el egreso nunca se carga a mano, así que la meta es 100 %. Fórmula del 04/11/2026; la anterior (filas de repuesto de OT vinculadas ÷ todas) se movía con cuántas piezas compraba el taller. Arranca el 25/08/2026, que es cuando el vínculo existe",
-    fmt: (v) => `${v.toFixed(0)}%`,
-    conSerie: true,
-    dpo: "2.3",
-    nLabel: { sing: "egreso contra trabajo", plural: "egresos contra trabajo" },
-  },
-  {
-    kpi: "repuestos_demora_pieza",
-    label: "Demora por falta de pieza",
-    descripcion:
-      "Días promedio que un pedido de repuestos esperó la pieza, de la detección de la falta al retiro (los abiertos cuentan hasta hoy), por mes de detección. Es el «pedidos de servicio retrasados debido a las piezas» del R2.3.3: lo que el pañol existe para evitar",
-    fmt: (v) => `${v.toFixed(1)} d`,
-    conSerie: true,
-    dpo: "2.3",
-    nLabel: { sing: "pedido", plural: "pedidos" },
-  },
-  {
-    kpi: "valor_stock_panol",
-    label: "Valor del pañol",
-    descripcion:
-      "Capital inmovilizado en el pañol: stock actual × último precio unitario de cada pieza. Es el primer KPI que el auditor nombra en R2.3.3 (capital circulante). Foto de hoy; los meses cerrados salen de los snapshots del cron. Se lee junto con los ítems SOBRE máximo",
-    fmt: (v) => `$${Math.round(v).toLocaleString("es-AR")}`,
-    conSerie: true,
-    dpo: "2.3",
-    nLabel: { sing: "pieza con precio", plural: "piezas con precio" },
-  },
-  {
-    kpi: "combustible_kml",
-    label: "Rendimiento de combustible",
-    descripcion:
-      "Σ km recorridos ÷ Σ litros con medición del mes, flota de reparto, sin los tramos con carga faltante (mismo criterio que el módulo Combustible). KPI principal del DPO 3.3",
-    fmt: (v) => `${v.toFixed(2)} km/l`,
-    conSerie: true,
-    dpo: "3.3",
-  },
-  {
-    // PI de pérdida de combustible (R3.3.3). Mientras haya litros sin
-    // registrar el km/l de arriba está inflado: este número dice cuánto.
-    kpi: "combustible_sin_registrar_l",
-    label: "Litros sin registrar",
-    descripcion:
-      "Litros de las cargas cuyo tramo rinde más de 1,4× lo habitual del camión: entraron al tanque sin pasar por la app. Meta 0; la política de combustible exige registrar cada carga en el momento",
-    fmt: (v) => `${Math.round(v).toLocaleString("es-AR")} L`,
-    conSerie: true,
-    dpo: "3.3",
-    acumulativo: true,
-  },
-  {
-    // Condición de la meta 3,75: una carga cada ≤ 7 días por camión.
-    kpi: "combustible_camiones_sin_carga_7d",
-    label: "Camiones con +7 días sin carga",
-    descripcion:
-      "Camiones de reparto con algún hueco de más de 7 días entre cargas en el mes: un camión parado sin avisar o una carga que no pasó por la app. Meta 0",
-    fmt: (v) => String(Math.round(v)),
-    conSerie: true,
-    dpo: "3.3",
-    nLabel: { sing: "camión", plural: "camiones" },
-  },
-  {
-    kpi: "co2_flota",
-    label: "Huella de CO₂ de flota",
-    descripcion:
-      "Litros de gasoil cargados × 2,68 kg CO₂/l (estimación estándar; sostenibilidad DPO 4.3)",
-    fmt: (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)} t` : `${v.toFixed(0)} kg`),
-    conSerie: true,
-    dpo: "4.3",
-    acumulativo: true,
-  },
-  {
-    kpi: "cil_tareas",
-    label: "Tareas CIL / ATO completadas",
-    descripcion:
-      "Limpiezas, inspecciones y lubricaciones autónomas registradas en el mes (Check lists → Tareas CIL)",
-    fmt: (v) => String(Math.round(v)),
-    conSerie: true,
-    dpo: "4.1",
-    acumulativo: true,
-  },
-  {
-    kpi: "cil_defectos_anticipables",
-    label: "Defectos que el CIL anticipa",
-    descripcion:
-      "Defectos de checklist de las familias que la limpieza e inspección autónoma previene: pérdida de fluidos y nivel de aceite, luces (focos y destelladores) y soldaduras de carrocería, sólo en la flota de reparto. Menos es mejor: es el resultado del CIL, no la actividad",
-    fmt: (v) => String(Math.round(v)),
-    conSerie: true,
-    dpo: "4.1",
-    acumulativo: true,
-  },
-  {
-    kpi: "cil_fugas_detectadas",
-    label: "Fugas de aceite que encontró el CIL",
-    descripcion:
-      "PI de ATO (R4.1.4): controles de aceite del CIL con nivel bajo o pasado, litros repuestos o pérdida a la vista, en camiones y autoelevadores. Cada hallazgo es una falla que no llegó a ruta. Se lee junto con «Pérdidas de aceite en ruta»",
-    fmt: (v) => String(Math.round(v)),
-    conSerie: true,
-    dpo: "4.1",
-    acumulativo: true,
-  },
-  {
-    kpi: "fugas_aceite_ruta",
-    label: "Pérdidas de aceite en ruta",
-    descripcion:
-      "Resultado del ATO: eventos de pérdida de fluidos o nivel de aceite NO OK que llegaron al checklist diario (la misma unidad con menos de 7 días entre reportes = 1 evento). Incluye autoelevadores. Menos es mejor",
-    fmt: (v) => String(Math.round(v)),
-    conSerie: true,
-    dpo: "4.1",
-    acumulativo: true,
-  },
-  {
-    kpi: "correctivo_dias_parado",
-    label: "Días parado por correctivo",
-    descripcion:
-      "Σ días fuera de servicio por OT correctivas dentro del mes (una OT que cruza meses reparte sus días)",
-    fmt: (v) => `${v.toFixed(0)} d`,
-    conSerie: true,
-    dpo: "2.4",
-    acumulativo: true,
-  },
-  {
-    kpi: "roturas_flota",
-    label: "Roturas de flota",
-    descripcion:
-      "OT correctivas del mes que dejaron la unidad parada al menos un día o requirieron auxilio en ruta: la «avería» de la pirámide de fallas, que es el «nº de roturas de flota» del R2.4.3. Se cuenta por OT (n = correctivas del mes)",
-    fmt: (v) => `${v.toFixed(0)}`,
-    conSerie: true,
-    dpo: "2.4",
-    acumulativo: true,
-    nLabel: { sing: "OT correctiva", plural: "OT correctivas" },
-  },
-  {
-    kpi: "correctivo_tiempo_servicio",
-    label: "Tiempo de servicio en taller",
-    descripcion:
-      "Horas promedio entre la entrada y la salida del taller de las OT correctivas del mes, sobre las que tienen las dos fechas cargadas. Mide al proveedor tanto como a la falla y alimenta el ANS con los talleres (R2.4.3 «tiempo de servicio»)",
-    fmt: (v) => `${v.toFixed(0)} h`,
-    conSerie: true,
-    dpo: "2.4",
-    nLabel: { sing: "OT con entrada y salida", plural: "OT con entrada y salida" },
-  },
-  {
-    kpi: "rechazos_rotura_flota",
-    label: "Rechazos por rotura de flota",
-    descripcion:
-      "Rechazos de entrega del mes con motivo «ROTURA DE CAMION - SINIESTRO» (tabla rechazos, fuente Chess). Es el KPI que el R2.4.3 nombra textual y el que conecta el correctivo con el nivel de servicio: cada evento es un cliente que no recibió por una falla del camión. n = bultos rechazados",
-    fmt: (v) => `${v.toFixed(0)}`,
-    conSerie: true,
-    dpo: "2.4",
-    acumulativo: true,
-    nLabel: { sing: "bulto rechazado", plural: "bultos rechazados" },
-  },
-  // 🚨 Neumáticos son DOS indicadores y no uno: antes "conformidad" dividía por
-  // las cubiertas instaladas, así que la que no se medía contaba como si
-  // estuviera fuera de norma. El 6 % rojo de agosto de 2026 no era una flota con
-  // las cubiertas destruidas —las 98 mediciones de tres meses dieron todas
-  // dentro de estándar—, era la rutina de medición sin hacer. Separados, cada
-  // número tiene un dueño distinto: medir es del que mide, la conformidad es de
-  // mantenimiento.
-  {
-    kpi: "neumaticos_medicion",
-    label: "Medición de neumáticos",
-    descripcion:
-      "Cubiertas medidas en el mes ÷ cubiertas instaladas en camiones y autoelevadores activos. Es la rutina mensual de DPO 3.4: sin medición, la conformidad no se puede afirmar",
-    fmt: (v) => `${v.toFixed(0)}%`,
-    conSerie: true,
-    dpo: "3.4",
-    nLabel: { sing: "cubierta medida", plural: "cubiertas medidas" },
-    // 🚨 Es un % pero se ACUMULA: las mediciones se van cargando a lo largo del
-    // mes contra un denominador fijo (las cubiertas instaladas), así que el
-    // día 3 marca 4 % y pinta rojo una rutina que todavía no tenía por qué
-    // estar hecha. Se juzga contra la meta recién con el mes cerrado.
-    acumulativo: true,
-  },
-  {
-    kpi: "neumaticos_conformidad",
-    label: "Conformidad de neumáticos",
-    descripcion:
-      "De las cubiertas MEDIDAS en el mes, las que están dentro de estándar (≥3 mm de profundidad y 90–120 psi). Se lee junto con la medición: 100 % sobre 7 cubiertas de 85 no dice nada de la flota",
-    fmt: (v) => `${v.toFixed(0)}%`,
-    conSerie: true,
-    dpo: "3.4",
-    nLabel: { sing: "cubierta medida", plural: "cubiertas medidas" },
-  },
-  // 🚨 Este NO tiene serie mensual a propósito: la tasa sale de una recta
-  // ajustada sobre todas las rondas del programa, no de lo que pasó en el mes.
-  // Mostrarla mes a mes dibujaría el ruido del calibre como si fuera desgaste.
-  {
-    kpi: "neumaticos_desgaste",
-    label: "Desgaste de cubiertas",
-    descripcion:
-      "Milímetros de dibujo que se come la flota cada 1.000 km, de la recta ajustada sobre todas las rondas de medición (Neumáticos → Desgaste por km). Menos es mejor. Queda en «—» hasta que las rondas junten km suficientes: con dos rondas la pendiente todavía la mueve el calibre",
-    fmt: (v) => `${v.toFixed(2)} mm/1.000 km`,
-    conSerie: false,
-    dpo: "3.4",
-    nLabel: { sing: "cubierta en el ajuste", plural: "cubiertas en el ajuste" },
-  },
-  // El PI que pidió el auditor del H1 2026 ("Comenzar a seguir KPI de consumo
-  // de neumaticos"). R3.4.4 nombra "Gasto de Neumáticos" como uno de los PI
-  // válidos del punto: es el único de los cuatro que faltaba.
-  {
-    kpi: "neumaticos_gasto_km",
-    label: "Gasto de neumáticos por km",
-    descripcion:
-      "Plata de goma (cubiertas nuevas + recapados) ÷ km de la flota, acumulado del año y expresado por cada 1.000 km. Menos es mejor. Se mira acumulado porque las cubiertas se compran por juego: mes a mes daría $0 los meses sin compra y un pico el mes que se compra. Excluye los autoelevadores, que miden horas y no km",
-    fmt: (v) => `${fmtMoney(v)} /1.000 km`,
-    conSerie: true,
-    dpo: "3.4",
-    // 🚨 Acumulativo: el numerador y el denominador se van juntando durante el
-    // año, así que en enero el número todavía no se puede juzgar contra la meta.
-    acumulativo: true,
-  },
-]
-
-// KPIs cuya serie de meses cerrados sale de `flota_kpi_snapshots` (los pisa el
-// cron diario); el mes en curso se calcula en vivo.
-const KPIS_FOTO: FlotaKpi[] = [
-  "cumplimiento_plan",
-  "services_vencidos",
-  "docs_conformidad",
-  "estandares_conformidad",
-  "estandares_mandatorios",
-  "estandares_excelencia",
-]
-
-interface PuntoSerie {
-  ym: string
-  valor: number | null
-  parcial: boolean
-  /** Denominador detrás del valor, cuando el PI lo informa. */
-  n?: number | null
-  /** Universo que ese denominador debería cubrir ("7 de 85"). */
-  nTotal?: number | null
-  /** Casos descartados por dato inválido. */
-  excluidos?: number | null
-}
+import { DpoSeccionCinta } from "./_components/dpo-badge"
+import {
+  CrearPlanDialog,
+  DetalleKpiDialog,
+  DetallePlanDialog,
+} from "./_components/indicadores/dialogs"
+import { FiltrosIndicadoresBar, useFiltrosIndicadores } from "./_components/indicadores/filtros"
+import { fmtMesNombre } from "./_components/indicadores/formato"
+import {
+  DESTINO_KPI,
+  KPI_DEF_BY,
+  KPI_DEFS,
+  TEMAS,
+  TIERS,
+  type KpiDef,
+} from "./_components/indicadores/kpi-defs"
+import { PlanesAccion } from "./_components/indicadores/planes-accion"
+import { mesesSinPlan, ResumenSalud } from "./_components/indicadores/resumen-salud"
+import { KpiTarjeta, type AccionesTarjeta } from "./_components/indicadores/tarjeta"
+import {
+  aplicarFiltros,
+  contarFacetas,
+  evaluarKpis,
+  filtrosActivos,
+  useSeriesKpi,
+  type KpiVista,
+} from "./_components/indicadores/vistas"
 
 interface Props {
   estados: EstadoPlanVehiculo[]
@@ -807,30 +86,25 @@ interface Props {
   onNavegar?: (tab: string) => void
 }
 
-export function IndicadoresFlota({
-  estados,
-  programacion,
-  documentos,
-  costos,
-  mantenimientos,
-  unidades,
-  diasRuteo,
-  indisponibilidades,
-  metas,
-  planes,
-  kpiSnapshots,
-  extraSeries,
-  estandaresPct,
-  estandaresPctMandatorio,
-  estandaresPctExcelencia,
-  puedeEditar,
-  esAdmin,
-  onNavegar,
-}: Props) {
+export function IndicadoresFlota(props: Props) {
+  const { metas, planes, puedeEditar, esAdmin, onNavegar } = props
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const refresh = () => startTransition(() => router.refresh())
+  const refresh = useCallback(() => startTransition(() => router.refresh()), [router])
 
+  const { hoy, mesActual, meses, series, calcDisp } = useSeriesKpi(props)
+  const { foco, setFoco, filtros, set, limpiar } = useFiltrosIndicadores(meses)
+
+  const metaBy = useMemo(() => new Map(metas.map((m) => [m.kpi, m])), [metas])
+  const vistas = useMemo(
+    () => evaluarKpis({ defs: KPI_DEFS, series, metaBy, planes, meses, mesActual, foco }),
+    [series, metaBy, planes, meses, mesActual, foco]
+  )
+  const visibles = useMemo(() => aplicarFiltros(vistas, filtros), [vistas, filtros])
+  const facetas = useMemo(() => contarFacetas(vistas, filtros), [vistas, filtros])
+  const filtrando = filtrosActivos(filtros) > 0
+
+  // ---------- Diálogos ----------
   const [planNuevo, setPlanNuevo] = useState<{
     def: KpiDef
     ym: string
@@ -841,318 +115,231 @@ export function IndicadoresFlota({
   const [detalleVer, setDetalleVer] = useState<{
     kpi: FlotaKpiConDetalle
     label: string
+    ym: string
   } | null>(null)
 
-  const metaBy = useMemo(() => new Map(metas.map((m) => [m.kpi, m])), [metas])
-  const planBy = useMemo(
-    () => new Map(planes.map((p) => [`${p.kpi}|${p.year}-${pad(p.mes)}`, p])),
-    [planes]
-  )
-
-  // Últimos 3 meses: 2 cerrados + el actual (parcial).
-  const meses3 = useMemo(() => {
-    const hoy = hoyISO()
-    const [y, m] = [Number(hoy.slice(0, 4)), Number(hoy.slice(5, 7))]
-    const out: string[] = []
-    for (let i = 2; i >= 0; i--) {
-      const d = new Date(y, m - 1 - i, 1)
-      out.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`)
-    }
-    return out
-  }, [])
-  const mesActual = meses3[meses3.length - 1]
-
-  // Foto en vivo de los KPIs sin histórico: cumplimiento del plan y services
-  // vencidos (valor del mes en curso; los meses cerrados salen de snapshots).
-  const fotoActual = useMemo(() => {
-    const plan = cumplimientoPlanDesdeEstados(estados)
-    const cumplimiento = plan.pct
-    const vencidos = programacion.filter((p) => p.estado === "vencido").length
-    const docsConf = conformidadDocumental(
-      unidades.map((u) => u.dominio),
-      documentos
-    ).pct
-    return {
-      valores: new Map<FlotaKpi, number | null>([
-        ["cumplimiento_plan", cumplimiento],
-        ["services_vencidos", vencidos],
-        ["docs_conformidad", docsConf],
-        ["estandares_conformidad", estandaresPct],
-        ["estandares_mandatorios", estandaresPctMandatorio],
-        ["estandares_excelencia", estandaresPctExcelencia],
-      ]),
-      // Sobre cuántas tareas del plan se calculó ese porcentaje (ver
-      // `cumplimientoPlanDesdeEstados`).
-      planN: { conDato: plan.conDato, total: plan.total },
-    }
-  }, [
-    estados,
-    programacion,
-    documentos,
-    unidades,
-    estandaresPct,
-    estandaresPctMandatorio,
-    estandaresPctExcelencia,
-  ])
-
-  // Series por KPI para los 3 meses.
-  const series = useMemo(() => {
-    const hoy = hoyISO()
-    const flota = flotaDeRuta(unidades)
-    const ruteoSet = ruteoSetDe(diasRuteo)
-    const porMesCosto = new Map(
-      costos.porMes.map((p) => [p.mes, p.preventivo + p.correctivo + p.proactivo])
-    )
-    const porMesPctPrev = new Map(
-      costos.porMes.map((p) => {
-        const total = p.preventivo + p.correctivo + p.proactivo
-        return [p.mes, total > 0 ? ((p.preventivo + p.proactivo) / total) * 100 : null]
-      })
-    )
-
-    const out = new Map<FlotaKpi, PuntoSerie[]>()
-    const disp: PuntoSerie[] = []
-    const util: PuntoSerie[] = []
-    for (const ym of meses3) {
-      const c = calcularDisponibilidadMes(
-        ym, flota, mantenimientos, indisponibilidades, ruteoSet, hoy
-      )
-      disp.push({ ym, valor: c.flotaDisp, parcial: ym === mesActual })
-      util.push({ ym, valor: c.flotaUtil, parcial: ym === mesActual })
-    }
-    out.set("disponibilidad", disp)
-    out.set("utilizacion", util)
-    out.set(
-      "costo_total",
-      meses3.map((ym) => ({
-        ym,
-        valor: porMesCosto.get(ym) ?? null,
-        parcial: ym === mesActual,
-      }))
-    )
-    out.set(
-      "pct_preventivo",
-      meses3.map((ym) => ({
-        ym,
-        valor: porMesPctPrev.get(ym) ?? null,
-        parcial: ym === mesActual,
-      }))
-    )
-
-    // KPIs foto: meses cerrados desde snapshots, mes en curso en vivo.
-    const snapBy = new Map(
-      kpiSnapshots.map((s) => [`${s.kpi}|${s.year}-${pad(s.mes)}`, s.valor])
-    )
-    for (const kpi of KPIS_FOTO) {
-      out.set(
-        kpi,
-        meses3.map((ym) => {
-          const esActual = ym === mesActual
-          const valor = esActual
-            ? (fotoActual.valores.get(kpi) ?? null)
-            : (snapBy.get(`${kpi}|${ym}`) ?? null)
-          const punto: PuntoSerie = {
-            ym,
-            valor: valor != null ? Number(valor) : null,
-            parcial: esActual,
-          }
-          // El cumplimiento del plan viaja con su cobertura: en vivo sale del
-          // estado del plan y en los meses cerrados, de los snapshots que el
-          // cron viene guardando (los meses previos a esa foto quedan sin n, y
-          // ahí el semáforo se comporta como antes).
-          if (kpi === "cumplimiento_plan") {
-            const conDato = esActual
-              ? fotoActual.planN.conDato
-              : snapBy.get(`plan_tareas_con_dato|${ym}`)
-            const total = esActual
-              ? fotoActual.planN.total
-              : snapBy.get(`plan_tareas_total|${ym}`)
-            punto.n = conDato != null ? Number(conDato) : null
-            punto.nTotal = total != null ? Number(total) : null
-          }
-          return punto
-        })
-      )
-    }
-
-    // Adherencia al checklist (R1.3.1a): también sale de la foto, pero el mes
-    // EN CURSO también. A diferencia del resto de los KPIs foto acá no hay
-    // cálculo en vivo posible en el cliente: el denominador son los camión-día
-    // de `ventas_diarias_cliente` (~20.000 filas por trimestre) y esta página
-    // no los tiene cargados. El cron pisa el mes en curso todos los días, así
-    // que el número tiene como máximo un día de atraso; el valor al minuto
-    // está en la tarjeta de Adherencia de la solapa Checklists, que es
-    // justamente a donde lleva el click.
-    out.set(
-      "checklist_adherencia",
-      meses3.map((ym) => {
-        const valor = snapBy.get(`checklist_adherencia|${ym}`)
-        return {
-          ym,
-          valor: valor != null ? Number(valor) : null,
-          parcial: ym === mesActual,
-        }
-      })
-    )
-
-    // PIs calculados en el server (checklist, y a futuro combustible/CO2):
-    // llegan como serie {ym, valor}; el mes en curso siempre es parcial.
-    for (const [kpi, serie] of Object.entries(extraSeries) as Array<
-      [FlotaKpi, PuntoSerieKpi[]]
-    >) {
-      const byYm = new Map(serie.map((p) => [p.ym, p]))
-      out.set(
-        kpi,
-        meses3.map((ym) => {
-          const p = byYm.get(ym)
-          return {
-            ym,
-            valor: p?.valor != null ? Number(p.valor) : null,
-            parcial: ym === mesActual,
-            n: p?.n ?? null,
-            nTotal: p?.nTotal ?? null,
-            excluidos: p?.excluidos ?? null,
-          }
-        })
-      )
-    }
-    return out
-  }, [
-    meses3,
-    mesActual,
-    unidades,
-    diasRuteo,
-    costos,
-    mantenimientos,
-    indisponibilidades,
-    kpiSnapshots,
-    fotoActual,
-    extraSeries,
-  ])
-
-  const valorActual = (def: KpiDef): number | null =>
-    series.get(def.kpi)?.find((p) => p.ym === mesActual)?.valor ?? null
-
   /**
-   * Acción del click de una tarjeta. Devuelve `null` cuando el PI no tiene a
-   * dónde llevar: sin destino la tarjeta NO se hace clickeable, para no
-   * prometer un detalle que no existe.
+   * Acción del botón de detalle. `undefined` cuando el PI no tiene a dónde
+   * llevar: sin destino no se muestra el botón, para no prometer un detalle
+   * que no existe.
    */
-  const abrirDe = (def: KpiDef): (() => void) | undefined => {
-    const d = DESTINO_KPI[def.kpi]
+  const abrirDe = (v: KpiVista): (() => void) | undefined => {
+    const d = DESTINO_KPI[v.def.kpi]
     if (!d) return undefined
-    if (d.detalle) return () => setDetalleVer({ kpi: d.detalle!, label: def.label })
+    if (d.detalle) return () => setDetalleVer({ kpi: d.detalle!, label: v.def.label, ym: v.ym })
     if (d.href) return () => router.push(d.href!)
     if (d.tab && onNavegar) return () => onNavegar(d.tab!)
     return undefined
   }
 
-  const planesOrdenados = useMemo(
-    () =>
-      [...planes].sort((a, b) =>
-        a.estado === b.estado
-          ? (b.year - a.year) * 100 + (b.mes - a.mes)
-          : a.estado === "cerrado"
-            ? 1
-            : -1
-      ),
-    [planes]
+  const crearPlan = useCallback(
+    (v: KpiVista, ym: string, valor: number | null) =>
+      setPlanNuevo({ def: v.def, ym, valor, meta: v.meta?.meta ?? null }),
+    []
   )
 
+  // ---------- Ir a una tarjeta desde el resumen ----------
+  const [resaltado, setResaltado] = useState<string | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current)
+  }, [])
+  const irA = (kpi: string) => {
+    // Si un filtro la esconde, se limpian los filtros: el resumen mira todo.
+    if (!visibles.some((v) => v.def.kpi === kpi)) limpiar()
+    requestAnimationFrame(() => {
+      document.getElementById(`kpi-${kpi}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
+    })
+    setResaltado(kpi)
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => setResaltado(null), 1800)
+  }
+  const irPlanes = () =>
+    document.getElementById("planes-accion")?.scrollIntoView({ behavior: "smooth", block: "start" })
+
+  // ---------- Planes ----------
+  const [planesTodos, setPlanesTodos] = useState(false)
+  const kpisVisibles = useMemo(() => new Set(visibles.map((v) => v.def.kpi)), [visibles])
+  const planesVista =
+    filtrando && !planesTodos ? planes.filter((p) => kpisVisibles.has(p.kpi)) : planes
+  const faltan = mesesSinPlan(filtrando && !planesTodos ? visibles : vistas)
+  const comparadorDe = useCallback(
+    (kpi: string) => metaBy.get(kpi as FlotaKpi)?.comparador ?? ">=",
+    [metaBy]
+  )
+
+  // Acumulativos sin juzgar porque se eligió mirar el mes en curso.
+  const acumEnCurso =
+    foco === mesActual
+      ? vistas.filter((v) => v.punto.motivo === "mes_en_curso").length
+      : 0
+  const mesCerrado = meses[meses.length - 2]
+
+  const accionesDe = (v: KpiVista): AccionesTarjeta => ({
+    puedeEditar,
+    onMetaSaved: refresh,
+    onCrearPlan: crearPlan,
+    onVerPlan: setPlanVer,
+    onAbrir: abrirDe(v),
+  })
+
+  const tarjeta = (v: KpiVista, heroe: boolean) => (
+    <KpiTarjeta
+      key={v.def.kpi}
+      vista={v}
+      heroe={heroe}
+      hoy={hoy}
+      mesActual={mesActual}
+      calcDisp={v.def.kpi === "disponibilidad" ? calcDisp.get(v.ym) : undefined}
+      resaltada={resaltado === v.def.kpi}
+      acciones={accionesDe(v)}
+    />
+  )
+
+  const soloFueraVacio =
+    visibles.length === 0 &&
+    filtros.estados.length > 0 &&
+    filtros.estados.every((e) => e === "critico" || e === "alerta")
+
   return (
-    <div className="space-y-6">
-      <div className="space-y-3">
+    <div className="space-y-6 pb-20 md:pb-0">
+      <div className="space-y-2">
         <DpoSeccionCinta seccionId="indicadores" />
-        <p className="text-sm text-muted-foreground">
-          Cada indicador contra su meta, con la tendencia de los últimos 3 meses. Un mes
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Cada indicador contra su meta, ordenados por lo que más pesa en la auditoría. Un mes
           fuera de meta pide un plan de acción con causa raíz y acciones con responsable.
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {KPI_DEFS.map((def) => (
-          <KpiIndicadorCard
-            key={def.kpi}
-            def={def}
-            meta={metaBy.get(def.kpi) ?? null}
-            serie={def.conSerie ? (series.get(def.kpi) ?? []) : []}
-            valor={valorActual(def)}
-            planBy={planBy}
-            puedeEditar={puedeEditar}
-            onMetaSaved={refresh}
-            onCrearPlan={(ym, valor, meta) => setPlanNuevo({ def, ym, valor, meta })}
-            onVerPlan={setPlanVer}
-            onAbrir={abrirDe(def)}
-          />
-        ))}
-      </div>
+      <ResumenSalud
+        vistas={vistas}
+        planes={planes}
+        hoy={hoy}
+        mesActual={mesActual}
+        foco={foco}
+        onIrA={irA}
+        onIrPlanes={irPlanes}
+      />
 
-      {/* Planes de acción */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ClipboardList className="size-4 text-muted-foreground" /> Planes de acción de flota
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {planesOrdenados.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Sin planes cargados. Se crean desde cada indicador cuando un mes queda
-              fuera de meta.
-            </p>
+      <FiltrosIndicadoresBar
+        meses={meses}
+        mesActual={mesActual}
+        foco={foco}
+        setFoco={setFoco}
+        filtros={filtros}
+        facetas={facetas}
+        set={set}
+        limpiar={limpiar}
+        visibles={visibles.length}
+        total={vistas.length}
+      />
+
+      {acumEnCurso > 0 && mesCerrado && (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-muted/70 px-4 py-3 text-sm text-muted-foreground">
+          <span>
+            <span className="font-semibold text-foreground">{acumEnCurso}</span> indicadores
+            acumulativos se juzgan al cierre del mes.
+          </span>
+          <button
+            type="button"
+            onClick={() => setFoco(mesCerrado)}
+            className="min-h-10 font-medium text-primary hover:underline"
+          >
+            Ver {fmtMesNombre(mesCerrado)} (cerrado) →
+          </button>
+        </p>
+      )}
+
+      {visibles.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
+          {soloFueraVacio ? (
+            <>
+              <CheckCircle2 className="size-8 text-emerald-500" aria-hidden />
+              <p className="text-base font-medium text-foreground">
+                Ningún indicador fuera de meta con estos filtros
+              </p>
+            </>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="py-2">Indicador</th>
-                  <th>Mes</th>
-                  <th className="text-right">Valor</th>
-                  <th className="text-right">Meta</th>
-                  <th className="pl-4">Causa raíz</th>
-                  <th className="text-center">Acciones</th>
-                  <th className="text-center">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {planesOrdenados.map((p) => {
-                  const def = KPI_DEFS.find((d) => d.kpi === p.kpi)
-                  const done = p.items.filter((i) => i.estado === "completado").length
-                  return (
-                    <tr
-                      key={p.id}
-                      className="cursor-pointer border-b border-border last:border-0 hover:bg-muted"
-                      onClick={() => setPlanVer(p)}
-                    >
-                      <td className="py-2 font-medium text-foreground">
-                        {def?.label ?? p.kpi}
-                      </td>
-                      <td className="capitalize text-muted-foreground">
-                        {fmtMesLargo(`${p.year}-${pad(p.mes)}`)}
-                      </td>
-                      <td className="text-right tabular-nums text-muted-foreground">
-                        {p.valor_mes != null && def ? def.fmt(Number(p.valor_mes)) : "—"}
-                      </td>
-                      <td className="text-right tabular-nums text-muted-foreground">
-                        {p.meta_mes != null && def ? def.fmt(Number(p.meta_mes)) : "—"}
-                      </td>
-                      <td className="max-w-64 truncate pl-4 text-muted-foreground">{p.causa_raiz}</td>
-                      <td className="text-center tabular-nums text-muted-foreground">
-                        {done}/{p.items.length}
-                      </td>
-                      <td className="text-center">
-                        <EstadoPlanBadge estado={p.estado} />
-                        {p.estado !== "cerrado" && p.items.length > 0 && done === p.items.length && (
-                          <div className="mt-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">listo para cerrar</div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <>
+              <SearchX className="size-8 text-muted-foreground" aria-hidden />
+              <p className="text-base font-medium text-foreground">
+                Ningún indicador cumple estos filtros
+              </p>
+            </>
           )}
-        </CardContent>
-      </Card>
+          <button
+            type="button"
+            onClick={limpiar}
+            className="min-h-10 rounded-lg px-3 text-sm font-medium text-primary hover:bg-primary/5"
+          >
+            Limpiar filtros
+          </button>
+        </div>
+      ) : (
+        TIERS.map((t) => {
+          const deTier = visibles.filter((v) => v.def.tier === t.tier)
+          if (deTier.length === 0) return null
+          const heroes = deTier.filter((v) => v.def.heroe)
+          const resto = deTier.filter((v) => !v.def.heroe)
+          return (
+            <section key={t.tier} aria-labelledby={`tier-${t.tier}`} className="space-y-4 pt-2">
+              <div>
+                <h2
+                  id={`tier-${t.tier}`}
+                  className="text-xl font-semibold tracking-tight text-foreground"
+                >
+                  {t.titulo}
+                </h2>
+                <p className="text-sm text-muted-foreground">{t.sub}</p>
+              </div>
+              {t.tier === 1 ? (
+                <>
+                  {heroes.length > 0 && (
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      {heroes.map((v) => tarjeta(v, true))}
+                    </div>
+                  )}
+                  {resto.length > 0 && (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {resto.map((v) => tarjeta(v, false))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-5">
+                  {TEMAS.map((tema) => {
+                    const deTema = resto.filter((v) => v.def.tema === tema.id)
+                    if (deTema.length === 0) return null
+                    return (
+                      <div key={tema.id} className="space-y-2">
+                        <h3 className="text-sm font-semibold text-muted-foreground">
+                          {tema.label}
+                        </h3>
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                          {deTema.map((v) => tarjeta(v, false))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+          )
+        })
+      )}
+
+      <PlanesAccion
+        planes={planesVista}
+        totalPlanes={planes.length}
+        filtrando={filtrando && !planesTodos && planesVista.length !== planes.length}
+        onVerTodos={() => setPlanesTodos(true)}
+        faltan={faltan}
+        hoy={hoy}
+        comparadorDe={comparadorDe}
+        puedeEditar={puedeEditar}
+        onVerPlan={setPlanVer}
+        onCrearPlan={(f) => crearPlan(f.vista, f.ym, f.valor)}
+      />
 
       {planNuevo && (
         <CrearPlanDialog
@@ -1170,1059 +357,22 @@ export function IndicadoresFlota({
       {planVer && (
         <DetallePlanDialog
           plan={planVer}
-          def={KPI_DEFS.find((d) => d.kpi === planVer.kpi)}
+          def={KPI_DEF_BY.get(planVer.kpi)}
           puedeEditar={puedeEditar}
           esAdmin={esAdmin}
           onClose={() => setPlanVer(null)}
           onChanged={refresh}
         />
       )}
-
       {detalleVer && (
         <DetalleKpiDialog
-          key={detalleVer.kpi}
+          key={`${detalleVer.kpi}|${detalleVer.ym}`}
           kpi={detalleVer.kpi}
           label={detalleVer.label}
-          ym={mesActual}
+          ym={detalleVer.ym}
           onClose={() => setDetalleVer(null)}
         />
       )}
-    </div>
-  )
-}
-
-// ==================== Card de un KPI ====================
-
-function cumpleMeta(valor: number, meta: FlotaMeta | null): boolean | null {
-  if (!meta || meta.meta == null) return null
-  return meta.comparador === "<=" ? valor <= Number(meta.meta) : valor >= Number(meta.meta)
-}
-
-/**
- * Margen dentro del cual un PI que no llega a la meta se muestra en AMARILLO en
- * vez de rojo: 10 % de la meta.
- *
- * 🚨 Antes el semáforo era binario y 94,9 % contra una meta de 95 % se pintaba
- * exactamente igual que un 20 %. Con metas exigentes —que es lo correcto— eso
- * dejaba el tablero entero en rojo y el rojo dejaba de querer decir algo.
- * El amarillo no afloja ninguna meta: sigue sin cumplir, pero se distingue "a un
- * pelo" de "lejos".
- */
-const MARGEN_ALERTA = 0.1
-
-/**
- * Semáforo de un PI.
- *
- * 🚨 `parcial` = el mes todavía está corriendo. Para los KPI ACUMULATIVOS eso
- * hace que el número no signifique nada todavía y se devuelve neutro: comparar
- * 8 tareas de CIL contra la meta de 30 el día 7 pinta rojo algo que va bien, y
- * comparar el costo del mes contra el tope el día 2 pinta verde algo que no se
- * sabe. Los porcentuales sí se evalúan siempre: valen igual el día 7 que el 30.
- */
-function estadoDeKpi(
-  valor: number | null,
-  meta: FlotaMeta | null,
-  opts: {
-    acumulativo?: boolean
-    parcial?: boolean
-    /** Cobertura del PI, en % (n ÷ nTotal), cuando el PI la informa. */
-    cobertura?: number | null
-    coberturaMinima?: number
-  } = {},
-): EstadoKpi {
-  if (valor == null) return "neutro"
-  const cumple = cumpleMeta(valor, meta)
-  if (cumple == null) return "neutro"
-  if (opts.acumulativo && opts.parcial) return "neutro"
-  // 🚨 Sin cobertura suficiente el KPI no se juzga: el cumplimiento del plan
-  // preventivo mostraba 100 % en verde calculado sobre 13 de 122 tareas. Un
-  // verde así no dice "el plan se cumple", dice "casi nadie cargó nada", y es
-  // exactamente lo que hay que ver.
-  if (
-    opts.coberturaMinima != null &&
-    opts.cobertura != null &&
-    opts.cobertura < opts.coberturaMinima
-  ) {
-    return "neutro"
-  }
-  if (cumple) return "ok"
-
-  const m = Number(meta!.meta)
-  // Con meta 0 ("cero services vencidos") no hay margen posible: 1 es 1.
-  if (m === 0) return "critico"
-  const cerca =
-    meta!.comparador === "<="
-      ? valor <= m * (1 + MARGEN_ALERTA)
-      : valor >= m * (1 - MARGEN_ALERTA)
-  return cerca ? "alerta" : "critico"
-}
-
-/**
- * Card de un PI de flota: usa la <KpiCard> del módulo como contenedor (label,
- * valor, semáforo, delta y badge DPO) y le cuelga lo propio de esta sección —
- * editor de meta y tendencia de 3 meses con su plan de acción.
- */
-function KpiIndicadorCard({
-  def,
-  meta,
-  serie,
-  valor,
-  planBy,
-  puedeEditar,
-  onMetaSaved,
-  onCrearPlan,
-  onVerPlan,
-  onAbrir,
-}: {
-  def: KpiDef
-  meta: FlotaMeta | null
-  serie: PuntoSerie[]
-  valor: number | null
-  planBy: Map<string, FlotaPlanConItems>
-  puedeEditar: boolean
-  onMetaSaved: () => void
-  onCrearPlan: (ym: string, valor: number | null, meta: number | null) => void
-  onVerPlan: (p: FlotaPlanConItems) => void
-  /** Click de la tarjeta; `undefined` = no hay a dónde ir y no se hace clickeable. */
-  onAbrir?: () => void
-}) {
-  const [editMeta, setEditMeta] = useState(false)
-
-  const puntoActual = serie.find((p) => p.parcial)
-  const parcialMes = puntoActual?.parcial ?? false
-  const nActual = puntoActual?.n ?? null
-  const nTotalActual = puntoActual?.nTotal ?? null
-  const excluidosActual = puntoActual?.excluidos ?? null
-  const coberturaDe = (p: PuntoSerie | undefined) =>
-    p?.n != null && p.nTotal != null && p.nTotal > 0 ? (p.n / p.nTotal) * 100 : null
-  const estado: EstadoKpi = estadoDeKpi(valor, meta, {
-    acumulativo: def.acumulativo,
-    parcial: parcialMes,
-    cobertura: coberturaDe(puntoActual),
-    coberturaMinima: def.coberturaMinima,
-  })
-  const sinCobertura =
-    def.coberturaMinima != null &&
-    coberturaDe(puntoActual) != null &&
-    coberturaDe(puntoActual)! < def.coberturaMinima
-
-  // Tendencia: compara los dos últimos puntos con dato.
-  const conDato = serie.filter((p) => p.valor != null)
-  const delta =
-    conDato.length >= 2
-      ? Number(conDato[conDato.length - 1].valor) - Number(conDato[conDato.length - 2].valor)
-      : null
-  // Mejora/empeora según el sentido de la meta (<= : bajar es mejorar).
-  const mejora = delta == null ? null : meta?.comparador === "<=" ? delta <= 0 : delta >= 0
-
-  // El botón avisa cuando el mes no tiene número por una tarea sin hacer.
-  const destino = DESTINO_KPI[def.kpi]
-  const sinDato = valor == null && destino?.labelSinDato != null
-  const textoBoton = sinDato ? destino!.labelSinDato : destino?.label
-
-  return (
-    <KpiCard
-      label={def.label}
-      dpo={def.dpo}
-      estado={estado}
-      delta={delta}
-      mejora={mejora ?? undefined}
-      valor={
-        <>
-          {valor == null ? "—" : def.fmt(valor)}
-          {/* 🚨 El n al lado del valor, no escondido: un 0 % sobre UNA sola OT
-              no es lo mismo que un 0 % sobre veinte, y sin el denominador las
-              dos cosas se leen igual. */}
-          {nActual != null && def.nLabel && (
-            <span className="ml-1 align-middle text-xs font-normal text-muted-foreground">
-              (n={nActual}
-              {nTotalActual != null && ` de ${nTotalActual}`}{" "}
-              {nActual === 1 ? def.nLabel.sing : def.nLabel.plural})
-            </span>
-          )}
-          {def.conSerie && (
-            <span className="ml-1 align-middle text-xs font-normal text-muted-foreground">
-              mes en curso
-            </span>
-          )}
-        </>
-      }
-    >
-      {/* 🚨 El acceso al detalle es un BOTÓN y no la tarjeta entera. La
-          tarjeta está llena de controles propios —el lapicito de la meta, los
-          tres meses con su plan—, así que hacerla clickeable entera dejaba
-          medio card con cursor de mano y sin reaccionar: se lee como roto. Un
-          botón con su texto dice exactamente qué se abre y dónde tocar. */}
-      <div className="space-y-3">
-        {onAbrir && (
-          <button
-            type="button"
-            onClick={onAbrir}
-            className={cn(
-              "-mx-1 flex w-[calc(100%+0.5rem)] items-center justify-between gap-2 rounded-md px-1 py-1 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-              sinDato
-                ? "text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
-                : "text-primary hover:bg-primary/5"
-            )}
-          >
-            <span>{textoBoton}</span>
-            <ArrowRight className="size-3.5 shrink-0" aria-hidden />
-          </button>
-        )}
-        {/* 🚨 Por qué este KPI no tiene semáforo: sin decirlo, un indicador gris
-            se lee como "no hay dato" y acá el dato está — lo que falta es la
-            carga que lo haría representativo. */}
-        {sinCobertura && (
-          <p className="rounded-md bg-amber-50 px-2 py-1.5 text-[11px] leading-tight text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
-            Sin semáforo: se calculó sobre el{" "}
-            {Math.round(coberturaDe(puntoActual)!)} % de las tareas del plan
-            (mínimo {def.coberturaMinima} %). El valor no representa al plan
-            completo hasta que se registren las tareas que faltan.
-          </p>
-        )}
-        {excluidosActual != null && excluidosActual > 0 && (
-          <p className="text-[11px] leading-tight text-muted-foreground">
-            {excluidosActual}{" "}
-            {excluidosActual === 1 ? "caso quedó" : "casos quedaron"} fuera del
-            promedio por no tener medible el momento de la observación.
-          </p>
-        )}
-
-        {/* Meta */}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {editMeta ? (
-            <MetaEditor
-              def={def}
-              meta={meta}
-              onDone={() => {
-                setEditMeta(false)
-                onMetaSaved()
-              }}
-              onCancel={() => setEditMeta(false)}
-            />
-          ) : (
-            <>
-              <span>
-                Meta:{" "}
-                {meta?.meta == null ? (
-                  <span className="italic text-muted-foreground">sin definir</span>
-                ) : (
-                  <span className="font-medium text-foreground">
-                    {meta.comparador === "<=" ? "≤ " : "≥ "}
-                    {def.fmt(Number(meta.meta))}
-                  </span>
-                )}
-              </span>
-              {puedeEditar && (
-                <button
-                  className="text-muted-foreground transition-colors hover:text-foreground"
-                  onClick={() => setEditMeta(true)}
-                  title="Editar meta"
-                >
-                  <Pencil className="size-3" />
-                </button>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Tendencia 3 meses (o foto actual) + plan por mes fuera de meta */}
-        {def.conSerie ? (
-          <div className="grid grid-cols-3 gap-2 border-t border-border pt-2">
-            {serie.map((p) => {
-              // Mismo criterio que el número grande: amarillo si está cerca, y
-              // el mes en curso de un acumulativo no se juzga.
-              const estMes = estadoDeKpi(p.valor, meta, {
-                acumulativo: def.acumulativo,
-                parcial: p.parcial,
-                cobertura: coberturaDe(p),
-                coberturaMinima: def.coberturaMinima,
-              })
-              const okMes = p.valor == null ? null : cumpleMeta(p.valor, meta)
-              const plan = planBy.get(`${def.kpi}|${p.ym}`)
-              return (
-                <div key={p.ym} className="text-center">
-                  <p className="text-[11px] uppercase text-muted-foreground">
-                    {fmtMesCorto(p.ym)}
-                    {p.parcial && "*"}
-                  </p>
-                  <p
-                    className={cn(
-                      "text-sm font-semibold tabular-nums",
-                      estMes === "ok"
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : estMes === "alerta"
-                          ? "text-amber-600 dark:text-amber-400"
-                          : estMes === "critico"
-                            ? "text-destructive"
-                            : "text-muted-foreground"
-                    )}
-                  >
-                    {p.valor == null ? "—" : def.fmt(p.valor)}
-                  </p>
-                  {p.n != null && def.nLabel && (
-                    <p className="text-[10px] leading-tight text-muted-foreground">
-                      n={p.n}
-                      {p.nTotal != null && `/${p.nTotal}`}
-                    </p>
-                  )}
-                  {plan ? (
-                    <button
-                      className="mt-0.5 text-[11px] font-medium text-primary hover:underline"
-                      onClick={() => onVerPlan(plan)}
-                    >
-                      Ver plan
-                    </button>
-                  ) : (estMes === "critico" || estMes === "alerta") && puedeEditar ? (
-                    <button
-                      className="mt-0.5 text-[11px] font-medium text-amber-600 hover:underline dark:text-amber-400"
-                      onClick={() => onCrearPlan(p.ym, p.valor, meta?.meta ?? null)}
-                    >
-                      + Plan
-                    </button>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="flex items-center justify-between border-t border-border pt-2 text-xs text-muted-foreground">
-            <span>{def.descripcion}</span>
-            {(estado === "critico" || estado === "alerta") && puedeEditar && (
-              <PlanFotoActualBtn def={def} valor={valor} meta={meta} planBy={planBy}
-                onCrearPlan={onCrearPlan} onVerPlan={onVerPlan} />
-            )}
-          </div>
-        )}
-        {def.conSerie && (
-          <p className="text-[11px] leading-tight text-muted-foreground">{def.descripcion}</p>
-        )}
-        {meta?.justificacion && (
-          <p className="border-t border-border pt-1.5 text-[11px] italic leading-tight text-muted-foreground">
-            Por qué este PI: {meta.justificacion}
-          </p>
-        )}
-      </div>
-    </KpiCard>
-  )
-}
-
-// Botón de plan para los KPIs de foto actual: el plan se cuelga del mes en curso.
-function PlanFotoActualBtn({
-  def, valor, meta, planBy, onCrearPlan, onVerPlan,
-}: {
-  def: KpiDef
-  valor: number | null
-  meta: FlotaMeta | null
-  planBy: Map<string, FlotaPlanConItems>
-  onCrearPlan: (ym: string, valor: number | null, meta: number | null) => void
-  onVerPlan: (p: FlotaPlanConItems) => void
-}) {
-  const ym = hoyISO().slice(0, 7)
-  const plan = planBy.get(`${def.kpi}|${ym}`)
-  return plan ? (
-    <button
-      className="shrink-0 text-[11px] font-medium text-primary hover:underline"
-      onClick={() => onVerPlan(plan)}
-    >
-      Ver plan
-    </button>
-  ) : (
-    <button
-      className="shrink-0 text-[11px] font-medium text-amber-600 hover:underline dark:text-amber-400"
-      onClick={() => onCrearPlan(ym, valor, meta?.meta ?? null)}
-    >
-      + Plan
-    </button>
-  )
-}
-
-function MetaEditor({
-  def, meta, onDone, onCancel,
-}: {
-  def: KpiDef
-  meta: FlotaMeta | null
-  onDone: () => void
-  onCancel: () => void
-}) {
-  const [valor, setValor] = useState(meta?.meta != null ? String(meta.meta) : "")
-  const [justif, setJustif] = useState(meta?.justificacion ?? "")
-  const [saving, setSaving] = useState(false)
-
-  const guardar = async () => {
-    const num = valor.trim() === "" ? null : Number(valor.replace(",", "."))
-    if (num != null && isNaN(num)) {
-      toast.error("Meta inválida")
-      return
-    }
-    setSaving(true)
-    const res = await updateFlotaMeta({ kpi: def.kpi, meta: num, justificacion: justif })
-    setSaving(false)
-    if ("error" in res) {
-      toast.error(res.error)
-      return
-    }
-    toast.success("Meta actualizada")
-    onDone()
-  }
-
-  return (
-    <div className="w-full space-y-1.5">
-      <div className="flex items-center gap-1.5">
-        <span>Meta {meta?.comparador === "<=" ? "≤" : "≥"}</span>
-        <Input
-          value={valor}
-          onChange={(e) => setValor(e.target.value)}
-          className="h-6 w-24 px-1.5 text-xs"
-          placeholder="sin meta"
-          autoFocus
-          onKeyDown={(e) => {
-            if (e.key === "Enter") guardar()
-            if (e.key === "Escape") onCancel()
-          }}
-        />
-        <Button size="sm" className="h-6 px-2 text-xs" onClick={guardar} disabled={saving}>
-          {saving ? "…" : "OK"}
-        </Button>
-        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onCancel}>
-          ✕
-        </Button>
-      </div>
-      <Textarea
-        value={justif}
-        onChange={(e) => setJustif(e.target.value)}
-        rows={2}
-        className="text-xs"
-        placeholder="Por qué se eligió este PI y qué impacto ataca (el auditor lo pregunta)"
-      />
-    </div>
-  )
-}
-
-function EstadoPlanBadge({ estado }: { estado: FlotaPlanConItems["estado"] }) {
-  const map: Record<string, string> = {
-    abierto: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
-    en_progreso: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-400",
-    cerrado: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
-  }
-  const label: Record<string, string> = {
-    abierto: "Abierto",
-    en_progreso: "En progreso",
-    cerrado: "Cerrado",
-  }
-  return <Badge className={cn("font-medium", map[estado])}>{label[estado]}</Badge>
-}
-
-// ==================== Dialog: crear plan ====================
-
-interface ItemForm {
-  accion: string
-  responsable: string
-  fecha: string
-}
-
-function CrearPlanDialog({
-  def, ym, valor, meta, onClose, onSaved,
-}: {
-  def: KpiDef
-  ym: string
-  valor: number | null
-  meta: number | null
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [causa, setCausa] = useState("")
-  const [items, setItems] = useState<ItemForm[]>([{ accion: "", responsable: "", fecha: "" }])
-  const [saving, setSaving] = useState(false)
-
-  const guardar = async () => {
-    if (!causa.trim()) {
-      toast.error("Cargá la causa raíz")
-      return
-    }
-    const itemsOk = items.filter((i) => i.accion.trim() && i.responsable.trim() && i.fecha)
-    if (itemsOk.length === 0) {
-      toast.error("Cargá al menos una acción completa (acción, responsable y fecha)")
-      return
-    }
-    setSaving(true)
-    const res = await createFlotaPlan({
-      kpi: def.kpi,
-      mes: Number(ym.slice(5, 7)),
-      year: Number(ym.slice(0, 4)),
-      valorMes: valor,
-      metaMes: meta,
-      causaRaiz: causa,
-      items: itemsOk.map((i) => ({
-        accion: i.accion,
-        responsable: i.responsable,
-        fechaCompromiso: i.fecha,
-      })),
-    })
-    setSaving(false)
-    if ("error" in res) {
-      toast.error(res.error)
-      return
-    }
-    toast.success("Plan de acción creado")
-    onSaved()
-  }
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>
-            Plan de acción — {def.label} · {fmtMesLargo(ym)}
-          </DialogTitle>
-          <DialogDescription>
-            {valor != null && (
-              <>
-                Valor del mes: <span className="font-medium">{def.fmt(valor)}</span>
-                {meta != null && (
-                  <>
-                    {" "}· Meta: <span className="font-medium">{def.fmt(meta)}</span>
-                  </>
-                )}
-              </>
-            )}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div>
-            <Label>Causa raíz</Label>
-            <Textarea
-              value={causa}
-              onChange={(e) => setCausa(e.target.value)}
-              placeholder="¿Por qué quedó fuera de meta?"
-              rows={2}
-            />
-          </div>
-
-          <div>
-            <Label>Acciones</Label>
-            <div className="mt-1.5 space-y-2">
-              {items.map((it, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <Input
-                    value={it.accion}
-                    onChange={(e) =>
-                      setItems(items.map((x, j) => (j === i ? { ...x, accion: e.target.value } : x)))
-                    }
-                    placeholder="Acción"
-                    className="flex-1"
-                  />
-                  <Input
-                    value={it.responsable}
-                    onChange={(e) =>
-                      setItems(
-                        items.map((x, j) => (j === i ? { ...x, responsable: e.target.value } : x))
-                      )
-                    }
-                    placeholder="Responsable"
-                    className="w-40"
-                  />
-                  <Input
-                    type="date"
-                    value={it.fecha}
-                    onChange={(e) =>
-                      setItems(items.map((x, j) => (j === i ? { ...x, fecha: e.target.value } : x)))
-                    }
-                    className="w-40"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 text-muted-foreground hover:text-destructive"
-                    onClick={() => setItems(items.filter((_, j) => j !== i))}
-                    disabled={items.length === 1}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              onClick={() => setItems([...items, { accion: "", responsable: "", fecha: "" }])}
-            >
-              <Plus className="mr-1 size-4" /> Agregar acción
-            </Button>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button onClick={guardar} disabled={saving}>
-            {saving ? "Guardando…" : "Crear plan"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ==================== Dialog: detalle de plan ====================
-
-function DetallePlanDialog({
-  plan, def, puedeEditar, esAdmin, onClose, onChanged,
-}: {
-  plan: FlotaPlanConItems
-  def: KpiDef | undefined
-  puedeEditar: boolean
-  esAdmin: boolean
-  onClose: () => void
-  onChanged: () => void
-}) {
-  const [nuevo, setNuevo] = useState<ItemForm>({ accion: "", responsable: "", fecha: "" })
-  const [resultado, setResultado] = useState("")
-  const [cerrando, setCerrando] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const cerrado = plan.estado === "cerrado"
-
-  /*
-   * Los comentarios de TODAS las acciones del plan se leen de una sola vez al
-   * abrir el diálogo y se reparten por acción: con una consulta por renglón,
-   * un plan de cinco acciones pegaba cinco veces a la base para mostrar lo
-   * mismo.
-   */
-  const [avances, setAvances] = useState<FlotaPlanAvance[]>([])
-  const [recarga, setRecarga] = useState(0)
-  const recargarAvances = useCallback(() => setRecarga((n) => n + 1), [])
-
-  useEffect(() => {
-    let vivo = true
-    listarAvancesFlotaPlan(plan.id).then((res) => {
-      if (vivo) setAvances("error" in res ? [] : res.data)
-    })
-    return () => {
-      vivo = false
-    }
-  }, [plan.id, recarga])
-
-  const avancesPorItem = useMemo(() => {
-    const m = new Map<string, FlotaPlanAvance[]>()
-    for (const a of avances) {
-      if (!a.item_id) continue
-      const arr = m.get(a.item_id)
-      if (arr) arr.push(a)
-      else m.set(a.item_id, [a])
-    }
-    return m
-  }, [avances])
-
-  const agregarItem = async () => {
-    if (!nuevo.accion.trim() || !nuevo.responsable.trim() || !nuevo.fecha) {
-      toast.error("Completá acción, responsable y fecha")
-      return
-    }
-    setSaving(true)
-    const res = await addFlotaPlanItem({
-      planId: plan.id,
-      accion: nuevo.accion,
-      responsable: nuevo.responsable,
-      fechaCompromiso: nuevo.fecha,
-    })
-    setSaving(false)
-    if ("error" in res) {
-      toast.error(res.error)
-      return
-    }
-    setNuevo({ accion: "", responsable: "", fecha: "" })
-    onChanged()
-    onClose()
-  }
-
-  const toggleItem = async (id: string, completado: boolean) => {
-    const res = await updateFlotaPlanItem({
-      id,
-      estado: completado ? "completado" : "pendiente",
-    })
-    if ("error" in res) toast.error(res.error)
-    else {
-      onChanged()
-      onClose()
-    }
-  }
-
-  const cerrarPlan = async () => {
-    if (!resultado.trim()) {
-      toast.error("Contá el resultado del plan para cerrarlo")
-      return
-    }
-    setSaving(true)
-    const res = await cerrarFlotaPlan(plan.id, resultado)
-    setSaving(false)
-    if ("error" in res) {
-      toast.error(res.error)
-      return
-    }
-    toast.success("Plan cerrado")
-    onChanged()
-    onClose()
-  }
-
-  const borrarPlan = async () => {
-    const res = await deleteFlotaPlan(plan.id)
-    if ("error" in res) toast.error(res.error)
-    else {
-      toast.success("Plan eliminado")
-      onChanged()
-      onClose()
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {def?.label ?? plan.kpi} · {fmtMesLargo(`${plan.year}-${pad(plan.mes)}`)}
-            <EstadoPlanBadge estado={plan.estado} />
-          </DialogTitle>
-          <DialogDescription>
-            {plan.valor_mes != null && def && (
-              <>
-                Valor: <span className="font-medium">{def.fmt(Number(plan.valor_mes))}</span>
-              </>
-            )}
-            {plan.meta_mes != null && def && (
-              <>
-                {" "}· Meta: <span className="font-medium">{def.fmt(Number(plan.meta_mes))}</span>
-              </>
-            )}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div>
-            <p className="text-xs font-medium uppercase text-muted-foreground">Causa raíz</p>
-            <p className="mt-0.5 text-sm text-foreground">{plan.causa_raiz}</p>
-            {/*
-              La causa raíz era un párrafo escrito a mano. Desde acá se le puede
-              aplicar el método: 5 Porqués, Causa-Efecto o PDCA, con el mismo
-              formato que en el resto de la app y con PDF para la auditoría.
-            */}
-            <PlanHerramientasInline
-              flotaPlanId={plan.id}
-              tituloSugerido={def ? def.label : "Plan de acción de flota"}
-              puedeAplicar={puedeEditar && !cerrado}
-            />
-          </div>
-
-          <div>
-            <p className="text-xs font-medium uppercase text-muted-foreground">Acciones</p>
-            <div className="mt-1.5 space-y-1.5">
-              {plan.items.length === 0 && (
-                <p className="text-sm text-muted-foreground">Sin acciones cargadas.</p>
-              )}
-              {plan.items.map((it) => (
-                <div key={it.id} className="rounded-md border border-border px-2.5 py-1.5">
-                 <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={it.estado === "completado"}
-                    disabled={!puedeEditar || cerrado}
-                    onCheckedChange={(v) => toggleItem(it.id, v === true)}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p
-                      className={cn(
-                        "text-sm text-foreground",
-                        it.estado === "completado" && "text-muted-foreground line-through"
-                      )}
-                    >
-                      {it.accion}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {it.responsable} · compromiso{" "}
-                      {it.fecha_compromiso.slice(0, 10).split("-").reverse().join("/")}
-                      {it.fecha_completado &&
-                        ` · completado ${it.fecha_completado.slice(0, 10).split("-").reverse().join("/")}`}
-                    </p>
-                  </div>
-                  {puedeEditar && !cerrado && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 text-muted-foreground hover:text-destructive"
-                      onClick={async () => {
-                        const res = await deleteFlotaPlanItem(it.id)
-                        if ("error" in res) toast.error(res.error)
-                        else {
-                          onChanged()
-                          onClose()
-                        }
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  )}
-                 </div>
-
-                 {/*
-                   Comentario y fotos DE ESTA ACCIÓN. Un plan con cinco acciones
-                   tenía un solo renglón de seguimiento para las cinco y no se
-                   sabía a cuál se refería "ya se pidió el turno".
-                 */}
-                 <AvancesDeAccion
-                   planId={plan.id}
-                   itemId={it.id}
-                   avances={avancesPorItem.get(it.id) ?? []}
-                   puedeEditar={puedeEditar && !cerrado}
-                   onChanged={recargarAvances}
-                 />
-                </div>
-              ))}
-            </div>
-
-            {puedeEditar && !cerrado && (
-              <div className="mt-2 flex items-center gap-2">
-                <Input
-                  value={nuevo.accion}
-                  onChange={(e) => setNuevo({ ...nuevo, accion: e.target.value })}
-                  placeholder="Nueva acción"
-                  className="flex-1"
-                />
-                <Input
-                  value={nuevo.responsable}
-                  onChange={(e) => setNuevo({ ...nuevo, responsable: e.target.value })}
-                  placeholder="Responsable"
-                  className="w-36"
-                />
-                <Input
-                  type="date"
-                  value={nuevo.fecha}
-                  onChange={(e) => setNuevo({ ...nuevo, fecha: e.target.value })}
-                  className="w-36"
-                />
-                <Button size="sm" onClick={agregarItem} disabled={saving}>
-                  <Plus className="size-4" />
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {cerrado ? (
-            <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
-              <p className="text-xs font-medium uppercase text-emerald-600 dark:text-emerald-400">
-                Cerrado{" "}
-                {plan.fecha_cierre &&
-                  `el ${plan.fecha_cierre.slice(0, 10).split("-").reverse().join("/")}`}
-              </p>
-              <p className="mt-0.5">{plan.resultado_cierre}</p>
-            </div>
-          ) : (
-            puedeEditar &&
-            (cerrando ? (
-              <div className="space-y-2 rounded-md border border-border bg-muted p-3">
-                <Label>Resultado del cierre</Label>
-                <Textarea
-                  value={resultado}
-                  onChange={(e) => setResultado(e.target.value)}
-                  placeholder="¿Qué se logró? ¿Volvió a meta?"
-                  rows={2}
-                />
-                <div className="flex justify-end gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setCerrando(false)}>
-                    Cancelar
-                  </Button>
-                  <Button size="sm" onClick={cerrarPlan} disabled={saving}>
-                    {saving ? "Cerrando…" : "Cerrar plan"}
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex justify-between">
-                {esAdmin ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive"
-                    onClick={borrarPlan}
-                  >
-                    <Trash2 className="mr-1 size-4" /> Eliminar
-                  </Button>
-                ) : (
-                  <span />
-                )}
-                <Button variant="outline" size="sm" onClick={() => setCerrando(true)}>
-                  Cerrar plan
-                </Button>
-              </div>
-            ))
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-/**
- * Comentarios y fotos de UNA acción del plan.
- *
- * El plan tenía tres momentos —se abre, se tildan las acciones, se cierra— y
- * nada en el medio. Lo que falta contar es justamente eso: se pidió el turno,
- * llegó el repuesto, el taller lo devolvió sin hacer. Y cuelga de la acción,
- * no del plan: con un solo renglón para las cinco acciones no se sabía a cuál
- * se refería.
- *
- * Las fotos son OPCIONALES a propósito: la mayoría de los avances son una
- * línea de texto, y exigir evidencia para escribirla logra que no se escriba
- * nada. Hasta dos, que es lo que entra en una pantalla sin tapar la acción.
- */
-function AvancesDeAccion({
-  planId,
-  itemId,
-  avances,
-  puedeEditar,
-  onChanged,
-}: {
-  planId: string
-  itemId: string
-  avances: FlotaPlanAvance[]
-  puedeEditar: boolean
-  onChanged: () => void
-}) {
-  const [abierto, setAbierto] = useState(false)
-  const [comentario, setComentario] = useState("")
-  const [fotos, setFotos] = useState<File[]>([])
-  const [guardando, setGuardando] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
-
-  const supabase = useMemo(() => createClientBrowser(), [])
-  const urlDe = (path: string) =>
-    supabase.storage.from("mantenimiento-evidencias").getPublicUrl(path).data.publicUrl
-
-  const guardar = async () => {
-    if (!comentario.trim() && fotos.length === 0) {
-      toast.error("Escribí un comentario o adjuntá una foto")
-      return
-    }
-    setGuardando(true)
-    const fd = new FormData()
-    fd.set("comentario", comentario)
-    fd.set("item_id", itemId)
-    for (const f of fotos) fd.append("archivo", f)
-    const res = await agregarAvanceFlotaPlan(planId, fd)
-    setGuardando(false)
-    if ("error" in res) {
-      toast.error(res.error)
-      return
-    }
-    setComentario("")
-    setFotos([])
-    if (fileRef.current) fileRef.current.value = ""
-    setAbierto(false)
-    toast.success("Comentario agregado")
-    onChanged()
-  }
-
-  const borrar = async (id: string) => {
-    if (!window.confirm("¿Eliminar este comentario?")) return
-    const res = await eliminarAvanceFlotaPlan(id)
-    if ("error" in res) toast.error(res.error)
-    else onChanged()
-  }
-
-  return (
-    <div className="ml-6 mt-1 space-y-1.5">
-      {avances.map((a) => (
-        <div key={a.id} className="flex items-start gap-2 border-l-2 border-border pl-2">
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] text-muted-foreground">
-              {new Date(a.created_at).toLocaleString("es-AR", {
-                day: "2-digit",
-                month: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-              {a.autor_nombre ? ` · ${a.autor_nombre}` : ""}
-            </p>
-            {a.comentario && (
-              <p className="whitespace-pre-wrap text-xs text-foreground">{a.comentario}</p>
-            )}
-            {a.archivos.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {a.archivos.map((f) => (
-                  <a key={f.path} href={urlDe(f.path)} target="_blank" rel="noreferrer" title={f.nombre}>
-                    {(f.mime ?? "").startsWith("image/") ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={urlDe(f.path)}
-                        alt={f.nombre}
-                        className="h-16 w-24 rounded border object-cover"
-                      />
-                    ) : (
-                      <span className="text-[11px] text-primary underline">{f.nombre}</span>
-                    )}
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-          {puedeEditar && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-6 text-muted-foreground hover:text-destructive"
-              onClick={() => borrar(a.id)}
-              aria-label="Eliminar comentario"
-            >
-              <Trash2 className="size-3" />
-            </Button>
-          )}
-        </div>
-      ))}
-
-      {puedeEditar &&
-        (abierto ? (
-          <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-2">
-            <Textarea
-              value={comentario}
-              onChange={(e) => setComentario(e.target.value)}
-              placeholder="Qué se hizo o en qué está"
-              rows={2}
-              className="text-sm"
-            />
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <Input
-                  ref={fileRef}
-                  type="file"
-                  multiple
-                  accept="image/*,application/pdf,.pdf"
-                  className="h-8 w-auto text-xs"
-                  onChange={(e) => setFotos(Array.from(e.target.files ?? []).slice(0, 2))}
-                />
-                <span className="text-[11px] text-muted-foreground">
-                  {fotos.length > 0 ? `${fotos.length} de 2` : "hasta 2, opcionales"}
-                </span>
-              </div>
-              <div className="flex gap-1.5">
-                <Button variant="ghost" size="sm" onClick={() => setAbierto(false)}>
-                  Cancelar
-                </Button>
-                <Button size="sm" onClick={guardar} disabled={guardando}>
-                  {guardando ? "Guardando…" : "Guardar"}
-                </Button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-1.5 text-[11px] text-muted-foreground"
-            onClick={() => setAbierto(true)}
-          >
-            <Plus className="mr-1 size-3" /> Comentario / foto
-          </Button>
-        ))}
     </div>
   )
 }

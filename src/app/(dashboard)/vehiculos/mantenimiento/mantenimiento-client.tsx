@@ -141,6 +141,7 @@ import { DisposicionResiduos } from "./disposicion-residuos"
 import { HerramientasTab } from "./herramientas-tab"
 import type { Herramienta } from "@/actions/mantenimiento-herramientas"
 import { IndicadoresFlota } from "./indicadores-flota"
+import { parseAsStringLiteral, useQueryState } from "nuqs"
 import { EstandaresFlota } from "./estandares-flota"
 import { AnalisisItemsChecklist } from "./analisis-items-checklist"
 import { AnalisisCorrectivos } from "./analisis-correctivos"
@@ -557,6 +558,14 @@ interface MantenimientoClientProps {
   esAdmin: boolean
 }
 
+
+const TABS_MTTO = [
+  "tablero", "checklists", "checklist-flota", "programacion", "historial", "cil",
+  "analisis-items", "analisis-correctivos", "indicadores", "seguimiento", "piramide",
+  "neumaticos", "estandares", "herramientas", "repuestos", "plantillas", "documentos",
+  "estado-dpo", "residuos", "sustentabilidad",
+] as const
+type TabMtto = (typeof TABS_MTTO)[number]
 export function MantenimientoClient({
   estados,
   desgasteNeumaticos,
@@ -599,7 +608,15 @@ export function MantenimientoClient({
   const router = useRouter()
   const [, startTransition] = useTransition()
 
-  const [tab, setTab] = useState("tablero")
+  // La solapa vive en la URL (?tab=): un link abre la solapa, y Atrás vuelve a
+  // la anterior. Shallow: cambiar de solapa no vuelve a correr la página.
+  const [tab, setTabUrl] = useQueryState(
+    "tab",
+    parseAsStringLiteral(TABS_MTTO).withDefault("tablero").withOptions({ history: "push" })
+  )
+  const setTab = (t: string) => {
+    if ((TABS_MTTO as readonly string[]).includes(t)) setTabUrl(t as TabMtto)
+  }
   /**
    * OT para colgarle un pedido de repuestos: las programadas o en taller
    * primero —son las que están esperando la pieza— y después las recientes.
@@ -893,7 +910,7 @@ export function MantenimientoClient({
         )}
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
         {/* Las 12 solapas estaban planas y sin jerarquía: los tableros del día
             convivían con el back-office. Se agrupan según SECCIONES_FLOTA, cada
             grupo en su fila rotulada y con su color (ver ESTILO_GRUPO), y la
