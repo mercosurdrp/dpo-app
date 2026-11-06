@@ -1,5 +1,6 @@
 "use server"
 
+import { adjuntarHerramientas } from "@/lib/reuniones-herramientas"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
@@ -242,7 +243,7 @@ export async function getHistorialIndicador(
           ? b.created_at.localeCompare(a.created_at)
           : b.reunion_fecha.localeCompare(a.reunion_fecha),
       )
-    const actividades = (actRes.data ?? [])
+    const actividadesBase = (actRes.data ?? [])
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((r) => mapActividad(r as any))
       .sort((a, b) =>
@@ -250,6 +251,7 @@ export async function getHistorialIndicador(
           ? b.created_at.localeCompare(a.created_at)
           : b.reunion_origen_fecha.localeCompare(a.reunion_origen_fecha),
       )
+    const actividades = await adjuntarHerramientas(supabase, actividadesBase)
     return { data: { observaciones, actividades } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error cargando historial" }

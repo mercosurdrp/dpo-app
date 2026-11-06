@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { Plus, Trash2, Loader2, ListTodo } from "lucide-react";
+import { HerramientasChip } from "@/components/reuniones/herramientas-chip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -254,6 +255,11 @@ export function ActionLogSeccion({
                     >
                       <p className="text-sm text-slate-800">
                         {act.descripcion}
+                        {act.herramientas && act.herramientas.length > 0 && (
+                          <span className="ml-1.5 align-middle">
+                            <HerramientasChip herramientas={act.herramientas} />
+                          </span>
+                        )}
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {act.responsable_nombre ?? "Sin responsable"} ·{" "}

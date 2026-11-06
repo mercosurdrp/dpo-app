@@ -31,6 +31,7 @@ import {
   UserPlus,
   X,
 } from "lucide-react"
+import { HerramientasChip } from "@/components/reuniones/herramientas-chip"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -861,6 +862,7 @@ function ActividadListItem({
               </span>
             )}
             {actividad.motivo && <span>Motivo: {actividad.motivo}</span>}
+            <HerramientasChip herramientas={actividad.herramientas} />
             {actividad.indicador_nombre && (
               <span
                 className="rounded-full border border-blue-200 bg-blue-50 px-1.5 font-medium text-blue-800"

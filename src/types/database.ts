@@ -3994,6 +3994,8 @@ export interface ReunionActividadConResponsable extends ReunionActividad {
   reunion_origen_id: string
   /** Tipo de la reunión donde nació (sirve cuando se muestra en otra, ej. SLA). */
   reunion_origen_tipo?: TipoReunion
+  /** Herramientas de gestión (5XQ, Espina, PDCA) colgadas de esta acción. */
+  herramientas?: { id: string; tipo: string }[]
 }
 
 // Entrada del historial de avances de una actividad del Action Log.

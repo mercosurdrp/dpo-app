@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { adjuntarHerramientas } from "@/lib/reuniones-herramientas"
 import { cargarSerieWnp } from "@/lib/wnp/datos"
 import { requireAuth, getProfile } from "@/lib/session"
 import {
@@ -629,7 +630,7 @@ export async function getReunionDetalle(
       return cierreYm === reunionYm
     })
 
-    const actividades: ReunionActividadConResponsable[] = actividadesFiltradas.map(
+    const actividadesBase: ReunionActividadConResponsable[] = actividadesFiltradas.map(
       (row) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = row as any
@@ -662,6 +663,8 @@ export async function getReunionDetalle(
         }
       },
     )
+
+    const actividades = await adjuntarHerramientas(supabase, actividadesBase)
 
     const archivos = (archRaw ?? []) as ReunionArchivo[]
 

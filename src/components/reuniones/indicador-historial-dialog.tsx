@@ -8,6 +8,7 @@ import {
   Loader2,
   MessageSquareText,
 } from "lucide-react";
+import { HerramientasChip } from "@/components/reuniones/herramientas-chip"
 import {
   Dialog,
   DialogContent,
@@ -261,6 +262,7 @@ function HistorialContenido({
                           {a.descripcion}
                         </p>
                         <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                          <HerramientasChip herramientas={a.herramientas} />
                           <span>
                             Reunión{" "}
                             {etiquetaTipo(a.reunion_origen_tipo)
