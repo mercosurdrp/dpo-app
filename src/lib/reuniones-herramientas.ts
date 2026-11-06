@@ -31,3 +31,9 @@ export async function adjuntarHerramientas(
     porActividad.has(a.id) ? { ...a, herramientas: porActividad.get(a.id) } : a,
   )
 }
+
+/** Marca (en reuniones_actividades.etiquetas) de la acción creada a partir de
+ *  la contramedida de una herramienta: evita duplicarla al reeditar. */
+export function marcaContramedida(herramientaId: string): string {
+  return `contramedida:${herramientaId}`
+}

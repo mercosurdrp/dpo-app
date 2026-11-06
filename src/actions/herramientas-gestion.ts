@@ -1,5 +1,6 @@
 "use server"
 
+import { HERRAMIENTA_LABEL, marcaContramedida } from "@/lib/reuniones-herramientas"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -549,7 +550,7 @@ export async function crearHerramientaActividad(
     )
     if (!permiso.ok) return { error: permiso.error }
 
-    return insertarHerramienta(
+    const res = await insertarHerramienta(
       supabase,
       {
         reunion_actividad_id: actividadId,
@@ -560,6 +561,10 @@ export async function crearHerramientaActividad(
       },
       getNombre(profile),
     )
+    if (!("error" in res)) {
+      await sincronizarAccionContramedida(res.data.id, actividadId, tipo, contenido, profile.id)
+    }
+    return res
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error creando la herramienta" }
   }
@@ -620,6 +625,94 @@ async function sincronizarPlanReporte(
     }
   } catch (e) {
     console.error("[herramientas-gestion] sincronizar plan del reporte:", e)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Contramedida de una herramienta aplicada sobre una acción de reunión →
+// acción APARTE en el mismo Action Log, con responsable y vencimiento.
+//
+// El análisis (la acción que tiene el 5XQ) se puede cerrar al terminarlo; la
+// contramedida queda viva hasta que se ejecute y se verifique con el dato.
+// Hereda reunión, sección e indicador de la acción de origen; responsable =
+// el de la acción de origen (o quien cargó la herramienta), vence a 14 días.
+// Se marca con etiquetas = ["contramedida:<herramienta>"] para no duplicarla:
+// si ya existe y sigue sin comenzar, se le actualiza el texto. No lanza.
+// ---------------------------------------------------------------------------
+
+async function sincronizarAccionContramedida(
+  herramientaId: string,
+  actividadId: string,
+  tipo: HerramientaGestionTipo,
+  contenido: HerramientaGestionContenido,
+  autorId: string,
+): Promise<void> {
+  const texto = extraerContramedida(tipo, contenido)
+  if (!texto) return
+  try {
+    const admin = createAdminClient()
+    const marca = marcaContramedida(herramientaId)
+
+    const { data: existente } = await admin
+      .from("reuniones_actividades")
+      .select("id, estado, reunion_id")
+      .contains("etiquetas", [marca])
+      .maybeSingle()
+    if (existente) {
+      const e = existente as { id: string; estado: string; reunion_id: string }
+      if (e.estado === "no_comenzada") {
+        await admin
+          .from("reuniones_actividades")
+          .update({ descripcion: texto, updated_at: new Date().toISOString() })
+          .eq("id", e.id)
+        revalidatePath(`/reuniones/${e.reunion_id}`)
+      }
+      return
+    }
+
+    const { data: origen } = await admin
+      .from("reuniones_actividades")
+      .select("reunion_id, descripcion, responsable_id, seccion, indicador_id, indicador_nombre")
+      .eq("id", actividadId)
+      .single()
+    if (!origen) return
+    const o = origen as {
+      reunion_id: string
+      descripcion: string
+      responsable_id: string | null
+      seccion: string | null
+      indicador_id: string | null
+      indicador_nombre: string | null
+    }
+
+    const vence = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" }),
+    )
+    vence.setDate(vence.getDate() + 14)
+    const fechaCompromiso = `${vence.getFullYear()}-${String(vence.getMonth() + 1).padStart(2, "0")}-${String(vence.getDate()).padStart(2, "0")}`
+
+    const label = HERRAMIENTA_LABEL[tipo] ?? tipo
+    const origenCorto =
+      o.descripcion.length > 80 ? `${o.descripcion.slice(0, 80)}…` : o.descripcion
+
+    await admin.from("reuniones_actividades").insert({
+      reunion_id: o.reunion_id,
+      descripcion: texto,
+      motivo: `Contramedida ${label}: ${origenCorto}`,
+      responsable_id: o.responsable_id ?? autorId,
+      fecha_compromiso: fechaCompromiso,
+      estado: "no_comenzada",
+      destino: "simple",
+      seccion: o.seccion,
+      indicador_id: o.indicador_id,
+      indicador_nombre: o.indicador_nombre,
+      prioridad: "alta",
+      etiquetas: [marca],
+      created_by: autorId,
+    })
+    revalidatePath(`/reuniones/${o.reunion_id}`)
+  } catch (e) {
+    console.error("[herramientas-gestion] acción de contramedida:", e)
   }
 }
 
@@ -749,6 +842,16 @@ export async function actualizarHerramientaGestion(
         )
       }
       revalidatePath("/reportes-seguridad")
+    }
+
+    if (tgt.reunion_actividad_id) {
+      await sincronizarAccionContramedida(
+        row.id,
+        tgt.reunion_actividad_id,
+        row.tipo as HerramientaGestionTipo,
+        row.contenido,
+        profile.id,
+      )
     }
 
     revalidatePath("/herramientas-gestion")

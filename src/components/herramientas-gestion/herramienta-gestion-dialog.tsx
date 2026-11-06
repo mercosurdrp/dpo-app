@@ -123,6 +123,8 @@ export function HerramientaGestionDialog({
   // La marca de "contramedida completada" solo aplica cuando el destino es un
   // reporte de seguridad (es ahí donde la contramedida vuelca al plan de acción).
   const esReporte = !!reporteId || !!herramienta?.reporte_seguridad_id
+  const esActividad =
+    !!reunionActividadId || !!herramienta?.reunion_actividad_id
 
   // Sincronizar estado cuando cambia la herramienta o se reabre
   useEffect(() => {
@@ -327,6 +329,15 @@ export function HerramientaGestionDialog({
                 value={contenido as ReturnType<typeof pdcaVacio>}
                 onChange={setContenido}
               />
+            )}
+
+            {esActividad && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                Al guardar, la {tipo === "pdca" ? "acción del HACER" : "contramedida"} se crea
+                como una <span className="font-semibold">acción aparte</span> en el
+                Action Log, con el responsable de esta acción y vencimiento a 14 días
+                (se puede cambiar). Esta acción queda como el análisis.
+              </p>
             )}
 
             {esReporte && (
