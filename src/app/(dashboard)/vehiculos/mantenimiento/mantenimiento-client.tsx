@@ -80,6 +80,7 @@ import {
   Wrench,
   X,
 } from "lucide-react"
+import { FileSignature } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
@@ -131,6 +132,8 @@ import { PiramideResultados } from "./piramide-resultados"
 import { AvisoRechazoRotura } from "./_components/aviso-rechazo-rotura"
 import { Sustentabilidad } from "./sustentabilidad"
 import { ProveedorPicker } from "./_components/proveedor-picker"
+import { CampoEntregaComprometida } from "./_components/entrega-comprometida"
+import { AnsProveedoresPanel } from "./_components/ans-proveedores-panel"
 import {
   EvolucionPlanPanel,
   type AnalisisRecurrenciaProps,
@@ -363,6 +366,7 @@ const ICONO_SECCION: Record<string, LucideIcon> = {
   estandares: ShieldCheck,
   herramientas: Hammer,
   repuestos: Package,
+  "ans-proveedores": FileSignature,
   residuos: Recycle,
   plantillas: ClipboardList,
 }
@@ -565,7 +569,7 @@ const TABS_MTTO = [
   "tablero", "checklists", "checklist-flota", "programacion", "historial", "cil",
   "analisis-items", "analisis-correctivos", "indicadores", "seguimiento", "piramide",
   "neumaticos", "estandares", "herramientas", "repuestos", "plantillas", "documentos",
-  "estado-dpo", "residuos", "sustentabilidad",
+  "estado-dpo", "residuos", "sustentabilidad", "ans-proveedores",
 ] as const
 type TabMtto = (typeof TABS_MTTO)[number]
 export function MantenimientoClient({
@@ -1183,6 +1187,11 @@ export function MantenimientoClient({
             revisiones={estandares.revisiones}
             puedeEditar={puedeEditar}
           />
+        </TabsContent>
+
+        {/* ============ TAB: Cumplimiento de los ANS con proveedores (2.3) ============ */}
+        <TabsContent value="ans-proveedores" className="space-y-6">
+          <AnsProveedoresPanel puedeEditar={puedeEditar} />
         </TabsContent>
 
         {/* ============ TAB: Estado DPO (el mapa de la auditoría) ============ */}
@@ -2103,6 +2112,8 @@ function NuevoMantenimientoDialog({
   // arriba. Hasta hoy sólo quedaba escrito en las observaciones.
   const [auxilioRuta, setAuxilioRuta] = useState(false)
   const [salidaTaller, setSalidaTaller] = useState("")
+  // Lo que el taller se comprometió a entregar (ANS de flota, puntualidad).
+  const [salidaComprometida, setSalidaComprometida] = useState("")
   const [tareasSel, setTareasSel] = useState<Set<string>>(
     () => new Set(prefill.tareaId ? [prefill.tareaId] : [])
   )
@@ -2214,6 +2225,7 @@ function NuevoMantenimientoDialog({
       evidencia_urls: comprobantes.urls.length > 0 ? comprobantes.urls : null,
       entrada_taller: deDatetimeLocal(entradaTaller),
       salida_taller: deDatetimeLocal(salidaTaller),
+      salida_comprometida: deDatetimeLocal(salidaComprometida),
       auxilio_ruta: auxilioRuta,
       tareas,
       reprogramadas: reprogramadasPayload(reprogramadas),
@@ -2442,6 +2454,12 @@ function NuevoMantenimientoDialog({
                 />
               </div>
             </div>
+            <CampoEntregaComprometida
+              taller={taller}
+              valor={salidaComprometida}
+              onChange={setSalidaComprometida}
+              salida={salidaTaller}
+            />
           </div>
 
 
@@ -3704,6 +3722,7 @@ function EditarMantenimientoDialog({
     aDatetimeLocal(m.salida_taller ?? m.fuera_servicio_hasta)
   )
   const [auxilioRuta, setAuxilioRuta] = useState(!!m.auxilio_ruta)
+  const [salidaComprometida, setSalidaComprometida] = useState(aDatetimeLocal(m.salida_comprometida ?? null))
   const [facturas, setFacturas] = useState<FacturaForm[]>(() => facturasDesde(m))
   const [repuestos, setRepuestos] = useState<RepuestoForm[]>(() => repuestosDesde(m))
   const [costoMO, setCostoMO] = useState(() => {
@@ -3745,6 +3764,7 @@ function EditarMantenimientoDialog({
       evidencia_urls: comprobantes.urls,
       entrada_taller: deDatetimeLocal(entradaTaller),
       salida_taller: deDatetimeLocal(salidaTaller),
+      salida_comprometida: deDatetimeLocal(salidaComprometida),
       auxilio_ruta: auxilioRuta,
     })
     setSaving(false)
@@ -3897,6 +3917,12 @@ function EditarMantenimientoDialog({
                 />
               </div>
             </div>
+            <CampoEntregaComprometida
+              taller={taller}
+              valor={salidaComprometida}
+              onChange={setSalidaComprometida}
+              salida={salidaTaller}
+            />
           </div>
 
 

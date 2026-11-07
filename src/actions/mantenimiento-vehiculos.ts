@@ -1028,6 +1028,8 @@ interface CreateMantenimientoInput {
   fuera_servicio_hasta?: string | null
   entrada_taller?: string | null
   salida_taller?: string | null
+  /** Entrega comprometida por el taller (ANS de flota, puntualidad). */
+  salida_comprometida?: string | null
   /** La unidad quedó parada fuera de la planta (punta de la pirámide). */
   auxilio_ruta?: boolean
   /** Sistema del vehículo (carrocería, pérdidas, luces…): base de la recurrencia (R2.2.6). */
@@ -1315,6 +1317,14 @@ async function hayAuxilioRuta(
   return !sonda.error
 }
 
+/** Ídem para `salida_comprometida` (migración 20261107150000, ANS de flota). */
+async function haySalidaComprometida(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<boolean> {
+  const sonda = await supabase.from("mantenimiento_realizados").select("salida_comprometida").limit(1)
+  return !sonda.error
+}
+
 /** Ídem para `sistema` (migración 20261104120000, R2.2.6). */
 async function haySistemaOt(
   supabase: Awaited<ReturnType<typeof createClient>>
@@ -1382,6 +1392,9 @@ export async function createMantenimiento(
         fuera_servicio_desde: fs.desde,
         fuera_servicio_hasta: fs.hasta,
         ...((await hayAuxilioRuta(supabase)) ? { auxilio_ruta: !!input.auxilio_ruta } : {}),
+        ...(input.salida_comprometida !== undefined && (await haySalidaComprometida(supabase))
+          ? { salida_comprometida: input.salida_comprometida || null }
+          : {}),
         ...(input.sistema !== undefined && (await haySistemaOt(supabase))
           ? { sistema: input.sistema || null }
           : {}),
@@ -1476,6 +1489,8 @@ interface UpdateMantenimientoInput {
   fuera_servicio_hasta?: string | null
   entrada_taller?: string | null
   salida_taller?: string | null
+  /** Entrega comprometida por el taller (ANS de flota, puntualidad). */
+  salida_comprometida?: string | null
   /** La unidad quedó parada fuera de la planta (punta de la pirámide). */
   auxilio_ruta?: boolean
   /** Sistema del vehículo al que pertenece el trabajo (R2.2.6). */
@@ -1586,6 +1601,8 @@ export async function updateMantenimiento(
     if (input.salida_taller !== undefined) patch.salida_taller = input.salida_taller || null
     if (input.auxilio_ruta !== undefined && (await hayAuxilioRuta(supabase)))
       patch.auxilio_ruta = input.auxilio_ruta
+    if (input.salida_comprometida !== undefined && (await haySalidaComprometida(supabase)))
+      patch.salida_comprometida = input.salida_comprometida || null
     if (input.sistema !== undefined && (await haySistemaOt(supabase)))
       patch.sistema = input.sistema || null
     // Fuera de servicio: explícito si se pasa; si no, se deriva de entrada/salida.

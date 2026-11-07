@@ -41,6 +41,14 @@ export interface PedidoRepuestos {
   estado: PedidoEstado
   monto: number | null
   descripcion: string | null
+  /** ANS de repuestos: fecha que confirmó el proveedor. */
+  fechaComprometida: string | null
+  /** Llegó completo y correcto (null = sin dato). */
+  entregaCompleta: boolean | null
+  /** Pieza del Anexo A (crítica). */
+  esCritico: boolean
+  /** El proveedor la tenía en stock al pedirla (null = sin dato). */
+  disponibleAlPedir: boolean | null
   items: PedidoItem[]
   /**
    * Días que el pedido estuvo (o lleva) esperando la pieza: de la detección al
@@ -154,6 +162,10 @@ export async function getPedidosRepuestos(): Promise<
       monto: number | null
       descripcion: string | null
       created_at: string
+      fecha_comprometida?: string | null
+      entrega_completa?: boolean | null
+      es_critico?: boolean | null
+      disponible_al_pedir?: boolean | null
     }
     const filas = (data || []) as unknown as Row[]
     if (filas.length === 0) return { data: [] }
@@ -209,6 +221,10 @@ export async function getPedidosRepuestos(): Promise<
         estado: f.estado,
         monto: f.monto == null ? null : Number(f.monto),
         descripcion: f.descripcion,
+        fechaComprometida: f.fecha_comprometida ? f.fecha_comprometida.slice(0, 10) : null,
+        entregaCompleta: f.entrega_completa ?? null,
+        esCritico: !!f.es_critico,
+        disponibleAlPedir: f.disponible_al_pedir ?? null,
         items: (porPedido.get(f.id) ?? []).sort((a, b) => a.nombre.localeCompare(b.nombre)),
         // El pedido anulado no espera nada; el abierto sigue corriendo contra hoy.
         diasEspera:
@@ -243,6 +259,11 @@ export async function upsertPedidoRepuestos(input: {
   estado?: PedidoEstado
   monto?: number | null
   descripcion?: string | null
+  /** Campos del ANS de repuestos (migración 20261107150000). */
+  fechaComprometida?: string | null
+  entregaCompleta?: boolean | null
+  esCritico?: boolean
+  disponibleAlPedir?: boolean | null
   items: PedidoItemInput[]
 }): Promise<{ success: true; id: string } | { error: string }> {
   try {
@@ -317,6 +338,14 @@ export async function upsertPedidoRepuestos(input: {
       monto: input.monto ?? null,
       descripcion: input.descripcion?.trim() || null,
       updated_at: new Date().toISOString(),
+      ...((await hayColumnasAns(supabase))
+        ? {
+            fecha_comprometida: input.fechaComprometida || null,
+            entrega_completa: input.entregaCompleta ?? null,
+            es_critico: !!input.esCritico,
+            disponible_al_pedir: input.disponibleAlPedir ?? null,
+          }
+        : {}),
     }
 
     let pedidoId = input.id
@@ -348,7 +377,20 @@ export async function upsertPedidoRepuestos(input: {
   }
 }
 
-/** El botón "Ya se retiró": cierra el pedido con la fecha del día. */
+/**
+ * ¿Ya están las columnas del ANS de repuestos? Las agrega una migración y hasta
+ * que corra el pedido se guarda igual, sin ellas (mandarlas tira 42703).
+ */
+async function hayColumnasAns(supabase: Awaited<ReturnType<typeof createClient>>): Promise<boolean> {
+  const sonda = await supabase.from("mantenimiento_pedidos").select("fecha_comprometida").limit(1)
+  return !sonda.error
+}
+
+/**
+ * El botón "Ya se retiró": cierra el pedido con la fecha del día. Si nadie dijo
+ * lo contrario, el pedido llegó completo (ANS de repuestos, «pedidos completos»):
+ * el que llega incompleto se marca editando el pedido.
+ */
 export async function marcarPedidoRetirado(
   id: string,
   fecha?: string
@@ -359,12 +401,18 @@ export async function marcarPedidoRetirado(
     const hoy = fecha || new Date().toISOString().slice(0, 10)
     const { data: previo } = await supabase
       .from("mantenimiento_pedidos")
-      .select("estado, proveedor")
+      .select("*")
       .eq("id", id)
       .maybeSingle()
+    const conAns = previo != null && "entrega_completa" in previo
     const { error } = await supabase
       .from("mantenimiento_pedidos")
-      .update({ estado: "retirado", fecha_retiro: hoy, updated_at: new Date().toISOString() })
+      .update({
+        estado: "retirado",
+        fecha_retiro: hoy,
+        updated_at: new Date().toISOString(),
+        ...(conAns && previo.entrega_completa == null ? { entrega_completa: true } : {}),
+      })
       .eq("id", id)
     if (error) return { error: error.message }
 

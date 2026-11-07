@@ -46,6 +46,7 @@ import { cn } from "@/lib/utils"
 import { createProveedor, updateProveedor } from "@/actions/mantenimiento-gastos"
 import { getPedidosRepuestos, type PedidoRepuestos } from "@/actions/pedidos-repuestos"
 import { getSlas } from "@/actions/sla"
+import { getAnsProveedores, type AnsMin } from "@/actions/ans-proveedores"
 import type { Repuesto } from "@/actions/mantenimiento-vehiculos"
 import type { MantenimientoProveedor } from "@/types/database"
 import { DpoResponde } from "./dpo-badge"
@@ -95,6 +96,8 @@ export function ProveedoresRepuestos({
   const router = useRouter()
   const [pedidos, setPedidos] = useState<PedidoRepuestos[]>([])
   const [slas, setSlas] = useState<SlaMin[]>([])
+  // ANS por proveedor (flota_ans): manda sobre el cruce por palabras del SLA.
+  const [ans, setAns] = useState<AnsMin[]>([])
   const [edit, setEdit] = useState<MantenimientoProveedor | null | "nuevo">(null)
   const [soloRepuestos, setSoloRepuestos] = useState(true)
 
@@ -105,10 +108,14 @@ export function ProveedoresRepuestos({
     getSlas().then((r) => {
       if ("data" in r)
         setSlas(
-          (r.data as unknown as Array<{ nombre: string; parte_proveedor: string | null; estado: SlaMin["estado"]; pilar: string }>)
-            .filter((s) => s.pilar === "flota")
+          (r.data as unknown as Array<{ codigo?: string; nombre: string; parte_proveedor: string | null; estado: SlaMin["estado"]; pilar: string }>)
+            // El SLA genérico de repuestos no nombra a ningún proveedor (sólo guarda los PDF).
+            .filter((s) => s.pilar === "flota" && s.codigo !== "flo_repuestos")
             .map((s) => ({ nombre: s.nombre, parte_proveedor: s.parte_proveedor, estado: s.estado }))
         )
+    })
+    getAnsProveedores().then((r) => {
+      if ("data" in r) setAns(r.data)
     })
   }, [])
 
@@ -137,7 +144,18 @@ export function ProveedoresRepuestos({
     .filter((p) => !soloRepuestos || p.es_repuestos || piezasPorProveedor.has(p.id))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))
 
-  const firmados = lista.filter((p) => slaDeProveedor(slas, p.nombre)?.estado === "firmado").length
+  // El ANS del proveedor (flota_ans) por id; si no tiene, el cruce viejo por nombre contra /sla.
+  const slaDe = (p: MantenimientoProveedor): SlaMin | null => {
+    const a = ans.find((x) => x.proveedorId === p.id)
+    if (a)
+      return {
+        nombre: `ANS ${p.nombre}${a.fechaFirma ? ` · firmado ${a.fechaFirma.slice(8, 10)}/${a.fechaFirma.slice(5, 7)}/${a.fechaFirma.slice(0, 4)}` : ""}`,
+        parte_proveedor: p.nombre,
+        estado: a.fechaFirma ? "firmado" : "pendiente",
+      }
+    return slaDeProveedor(slas, p.nombre)
+  }
+  const firmados = lista.filter((p) => slaDe(p)?.estado === "firmado").length
 
   return (
     <div className="space-y-3">
@@ -205,7 +223,7 @@ export function ProveedoresRepuestos({
               <TableBody>
                 {lista.map((p) => {
                   const med = medido.get(norm(p.nombre))
-                  const sla = slaDeProveedor(slas, p.nombre)
+                  const sla = slaDe(p)
                   return (
                     <TableRow key={p.id}>
                       <TableCell className="font-medium">{p.nombre}</TableCell>

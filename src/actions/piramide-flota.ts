@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import { getChecklistsMtto, getMantenimientos } from "@/actions/mantenimiento-vehiculos"
 import { getSlas } from "@/actions/sla"
+import { getAnsProveedores } from "@/actions/ans-proveedores"
 import { MOTIVO_RECHAZO_ROTURA } from "@/lib/vehiculos/correctivo-kpis"
 import { esHallazgoAceite } from "@/lib/flota/cil-aceite"
 import {
@@ -197,12 +198,25 @@ export async function getPiramideFlota(
       revisadoAt: r.revisado_at,
     }))
 
-    const slas: SlaTaller[] =
-      "data" in slaRes
-        ? (slaRes.data as unknown as Array<{ nombre: string; parte_proveedor: string | null; estado: SlaTaller["estado"]; pilar: string }>)
-            .filter((s) => (s.pilar ?? "").toLowerCase().startsWith("flo"))
+    // Primero los ANS por proveedor (flota_ans, firmados el 06/11/2026); después
+    // los SLA sueltos del pilar. El SLA genérico «con proveedores de repuestos»
+    // no nombra a nadie: sólo guarda los PDF, así que no se usa para el cruce.
+    const ansRes = await getAnsProveedores()
+    const slas: SlaTaller[] = [
+      ...("data" in ansRes
+        ? ansRes.data.map((a) => ({
+            nombre: a.nombre,
+            parteProveedor: a.nombre,
+            estado: (a.fechaFirma ? "firmado" : "pendiente") as SlaTaller["estado"],
+            exacto: true,
+          }))
+        : []),
+      ...("data" in slaRes
+        ? (slaRes.data as unknown as Array<{ codigo?: string; nombre: string; parte_proveedor: string | null; estado: SlaTaller["estado"]; pilar: string }>)
+            .filter((s) => (s.pilar ?? "").toLowerCase().startsWith("flo") && s.codigo !== "flo_repuestos")
             .map((s) => ({ nombre: s.nombre, parteProveedor: s.parte_proveedor, estado: s.estado }))
-        : []
+        : []),
+    ]
 
     const snap = new Map(
       ((snapRes.data || []) as Array<{ mes: number; valor: number | null }>).map((s) => [s.mes, s.valor])

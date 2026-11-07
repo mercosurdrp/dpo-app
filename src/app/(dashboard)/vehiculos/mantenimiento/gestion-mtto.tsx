@@ -381,6 +381,7 @@ export function GestionMtto({
             dominios={dominios}
             ots={otsParaPedido}
             puedeEditar={puedeEditar}
+            proveedores={proveedores}
           />
         </TabsContent>
 

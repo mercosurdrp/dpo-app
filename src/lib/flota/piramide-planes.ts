@@ -5,6 +5,7 @@
 import type { MantenimientoSistema } from "@/types/database"
 import type { ConteoNiveles, KpisPiramide, BalancePiramide } from "./piramide-flota"
 import { labelSistema } from "./sistemas-ot"
+import { esDelProveedor } from "./ans-cumplimiento"
 
 /** Los planes de la pirámide son `flota_plan_accion` con este prefijo en `kpi`. */
 export const KPI_PIRAMIDE_PREFIJO = "piramide:"
@@ -111,6 +112,8 @@ export interface SlaTaller {
   nombre: string
   parteProveedor: string | null
   estado: "pendiente" | "firmado" | "no_aplica"
+  /** ANS por proveedor (flota_ans): se cruza por el nombre del maestro, no por palabras sueltas. */
+  exacto?: boolean
 }
 
 function norm(s: string | null | undefined): string {
@@ -124,12 +127,15 @@ function norm(s: string | null | undefined): string {
 
 /** ¿Algún ANS de flota nombra a este taller? Mismo criterio que Proveedores (2.3). */
 export function slaDeTaller(slas: SlaTaller[], taller: string): SlaTaller | null {
+  const exacto = slas.find((s) => s.exacto && esDelProveedor(taller, s.parteProveedor ?? s.nombre))
+  if (exacto) return exacto
   const claves = norm(taller)
     .split(" ")
     .filter((w) => w.length >= 4)
   if (claves.length === 0) return null
   return (
     slas.find((s) => {
+      if (s.exacto) return false
       const texto = `${norm(s.parteProveedor)} ${norm(s.nombre)}`
       return claves.some((k) => texto.includes(k))
     }) ?? null

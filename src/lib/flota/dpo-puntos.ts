@@ -278,6 +278,18 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
       "Política de stock de cada pieza (mínimo/objetivo/máximo, curva ABC y criticidad calculadas desde el consumo real), rutina de recuento con la causa de cada diferencia, egreso trazable desde la OT, pedidos con su demora, proveedores con sus ANS, el valor del pañol y la planilla oficial DPO 2.3 para exportar; más el registro de las eliminaciones de residuos de mantenimiento.",
   },
   {
+    // Sin taller propio, el 2.3 pide ANS con los principales proveedores y su
+    // KPI de puntualidad (R2.3.2a). El 06/11/2026 se firmaron 6 de 7 acuerdos;
+    // acá se mide cada uno contra su cláusula 5 y se cargan los planes de la 6.
+    id: "ans-proveedores",
+    label: "Proveedores ANS",
+    grupo: "gestion",
+    puntos: ["2.3", "3.1"],
+    requisitos: ["R2.3.1a", "R2.3.2a", "R3.1.4"],
+    aporta:
+      "Cumplimiento mensual de cada ANS firmado con talleres y proveedores (puntualidad, retrabajos, pedidos completos, críticos disponibles, matafuegos vigentes) contra la meta del acuerdo, con el detalle de cada incumplimiento y su plan de acción.",
+  },
+  {
     // 🚨 El 1.4 se respondía desde dos solapas que son de otra cosa —Repuestos
     // (inventario) y Neumáticos (medición y rotación)—, así que el auditor tenía
     // que armar el punto saltando entre pantallas y ninguna mostraba el circuito

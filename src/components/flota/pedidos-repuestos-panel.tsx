@@ -46,6 +46,8 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import type { MantenimientoProveedor } from "@/types/database"
+import { ProveedorPicker } from "@/app/(dashboard)/vehiculos/mantenimiento/_components/proveedor-picker"
 import {
   eliminarPedidoRepuestos,
   getCatalogoRepuestos,
@@ -85,11 +87,14 @@ export function PedidosRepuestosPanel({
   dominios,
   ots,
   puedeEditar,
+  proveedores,
 }: {
   dominios: string[]
   /** OT recientes y programadas, para colgar el pedido de la que lo espera. */
   ots: OtParaPedido[]
   puedeEditar: boolean
+  /** Maestro de proveedores: el pedido se mide contra el ANS por el nombre. */
+  proveedores?: MantenimientoProveedor[]
 }) {
   const router = useRouter()
   const [pedidos, setPedidos] = useState<PedidoRepuestos[]>([])
@@ -228,6 +233,19 @@ export function PedidosRepuestosPanel({
                     </TableCell>
                     <TableCell className="whitespace-nowrap tabular-nums text-muted-foreground">
                       {fmtFecha(p.fechaRetiro)}
+                      {p.fechaComprometida && (
+                        <span
+                          className={cn(
+                            "block text-[11px]",
+                            (p.fechaRetiro ?? hoyISO()) > p.fechaComprometida
+                              ? "font-medium text-destructive"
+                              : "text-emerald-700 dark:text-emerald-400"
+                          )}
+                          title="Entrega comprometida por el proveedor (ANS)"
+                        >
+                          comp. {fmtFecha(p.fechaComprometida)}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell
                       className={cn(
@@ -296,6 +314,7 @@ export function PedidosRepuestosPanel({
           catalogo={catalogo}
           dominios={dominios}
           ots={ots}
+          proveedores={proveedores}
           onClose={() => setEditar(null)}
           onSaved={() => {
             setEditar(null)
@@ -371,11 +390,46 @@ function ListaPiezas({
   )
 }
 
+type TriEstado = "si" | "no" | "nd"
+
+function aTri(v: boolean | null): TriEstado {
+  return v == null ? "nd" : v ? "si" : "no"
+}
+
+function deTri(v: TriEstado): boolean | null {
+  return v === "nd" ? null : v === "si"
+}
+
+/** Sí / No / Sin dato con <select> nativo (el de Radix no admite valor vacío). */
+function SelectTri({
+  valor,
+  onChange,
+  disabled,
+}: {
+  valor: TriEstado
+  onChange: (v: TriEstado) => void
+  disabled?: boolean
+}) {
+  return (
+    <select
+      value={valor}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value as TriEstado)}
+      className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm disabled:opacity-50"
+    >
+      <option value="nd">Sin dato</option>
+      <option value="si">Sí</option>
+      <option value="no">No</option>
+    </select>
+  )
+}
+
 function PedidoDialog({
   pedido,
   catalogo,
   dominios,
   ots,
+  proveedores,
   onClose,
   onSaved,
 }: {
@@ -383,6 +437,7 @@ function PedidoDialog({
   catalogo: RepuestoCatalogo[]
   dominios: string[]
   ots: OtParaPedido[]
+  proveedores?: MantenimientoProveedor[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -395,6 +450,12 @@ function PedidoDialog({
   const [prioridad, setPrioridad] = useState(pedido?.prioridad ?? "media")
   const [monto, setMonto] = useState(pedido?.monto != null ? String(pedido.monto) : "")
   const [descripcion, setDescripcion] = useState(pedido?.descripcion ?? "")
+  // ANS de repuestos: lo que confirmó el proveedor y cómo llegó.
+  const [fechaComprometida, setFechaComprometida] = useState(pedido?.fechaComprometida ?? "")
+  const [esCritico, setEsCritico] = useState(pedido?.esCritico ?? false)
+  const [disponible, setDisponible] = useState<TriEstado>(aTri(pedido?.disponibleAlPedir ?? null))
+  const [completa, setCompleta] = useState<TriEstado>(aTri(pedido?.entregaCompleta ?? null))
+  const [listaProv, setListaProv] = useState<MantenimientoProveedor[]>(proveedores ?? [])
   const [sel, setSel] = useState<Map<string, number>>(
     () =>
       new Map(
@@ -455,6 +516,11 @@ function PedidoDialog({
       prioridad: prioridad as "baja" | "media" | "alta",
       monto: monto ? Number(monto.replace(",", ".")) : null,
       descripcion,
+      fechaComprometida: fechaComprometida || null,
+      esCritico,
+      disponibleAlPedir: deTri(disponible),
+      // Retirado sin aclarar = llegó completo (mismo criterio que "Ya se retiró").
+      entregaCompleta: fechaRetiro ? (deTri(completa) ?? true) : null,
       items: [
         ...[...sel.entries()].map(([repuestoId, cantidad]) => ({ repuestoId, cantidad })),
         ...nuevas.map((nombreNuevo) => ({ nombreNuevo, cantidad: 1 })),
@@ -544,11 +610,21 @@ function PedidoDialog({
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="col-span-2">
               <Label className="text-xs text-muted-foreground">Proveedor</Label>
-              <Input
-                value={proveedor}
-                onChange={(e) => setProveedor(e.target.value)}
-                placeholder="A quién se le compra"
-              />
+              {proveedores ? (
+                <ProveedorPicker
+                  proveedores={listaProv}
+                  value={proveedor}
+                  onChange={setProveedor}
+                  onCreado={(p) => setListaProv((l) => [...l, p])}
+                  placeholder="A quién se le compra"
+                />
+              ) : (
+                <Input
+                  value={proveedor}
+                  onChange={(e) => setProveedor(e.target.value)}
+                  placeholder="A quién se le compra"
+                />
+              )}
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Se compra</Label>
@@ -566,6 +642,41 @@ function PedidoDialog({
                 onChange={(e) => setFechaRetiro(e.target.value)}
               />
             </div>
+          </div>
+
+          {/* ANS de repuestos (cláusulas 3 y 5): sin estos datos el pedido no
+              entra en la puntualidad, los completos ni los críticos del mes. */}
+          <div className="space-y-2 rounded-md border border-sky-200 bg-sky-50/60 p-3 dark:border-sky-900 dark:bg-sky-950/30">
+            <p className="text-xs font-medium text-sky-800 dark:text-sky-300">
+              Para medir el ANS del proveedor
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <Label className="text-xs text-muted-foreground">Entrega comprometida</Label>
+                <Input
+                  type="date"
+                  value={fechaComprometida}
+                  onChange={(e) => setFechaComprometida(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">¿La tenía en stock?</Label>
+                <SelectTri valor={disponible} onChange={setDisponible} />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">¿Llegó completo y correcto?</Label>
+                <SelectTri valor={completa} onChange={setCompleta} disabled={!fechaRetiro} />
+              </div>
+              <label className="flex items-end gap-2 pb-2 text-xs">
+                <Checkbox checked={esCritico} onCheckedChange={(c) => setEsCritico(c === true)} />
+                <span>Pieza crítica (Anexo A)</span>
+              </label>
+            </div>
+            {fechaComprometida && fechaRetiro && fechaRetiro > fechaComprometida && (
+              <p className="text-[11px] font-medium text-red-700">
+                Llegó después de lo comprometido: cuenta como incumplimiento del ANS.
+              </p>
+            )}
           </div>
 
           {/* La lista para tildar: el pañol primero, después lo que se compra. */}

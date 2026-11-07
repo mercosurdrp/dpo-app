@@ -1757,6 +1757,11 @@ export interface MantenimientoRealizado {
   /** Entrada/salida del taller con fecha+hora (ISO). De acá se deriva el período fuera de servicio. */
   entrada_taller: string | null
   salida_taller: string | null
+  /**
+   * Entrega comprometida por el taller (ANS de flota, cláusula 3). Opcional:
+   * la agrega la migración 20261107150000.
+   */
+  salida_comprometida?: string | null
   /** true = service general/rodado: ancla el contador del próximo service. */
   es_service_general: boolean
   /**
