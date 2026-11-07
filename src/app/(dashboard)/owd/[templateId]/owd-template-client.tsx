@@ -14,9 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
-  ComposedChart,
   Bar,
-  Line,
   BarChart,
   XAxis,
   YAxis,
@@ -119,12 +117,21 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
   const obsCountLabel = esTodos ? "Mes actual" : monthLabel(mesSel!)
 
   // Serie de evolución (todos los meses); resalta el seleccionado
-  const evolData = meses.map((m) => ({
-    key: monthKey(m),
-    name: `${MESES[m.mes]} '${String(m.year).slice(2)}`,
-    cumplimiento: m.promedio_cumplimiento,
-    total: m.total_observaciones,
-  }))
+  // Cada barra mide la cantidad de OWD del mes y se parte en dos colores:
+  // verde = % cumplido, rojo = % no cumplido (ej. 95% → 5% de la barra en rojo).
+  const evolData = meses.map((m) => {
+    const pct = Number(m.promedio_cumplimiento) || 0
+    const total = m.total_observaciones
+    const ok = Math.round(total * pct) / 100
+    return {
+      key: monthKey(m),
+      name: `${MESES[m.mes]} '${String(m.year).slice(2)}`,
+      cumplimiento: pct,
+      total,
+      ok,
+      nook: Math.max(0, total - ok),
+    }
+  })
 
   return (
     <div className="space-y-6">
@@ -312,8 +319,19 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
           <CardHeader>
             <CardTitle className="text-base">Evolución mensual</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Barras = observaciones cargadas · Línea = % cumplimiento (clic en un mes para filtrar)
+              Alto de la barra = cantidad de OWD hechas en el mes · Arriba de cada barra: % de
+              cumplimiento (meta ≥ {meta.toFixed(0)}%). Clic en un mes para filtrar.
             </p>
+            <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-slate-600">
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm" style={{ background: "#16a34a" }} />
+                Cumplido
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm" style={{ background: "#dc2626" }} />
+                No cumplido
+              </span>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="h-72">
@@ -323,55 +341,88 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
                 </p>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={evolData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="name" fontSize={11} />
-                    <YAxis yAxisId="left" fontSize={11} allowDecimals={false} />
+                  <BarChart data={evolData} margin={{ top: 24, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="name" fontSize={11} tickLine={false} />
                     <YAxis
-                      yAxisId="right"
-                      orientation="right"
                       fontSize={11}
-                      unit="%"
-                      domain={[0, 100]}
+                      allowDecimals={false}
+                      tickLine={false}
+                      axisLine={false}
+                      label={{
+                        value: "Cantidad de OWD",
+                        angle: -90,
+                        position: "insideLeft",
+                        fontSize: 11,
+                        fill: "#64748b",
+                        style: { textAnchor: "middle" },
+                      }}
                     />
                     <Tooltip
-                      formatter={(v, n) =>
-                        n === "cumplimiento" ? [`${v}%`, "Cumplimiento"] : [v, "Observaciones"]
-                      }
-                    />
-                    <ReferenceLine
-                      yAxisId="right"
-                      y={meta}
-                      stroke="#10B981"
-                      strokeDasharray="5 5"
-                      label={{ value: `Meta ${meta.toFixed(0)}%`, position: "right", fontSize: 10 }}
-                    />
-                    <Bar
-                      yAxisId="left"
-                      dataKey="total"
-                      radius={[4, 4, 0, 0]}
-                      onClick={(d) => {
-                        const k = (d as { payload?: { key?: string } })?.payload?.key
-                        if (k) setSelected(k)
+                      cursor={{ fill: "rgba(148,163,184,0.15)" }}
+                      content={({ active, payload }) => {
+                        const p = active ? (payload?.[0]?.payload as (typeof evolData)[number] | undefined) : undefined
+                        if (!p) return null
+                        return (
+                          <div className="rounded-md border bg-white px-3 py-2 text-xs shadow-sm">
+                            <p className="mb-1 font-semibold text-slate-900">{p.name}</p>
+                            <p>OWD hechas: <b>{p.total}</b></p>
+                            <p>
+                              Cumplimiento:{" "}
+                              <b className={p.cumplimiento >= meta ? "text-green-700" : "text-red-700"}>
+                                {p.cumplimiento.toFixed(1)}%
+                              </b>{" "}
+                              (meta ≥ {meta.toFixed(0)}%)
+                            </p>
+                            <p className="text-red-700">No cumplido: {(100 - p.cumplimiento).toFixed(1)}%</p>
+                          </div>
+                        )
                       }}
-                      cursor="pointer"
-                    >
-                      {evolData.map((e) => (
-                        <Cell
-                          key={e.key}
-                          fill={!esTodos && e.key === selected ? "#1e293b" : "#cbd5e1"}
-                        />
-                      ))}
-                    </Bar>
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="cumplimiento"
-                      stroke="#10B981"
-                      strokeWidth={2}
-                      dot={{ fill: "#10B981", r: 3 }}
                     />
-                  </ComposedChart>
+                    {(["ok", "nook"] as const).map((k) => (
+                      <Bar
+                        key={k}
+                        dataKey={k}
+                        stackId="owd"
+                        maxBarSize={56}
+                        radius={k === "nook" ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                        onClick={(d) => {
+                          const key = (d as { payload?: { key?: string } })?.payload?.key
+                          if (key) setSelected(key)
+                        }}
+                        cursor="pointer"
+                        label={
+                          k === "nook"
+                            ? (props: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {
+                                const e = evolData[props.index ?? 0]
+                                if (!e) return <g />
+                                const x = Number(props.x) + Number(props.width) / 2
+                                return (
+                                  <text
+                                    x={x}
+                                    y={Number(props.y) - 6}
+                                    textAnchor="middle"
+                                    fontSize={12}
+                                    fontWeight={700}
+                                    fill={e.cumplimiento >= meta ? "#15803d" : "#b91c1c"}
+                                  >
+                                    {`${e.cumplimiento.toFixed(0)}%`}
+                                  </text>
+                                )
+                              }
+                            : undefined
+                        }
+                      >
+                        {evolData.map((e) => (
+                          <Cell
+                            key={e.key}
+                            fill={k === "ok" ? "#16a34a" : "#dc2626"}
+                            fillOpacity={esTodos || e.key === selected ? 1 : 0.35}
+                          />
+                        ))}
+                      </Bar>
+                    ))}
+                  </BarChart>
                 </ResponsiveContainer>
               )}
             </div>
