@@ -267,19 +267,6 @@ export async function GET(req: NextRequest) {
       }
       espacio(doc, 4)
 
-      drawSeccion(doc, "Rechazos por rotura sin OT (a revisar)", "Rechazos con motivo ROTURA DE CAMION sin OT correctiva de la unidad 3 días antes o después: no suman a la punta.")
-      const porPatente = new Map<string, number>()
-      for (const e of p.rechazosSinOt) porPatente.set(e.patente || "-", (porPatente.get(e.patente || "-") ?? 0) + 1)
-      drawParrafo(
-        doc,
-        p.rechazosSinOt.length === 0
-          ? "Ninguno."
-          : `${p.rechazosSinOt.length} días con rechazo sin OT: ${[...porPatente.entries()]
-              .sort((a, b) => b[1] - a[1])
-              .map(([pat, n]) => `${pat} ${n}`)
-              .join(", ")}. ${p.rechazosConOt.length} rechazo(s) validado(s) con OT.`
-      )
-      espacio(doc, 6)
       drawParrafo(
         doc,
         "Fuente: Órdenes de Trabajo de la app (sistema de gestión de flota, R4.2.1), sin canceladas; focos de checklist (un problema reportado varios días cuenta una vez); control de aceite del CIL; rechazos de Chess. Rotura = OT correctiva con auxilio en ruta o con la unidad fuera de servicio 1 día o más, o con rechazo por rotura de la unidad 3 días antes o después. Costo = el mayor entre la cabecera y el desglose de la OT. MTBF = unidades activas por días del período sobre fallas. MTTR = mediana de horas entre entrada y salida de taller.",

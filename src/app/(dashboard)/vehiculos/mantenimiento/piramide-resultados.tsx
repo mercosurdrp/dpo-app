@@ -328,8 +328,8 @@ function PiramideContenido({
             <DpoResponde puntos={["4.2"]} requisitos={["R4.2.3"]} />
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Cada evento cuenta una sola vez, en su nivel más alto. El ancho de cada escalón es proporcional a su
-            cantidad: una pirámide sana tiene la base (lo planificado) más ancha que todo lo de arriba.
+            Cada evento cuenta una sola vez, en su nivel más alto. Una pirámide sana tiene más eventos en la base
+            (lo planificado) que en cada escalón de arriba, hasta la rotura en la punta.
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -608,52 +608,6 @@ function PiramideContenido({
         </CardContent>
       </Card>
 
-      {/* 7. Rechazos por rotura a revisar */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold">
-            Rechazos por rotura sin OT · a revisar ({p.rechazosSinOt.length})
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Rechazos de entrega con motivo «ROTURA DE CAMION - SINIESTRO» sin ninguna OT correctiva de esa unidad ±3
-            días. No suman a la punta de la pirámide: o falta cargar la OT (y el tilde de auxilio en ruta), o el
-            motivo del rechazo está mal elegido en Chess. {p.rechazosConOt.length} rechazo(s) sí tienen OT y cuentan
-            como rotura.
-          </p>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          {p.rechazosSinOt.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sin rechazos por rotura pendientes de revisar.</p>
-          ) : (
-            <>
-              <ResumenPatentes eventos={p.rechazosSinOt} />
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Unidad</TableHead>
-                    <TableHead className="text-right">Docs</TableHead>
-                    <TableHead className="text-right">Bultos</TableHead>
-                    <TableHead>Clientes</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {p.rechazosSinOt.map((e) => (
-                    <TableRow key={`${e.fecha}-${e.patente}`}>
-                      <TableCell className="whitespace-nowrap">{fmtFecha(e.fecha)}</TableCell>
-                      <TableCell className="font-medium">{e.patente || "—"}</TableCell>
-                      <TableCell className="text-right">{e.docs}</TableCell>
-                      <TableCell className="text-right">{fmtNum(e.bultos)}</TableCell>
-                      <TableCell className="max-w-72 truncate text-muted-foreground">{e.clientes.join(", ") || "—"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
       {dialogs}
     </div>
   )
@@ -679,7 +633,6 @@ function PiramideBarras({
   detalle: PiramideFlotaRespuesta["piramide"] | null
 }) {
   const orden = [...NIVELES_PIRAMIDE].reverse() // punta arriba
-  const max = Math.max(1, ...orden.map((n) => conteo[n.key]))
   const costo: Record<NivelPiramide, number | null> = {
     rotura: conteo.costoRotura,
     correctivo: conteo.costoCorrectivo,
@@ -692,13 +645,25 @@ function PiramideBarras({
         deteccion: `${detalle.detalleDeteccion.checklist} focos de checklist (${detalle.detalleDeteccion.criticos} críticos) · ${detalle.detalleDeteccion.cil} hallazgos CIL`,
       }
     : {}
+  // Triángulo partido en franjas de igual alto: la forma es fija (punta arriba) y
+  // el número va adentro de cada franja. Cada franja es un trapecio recortado con
+  // clip-path; la de arriba arranca en 0 de ancho, así cierra en punta.
+  const total = orden.length
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-[3px]">
       {orden.map((n, i) => {
         const v = conteo[n.key]
         const abajo = orden[i + 1]
         const vAbajo = abajo ? conteo[abajo.key] : 0
-        const ancho = Math.max(6, (v / max) * 100)
+        const arriba = (50 * i) / total // semiancho (%) del borde superior
+        const base = (50 * (i + 1)) / total // semiancho (%) del borde inferior
+        const clip = `polygon(${50 - arriba}% 0, ${50 + arriba}% 0, ${50 + base}% 100%, ${50 - base}% 100%)`
+        const extra = (
+          <>
+            {costo[n.key] != null && <span>{fmtMoneyOt(costo[n.key] ?? 0)}</span>}
+            {abajo && v > 0 && vAbajo > 0 && <span className="ml-2">· 1 cada {fmt1(vAbajo / v)}</span>}
+          </>
+        )
         return (
           <div key={n.key} className="grid grid-cols-[minmax(0,9rem)_1fr] items-center gap-2 sm:grid-cols-[13rem_1fr_9rem]">
             <div className="min-w-0">
@@ -706,20 +671,17 @@ function PiramideBarras({
                 {n.titulo}
               </p>
               <p className="hidden truncate text-[11px] text-muted-foreground sm:block">{sub[n.key] ?? n.detalle}</p>
+              {/* En celu el costo va acá: una fila aparte cortaría el triángulo. */}
+              <p className="text-[11px] text-muted-foreground sm:hidden">{extra}</p>
             </div>
-            <div className="flex justify-center">
-              <div
-                className="flex h-9 items-center justify-center rounded-sm text-sm font-bold text-white transition-all"
-                style={{ width: `${ancho}%`, background: color[n.key] }}
-                title={`${n.titulo}: ${v}`}
-              >
-                {fmtNum(v)}
-              </div>
+            <div
+              className={`flex h-14 justify-center text-sm font-bold text-white ${i === 0 ? "items-end pb-1.5" : "items-center"}`}
+              style={{ clipPath: clip, background: color[n.key] }}
+              title={`${n.titulo}: ${v}`}
+            >
+              {fmtNum(v)}
             </div>
-            <div className="col-span-2 text-[11px] text-muted-foreground sm:col-span-1 sm:text-right">
-              {costo[n.key] != null && <span>{fmtMoneyOt(costo[n.key] ?? 0)}</span>}
-              {abajo && v > 0 && vAbajo > 0 && <span className="ml-2">· 1 cada {fmt1(vAbajo / v)}</span>}
-            </div>
+            <div className="hidden text-right text-[11px] text-muted-foreground sm:block">{extra}</div>
           </div>
         )
       })}
@@ -980,17 +942,6 @@ function TablaTalleres({
         </TableBody>
       </Table>
     </>
-  )
-}
-
-function ResumenPatentes({ eventos }: { eventos: Array<{ patente: string; docs: number }> }) {
-  const por = new Map<string, number>()
-  for (const e of eventos) por.set(e.patente || "—", (por.get(e.patente || "—") ?? 0) + 1)
-  const lista = [...por.entries()].sort((a, b) => b[1] - a[1])
-  return (
-    <p className="mb-2 text-xs">
-      <strong>Por unidad:</strong> {lista.map(([pat, n]) => `${pat} ${n} día(s)`).join(" · ")}
-    </p>
   )
 }
 
