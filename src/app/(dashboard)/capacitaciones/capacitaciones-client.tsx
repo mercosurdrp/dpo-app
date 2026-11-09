@@ -448,7 +448,7 @@ export function CapacitacionesClient({
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard label="Calendarizadas" value={stats.total} color="#6366F1" />
         <StatCard label="Pendientes" value={stats.programadas} color={ESTADO_CAPACITACION_COLORS.programada} />
         <StatCard label="En Curso" value={stats.enCurso} color={ESTADO_CAPACITACION_COLORS.en_curso} />
@@ -460,16 +460,16 @@ export function CapacitacionesClient({
           aria-label="Ver capacitaciones realizadas"
         >
           <Card className="transition-shadow hover:shadow-md">
-            <CardContent className="flex items-center gap-3 p-4">
+            <CardContent className="flex items-center gap-2.5 px-3 py-2">
               <div
-                className="flex size-10 items-center justify-center rounded-lg text-sm font-bold text-white"
+                className="flex size-8 items-center justify-center rounded-md text-xs font-bold text-white"
                 style={{ backgroundColor: "#0EA5E9" }}
               >
                 {stats.pctRealizadas}%
               </div>
               <div className="flex flex-col">
-                <span className="text-sm font-medium text-slate-600">Cumplimiento anual</span>
-                <span className="text-xs text-slate-400">Ver realizadas</span>
+                <span className="text-xs font-medium text-slate-600">Cumplimiento anual</span>
+                <span className="text-[11px] text-slate-400">Ver realizadas</span>
               </div>
             </CardContent>
           </Card>
@@ -861,14 +861,14 @@ function StatCard({
 }) {
   return (
     <Card>
-      <CardContent className="flex items-center gap-3 p-4">
+      <CardContent className="flex items-center gap-2.5 px-3 py-2">
         <div
-          className="flex size-10 items-center justify-center rounded-lg text-lg font-bold text-white"
+          className="flex size-8 items-center justify-center rounded-md text-sm font-bold text-white"
           style={{ backgroundColor: color }}
         >
           {value}
         </div>
-        <span className="text-sm font-medium text-slate-600">{label}</span>
+        <span className="text-xs font-medium text-slate-600">{label}</span>
       </CardContent>
     </Card>
   )

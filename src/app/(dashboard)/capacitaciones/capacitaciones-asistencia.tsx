@@ -121,9 +121,9 @@ export function CapacitacionesAsistencia({ capacitaciones, hoy, porEmpleado }: P
       </CardHeader>
 
       {abierto && (
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-4">
           {/* KPIs */}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             <button
               type="button"
               onClick={() => setVerDetalle((v) => !v)}
@@ -566,7 +566,7 @@ function Kpi({
 }) {
   return (
     <div
-      className="h-full rounded-lg border p-3"
+      className="h-full rounded-lg border px-3 py-2"
       style={{
         borderColor: color + "40",
         backgroundColor: destacado ? color + "0D" : undefined,
@@ -574,10 +574,10 @@ function Kpi({
     >
       <div className="flex items-center gap-1.5" style={{ color }}>
         {icono}
-        <span className={`font-bold ${destacado ? "text-3xl" : "text-2xl"}`}>{valor}</span>
+        <span className={`font-bold leading-tight ${destacado ? "text-xl" : "text-lg"}`}>{valor}</span>
       </div>
-      <p className="mt-0.5 text-sm font-medium text-slate-700">{label}</p>
-      <p className="text-xs text-slate-500">{detalle}</p>
+      <p className="text-xs font-medium text-slate-700">{label}</p>
+      <p className="truncate text-[11px] text-slate-500" title={detalle}>{detalle}</p>
     </div>
   )
 }
