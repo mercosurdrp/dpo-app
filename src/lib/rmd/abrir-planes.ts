@@ -131,7 +131,9 @@ export async function abrirPlanesRmdPendientes(
     if (error) throw new Error(error.message)
     planes.push(...((data ?? []) as typeof planes))
   }
-  const primerCierre = new Map<string, string>()
+  // Todos los avances de cierre de cada plan (un plan puede registrar varias
+  // visitas), igual que `getCierresPorCliente` en actions/sla.ts.
+  const cierresDelPlan = new Map<string, string[]>()
   const completados = planes.filter((p) => p.estado === "completado")
   for (let i = 0; i < completados.length; i += 200) {
     const { data, error } = await supabase
@@ -141,8 +143,7 @@ export async function abrirPlanesRmdPendientes(
       .eq("estado_resultante", "completado")
     if (error) throw new Error(error.message)
     for (const a of (data ?? []) as Array<{ plan_id: string; created_at: string }>) {
-      const prev = primerCierre.get(a.plan_id)
-      if (!prev || a.created_at < prev) primerCierre.set(a.plan_id, a.created_at)
+      cierresDelPlan.set(a.plan_id, [...(cierresDelPlan.get(a.plan_id) ?? []), a.created_at])
     }
   }
   const conPlanAbierto = new Set<number>()
@@ -153,8 +154,8 @@ export async function abrirPlanesRmdPendientes(
       conPlanAbierto.add(cli)
       continue
     }
-    const cierre = (primerCierre.get(p.id) ?? p.updated_at).slice(0, 10)
-    cierres.set(cli, [...(cierres.get(cli) ?? []), cierre])
+    const delPlan = (cierresDelPlan.get(p.id) ?? [p.updated_at]).map((c) => c.slice(0, 10))
+    cierres.set(cli, [...(cierres.get(cli) ?? []), ...delPlan])
   }
 
   // 3. Casos sin cubrir, agrupados por cliente.

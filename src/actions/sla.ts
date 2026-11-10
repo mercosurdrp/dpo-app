@@ -1288,6 +1288,12 @@ async function getCasosCrudos(
  * cualquier edición posterior pisa `updated_at` y correría la fecha. Sólo se
  * cae a `updated_at` cuando el plan figura completado sin ningún avance que lo
  * marque (se cambió el estado editando el plan a mano).
+ *
+ * 🚨 Cuenta TODOS los avances de cierre de un plan, no sólo el primero: un
+ * mismo plan puede registrar varias visitas al cliente (cada una cierra los
+ * casos anteriores que seguían en plazo). Con sólo el primero, una visita vieja
+ * cargada tarde tapaba las posteriores y el 10/11/2026 hubo que abrir planes
+ * aparte por cada visita.
  */
 async function getCierresPorCliente(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -1310,8 +1316,8 @@ async function getCierresPorCliente(
   }>
   if (filas.length === 0) return cierres
 
-  // Primer avance que dejó cada plan en "completado".
-  const primerCierre = new Map<string, string>()
+  // Todos los avances que dejaron cada plan en "completado".
+  const cierresDelPlan = new Map<string, string[]>()
   const { data: avances } = await supabase
     .from(tablaAvances)
     .select("plan_id, created_at")
@@ -1321,16 +1327,18 @@ async function getCierresPorCliente(
     )
     .eq("estado_resultante", "completado")
   for (const a of (avances ?? []) as Array<{ plan_id: string; created_at: string }>) {
-    const prev = primerCierre.get(a.plan_id)
-    if (!prev || a.created_at < prev) primerCierre.set(a.plan_id, a.created_at)
+    const lista = cierresDelPlan.get(a.plan_id) ?? []
+    lista.push(a.created_at)
+    cierresDelPlan.set(a.plan_id, lista)
   }
 
   for (const p of filas) {
     if (p.foco_cliente_id == null) continue
-    const cierre = primerCierre.get(p.id) ?? (p.estado === "completado" ? p.updated_at : null)
-    if (!cierre) continue
+    const delPlan =
+      cierresDelPlan.get(p.id) ?? (p.estado === "completado" ? [p.updated_at] : [])
+    if (delPlan.length === 0) continue
     const lista = cierres.get(p.foco_cliente_id) ?? []
-    lista.push(cierre.slice(0, 10))
+    lista.push(...delPlan.map((c) => c.slice(0, 10)))
     cierres.set(p.foco_cliente_id, lista)
   }
   return cierres
