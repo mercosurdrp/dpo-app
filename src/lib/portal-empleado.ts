@@ -18,7 +18,6 @@ import {
   PackageX,
   Recycle,
   Refrigerator,
-  ScrollText,
   ShieldAlert,
   Shirt,
   Sparkles,
@@ -147,16 +146,6 @@ export const MODULOS_PORTAL: ModuloPortal[] = [
     visible: (ctx) => ctx.puedeVehiculos,
     acceso: () => true,
     subrutas: false,
-  },
-  // Remitos internos (mudanza y traslados): el operador en destino confirma
-  // la descarga. Se entra por el QR del remito impreso o desde el menú.
-  {
-    id: "remitos-internos",
-    label: "Remitos internos",
-    href: "/remitos-internos",
-    icon: ScrollText,
-    empresas: PAMPEANA,
-    grupo: "trabajo",
   },
   {
     id: "mi-productividad",
