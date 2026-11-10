@@ -43,6 +43,7 @@ import {
   AJUSTE_TRASLADO_MINUTOS,
   calcularTiempoRuta,
   filtrarPorZona,
+  minutosAjustados,
   type RetornoRuta,
 } from "@/lib/tiempo-ruta/meta"
 import {
@@ -131,7 +132,7 @@ function formatHora(isoStr: string) {
   return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })
 }
 
-export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes }: Props) {
+export function TiempoRutaClient({ kpis, vehiculos, clientes, planes }: Props) {
   const [tab, setTab] = useState("semanal")
   // Vista oficial = ajustada por traslado y todas las zonas (la que pide planes).
   const [ajustar, setAjustar] = useState(true)
@@ -141,6 +142,15 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
     [kpis.retornos, zona, ajustar],
   )
   const sinDato = kpis.retornos.filter((r) => !r.ruta).length
+  // La lista de abajo sigue al filtro de zona: los 50 retornos más recientes de la zona elegida.
+  const ultimos = useMemo(
+    () =>
+      filtrarPorZona(kpis.retornos, zona)
+        .slice()
+        .sort((a, b) => (b.fecha + (b.hora ?? "")).localeCompare(a.fecha + (a.hora ?? "")))
+        .slice(0, 50),
+    [kpis.retornos, zona],
+  )
   const lejanas = Object.entries(AJUSTE_TRASLADO_MINUTOS)
     .map(([ruta, min]) => `${ruta} −${min / 60} h`)
     .join(" · ")
@@ -447,7 +457,9 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
       {/* Recent retorno checklists */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Últimos Retornos</CardTitle>
+          <CardTitle className="text-base">
+            Últimos retornos{zona !== "todas" ? ` · ${zona === "sin_lejanas" ? "sin Pergamino ni Colón" : zona === "sin_dato" ? "sin dato de zona" : zona}` : ""}
+          </CardTitle>
           <Link href="/vehiculos">
             <Button variant="outline" size="sm">
               Ver todos
@@ -455,9 +467,9 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
           </Link>
         </CardHeader>
         <CardContent>
-          {checklists.length === 0 ? (
+          {ultimos.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">
-              No hay checklists de retorno registrados. El tiempo en ruta se calcula automáticamente al completar el checklist de retorno.
+              No hay retornos para esta zona. El tiempo en ruta se calcula automáticamente al completar el checklist de retorno.
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -467,42 +479,57 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
                     <TableHead>Fecha</TableHead>
                     <TableHead>Hora Retorno</TableHead>
                     <TableHead>Dominio</TableHead>
+                    <TableHead>Zona</TableHead>
                     <TableHead>Chofer</TableHead>
                     <TableHead>Resultado</TableHead>
-                    <TableHead className="text-right">Tiempo Ruta</TableHead>
+                    <TableHead className="text-right">Tiempo real</TableHead>
+                    {ajustar && <TableHead className="text-right">Ajustado</TableHead>}
                     <TableHead className="text-right w-16"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {checklists.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell className="text-sm">{c.fecha}</TableCell>
-                      <TableCell className="text-sm font-mono">{formatHora(c.hora)}</TableCell>
-                      <TableCell className="font-medium">{c.dominio}</TableCell>
-                      <TableCell className="text-sm">{c.chofer}</TableCell>
-                      <TableCell>
-                        <Badge className={
-                          c.resultado === "aprobado"
-                            ? "bg-green-100 text-green-700 hover:bg-green-100"
-                            : "bg-red-100 text-red-700 hover:bg-red-100"
-                        }>
-                          {c.resultado === "aprobado" ? "Aprobado" : "Rechazado"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {c.tiempo_ruta_minutos != null ? (
-                          <TiempoRutaBadge minutos={c.tiempo_ruta_minutos} />
-                        ) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Link href={`/vehiculos/checklist/${c.id}`}>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                            <Eye className="h-3.5 w-3.5" />
-                          </Button>
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {ultimos.map((c) => {
+                    const ajustado = minutosAjustados(c, true)
+                    return (
+                      <TableRow key={c.id ?? `${c.fecha}-${c.dominio}`}>
+                        <TableCell className="text-sm">{c.fecha}</TableCell>
+                        <TableCell className="text-sm font-mono">{c.hora ? formatHora(c.hora) : "—"}</TableCell>
+                        <TableCell className="font-medium">{c.dominio}</TableCell>
+                        <TableCell className="text-sm">{c.ruta ?? <span className="text-muted-foreground">sin dato</span>}</TableCell>
+                        <TableCell className="text-sm">{c.chofer}</TableCell>
+                        <TableCell>
+                          <Badge className={
+                            c.resultado === "aprobado"
+                              ? "bg-green-100 text-green-700 hover:bg-green-100"
+                              : "bg-red-100 text-red-700 hover:bg-red-100"
+                          }>
+                            {c.resultado === "aprobado" ? "Aprobado" : "Rechazado"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {ajustar && ajustado !== c.minutos ? (
+                            <span className="text-sm text-muted-foreground">{formatMinutosToHoras(c.minutos)}</span>
+                          ) : (
+                            <TiempoRutaBadge minutos={c.minutos} />
+                          )}
+                        </TableCell>
+                        {ajustar && (
+                          <TableCell className="text-right">
+                            {ajustado !== c.minutos ? <TiempoRutaBadge minutos={ajustado} /> : <span className="text-muted-foreground">=</span>}
+                          </TableCell>
+                        )}
+                        <TableCell className="text-right">
+                          {c.id && (
+                            <Link href={`/vehiculos/checklist/${c.id}`}>
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                            </Link>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </div>

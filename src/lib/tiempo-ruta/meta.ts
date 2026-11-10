@@ -39,6 +39,12 @@ export interface RetornoRuta {
   ruta: string | null
   /** Tiempo real puerta a puerta. */
   minutos: number
+  /** Datos del checklist de retorno, para la lista de la pantalla. */
+  id?: string
+  dominio?: string | null
+  chofer?: string | null
+  hora?: string | null
+  resultado?: string | null
 }
 
 /** "todas" | "sin_lejanas" (sin Pergamino ni Colón) | "sin_dato" | nombre de una ruta. */

@@ -905,11 +905,13 @@ export async function getTiempoRutaKpis(filters?: {
 
     // Paginado: sin filtros esto ya pasa las 1000 filas y PostgREST cortaba
     // en silencio — la pantalla quedaba congelada en septiembre.
-    const registros = await leerTodo<Pick<ChecklistVehiculo, "fecha" | "dominio" | "tiempo_ruta_minutos">>(
+    const registros = await leerTodo<
+      Pick<ChecklistVehiculo, "id" | "fecha" | "dominio" | "chofer" | "hora" | "resultado" | "tiempo_ruta_minutos">
+    >(
       (desde, hasta) => {
         let query = supabase
           .from("checklist_vehiculos")
-          .select("fecha, dominio, tiempo_ruta_minutos")
+          .select("id, fecha, dominio, chofer, hora, resultado, tiempo_ruta_minutos")
           .eq("tipo", "retorno")
           .not("tiempo_ruta_minutos", "is", null)
         if (filters?.fechaDesde) query = query.gte("fecha", filters.fechaDesde)
@@ -971,6 +973,11 @@ export async function getTiempoRutaKpis(filters?: {
       fecha: r.fecha,
       ruta: rutaDelDia.get(`${r.fecha}|${norm(r.dominio ?? "")}`) ?? null,
       minutos: r.tiempo_ruta_minutos!,
+      id: r.id,
+      dominio: r.dominio,
+      chofer: r.chofer,
+      hora: r.hora,
+      resultado: r.resultado,
     }))
     const rutas = [...new Set(retornos.map((r) => r.ruta).filter((x): x is string => !!x))].sort()
 
