@@ -10,10 +10,12 @@ import { getMiSector5S } from "@/actions/s5-mi-sector"
 import { IS_MISIONES } from "@/lib/empresa"
 import { puedeOperarVehiculos, puedeCargarCil } from "@/lib/acarreo-operadores"
 import { SuenoSection, SuenoSkeleton } from "@/components/sueno/sueno-section"
+import { getNovedadesVigentes } from "@/actions/novedades"
+import { NovedadesCartelera } from "@/components/portal/novedades-cartelera"
 import { MisCapacitacionesClient } from "./mis-capacitaciones-client"
 
 export default async function MisCapacitacionesPage() {
-  const [result, profile, reunionRes, warehouseRes, logisticaRes, dashRes, entregaRes, sobreRes, mi5sRes] = await Promise.all([
+  const [result, profile, reunionRes, warehouseRes, logisticaRes, dashRes, entregaRes, sobreRes, mi5sRes, novedadesRes] = await Promise.all([
     getMisCapacitaciones(),
     getProfile(),
     getEstadoReunionHoy(),
@@ -24,6 +26,7 @@ export default async function MisCapacitacionesPage() {
     IS_MISIONES ? getMisSobrecargas() : Promise.resolve(null),
     // El sorteo mensual de 5S corre solo en Pampeana.
     IS_MISIONES ? Promise.resolve(null) : getMiSector5S(),
+    getNovedadesVigentes(),
   ])
 
   if ("error" in result) {
@@ -51,6 +54,7 @@ export default async function MisCapacitacionesPage() {
 
   return (
     <>
+      <NovedadesCartelera novedades={"data" in novedadesRes ? novedadesRes.data : []} />
       <Suspense fallback={<SuenoSkeleton />}>
         <SuenoSection />
       </Suspense>

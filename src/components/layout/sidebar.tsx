@@ -133,6 +133,13 @@ const navItemsFlat: NavItem[] = [
     icon: <ClipboardList className="size-5" />,
   },
   {
+    // Cartelera que ven todos los empleados en su Inicio (cumpleaños, feriados…).
+    label: "Novedades",
+    href: "/novedades",
+    icon: <Megaphone className="size-5" />,
+    roles: ["admin", "supervisor"],
+  },
+  {
     // Bots por pilar: ronda de la mañana por WhatsApp + planes propuestos.
     label: "Bots",
     href: "/bots",
