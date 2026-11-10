@@ -19,6 +19,7 @@ import { cumplimientoPct } from "@/lib/ocupacion-bodega"
 import { esRutaLimpia } from "@/lib/foxtrot/ruta-limpia"
 import { getFueraRutaMensual } from "@/actions/fuera-ruta"
 import { getDqi } from "@/actions/dqi"
+import { resumirModulacion, type AlertaModulacion } from "@/lib/foxtrot-alertas/modulacion"
 
 export interface NodoValor {
   mth: number | null
@@ -127,6 +128,21 @@ async function cargarCalculadora() {
       .gte("fecha_venta", desdeAnio)
       .lte("fecha_venta", hoy)
       .order("fecha_venta", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
+
+  // ── Modulación del rechazo (bot de alertas de Foxtrot) ───────────────
+  // Mismas definiciones que la Matinal (`lib/foxtrot-alertas/modulacion`).
+  // El día en curso NO entra: el vendedor contesta una hora después del aviso
+  // y la re-entrega se resuelve con la ruta, así que hoy siempre daría bajo.
+  const alertas = await traerTodo<AlertaModulacion & { id: string }>((from, to) =>
+    sb
+      .from("foxtrot_alertas_rechazo")
+      .select("id, fecha, outcome, seguimiento_resultado")
+      .gte("fecha", desdeAnio)
+      .lt("fecha", hoy)
+      .order("fecha", { ascending: true })
       .order("id", { ascending: true })
       .range(from, to),
   )
@@ -291,6 +307,7 @@ async function cargarCalculadora() {
     })()
 
     const rechazoPct = div(hlRechazado, hlDistribuido)
+    const modulacion = resumirModulacion(alertas.filter((a) => incluye(a.fecha)))
 
     return {
       rechazo: rechazoPct == null ? null : rechazoPct * 100,
@@ -333,6 +350,9 @@ async function cargarCalculadora() {
       rech_sin_envases: pctMotivo((ds) => ds.includes("SIN ENVASES")),
       // El catálogo trae la variante con y sin tilde: se matchean las dos.
       rech_error_distribucion: pctMotivo((ds) => ds.startsWith("ERROR DE DISTRIBUCI")),
+      // null antes del 05/10/2026 (sin bot) y en meses sin rechazos.
+      modulacion: modulacion.pct_modulacion,
+      exito_modulacion: modulacion.pct_exito,
     }
   }
 

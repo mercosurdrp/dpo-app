@@ -19,9 +19,12 @@
  *     logística. Sus dos actividades (performance de clic y adherencia a la
  *     secuencia) SÍ las tenemos por Foxtrot y se recolgaron de TMR, que es
  *     donde el chofer efectivamente las mueve.
- *   - Adherencia Modulación (%), Rechazo Modulado (%) y Eficiencia Modulación
- *     (%): no modulamos pedidos. Las tareas que colgaban de ahí (Sin Dinero,
- *     No Pedido, Cerrado) se recolgaron de Rechazo en pedidos.
+ *   - Adherencia Modulación (%): la modulación se mide sobre el rechazo ya
+ *     ocurrido. Desde el 05/10/2026 el bot de alertas de Foxtrot da «Rechazo
+ *     modulado» y «Eficiencia de la modulación», que entraron como
+ *     Modulación del rechazo y Éxito de la modulación (10/11/2026). Las
+ *     tareas que colgaban de ahí (Sin Dinero, No Pedido, Cerrado) siguen
+ *     colgando de Rechazo en pedidos.
  *   - Minorista (%) / SMK (%): apertura por canal de venta, que hoy no se
  *     distingue en la base.
  * Un nodo dibujado y siempre vacío le resta credibilidad al tablero, que es
@@ -174,6 +177,35 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     mejorSi: "sin",
     metaDefault: null,
     fuente: "Clientes visitados por ruta (Foxtrot). Cuántas bocas atiende cada camión por viaje.",
+  },
+  // Modulación del rechazo (tarea crítica del mapeo de procesos, SOP 4.3
+  // Rev 2). En el árbol de Tucumán «Rechazo modulado» cuelga de Rechazo en
+  // pedidos. Se mide desde el 05/10/2026 con el bot de alertas de Foxtrot:
+  // mismas definiciones que la Matinal de Distribución
+  // (`@/lib/foxtrot-alertas/modulacion`). Antes de esa fecha no hay dato.
+  {
+    key: "modulacion",
+    label: "Modulación del rechazo",
+    nivel: "actividad",
+    parentKey: "rechazo_pedidos",
+    unidad: "%",
+    mejorSi: "mayor",
+    metaDefault: 100,
+    fuente:
+      "Rechazos que el vendedor gestionó (respondió el seguimiento del bot: se entregó / se reprograma / se perdió) ÷ rechazos avisados por el bot. Mismo cálculo que la fila de la Matinal de Distribución; el día en curso no se cuenta. Medido desde el 05/10/2026.",
+    href: "/indicadores/foxtrot-tracking/alertas",
+  },
+  {
+    key: "exito_modulacion",
+    label: "Éxito de la modulación",
+    nivel: "actividad",
+    parentKey: "rechazo_pedidos",
+    unidad: "%",
+    mejorSi: "mayor",
+    metaDefault: 100,
+    fuente:
+      "Rechazos gestionados que Foxtrot registra entregados el mismo día, después del rechazo ÷ rechazos gestionados. Lo confirma Foxtrot, no la respuesta del vendedor. Mismo cálculo que la Matinal de Distribución; medido desde el 05/10/2026.",
+    href: "/indicadores/foxtrot-tracking/alertas/efectividad",
   },
   {
     key: "click_score",
@@ -372,17 +404,8 @@ export const NODOS_SIN_FUENTE: { label: string; nivel: NivelKpi; motivo: string 
   {
     label: "Adherencia Modulación",
     nivel: "proceso",
-    motivo: "No modulamos pedidos: no hay proceso de modulación que medir.",
-  },
-  {
-    label: "Rechazo Modulado",
-    nivel: "actividad",
-    motivo: "Depende de la modulación de pedidos, que no existe en Pampeana.",
-  },
-  {
-    label: "Eficiencia Modulación",
-    nivel: "actividad",
-    motivo: "Depende de la modulación de pedidos, que no existe en Pampeana.",
+    motivo:
+      "En Pampeana la modulación se mide en el rechazo ya ocurrido (Modulación del rechazo y Éxito de la modulación, que cuelgan de Rechazo en pedidos), no como un proceso aparte.",
   },
   {
     label: "Dispersión de KM",
