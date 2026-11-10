@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, useTransition } from "react"
+import { esFeriado } from "@/lib/feriados-ar"
 import { toast } from "sonner"
 import { PackageX, Loader2, ClipboardList, CheckCircle2 } from "lucide-react"
 import {
@@ -27,11 +28,15 @@ import {
 } from "@/types/roturas"
 import type { UserRole } from "@/types/database"
 
+function isoLocal(dt: Date): string {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`
+}
+
 function ultimoDiaHabilAnterior(fechaReunionIso: string): string {
   const [y, m, d] = fechaReunionIso.split("-").map(Number)
   const dt = new Date(y, m - 1, d)
   dt.setDate(dt.getDate() - 1)
-  while (dt.getDay() === 0 || dt.getDay() === 6) {
+  while (dt.getDay() === 0 || dt.getDay() === 6 || esFeriado(isoLocal(dt))) {
     dt.setDate(dt.getDate() - 1)
   }
   const yy = dt.getFullYear()

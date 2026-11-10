@@ -28,6 +28,7 @@ const FERIADOS_AR: Record<number, ReadonlySet<string>> = {
     "2026-07-09", // Independencia
     "2026-08-17", // San Martín
     "2026-10-12", // Diversidad
+    "2026-11-09", // Feriado decretado (puente)
     "2026-11-23", // Soberanía
     "2026-12-08", // Inmaculada Concepción
     "2026-12-25", // Navidad
