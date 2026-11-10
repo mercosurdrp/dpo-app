@@ -427,6 +427,14 @@ const navItemsFlat: NavItem[] = [
     hideForEmpleado: true,
     pampeanaOnly: true,
   },
+  {
+    // Remitos de traslado entre depósitos propios (mudanza y después). Lo ven
+    // todos: el operador en destino confirma la descarga desde acá o por QR.
+    label: "Remitos internos",
+    href: "/remitos-internos",
+    icon: <ScrollText className="size-5" />,
+    pampeanaOnly: true,
+  },
 ]
 
 // ===== Menú agrupado por dominio (rediseño 2026-08) =====
@@ -496,7 +504,7 @@ export const navSections: NavGroup[] = [
     "/sugerencias",
   ]),
   grupo("Gestión", ["/herramientas-gestion", "/presupuesto", "/sla", "/huella-carbono"]),
-  grupo("Mudanza", ["/mudanza"]),
+  grupo("Mudanza", ["/mudanza", "/remitos-internos"]),
 ]
 
 // Red de seguridad: un item nuevo agregado a navItemsFlat pero olvidado en los
