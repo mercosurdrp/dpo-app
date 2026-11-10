@@ -1,5 +1,6 @@
 "use client"
 
+import { TML_META_MINUTOS } from "@/lib/tml/calculo"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import Link from "next/link"
@@ -112,11 +113,11 @@ export function ChoferDetalleClient({ data, desde, hasta }: Props) {
               valueClass={
                 data.kpis.tml_promedio == null
                   ? "text-slate-400"
-                  : data.kpis.tml_promedio <= 25
+                  : data.kpis.tml_promedio <= TML_META_MINUTOS
                     ? "text-emerald-700"
                     : "text-red-700"
               }
-              sub="meta 25 min"
+              sub={`meta ${TML_META_MINUTOS} min`}
             />
             <Kpi
               label="% Rechazo"
@@ -198,7 +199,7 @@ function DiaRow({ dia }: { dia: ChoferDetalleDia }) {
           "text-right tabular-nums",
           dia.tml_minutos == null
             ? "text-slate-400"
-            : dia.tml_minutos <= 25
+            : dia.tml_minutos <= TML_META_MINUTOS
               ? "text-emerald-700"
               : "text-red-700",
         )}

@@ -3,6 +3,8 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { registerActivity } from "@/lib/dpo-activity"
+import { leerTodo } from "@/lib/supabase/leer-todo"
+import { TML_META_MINUTOS } from "@/lib/tml/calculo"
 import type {
   TmlPlanAccion,
   TmlPlanAccionItem,
@@ -12,7 +14,6 @@ import type {
   RegistroVehiculo,
 } from "@/types/database"
 
-const TML_META_MINUTOS = 25
 const PCT_META_MINIMO = 65
 
 function mesFueraDeMeta(promedio: number, pct: number): boolean {
@@ -27,13 +28,20 @@ export async function getTmlPlanesResumen(): Promise<
     await requireAuth()
     const supabase = await createClient()
 
-    const [regRes, planRes, itemRes] = await Promise.all([
-      supabase
-        .from("registros_vehiculos")
-        .select("fecha,tml_minutos")
-        .eq("tipo", "egreso")
-        .not("tml_minutos", "is", null)
-        .order("fecha", { ascending: true }),
+    // Paginado: las salidas pasan las 1000 filas y PostgREST cortaba en
+    // silencio, así que los meses más nuevos nunca aparecían como "fuera de
+    // meta" y la app no pedía el plan.
+    const [registros, planRes, itemRes] = await Promise.all([
+      leerTodo<Pick<RegistroVehiculo, "fecha" | "tml_minutos">>((desde, hasta) =>
+        supabase
+          .from("registros_vehiculos")
+          .select("fecha,tml_minutos")
+          .eq("tipo", "egreso")
+          .not("tml_minutos", "is", null)
+          .order("fecha", { ascending: true })
+          .order("id", { ascending: true })
+          .range(desde, hasta),
+      ),
       supabase
         .from("tml_plan_accion")
         .select("*")
@@ -42,11 +50,9 @@ export async function getTmlPlanesResumen(): Promise<
       supabase.from("tml_plan_accion_items").select("*"),
     ])
 
-    if (regRes.error) return { error: regRes.error.message }
     if (planRes.error) return { error: planRes.error.message }
     if (itemRes.error) return { error: itemRes.error.message }
 
-    const registros = (regRes.data || []) as Pick<RegistroVehiculo, "fecha" | "tml_minutos">[]
     const planes = (planRes.data || []) as TmlPlanAccion[]
     const items = (itemRes.data || []) as TmlPlanAccionItem[]
 

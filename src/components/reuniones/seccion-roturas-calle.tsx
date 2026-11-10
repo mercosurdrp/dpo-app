@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
   getRoturasReunion,
+  getRoturasPendientes,
   upsertRoturaPlan,
   marcarRoturaPlanCompletado,
 } from "@/actions/roturas-calle"
@@ -53,6 +54,10 @@ export function SeccionRoturasCalle({
   currentRole?: UserRole
 }) {
   const [roturas, setRoturas] = useState<RoturaConPlan[]>([])
+  // "dia": las del último día hábil (lo de siempre). "pendientes": todas las que
+  // siguen sin revisar, de cualquier fecha (DPO Entrega 1.4 · R1.4.2).
+  const [modo, setModo] = useState<"dia" | "pendientes">("dia")
+  const [pendientes, setPendientes] = useState<number | null>(null)
   const [cargando, setCargando] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [, startTransition] = useTransition()
@@ -66,12 +71,16 @@ export function SeccionRoturasCalle({
   function recargar() {
     setCargando(true)
     startTransition(async () => {
-      const res = await getRoturasReunion(fechaObjetivo)
+      const [res, pend] = await Promise.all([
+        modo === "dia" ? getRoturasReunion(fechaObjetivo) : getRoturasPendientes(),
+        getRoturasPendientes(),
+      ])
       if ("error" in res) setErrorMsg(res.error)
       else {
         setRoturas(res.data)
         setErrorMsg(null)
       }
+      setPendientes("error" in pend ? null : pend.data.length)
       setCargando(false)
     })
   }
@@ -79,7 +88,7 @@ export function SeccionRoturasCalle({
   useEffect(() => {
     recargar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fechaObjetivo])
+  }, [fechaObjetivo, modo])
 
   return (
     <Card className="border-orange-200 bg-orange-50/30">
@@ -89,10 +98,23 @@ export function SeccionRoturasCalle({
             <PackageX className="size-5 text-orange-600" />
             Roturas en la calle
           </CardTitle>
-          <span className="text-xs text-muted-foreground">
-            Reportadas el {formatFechaCorta(fechaObjetivo)} ·{" "}
-            {roturas.length} {roturas.length === 1 ? "rotura" : "roturas"}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {modo === "dia"
+                ? `Reportadas el ${formatFechaCorta(fechaObjetivo)}`
+                : "Sin revisar, de todas las fechas"}{" "}
+              · {roturas.length} {roturas.length === 1 ? "rotura" : "roturas"}
+            </span>
+            <Button
+              size="sm"
+              variant={modo === "pendientes" ? "default" : "outline"}
+              onClick={() => setModo(modo === "dia" ? "pendientes" : "dia")}
+            >
+              {modo === "dia"
+                ? `Pendientes de revisar${pendientes != null ? ` (${pendientes})` : ""}`
+                : "Volver al último día"}
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -108,7 +130,9 @@ export function SeccionRoturasCalle({
           </div>
         ) : roturas.length === 0 ? (
           <p className="rounded-md border border-dashed border-slate-300 bg-white p-4 text-center text-sm text-muted-foreground">
-            Sin roturas reportadas el último día hábil.
+            {modo === "dia"
+              ? "Sin roturas reportadas el último día hábil."
+              : "No quedan roturas sin revisar."}
           </p>
         ) : (
           <ul className="space-y-3">
@@ -140,6 +164,8 @@ function RoturaItem({
   const completado = !!plan?.fecha_completado
   const [saving, startSaving] = useTransition()
 
+  // Con la vista de pendientes la lista cambia de filas: el estado del form se
+  // inicializa por rotura (key={r.id} en el padre), no se arrastra de otra.
   const [descripcion, setDescripcion] = useState(plan?.descripcion ?? "")
   const [responsable, setResponsable] = useState(plan?.responsable ?? "")
   const [fechaPlan, setFechaPlan] = useState(plan?.fecha_planificada ?? "")
@@ -179,6 +205,7 @@ function RoturaItem({
   return (
     <li className="rounded-md border border-slate-200 bg-white p-3">
       <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-slate-500">{formatFechaCorta(rotura.fecha)}</span>
         <Badge variant="outline" className="font-mono">{rotura.patente}</Badge>
         <Badge
           className={

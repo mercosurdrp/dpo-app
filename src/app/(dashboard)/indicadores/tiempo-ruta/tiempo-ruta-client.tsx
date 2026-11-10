@@ -35,6 +35,13 @@ import type {
 } from "@/types/database"
 import type { TiempoRutaClientesData } from "@/actions/tiempo-ruta-cliente"
 import { ClientesTiempo } from "./_components/clientes-tiempo"
+import { PlanesTiempoRuta } from "./_components/planes-tiempo-ruta"
+import type { TiempoRutaPlan } from "@/actions/tiempo-ruta-planes"
+import {
+  TIEMPO_RUTA_META_MINUTOS,
+  TIEMPO_RUTA_TOLERANCIA_MINUTOS,
+  TIEMPO_RUTA_PCT_MINIMO,
+} from "@/lib/tiempo-ruta/meta"
 import {
   Clock,
   Target,
@@ -64,10 +71,14 @@ interface Props {
   vehiculos: CatalogoVehiculo[]
   /** null si la migración del detalle por PDV todavía no está aplicada. */
   clientes: TiempoRutaClientesData | null
+  planes: TiempoRutaPlan[]
 }
 
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-const META_HORAS = 8
+const META_MIN = TIEMPO_RUTA_META_MINUTOS
+const AMARILLO_MIN = TIEMPO_RUTA_META_MINUTOS + TIEMPO_RUTA_TOLERANCIA_MINUTOS
+const META_HORAS = META_MIN / 60
+const META_LABEL = `Meta ${META_HORAS}h`
 
 function formatMinutosToHoras(min: number): string {
   const hh = Math.floor(min / 60)
@@ -77,8 +88,8 @@ function formatMinutosToHoras(min: number): string {
 
 function TiempoRutaBadge({ minutos }: { minutos: number }) {
   const text = formatMinutosToHoras(minutos)
-  if (minutos <= 480) return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">{text}</Badge>
-  if (minutos <= 540) return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">{text}</Badge>
+  if (minutos <= META_MIN) return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">{text}</Badge>
+  if (minutos <= AMARILLO_MIN) return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">{text}</Badge>
   return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{text}</Badge>
 }
 
@@ -111,7 +122,7 @@ function formatHora(isoStr: string) {
   return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })
 }
 
-export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes }: Props) {
+export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes }: Props) {
   const [tab, setTab] = useState("semanal")
 
   const semanalData = kpis.semanal.map((s) => ({
@@ -155,20 +166,20 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes }: Prop
               <div>
                 <p className="text-sm text-muted-foreground">Promedio Ruta</p>
                 <p className={`text-3xl font-bold ${
-                  kpis.promedioMinutos <= 480 ? "text-green-600" : kpis.promedioMinutos <= 540 ? "text-amber-600" : "text-red-600"
+                  kpis.promedioMinutos <= META_MIN ? "text-green-600" : kpis.promedioMinutos <= AMARILLO_MIN ? "text-amber-600" : "text-red-600"
                 }`}>
                   {kpis.promedioHoras}
                 </p>
               </div>
               <div className={`rounded-full p-3 ${
-                kpis.promedioMinutos <= 480 ? "bg-green-100" : kpis.promedioMinutos <= 540 ? "bg-amber-100" : "bg-red-100"
+                kpis.promedioMinutos <= META_MIN ? "bg-green-100" : kpis.promedioMinutos <= AMARILLO_MIN ? "bg-amber-100" : "bg-red-100"
               }`}>
                 <Clock className={`h-5 w-5 ${
-                  kpis.promedioMinutos <= 480 ? "text-green-600" : kpis.promedioMinutos <= 540 ? "text-amber-600" : "text-red-600"
+                  kpis.promedioMinutos <= META_MIN ? "text-green-600" : kpis.promedioMinutos <= AMARILLO_MIN ? "text-amber-600" : "text-red-600"
                 }`} />
               </div>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Meta: ≤ 8 horas</p>
+            <p className="mt-2 text-xs text-muted-foreground">Meta: ≤ {META_HORAS} horas</p>
           </CardContent>
         </Card>
 
@@ -178,16 +189,16 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes }: Prop
               <div>
                 <p className="text-sm text-muted-foreground">% Dentro Meta</p>
                 <p className={`text-3xl font-bold ${
-                  kpis.pctDentroMeta >= 65 ? "text-green-600" : kpis.pctDentroMeta >= 50 ? "text-amber-600" : "text-red-600"
+                  kpis.pctDentroMeta >= TIEMPO_RUTA_PCT_MINIMO ? "text-green-600" : kpis.pctDentroMeta >= 50 ? "text-amber-600" : "text-red-600"
                 }`}>
                   {kpis.pctDentroMeta}%
                 </p>
               </div>
               <div className={`rounded-full p-3 ${
-                kpis.pctDentroMeta >= 65 ? "bg-green-100" : kpis.pctDentroMeta >= 50 ? "bg-amber-100" : "bg-red-100"
+                kpis.pctDentroMeta >= TIEMPO_RUTA_PCT_MINIMO ? "bg-green-100" : kpis.pctDentroMeta >= 50 ? "bg-amber-100" : "bg-red-100"
               }`}>
                 <Target className={`h-5 w-5 ${
-                  kpis.pctDentroMeta >= 65 ? "text-green-600" : kpis.pctDentroMeta >= 50 ? "text-amber-600" : "text-red-600"
+                  kpis.pctDentroMeta >= TIEMPO_RUTA_PCT_MINIMO ? "text-green-600" : kpis.pctDentroMeta >= 50 ? "text-amber-600" : "text-red-600"
                 }`} />
               </div>
             </div>
@@ -259,12 +270,12 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes }: Prop
                         formatter={(value) => [`${value}h`, "Tiempo"]}
                         labelFormatter={(label) => `Semana ${label}`}
                       />
-                      <ReferenceLine y={META_HORAS} stroke="#10B981" strokeDasharray="5 5" label={{ value: "Meta 8h", position: "right", fontSize: 10 }} />
+                      <ReferenceLine y={META_HORAS} stroke="#10B981" strokeDasharray="5 5" label={{ value: META_LABEL, position: "right", fontSize: 10 }} />
                       <Bar dataKey="horas" radius={[4, 4, 0, 0]}>
                         {semanalData.map((entry, index) => (
                           <Cell
                             key={index}
-                            fill={entry.horas <= 8 ? "#10B981" : entry.horas <= 9 ? "#F59E0B" : "#EF4444"}
+                            fill={entry.horas <= META_HORAS ? "#10B981" : entry.horas <= AMARILLO_MIN / 60 ? "#F59E0B" : "#EF4444"}
                           />
                         ))}
                       </Bar>
@@ -320,12 +331,12 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes }: Prop
                       <Tooltip
                         formatter={(value) => [`${value}h`, "Tiempo"]}
                       />
-                      <ReferenceLine y={META_HORAS} stroke="#10B981" strokeDasharray="5 5" label={{ value: "Meta 8h", position: "right", fontSize: 10 }} />
+                      <ReferenceLine y={META_HORAS} stroke="#10B981" strokeDasharray="5 5" label={{ value: META_LABEL, position: "right", fontSize: 10 }} />
                       <Bar dataKey="horas" radius={[4, 4, 0, 0]}>
                         {mensualData.map((entry, index) => (
                           <Cell
                             key={index}
-                            fill={entry.horas <= 8 ? "#10B981" : entry.horas <= 9 ? "#F59E0B" : "#EF4444"}
+                            fill={entry.horas <= META_HORAS ? "#10B981" : entry.horas <= AMARILLO_MIN / 60 ? "#F59E0B" : "#EF4444"}
                           />
                         ))}
                       </Bar>
@@ -377,6 +388,8 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes }: Prop
           </TabsContent>
         )}
       </Tabs>
+
+      <PlanesTiempoRuta mensual={kpis.mensual} metaMinutos={kpis.metaMinutos} planes={planes} />
 
       {/* Recent retorno checklists */}
       <Card>

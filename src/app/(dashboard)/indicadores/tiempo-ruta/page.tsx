@@ -1,6 +1,7 @@
 import { getTiempoRutaKpis, getChecklists } from "@/actions/checklist-vehiculos"
 import { getVehiculos } from "@/actions/registros-vehiculos"
 import { getTiempoRutaClientes } from "@/actions/tiempo-ruta-cliente"
+import { getPlanesTiempoRuta } from "@/actions/tiempo-ruta-planes"
 import { TiempoRutaClient } from "./tiempo-ruta-client"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
@@ -11,11 +12,12 @@ export default async function TiempoRutaPage() {
   const hoy = new Date().toISOString().slice(0, 10)
   const desde = `${hoy.slice(0, 4)}-01-01`
 
-  const [kpisRes, checklistsRes, vehiculosRes, clientesRes] = await Promise.all([
+  const [kpisRes, checklistsRes, vehiculosRes, clientesRes, planesRes] = await Promise.all([
     getTiempoRutaKpis(),
     getChecklists({ tipo: "retorno", limit: 50 }),
     getVehiculos(),
     getTiempoRutaClientes(desde, hoy),
+    getPlanesTiempoRuta(),
   ])
 
   if ("error" in kpisRes) {
@@ -43,6 +45,7 @@ export default async function TiempoRutaPage() {
         checklists={checklists}
         vehiculos={vehiculos}
         clientes={"data" in clientesRes ? clientesRes.data : null}
+        planes={"data" in planesRes ? planesRes.data : []}
       />
     </div>
   )

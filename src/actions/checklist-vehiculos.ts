@@ -7,6 +7,8 @@ import {
   syncIndisponibilidadCritica,
 } from "@/lib/vehiculos/bloqueo-critico"
 import { requireAuth } from "@/lib/session"
+import { leerTodo } from "@/lib/supabase/leer-todo"
+import { TIEMPO_RUTA_META_MINUTOS } from "@/lib/tiempo-ruta/meta"
 import {
   addDays,
   fetchLecturas,
@@ -27,7 +29,7 @@ import type {
   TiempoRutaMensual,
 } from "@/types/database"
 
-const TIEMPO_RUTA_META_MINUTOS = 480 // 8 horas
+// Meta oficial 7 h (SOP 1.2 Rev H2): ver @/lib/tiempo-ruta/meta.
 
 // Corte horario (hora local Argentina) que define el tipo de checklist:
 // antes de las 09:00 → liberación (salida del depósito); 09:00 o después →
@@ -904,21 +906,24 @@ export async function getTiempoRutaKpis(filters?: {
     await requireAuth()
     const supabase = await createClient()
 
-    let query = supabase
-      .from("checklist_vehiculos")
-      .select("*")
-      .eq("tipo", "retorno")
-      .not("tiempo_ruta_minutos", "is", null)
-      .order("fecha", { ascending: true })
-
-    if (filters?.fechaDesde) query = query.gte("fecha", filters.fechaDesde)
-    if (filters?.fechaHasta) query = query.lte("fecha", filters.fechaHasta)
-    if (filters?.dominio) query = query.eq("dominio", filters.dominio)
-
-    const { data, error } = await query
-    if (error) return { error: error.message }
-
-    const registros = (data || []) as ChecklistVehiculo[]
+    // Paginado: sin filtros esto ya pasa las 1000 filas y PostgREST cortaba
+    // en silencio — la pantalla quedaba congelada en septiembre.
+    const registros = await leerTodo<Pick<ChecklistVehiculo, "fecha" | "tiempo_ruta_minutos">>(
+      (desde, hasta) => {
+        let query = supabase
+          .from("checklist_vehiculos")
+          .select("fecha, tiempo_ruta_minutos")
+          .eq("tipo", "retorno")
+          .not("tiempo_ruta_minutos", "is", null)
+        if (filters?.fechaDesde) query = query.gte("fecha", filters.fechaDesde)
+        if (filters?.fechaHasta) query = query.lte("fecha", filters.fechaHasta)
+        if (filters?.dominio) query = query.eq("dominio", filters.dominio)
+        return query
+          .order("fecha", { ascending: true })
+          .order("id", { ascending: true })
+          .range(desde, hasta)
+      },
+    )
 
     if (registros.length === 0) {
       return {

@@ -199,13 +199,30 @@ export async function getRoturasChofer(
 
 // Para la matinal de logística: roturas de una fecha, con su plan de acción.
 export async function getRoturasReunion(fecha: string): Promise<Result<RoturaConPlan[]>> {
+  return leerRoturasConPlan({ fecha })
+}
+
+// Pendientes de revisar (DPO Entrega 1.4 · R1.4.2): todas las roturas que
+// siguen en "reportada", sin importar la fecha. La matinal sólo mostraba las
+// del último día hábil, así que lo que no se trató ese día quedaba olvidado.
+export async function getRoturasPendientes(): Promise<Result<RoturaConPlan[]>> {
+  return leerRoturasConPlan({ soloPendientes: true })
+}
+
+async function leerRoturasConPlan(filtro: {
+  fecha?: string
+  soloPendientes?: boolean
+}): Promise<Result<RoturaConPlan[]>> {
   try {
     await requireAuth()
     const supabase = await createClient()
-    const { data, error } = await supabase
+    let query = supabase
       .from("roturas_calle")
       .select("*, autor:profiles!roturas_calle_creado_por_fkey(id, nombre)")
-      .eq("fecha", fecha)
+    if (filtro.fecha) query = query.eq("fecha", filtro.fecha)
+    if (filtro.soloPendientes) query = query.eq("estado", "reportada")
+    const { data, error } = await query
+      .order("fecha", { ascending: false })
       .order("created_at", { ascending: false })
     if (error) return { error: error.message }
 
@@ -259,6 +276,7 @@ export async function upsertRoturaPlan(
         })
         .eq("id", existing.id)
       if (error) return { error: error.message }
+      await marcarEnRevision(supabase, roturaId)
       revalidatePath("/reuniones")
       return { data: { id: existing.id as string } }
     }
@@ -277,11 +295,23 @@ export async function upsertRoturaPlan(
     if (error || !inserted) {
       return { error: error?.message ?? "No se pudo crear el plan." }
     }
+    await marcarEnRevision(supabase, roturaId)
     revalidatePath("/reuniones")
     return { data: { id: inserted.id as string } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error guardando el plan." }
   }
+}
+
+// Una rotura con plan ya fue revisada: deja de estar "reportada". Sólo avanza
+// desde "reportada" (no reabre una cerrada).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function marcarEnRevision(supabase: any, roturaId: string) {
+  await supabase
+    .from("roturas_calle")
+    .update({ estado: "en_revision" })
+    .eq("id", roturaId)
+    .eq("estado", "reportada")
 }
 
 export async function marcarRoturaPlanCompletado(

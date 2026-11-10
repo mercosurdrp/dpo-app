@@ -3,8 +3,9 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import type { PreRutaEnVivo, PreRutaEquipoLive } from "@/types/database"
+import { TML_META_MINUTOS } from "@/lib/tml/calculo"
 
-const META_MIN = 25
+const META_MIN = TML_META_MINUTOS
 
 interface EmpleadoRow {
   id: string

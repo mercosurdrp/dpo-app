@@ -1,5 +1,6 @@
 "use client"
 
+import { TML_META_MINUTOS } from "@/lib/tml/calculo"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useMemo, useState } from "react"
@@ -255,7 +256,7 @@ export function ChoferesRankingClient({ data, desde, hasta }: Props) {
                           "text-right tabular-nums",
                           f.tml_promedio == null
                             ? "text-slate-400"
-                            : f.tml_promedio <= 25
+                            : f.tml_promedio <= TML_META_MINUTOS
                               ? "text-emerald-700"
                               : "text-red-700",
                         )}

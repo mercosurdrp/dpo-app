@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { adjuntarHerramientas } from "@/lib/reuniones-herramientas"
 import { cargarSerieWnp } from "@/lib/wnp/datos"
+import { TML_META_MINUTOS } from "@/lib/tml/calculo"
 import { requireAuth, getProfile } from "@/lib/session"
 import {
   archivosDeFila,
@@ -3738,7 +3739,7 @@ async function getIndicadoresMesCore(
           id: "auto_tml",
           nombre: "TML",
           unidad: "min",
-          meta: 25,
+          meta: TML_META_MINUTOS,
           orden: -1,
           agregacion: "promedio",
           valores: valoresPorFecha,
@@ -4405,6 +4406,7 @@ async function getIndicadoresMesCore(
         valores: dqiValores,
         mtd: dqiPpm,
         auto: true,
+        mejor_si: "menor",
         // Un día operativo sin roturas en la calle es 0, no "—": el 0 es la
         // buena noticia y hay que poder distinguirlo del día sin datos.
         mostrar_cero: true,

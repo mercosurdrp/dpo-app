@@ -90,14 +90,19 @@ export async function getCapacitaciones(): Promise<
     if (caps.length === 0) return { data: [] }
 
     const capIds = caps.map((c) => c.id)
-    type AsistRow = { capacitacion_id: string; presente: boolean; resultado: ResultadoCapacitacion }
+    type AsistRow = {
+      capacitacion_id: string
+      empleado_id: string
+      presente: boolean
+      resultado: ResultadoCapacitacion
+    }
     const asistencias: AsistRow[] = []
     const PAGE_SIZE = 1000
     let from = 0
     while (true) {
       const { data, error: asistError } = await supabase
         .from("asistencias")
-        .select("capacitacion_id, presente, resultado")
+        .select("capacitacion_id, empleado_id, presente, resultado")
         .in("capacitacion_id", capIds)
         .order("id", { ascending: true })
         .range(from, from + PAGE_SIZE - 1)
@@ -108,11 +113,19 @@ export async function getCapacitaciones(): Promise<
       from += PAGE_SIZE
     }
 
+    // Un empleado dado de baja que quedó inscripto y no aprobó no puede rendir
+    // nunca: contarlo dejaba la capacitación trabada por debajo del 100 % (DPO
+    // pide "todos capacitados" = los que trabajan hoy). Si aprobó antes de
+    // irse, se sigue contando: es un hecho que pasó.
+    const { data: inactivosData } = await supabase.from("empleados").select("id").eq("activo", false)
+    const inactivos = new Set((inactivosData ?? []).map((e) => e.id as string))
+
     const resumen = new Map<
       string,
       { total: number; presentes: number; rendidos: number; pendientes: number; aprobados: number }
     >()
     for (const a of asistencias) {
+      if (inactivos.has(a.empleado_id) && a.resultado !== "aprobado") continue
       const r = resumen.get(a.capacitacion_id) ?? {
         total: 0,
         presentes: 0,

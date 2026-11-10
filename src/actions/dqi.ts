@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
 import { createPlanAccion } from "@/actions/gestion"
 import { getRoturasChofer } from "@/actions/roturas-calle"
+import { PREGUNTA_KEY, preguntaIdPorKey } from "@/lib/dpo/pregunta-por-key"
 import type { PrioridadPlan } from "@/types/database"
 import type { RoturaConDetalle } from "@/types/roturas"
 
@@ -21,8 +22,8 @@ const DEPOSITO_API_BASE = "https://deposito-regionpampeana.vercel.app"
 // la página moría por timeout. Con 8s degrada a null y el resto se muestra.
 const FETCH_TIMEOUT_MS = 8000
 
-// Punto DPO Entrega 1.4 "Calidad de entrega de los productos".
-const PREGUNTA_14_ID = "8d76cc3d-1d4e-4274-ac46-281cf22bdfd2"
+// Punto DPO Entrega 1.4 "Calidad de entrega de los productos". Se busca por la
+// key del manual: el UUID que estaba fijo acá sólo existía en la base de Pampeana.
 const DQI_INDICADOR_NOMBRE = "DQI — Roturas en distribución"
 // Marcador que guardamos en notas para asociar un plan a un mes del DQI.
 const PERIODO_RE = /dqi_periodo=(\d{4})-(\d{2})/
@@ -125,17 +126,18 @@ export async function getDqi(
     // roturas reportadas por choferes desde la app (registro) + insumos de la
     // corrección H2 (reempaque del mes + HL entregados, en paralelo).
     const supabase = await createClient()
+    const pregunta14 = (await preguntaIdPorKey(supabase, PREGUNTA_KEY.ENTREGA_1_4)) ?? ""
     const [{ data: ind }, { data: planesRaw }, roturasRes, reempaqueHl, hlEntregados] = await Promise.all([
       supabase
         .from("indicadores")
         .select("meta")
-        .eq("pregunta_id", PREGUNTA_14_ID)
+        .eq("pregunta_id", pregunta14)
         .eq("nombre", DQI_INDICADOR_NOMBRE)
         .maybeSingle(),
       supabase
         .from("planes_accion")
         .select("id, descripcion, estado, prioridad, notas, fecha_limite, responsable")
-        .eq("pregunta_id", PREGUNTA_14_ID)
+        .eq("pregunta_id", pregunta14)
         .order("created_at", { ascending: false }),
       getRoturasChofer(year, month),
       getReempaqueHlMes(year, month),
@@ -254,9 +256,11 @@ export async function crearPlanDqi(input: {
   await requireAuth()
   if (!input.descripcion.trim()) return { error: "La descripción es obligatoria." }
   if (!input.responsable.trim()) return { error: "El responsable es obligatorio." }
+  const pregunta14 = await preguntaIdPorKey(await createClient(), PREGUNTA_KEY.ENTREGA_1_4)
+  if (!pregunta14) return { error: "No se encontró el punto 1.4 de Entrega en el manual DPO." }
   const periodo = `${input.year}-${String(input.month).padStart(2, "0")}`
   const res = await createPlanAccion({
-    pregunta_id: PREGUNTA_14_ID,
+    pregunta_id: pregunta14,
     descripcion: input.descripcion.trim(),
     responsable: input.responsable.trim(),
     fecha_limite: input.fecha_limite || undefined,

@@ -958,7 +958,10 @@ export async function getResumenPuntos(): Promise<Result<DpoPuntoResumen[]>> {
       supabase.from("pilares").select("id, nombre, orden").order("orden"),
       supabase
         .from("preguntas")
-        .select("pilar_id, numero, pregunta")
+        // `preguntas` no tiene pilar_id ni pregunta: el pilar sale del bloque y
+        // el enunciado es `texto`. Pedir columnas inexistentes hacía fallar la
+        // consulta y /evidencia quedaba vacía sin ningún aviso.
+        .select("numero, texto, bloques!inner(pilar_id)")
         .order("numero"),
     ])
 
@@ -1006,11 +1009,14 @@ export async function getResumenPuntos(): Promise<Result<DpoPuntoResumen[]>> {
     }
     const tituloOficial = new Map<string, { titulo: string; orden: number }>()
     for (const q of preguntasRes.data || []) {
-      const pilar = pilarById.get(q.pilar_id as string)
+      const bloque = q.bloques as unknown as { pilar_id: string } | { pilar_id: string }[] | null
+      const pilarId = Array.isArray(bloque) ? bloque[0]?.pilar_id : bloque?.pilar_id
+      const pilar = pilarById.get(pilarId as string)
       if (!pilar) continue
-      const numero = String(q.numero ?? "").trim()
+      // En la base el número viene como "1,1"; los archivos usan "1.1".
+      const numero = String(q.numero ?? "").trim().replace(",", ".")
       if (!numero) continue
-      const textoCorto = String(q.pregunta ?? "").split(/[\n\r]/)[0].slice(0, 80)
+      const textoCorto = String(q.texto ?? "").split(/[\n\r]/)[0].slice(0, 80)
       const titulo = `${pilar.nombre} ${numero}${textoCorto ? " — " + textoCorto : ""}`
       ensure(pilar.slug, numero)
       tituloOficial.set(keyOf(pilar.slug, numero), { titulo, orden: pilar.orden })

@@ -4,7 +4,9 @@
  * de carga (TML y portería) y en las dos server actions, y divergían.
  */
 
-export const TML_META_MINUTOS = 25
+// Meta oficial DPO (Handbook Entrega 2026 y SOP 1.1): 30 min con ≥65 % de las
+// salidas dentro de meta. Antes la app usaba 25 y la Matinal/SOP 30.
+export const TML_META_MINUTOS = 30
 
 /** Franja de entrada del turno. La liberación se mide contra esta hora. */
 export type FranjaEntrada = 6 | 7
