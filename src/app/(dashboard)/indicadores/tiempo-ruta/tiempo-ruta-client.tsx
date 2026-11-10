@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -40,6 +40,10 @@ import type { TiempoRutaPlan } from "@/actions/tiempo-ruta-planes"
 import {
   TIEMPO_RUTA_META_MINUTOS,
   TIEMPO_RUTA_TOLERANCIA_MINUTOS,
+  AJUSTE_TRASLADO_MINUTOS,
+  calcularTiempoRuta,
+  filtrarPorZona,
+  type RetornoRuta,
 } from "@/lib/tiempo-ruta/meta"
 import {
   Clock,
@@ -62,6 +66,8 @@ interface KpiData {
   metaMinutos: number
   semanal: TiempoRutaSemanal[]
   mensual: TiempoRutaMensual[]
+  retornos: RetornoRuta[]
+  rutas: string[]
 }
 
 interface Props {
@@ -83,6 +89,10 @@ function formatMinutosToHoras(min: number): string {
   const hh = Math.floor(min / 60)
   const mm = min % 60
   return `${hh}h ${mm.toString().padStart(2, "0")}m`
+}
+
+function fmtHHMM(min: number): string {
+  return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`
 }
 
 function TiempoRutaBadge({ minutos }: { minutos: number }) {
@@ -123,15 +133,26 @@ function formatHora(isoStr: string) {
 
 export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes }: Props) {
   const [tab, setTab] = useState("semanal")
+  // Vista oficial = ajustada por traslado y todas las zonas (la que pide planes).
+  const [ajustar, setAjustar] = useState(true)
+  const [zona, setZona] = useState("todas")
+  const vista = useMemo(
+    () => calcularTiempoRuta(filtrarPorZona(kpis.retornos, zona), ajustar),
+    [kpis.retornos, zona, ajustar],
+  )
+  const sinDato = kpis.retornos.filter((r) => !r.ruta).length
+  const lejanas = Object.entries(AJUSTE_TRASLADO_MINUTOS)
+    .map(([ruta, min]) => `${ruta} −${min / 60} h`)
+    .join(" · ")
 
-  const semanalData = kpis.semanal.map((s) => ({
+  const semanalData = vista.semanal.map((s) => ({
     name: `S${s.semana}`,
     horas: +(s.promedio_minutos / 60).toFixed(1),
     pctMeta: s.pct_dentro_meta,
     retornos: s.total_retornos,
   }))
 
-  const mensualData = kpis.mensual.map((m) => ({
+  const mensualData = vista.mensual.map((m) => ({
     name: MESES[m.mes],
     horas: +(m.promedio_minutos / 60).toFixed(1),
     pctMeta: m.pct_dentro_meta,
@@ -157,6 +178,41 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
         </Link>
       </div>
 
+      {/* Filtros: zona y descuento del traslado a las zonas lejanas */}
+      <Card>
+        <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-6">
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Zona</span>
+            <select
+              value={zona}
+              onChange={(e) => setZona(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="todas">Todas las zonas</option>
+              <option value="sin_lejanas">Sin Pergamino ni Colón</option>
+              {kpis.rutas.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+              {sinDato > 0 && <option value="sin_dato">Sin dato de zona ({sinDato})</option>}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={ajustar}
+              onChange={(e) => setAjustar(e.target.checked)}
+              className="size-4 accent-emerald-600"
+            />
+            <span>Descontar el traslado ({lejanas})</span>
+          </label>
+          <p className="w-full text-xs text-muted-foreground">
+            La zona de cada retorno es la de más carga del camión ese día. Promedio real, sin descontar el traslado:{" "}
+            <strong>{fmtHHMM(vista.promedioRealMinutos)}</strong>
+            {ajustar ? " · la meta de 7 h se mide sobre el tiempo ajustado (SOP 1.2)." : "."}
+          </p>
+        </CardContent>
+      </Card>
+
       {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -165,16 +221,16 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
               <div>
                 <p className="text-sm text-muted-foreground">Promedio Ruta</p>
                 <p className={`text-3xl font-bold ${
-                  kpis.promedioMinutos <= META_MIN ? "text-green-600" : kpis.promedioMinutos <= AMARILLO_MIN ? "text-amber-600" : "text-red-600"
+                  vista.promedioMinutos <= META_MIN ? "text-green-600" : vista.promedioMinutos <= AMARILLO_MIN ? "text-amber-600" : "text-red-600"
                 }`}>
-                  {kpis.promedioHoras}
+                  {vista.promedioHoras}
                 </p>
               </div>
               <div className={`rounded-full p-3 ${
-                kpis.promedioMinutos <= META_MIN ? "bg-green-100" : kpis.promedioMinutos <= AMARILLO_MIN ? "bg-amber-100" : "bg-red-100"
+                vista.promedioMinutos <= META_MIN ? "bg-green-100" : vista.promedioMinutos <= AMARILLO_MIN ? "bg-amber-100" : "bg-red-100"
               }`}>
                 <Clock className={`h-5 w-5 ${
-                  kpis.promedioMinutos <= META_MIN ? "text-green-600" : kpis.promedioMinutos <= AMARILLO_MIN ? "text-amber-600" : "text-red-600"
+                  vista.promedioMinutos <= META_MIN ? "text-green-600" : vista.promedioMinutos <= AMARILLO_MIN ? "text-amber-600" : "text-red-600"
                 }`} />
               </div>
             </div>
@@ -190,7 +246,7 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
                 <p className={`text-3xl font-bold ${
                   "text-slate-700"
                 }`}>
-                  {kpis.pctDentroMeta}%
+                  {vista.pctDentroMeta}%
                 </p>
               </div>
               <div className={`rounded-full p-3 ${
@@ -202,7 +258,7 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
               </div>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              {kpis.dentroMeta}/{kpis.totalRetornos} retornos · dato informativo: la meta es el promedio ≤ {META_HORAS} h
+              {vista.dentroMeta}/{vista.totalRetornos} retornos · dato informativo: la meta es el promedio ≤ {META_HORAS} h
             </p>
           </CardContent>
         </Card>
@@ -213,7 +269,7 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
               <div>
                 <p className="text-sm text-muted-foreground">Total Retornos</p>
                 <p className="text-3xl font-bold text-slate-900">
-                  {kpis.totalRetornos}
+                  {vista.totalRetornos}
                 </p>
               </div>
               <div className="rounded-full bg-slate-100 p-3">
@@ -230,7 +286,7 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
               <div>
                 <p className="text-sm text-muted-foreground">Tendencia 3 meses</p>
                 <div className="mt-1">
-                  <Tendencia mensual={kpis.mensual} />
+                  <Tendencia mensual={vista.mensual} />
                 </div>
               </div>
               <div className="rounded-full bg-slate-100 p-3">

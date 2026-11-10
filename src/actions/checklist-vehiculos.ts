@@ -8,7 +8,8 @@ import {
 } from "@/lib/vehiculos/bloqueo-critico"
 import { requireAuth } from "@/lib/session"
 import { leerTodo } from "@/lib/supabase/leer-todo"
-import { TIEMPO_RUTA_META_MINUTOS } from "@/lib/tiempo-ruta/meta"
+import { calcularTiempoRuta, type RetornoRuta, type TiempoRutaVista } from "@/lib/tiempo-ruta/meta"
+import { IS_MISIONES } from "@/lib/empresa"
 import {
   addDays,
   fetchLecturas,
@@ -891,15 +892,11 @@ export async function getTiempoRutaKpis(filters?: {
   fechaHasta?: string
   dominio?: string
 }): Promise<{
-  data: {
-    totalRetornos: number
-    promedioMinutos: number
-    promedioHoras: string
-    dentroMeta: number
-    pctDentroMeta: number
-    metaMinutos: number
-    semanal: TiempoRutaSemanal[]
-    mensual: TiempoRutaMensual[]
+  data: TiempoRutaVista & {
+    /** Cada retorno con su ruta del día: la pantalla recalcula por zona y con/sin ajuste. */
+    retornos: RetornoRuta[]
+    /** Rutas presentes en los retornos (para el filtro). */
+    rutas: string[]
   }
 } | { error: string }> {
   try {
@@ -908,11 +905,11 @@ export async function getTiempoRutaKpis(filters?: {
 
     // Paginado: sin filtros esto ya pasa las 1000 filas y PostgREST cortaba
     // en silencio — la pantalla quedaba congelada en septiembre.
-    const registros = await leerTodo<Pick<ChecklistVehiculo, "fecha" | "tiempo_ruta_minutos">>(
+    const registros = await leerTodo<Pick<ChecklistVehiculo, "fecha" | "dominio" | "tiempo_ruta_minutos">>(
       (desde, hasta) => {
         let query = supabase
           .from("checklist_vehiculos")
-          .select("fecha, tiempo_ruta_minutos")
+          .select("fecha, dominio, tiempo_ruta_minutos")
           .eq("tipo", "retorno")
           .not("tiempo_ruta_minutos", "is", null)
         if (filters?.fechaDesde) query = query.gte("fecha", filters.fechaDesde)
@@ -925,114 +922,60 @@ export async function getTiempoRutaKpis(filters?: {
       },
     )
 
-    if (registros.length === 0) {
-      return {
-        data: {
-          totalRetornos: 0,
-          promedioMinutos: 0,
-          promedioHoras: "0:00",
-          dentroMeta: 0,
-          pctDentroMeta: 0,
-          metaMinutos: TIEMPO_RUTA_META_MINUTOS,
-          semanal: [],
-          mensual: [],
-        },
+    // Ruta del día de cada camión (Pampeana): la de más carga (CEq) según las
+    // localidades que llevaba, con el mapeo localidad → ruta de rutas_reparto.
+    // Mismo criterio que Target por ruta. Sirve para descontar el traslado a
+    // Pergamino / Colón y para filtrar por zona.
+    const rutaDelDia = new Map<string, string>()
+    const norm = (p: string) => p.replace(/\s+/g, "").toUpperCase()
+    if (!IS_MISIONES && registros.length > 0) {
+      const desdeFecha = registros[0].fecha
+      const [rutasRes, locs] = await Promise.all([
+        supabase.from("rutas_reparto").select("nombre, localidades, orden").eq("activo", true).order("orden"),
+        leerTodo<{ fecha: string; patente: string; localidad: string | null; ceq_total: number | null }>(
+          (desde, hasta) =>
+            supabase
+              .from("ocupacion_bodega_localidad_diaria")
+              .select("fecha, patente, localidad, ceq_total")
+              .gte("fecha", desdeFecha)
+              .order("fecha", { ascending: true })
+              .order("patente", { ascending: true })
+              .order("localidad", { ascending: true })
+              .range(desde, hasta),
+        ).catch(() => []),
+      ])
+      const rutaPorLocalidad = new Map<string, string>()
+      for (const r of rutasRes.data ?? []) {
+        for (const loc of (r.localidades ?? []) as string[]) {
+          if (!rutaPorLocalidad.has(loc.trim().toUpperCase())) rutaPorLocalidad.set(loc.trim().toUpperCase(), r.nombre as string)
+        }
+      }
+      const ceq = new Map<string, Map<string, number>>()
+      for (const row of locs) {
+        const ruta = rutaPorLocalidad.get((row.localidad ?? "").trim().toUpperCase())
+        if (!ruta) continue
+        const k = `${row.fecha}|${norm(row.patente)}`
+        const porRuta = ceq.get(k) ?? new Map<string, number>()
+        porRuta.set(ruta, (porRuta.get(ruta) ?? 0) + Number(row.ceq_total ?? 0))
+        ceq.set(k, porRuta)
+      }
+      for (const [k, porRuta] of ceq) {
+        let mejor: string | null = null
+        let max = -1
+        for (const [ruta, v] of porRuta) if (v > max) { max = v; mejor = ruta }
+        if (mejor) rutaDelDia.set(k, mejor)
       }
     }
 
-    const tiempos = registros.map((r) => r.tiempo_ruta_minutos!)
-    const totalRetornos = tiempos.length
-    const promedioMinutos = Math.round(
-      tiempos.reduce((a, b) => a + b, 0) / totalRetornos
-    )
-    const hh = Math.floor(promedioMinutos / 60)
-    const mm = promedioMinutos % 60
-    const promedioHoras = `${hh}:${mm.toString().padStart(2, "0")}`
-    const dentroMeta = tiempos.filter(
-      (t) => t <= TIEMPO_RUTA_META_MINUTOS
-    ).length
-    const pctDentroMeta = Math.round((dentroMeta / totalRetornos) * 100)
+    const retornos: RetornoRuta[] = registros.map((r) => ({
+      fecha: r.fecha,
+      ruta: rutaDelDia.get(`${r.fecha}|${norm(r.dominio ?? "")}`) ?? null,
+      minutos: r.tiempo_ruta_minutos!,
+    }))
+    const rutas = [...new Set(retornos.map((r) => r.ruta).filter((x): x is string => !!x))].sort()
 
-    // Group by week
-    const semanalMap = new Map<
-      string,
-      { tiempos: number[]; year: number; semana: number }
-    >()
-    for (const r of registros) {
-      const date = new Date(r.fecha + "T12:00:00")
-      const startOfYear = new Date(date.getFullYear(), 0, 1)
-      const diff = date.getTime() - startOfYear.getTime()
-      const semana = Math.ceil(
-        (diff / 86400000 + startOfYear.getDay() + 1) / 7
-      )
-      const year = date.getFullYear()
-      const key = `${year}-${semana}`
-      if (!semanalMap.has(key))
-        semanalMap.set(key, { tiempos: [], year, semana })
-      semanalMap.get(key)!.tiempos.push(r.tiempo_ruta_minutos!)
-    }
-    const semanal: TiempoRutaSemanal[] = Array.from(
-      semanalMap.values()
-    ).map((g) => {
-      const dm = g.tiempos.filter(
-        (t) => t <= TIEMPO_RUTA_META_MINUTOS
-      ).length
-      return {
-        semana: g.semana,
-        year: g.year,
-        promedio_minutos: Math.round(
-          g.tiempos.reduce((a, b) => a + b, 0) / g.tiempos.length
-        ),
-        total_retornos: g.tiempos.length,
-        dentro_meta: dm,
-        pct_dentro_meta: Math.round((dm / g.tiempos.length) * 100),
-      }
-    })
-
-    // Group by month
-    const mensualMap = new Map<
-      string,
-      { tiempos: number[]; year: number; mes: number }
-    >()
-    for (const r of registros) {
-      const d = new Date(r.fecha + "T12:00:00")
-      const year = d.getFullYear()
-      const mes = d.getMonth() + 1
-      const key = `${year}-${mes}`
-      if (!mensualMap.has(key))
-        mensualMap.set(key, { tiempos: [], year, mes })
-      mensualMap.get(key)!.tiempos.push(r.tiempo_ruta_minutos!)
-    }
-    const mensual: TiempoRutaMensual[] = Array.from(
-      mensualMap.values()
-    ).map((g) => {
-      const dm = g.tiempos.filter(
-        (t) => t <= TIEMPO_RUTA_META_MINUTOS
-      ).length
-      return {
-        mes: g.mes,
-        year: g.year,
-        promedio_minutos: Math.round(
-          g.tiempos.reduce((a, b) => a + b, 0) / g.tiempos.length
-        ),
-        total_retornos: g.tiempos.length,
-        dentro_meta: dm,
-        pct_dentro_meta: Math.round((dm / g.tiempos.length) * 100),
-      }
-    })
-
-    return {
-      data: {
-        totalRetornos,
-        promedioMinutos,
-        promedioHoras,
-        dentroMeta,
-        pctDentroMeta,
-        metaMinutos: TIEMPO_RUTA_META_MINUTOS,
-        semanal,
-        mensual,
-      },
-    }
+    // Vista oficial: ajustada por traslado, todas las zonas (la que pide planes).
+    return { data: { ...calcularTiempoRuta(retornos, true), retornos, rutas } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
