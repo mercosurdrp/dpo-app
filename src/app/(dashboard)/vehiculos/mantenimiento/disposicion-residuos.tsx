@@ -47,6 +47,13 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -66,9 +73,12 @@ import {
 import { cn } from "@/lib/utils"
 
 import {
+  amparResiduosConCertificado,
   marcarConstanciaSolicitada,
+  quitarCertificadoResiduos,
   quitarConstanciaTramite,
   setResiduoCantidad,
+  subirCertificadoResiduos,
   subirConstanciaTramite,
   type Residuo,
 } from "@/actions/mantenimiento-vehiculos"
@@ -92,6 +102,28 @@ const MATERIAL_LABEL: Record<string, string> = {
   baterias: "Baterías",
   chatarra: "Chatarra",
   otros: "Otros",
+}
+
+/**
+ * Un certificado ya cargado, con lo que se le imputó.
+ *
+ * Los papeles de este módulo amparan una CANTIDAD y un período, no un viaje
+ * (Kumen: 325 kg de cubiertas; manifiesto 14634062: 200 kg de aceite de los
+ * camiones), así que el mismo archivo se comparte entre varias filas y hay que
+ * poder colgar de él un service que se registró después.
+ */
+interface CertificadoCargado {
+  path: string
+  url: string | null
+  operador: string
+  materiales: string[]
+  fecha: string
+  ampara: number | null
+  unidad: string | null
+  esCubiertas: boolean
+  saldo: number | null
+  retirado: number
+  amparados: number
 }
 
 /** Número de OT que menciona la descripción del residuo ("OT 1786 · AF664NY — …"). */
@@ -212,7 +244,7 @@ export function DisposicionResiduos({
   }, [])
 
   // ===== Certificados: un papel por CANTIDAD, compartido por varias filas =====
-  const certificados = useMemo(() => {
+  const certificados: CertificadoCargado[] = useMemo(() => {
     const porPath = new Map<string, Residuo[]>()
     for (const r of residuos) {
       if (!r.certificado_path) continue
@@ -781,6 +813,7 @@ export function DisposicionResiduos({
                         ) : (
                           <ConstanciaCell
                             residuos={[aceite, filtros].filter(Boolean) as Residuo[]}
+                            certificados={certificados}
                             puedeEditar={puedeEditar}
                             onChanged={onChanged}
                           />
@@ -881,30 +914,57 @@ export function DisposicionResiduos({
  */
 function ConstanciaCell({
   residuos,
+  certificados,
   puedeEditar,
   onChanged,
 }: {
   residuos: Residuo[]
+  certificados: CertificadoCargado[]
   puedeEditar: boolean
   onChanged: () => void
 }) {
   const [pend, setPend] = useState(false)
+  const [abrirAmparar, setAbrirAmparar] = useState(false)
   const inputId = `tramite-${residuos[0]?.id ?? "x"}`
 
   const certificado = residuos.find((r) => r.certificado_url)?.certificado_url ?? null
   const conTramite = residuos.find((r) => r.tramite_url) ?? null
   const solicitada = residuos.find((r) => r.constancia_solicitada_at) ?? null
+  const ids = residuos.map((r) => r.id)
 
   if (certificado) {
     return (
-      <a
-        href={certificado}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1 text-primary hover:underline"
-      >
-        <Check className="size-3.5" /> amparado
-      </a>
+      <div className="flex items-center gap-1">
+        <a
+          href={certificado}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-primary hover:underline"
+        >
+          <Check className="size-3.5" /> amparado
+        </a>
+        {puedeEditar && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1 text-[11px] text-muted-foreground hover:text-destructive"
+            disabled={pend}
+            title="Quitar el amparo: vuelve a figurar como falta la constancia"
+            onClick={async () => {
+              setPend(true)
+              const res = await quitarCertificadoResiduos(ids)
+              setPend(false)
+              if ("error" in res) toast.error(res.error)
+              else {
+                toast.success("Amparo quitado")
+                onChanged()
+              }
+            }}
+          >
+            <X className="size-3" />
+          </Button>
+        )}
+      </div>
     )
   }
 
@@ -980,6 +1040,18 @@ function ConstanciaCell({
         <div className="flex flex-wrap items-center gap-1">
           <Button
             size="sm"
+            variant="outline"
+            className="h-6 border-primary/40 px-2 text-[11px] text-primary hover:bg-primary/10"
+            disabled={pend}
+            onClick={() => setAbrirAmparar(true)}
+            title="Colgar este registro de un certificado ya cargado, o subir la constancia del taller"
+          >
+            <Check className="mr-1 size-3" />
+            Amparar
+          </Button>
+
+          <Button
+            size="sm"
             variant={solicitada ? "secondary" : "outline"}
             className="h-6 px-2 text-[11px]"
             disabled={pend}
@@ -1034,7 +1106,194 @@ function ConstanciaCell({
           )}
         </div>
       )}
+
+      <AmpararDialog
+        abierto={abrirAmparar}
+        onCerrar={() => setAbrirAmparar(false)}
+        ids={ids}
+        certificados={certificados}
+        onChanged={onChanged}
+      />
     </div>
+  )
+}
+
+/**
+ * Amparar un service con la constancia que corresponde.
+ *
+ * Dos caminos, porque los dos pasan en la práctica:
+ *
+ *  1. El papel YA ESTÁ y ampara a varios: el manifiesto 14634062 cubre el
+ *     aceite y los filtros de todos los services de camión de 2026, así que un
+ *     service cargado después se cuelga del mismo archivo en un clic.
+ *  2. El papel es NUEVO (el que todavía deben LitorMac y Figueroa por los
+ *     autoelevadores): se sube acá y queda disponible para el resto.
+ *
+ * 🚨 Lo que el papel no dice, lo dice la aclaración. El manifiesto declara
+ * composición "ACEITE USADO" y nada de filtros: esa nota es lo que evita que el
+ * auditor lea el registro de filtros como un hueco. Y si el certificado es de
+ * otro taller o de otro año, no hay nota que lo arregle — ahí va "Solicitada" o
+ * el comprobante del trámite, no el amparo.
+ */
+function AmpararDialog({
+  abierto,
+  onCerrar,
+  ids,
+  certificados,
+  onChanged,
+}: {
+  abierto: boolean
+  onCerrar: () => void
+  ids: string[]
+  certificados: CertificadoCargado[]
+  onChanged: () => void
+}) {
+  const [elegido, setElegido] = useState<string | null>(null)
+  const [nota, setNota] = useState("")
+  const [pend, setPend] = useState(false)
+  const [archivo, setArchivo] = useState<File | null>(null)
+  const [unidades, setUnidades] = useState("")
+
+  const imputar = async () => {
+    if (!elegido) return
+    setPend(true)
+    const res = await amparResiduosConCertificado({
+      ids,
+      certificado_path: elegido,
+      nota: nota.trim() || undefined,
+    })
+    setPend(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    toast.success(`${res.amparados} registro${res.amparados === 1 ? "" : "s"} amparado${res.amparados === 1 ? "" : "s"}`)
+    setElegido(null)
+    setNota("")
+    onCerrar()
+    onChanged()
+  }
+
+  const subir = async () => {
+    if (!archivo) return
+    setPend(true)
+    const fd = new FormData()
+    fd.set("archivo", archivo)
+    if (unidades.trim()) fd.set("unidades", unidades.trim())
+    const res = await subirCertificadoResiduos(ids, fd)
+    setPend(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    toast.success("Constancia cargada: el registro queda amparado")
+    setArchivo(null)
+    setUnidades("")
+    onCerrar()
+    onChanged()
+  }
+
+  return (
+    <Dialog open={abierto} onOpenChange={(v) => (v ? null : onCerrar())}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Amparar la disposición de este service</DialogTitle>
+          <DialogDescription>
+            Los certificados de este módulo amparan una cantidad y un período, no un viaje: un
+            mismo papel cubre varios services. Elegí el que corresponde o subí la constancia que
+            trajo el taller.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Certificados ya cargados
+            </p>
+            {certificados.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Todavía no hay ninguno cargado.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {certificados.map((c) => (
+                  <button
+                    key={c.path}
+                    type="button"
+                    onClick={() => setElegido(c.path === elegido ? null : c.path)}
+                    className={cn(
+                      "flex w-full items-start gap-2 rounded-md border p-2 text-left text-sm transition",
+                      elegido === c.path
+                        ? "border-primary bg-primary/5"
+                        : "hover:bg-accent/50"
+                    )}
+                  >
+                    <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium text-foreground">{c.operador}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {c.materiales.map((m) => MATERIAL_LABEL[m] ?? m).join(" + ")} ·{" "}
+                        {fmtFecha(c.fecha)}
+                        {c.ampara != null && ` · ampara ${fmtNum(c.ampara)} ${c.unidad ?? ""}`} ·{" "}
+                        {c.amparados} registro{c.amparados === 1 ? "" : "s"} imputado
+                        {c.amparados === 1 ? "" : "s"}
+                      </span>
+                    </span>
+                    {elegido === c.path && <Check className="mt-0.5 size-4 text-primary" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {elegido && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Aclaración (va a las observaciones del registro)
+              </label>
+              <Input
+                value={nota}
+                onChange={(e) => setNota(e.target.value)}
+                placeholder="Ej: el manifiesto declara aceite usado y el mismo retiro se lleva los filtros"
+              />
+              <Button size="sm" className="mt-1" disabled={pend} onClick={imputar}>
+                <Check className="mr-1 size-3.5" />
+                Amparar con este certificado
+              </Button>
+            </div>
+          )}
+
+          <div className="space-y-2 border-t pt-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              O subir la constancia de este taller
+            </p>
+            <Input
+              type="file"
+              accept="image/*,application/pdf,.pdf"
+              onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
+            />
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Cantidad que declara el papel (opcional)
+                </label>
+                <Input
+                  value={unidades}
+                  onChange={(e) => setUnidades(e.target.value)}
+                  placeholder="200"
+                  className="w-28"
+                  inputMode="decimal"
+                />
+              </div>
+              <Button size="sm" variant="outline" disabled={pend || !archivo} onClick={subir}>
+                <FileText className="mr-1 size-3.5" />
+                Subir y amparar
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

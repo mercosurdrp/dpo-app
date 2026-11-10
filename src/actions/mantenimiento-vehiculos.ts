@@ -3231,6 +3231,191 @@ export async function quitarConstanciaTramite(
 }
 
 /**
+ * Ampara registros de residuo con un certificado QUE YA ESTÁ CARGADO.
+ *
+ * 🚨 Es la pieza que faltaba del circuito: los papeles de este módulo no son
+ * uno por viaje sino uno por CANTIDAD y por AÑO —el manifiesto 14634062 ampara
+ * el aceite y los filtros de todos los services de camión de 2026—, así que un
+ * service que se registra después tiene que poder colgarse del mismo papel. Sin
+ * esto, la única forma de amparar un registro era volver a subir el archivo
+ * (duplicándolo en el bucket) o escribir en la base a mano, y por eso quedaron
+ * filas en "falta" que en realidad estaban cubiertas.
+ *
+ * `nota` se agrega a las observaciones de cada fila: cuando el papel no nombra
+ * textualmente el material —el manifiesto dice "ACEITE USADO" y también se
+ * lleva los filtros— esa aclaración es lo que evita que el auditor lo lea como
+ * un hueco.
+ */
+export async function amparResiduosConCertificado(input: {
+  ids: string[]
+  certificado_path: string
+  nota?: string
+}): Promise<{ success: true; amparados: number } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const ids = (input.ids ?? []).filter(Boolean)
+    if (ids.length === 0) return { error: "No hay registros para amparar" }
+    if (!input.certificado_path) return { error: "Elegí el certificado" }
+
+    const supabase = await createClient()
+
+    // La URL pública sale de una fila que ya use ese papel: así el link es
+    // exactamente el mismo y no hay dos copias del archivo en el bucket.
+    const { data: fuente, error: errFuente } = await supabase
+      .from("mantenimiento_residuos")
+      .select("certificado_url")
+      .eq("certificado_path", input.certificado_path)
+      .not("certificado_url", "is", null)
+      .limit(1)
+      .maybeSingle()
+    if (errFuente) return { error: errFuente.message }
+    if (!fuente?.certificado_url) {
+      return { error: "Ese certificado no está cargado en ningún registro" }
+    }
+
+    const { data: filas, error: errFilas } = await supabase
+      .from("mantenimiento_residuos")
+      .select("id, observaciones, certificado_path")
+      .in("id", ids)
+    if (errFilas) return { error: errFilas.message }
+
+    const nota = (input.nota ?? "").trim()
+    let amparados = 0
+    for (const f of (filas ?? []) as Array<{
+      id: string
+      observaciones: string | null
+      certificado_path: string | null
+    }>) {
+      // Ya amparado por OTRO papel: no se pisa en silencio. Primero se quita.
+      if (f.certificado_path && f.certificado_path !== input.certificado_path) {
+        return {
+          error:
+            "Uno de los registros ya está amparado por otro certificado: quitale el amparo antes de cambiarlo",
+        }
+      }
+      const update: Record<string, unknown> = {
+        certificado_path: input.certificado_path,
+        certificado_url: fuente.certificado_url,
+      }
+      if (nota) {
+        update.observaciones = f.observaciones?.trim()
+          ? `${f.observaciones.trim()} · ${nota}`
+          : nota
+      }
+      const res = await actualizarResiduo(supabase, f.id, update)
+      if ("error" in res) return res
+      amparados += 1
+    }
+    return { success: true, amparados }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Sube una constancia NUEVA y ampara con ella los registros indicados (las dos
+ * filas del service, aceite y filtros). `unidades` es la cantidad que declara
+ * el papel, si la declara: queda en la primera fila, que es la que el panel usa
+ * de cabecera para mostrar cuánto ampara.
+ *
+ * FormData: `archivo` y, opcional, `unidades`.
+ */
+export async function subirCertificadoResiduos(
+  ids: string[],
+  formData: FormData
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const limpios = (ids ?? []).filter(Boolean)
+    if (limpios.length === 0) return { error: "No hay registros para amparar" }
+    const file = formData.get("archivo")
+    if (!(file instanceof File) || file.size === 0) return { error: "Elegí un archivo" }
+
+    const supabase = await createClient()
+    const clean = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80)
+    const path = `residuos/${Date.now()}-${clean}`
+    const { error: upErr } = await supabase.storage
+      .from(RESIDUOS_BUCKET)
+      .upload(path, await file.arrayBuffer(), {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      })
+    if (upErr) return { error: upErr.message }
+    const { data: pub } = supabase.storage.from(RESIDUOS_BUCKET).getPublicUrl(path)
+
+    const unidadesRaw = String(formData.get("unidades") || "").trim()
+    const unidades = unidadesRaw ? Number(unidadesRaw.replace(",", ".")) : null
+
+    let i = 0
+    for (const id of limpios) {
+      const update: Record<string, unknown> = {
+        certificado_path: path,
+        certificado_url: pub.publicUrl,
+      }
+      if (i === 0 && unidades != null && isFinite(unidades) && unidades > 0) {
+        update.certificado_unidades = Math.round(unidades)
+      }
+      const res = await actualizarResiduo(supabase, id, update)
+      if ("error" in res) {
+        // Si no se pudo escribir, el archivo no queda huérfano en el bucket.
+        if (i === 0) await supabase.storage.from(RESIDUOS_BUCKET).remove([path])
+        return res
+      }
+      i += 1
+    }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Quita el amparo de un registro: vuelve a figurar como "falta la constancia".
+ * El archivo sólo se borra del bucket si ya no queda ninguna fila usándolo —el
+ * mismo papel ampara varios registros, ver `deleteResiduo`—.
+ */
+export async function quitarCertificadoResiduos(
+  ids: string[]
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const limpios = (ids ?? []).filter(Boolean)
+    if (limpios.length === 0) return { error: "No hay registros" }
+    const supabase = await createClient()
+
+    const { data: filas } = await supabase
+      .from("mantenimiento_residuos")
+      .select("id, certificado_path")
+      .in("id", limpios)
+    const paths = new Set(
+      ((filas ?? []) as Array<{ certificado_path: string | null }>)
+        .map((f) => f.certificado_path)
+        .filter((p): p is string => !!p)
+    )
+
+    for (const id of limpios) {
+      const res = await actualizarResiduo(supabase, id, {
+        certificado_path: null,
+        certificado_url: null,
+        certificado_unidades: null,
+      })
+      if ("error" in res) return res
+    }
+
+    for (const path of paths) {
+      const { count } = await supabase
+        .from("mantenimiento_residuos")
+        .select("id", { count: "exact", head: true })
+        .eq("certificado_path", path)
+      if (!count) await supabase.storage.from(RESIDUOS_BUCKET).remove([path])
+    }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
  * Lee del catálogo SÓLO las piezas que están en el pañol.
  *
  * 🚨 Desde que el catálogo guarda también piezas de compra —filtros, aceites,
