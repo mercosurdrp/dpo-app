@@ -62,11 +62,18 @@ export function GestionTab({
   // La bandeja muestra lo accionable: vencido, por vencer, o cualquier
   // requisito con un trámite abierto (aunque todavía esté vigente porque se
   // empezó a gestionar con anticipación).
+  //
+  // 🚨 Los papeles de una unidad que ya no está en el parque no son
+  // accionables: el extintor del "AE TOYOTA 3" seguía saliendo vencido acá
+  // aunque el autoelevador se transfirió a Misiones. La matriz general ya los
+  // ocultaba y el contador de la solapa también los descontaba, así que la
+  // bandeja listaba filas que el badge decía que no existían. Ver
+  // lib/vehiculos/unidad-de-baja: no se borran, dejan de pedir renovación.
   const pendientes = useMemo(() => {
     return requisitos
       .filter(
         (r) =>
-          r.estado !== "vigente" || gestiones.has(r.id),
+          !r.fuera_de_flota && (r.estado !== "vigente" || gestiones.has(r.id)),
       )
       .sort((a, b) => a.dias_para_vencer - b.dias_para_vencer)
   }, [requisitos, gestiones])

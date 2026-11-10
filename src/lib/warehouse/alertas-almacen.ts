@@ -25,6 +25,7 @@ import {
 import { normalizePilar } from "@/lib/capacitacion-adherencia"
 import { esFeriado } from "@/lib/feriados-ar"
 import { SLA_CARGA_TARGET } from "@/lib/sla-cumplimiento"
+import { bajaDeUnidad, type UnidadCatalogo } from "@/lib/vehiculos/unidad-de-baja"
 import {
   CARGA_EXCEPCIONES_DIA_CUMPLE,
   CARGA_FERIADOS,
@@ -323,6 +324,17 @@ async function chequeoRequisitosLegales(sb: Sb, ahora: Date): Promise<Alerta[]> 
     .not("fecha_vencimiento", "is", null)
     .lte("fecha_vencimiento", sumarDiasISO(hoy, DIAS_LEGAL_AVISO))
 
+  // Los matafuegos de un autoelevador vendido o transferido no se recargan: la
+  // máquina no está más en el depósito. Mismo criterio que /requisitos-legales
+  // (lib/vehiculos/unidad-de-baja): el papel queda cargado, deja de avisar.
+  const { data: catVeh } = await sb
+    .from("catalogo_vehiculos")
+    .select("dominio, active, descripcion")
+  const catalogoUnidades = (catVeh ?? []) as UnidadCatalogo[]
+  const vigentes = (filas ?? []).filter(
+    (f: any) => bajaDeUnidad(catalogoUnidades, String(f.nombre ?? "")) === null,
+  )
+
   // Los 13 matafuegos del depósito vencen todos el mismo día: una alerta por
   // cada uno serían 13 tarjetas para un único trámite. Se agrupan por
   // categoría + fecha y los equipos se listan en el detalle.
@@ -330,7 +342,7 @@ async function chequeoRequisitosLegales(sb: Sb, ahora: Date): Promise<Alerta[]> 
   // y el .push() de abajo no compila.
   type GrupoLegal = { cat: string; fecha: string; nombres: string[] }
   const grupos = new Map<string, GrupoLegal>()
-  for (const f of filas ?? []) {
+  for (const f of vigentes) {
     const cat = catById.get(f.categoria_id)
     if (!cat) continue
     const clave = `${f.categoria_id}|${f.fecha_vencimiento}`

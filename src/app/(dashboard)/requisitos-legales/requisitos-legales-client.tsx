@@ -751,7 +751,11 @@ export function RequisitosLegalesClient({
       <Tabs value={tab} onValueChange={(v: string | null) => setTab(v ?? categorias[0]?.id ?? "")}>
         <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
           {categorias.map((c) => {
-            const count = requisitos.filter((r) => r.categoria_id === c.id).length
+            // Sin las bajas: el número de la solapa tiene que coincidir con lo
+            // que lista la tabla, que por defecto las oculta.
+            const count = requisitos.filter(
+              (r) => r.categoria_id === c.id && !r.fuera_de_flota,
+            ).length
             return (
               <TabsTrigger key={c.id} value={c.id} className="flex-none">
                 {c.nombre}
