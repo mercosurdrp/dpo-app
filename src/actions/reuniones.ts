@@ -5212,11 +5212,14 @@ async function getIndicadoresMesCore(
           fxRow("auto_fx_resecuenciado", "Rutas con resecuenciado", "%", fx.pct_resecuenciado, "promedio", null, "mayor"),
           fxRow("auto_fx_pct_finalizadas", "Rutas finalizadas", "%", fx.pct_finalizadas, "promedio", 100, "mayor"),
           fxRow("auto_fx_entregas_ok", "Entregas exitosas", "%", fx.pct_entregas_exitosas, "promedio", 98, "mayor"),
-          // Tiempo en ruta: acá MÁS es mejor — el camión tiene que estar en la
+          // Horas en la calle (Foxtrot): acá MÁS es mejor — el camión tiene que estar en la
           // calle. Target y gatillo se cargan desde el diálogo de indicadores
           // (hoy: verde ≥300 min, amarillo 250-300, rojo <300 y <gatillo), por
           // eso la meta va en null y la inyecta el wrapper desde la config.
-          fxRow("auto_fx_tiempo_ruta", "Tiempo en ruta", "min", fx.tiempo_ruta, "promedio", null, "mayor"),
+          // Se llamaba "Tiempo en ruta" y se confundía con el tiempo en ruta DPO
+          // 1.2 (checklist de retorno, meta 7 h, MENOS es mejor). La config de la
+          // matinal se busca por nombre: renombrar también su fila.
+          fxRow("auto_fx_tiempo_ruta", "Horas en la calle (Foxtrot)", "min", fx.tiempo_ruta, "promedio", null, "mayor"),
           // Desvío del tiempo real vs el planificado por Foxtrot (rutas
           // finalizadas limpias con fx_planned_journey_sec). Positivo = la
           // ruta tardó más que el plan. Meta/gatillo desde la config (DPO

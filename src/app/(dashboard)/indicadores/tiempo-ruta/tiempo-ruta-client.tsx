@@ -40,7 +40,6 @@ import type { TiempoRutaPlan } from "@/actions/tiempo-ruta-planes"
 import {
   TIEMPO_RUTA_META_MINUTOS,
   TIEMPO_RUTA_TOLERANCIA_MINUTOS,
-  TIEMPO_RUTA_PCT_MINIMO,
 } from "@/lib/tiempo-ruta/meta"
 import {
   Clock,
@@ -187,23 +186,23 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">% Dentro Meta</p>
+                <p className="text-sm text-muted-foreground">% retornos ≤ {META_HORAS} h</p>
                 <p className={`text-3xl font-bold ${
-                  kpis.pctDentroMeta >= TIEMPO_RUTA_PCT_MINIMO ? "text-green-600" : kpis.pctDentroMeta >= 50 ? "text-amber-600" : "text-red-600"
+                  "text-slate-700"
                 }`}>
                   {kpis.pctDentroMeta}%
                 </p>
               </div>
               <div className={`rounded-full p-3 ${
-                kpis.pctDentroMeta >= TIEMPO_RUTA_PCT_MINIMO ? "bg-green-100" : kpis.pctDentroMeta >= 50 ? "bg-amber-100" : "bg-red-100"
+                "bg-slate-100"
               }`}>
                 <Target className={`h-5 w-5 ${
-                  kpis.pctDentroMeta >= TIEMPO_RUTA_PCT_MINIMO ? "text-green-600" : kpis.pctDentroMeta >= 50 ? "text-amber-600" : "text-red-600"
+                  "text-slate-700"
                 }`} />
               </div>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              {kpis.dentroMeta}/{kpis.totalRetornos} retornos dentro de meta
+              {kpis.dentroMeta}/{kpis.totalRetornos} retornos · dato informativo: la meta es el promedio ≤ {META_HORAS} h
             </p>
           </CardContent>
         </Card>
@@ -287,7 +286,7 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">% Dentro de Meta por Semana</CardTitle>
+                <CardTitle className="text-base">% de retornos ≤ {META_HORAS} h por semana (informativo)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-72">
@@ -299,7 +298,6 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
                       <Tooltip
                         formatter={(value) => [`${value}%`, "% Meta"]}
                       />
-                      <ReferenceLine y={65} stroke="#10B981" strokeDasharray="5 5" label={{ value: "65%", position: "right", fontSize: 10 }} />
                       <Line
                         type="monotone"
                         dataKey="pctMeta"
@@ -348,7 +346,7 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">% Dentro de Meta por Mes</CardTitle>
+                <CardTitle className="text-base">% de retornos ≤ {META_HORAS} h por mes (informativo)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-72">
@@ -360,7 +358,6 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes, planes
                       <Tooltip
                         formatter={(value) => [`${value}%`, "% Meta"]}
                       />
-                      <ReferenceLine y={65} stroke="#10B981" strokeDasharray="5 5" label={{ value: "65%", position: "right", fontSize: 10 }} />
                       <Line
                         type="monotone"
                         dataKey="pctMeta"

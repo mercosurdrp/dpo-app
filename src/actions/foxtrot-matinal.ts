@@ -35,7 +35,7 @@ const META: Record<FoxtrotKpiId, { titulo: string; unidad: string; serieKey: key
   auto_fx_resecuenciado: { titulo: "Rutas con resecuenciado", unidad: "%", serieKey: "pct_resecuenciado" },
   auto_fx_pct_finalizadas: { titulo: "Rutas finalizadas", unidad: "%", serieKey: "pct_finalizadas" },
   auto_fx_entregas_ok: { titulo: "Entregas exitosas", unidad: "%", serieKey: "pct_entregas_exitosas" },
-  auto_fx_tiempo_ruta: { titulo: "Tiempo en ruta", unidad: "min", serieKey: "tiempo_ruta" },
+  auto_fx_tiempo_ruta: { titulo: "Horas en la calle (Foxtrot)", unidad: "min", serieKey: "tiempo_ruta" },
   auto_fx_desvio_plan: { titulo: "Desvío s/ tiempo planificado", unidad: "%", serieKey: "desvio_tiempo_plan" },
   auto_fx_tiempo_pdv: { titulo: "Tiempo por PDV", unidad: "min", serieKey: "tiempo_pdv" },
   auto_fx_km: { titulo: "Km recorridos", unidad: "km", serieKey: "km_recorridos" },
