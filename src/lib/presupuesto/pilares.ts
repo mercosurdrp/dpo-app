@@ -105,7 +105,7 @@ const REGLAS: Array<[PilarPresupuesto, RegExp]> = [
     "entrega",
     /SUBCONTRAT|FLETE|ACARREO|PEAJE|MULTAS? DE TRANSITO|TRANSITO DISTRIBUCION|TASA DE ABASTO|ABASTO|SOBRECARGA|DISTRIBUCION|ENTREGA|REPARTO/,
   ],
-  // Flota: rodados, combustible, cubiertas, mantenimiento de autoelevadores, VTV, patentes, seguros de rodados.
+  // Flota: rodados, lubricantes (el combustible va a Entrega, ver esCombustible), cubiertas, mantenimiento de autoelevadores, VTV, patentes, seguros de rodados.
   [
     "flota",
     /RODADO|CAMION|COMBUSTIBLE|GASOIL|GAS-OIL|GAS OIL|LUBRICANTE|NEUMATIC|CUBIERTA|AUTOELEVADOR|\bVTV\b|VERIFICACION TECNICA|PATENTE|SENASA|LAVADO|\bGPS\b|RASTREO|SATELITAL|SISTEMAS? FLOTA|\bMTTO\b|MANTENIMIENTO DE VEH|REPARACION.*VEH|MULTA|TALLER|\bFLOTA\b/,
@@ -127,10 +127,22 @@ const REGLAS: Array<[PilarPresupuesto, RegExp]> = [
   ],
 ]
 
+/**
+ * Combustible del reparto (gasoil, urea, nafta) = costo de ENTREGA (decisión de
+ * Fausto 09/11, DPO Entrega 3.1), aunque el catálogo lo tenga en FLOTA. Se mira
+ * el sub-rubro (lo que va después de ":") para que «COMBUSTIBLES Y
+ * LUBRICANTES: Lubricantes» siga en Flota.
+ */
+function esCombustible(rubroNormalizado: string): boolean {
+  const sub = rubroNormalizado.includes(":") ? rubroNormalizado.slice(rubroNormalizado.lastIndexOf(":") + 1) : rubroNormalizado
+  return /COMBUSTIBLE|GASOIL|GAS-? ?OIL|UREA|NAFTA/.test(sub) && !/LUBRICANTE/.test(sub)
+}
+
 /** Pilar inferido del nombre del rubro, o null si ninguna regla lo reconoce. */
 export function inferirPilar(rubro: string): PilarPresupuesto | null {
   const r = normalizarTexto(rubro)
   if (!r) return null
+  if (esCombustible(r)) return "entrega"
   for (const [pilar, re] of REGLAS) {
     if (re.test(r)) return pilar
   }
@@ -149,5 +161,6 @@ export function pilarParaRubro(
 ): PilarPresupuesto | null {
   const inferido = inferirPilar(rubro)
   if (inferido === "seguridad") return inferido
+  if (esCombustible(normalizarTexto(rubro))) return "entrega"
   return pilarDesdeCategoriaCatalogo(categoriaCatalogo) ?? inferido
 }
