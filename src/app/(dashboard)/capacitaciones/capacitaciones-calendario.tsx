@@ -50,7 +50,7 @@ export function CapacitacionesCalendario({ capacitaciones }: Props) {
   const hoyStr = `${hoy.getFullYear()}-${pad(hoy.getMonth() + 1)}-${pad(hoy.getDate())}`
 
   const [cursor, setCursor] = useState({ y: hoy.getFullYear(), m: hoy.getMonth() })
-  const [abierto, setAbierto] = useState(true)
+  const [abierto, setAbierto] = useState(false)
 
   // Agrupa por fecha (YYYY-MM-DD) para evitar problemas de zona horaria
   const porFecha = useMemo(() => {
@@ -111,7 +111,7 @@ export function CapacitacionesCalendario({ capacitaciones }: Props) {
 
   return (
     <Card>
-      <CardHeader className="pb-3">
+      <CardHeader className={abierto ? "pb-3" : "py-3"}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button
             type="button"
@@ -126,7 +126,13 @@ export function CapacitacionesCalendario({ capacitaciones }: Props) {
               <CalendarDays className="size-4 text-slate-400" />
               Calendario de Programación
             </CardTitle>
+            {!abierto && (
+              <span className="text-xs text-slate-500">
+                · {enElMes} {enElMes === 1 ? "capacitación" : "capacitaciones"} en {MESES[cursor.m]} {cursor.y}
+              </span>
+            )}
           </button>
+          {abierto && (
           <div className="flex items-center gap-1">
             <span className="mr-1 text-xs text-slate-500">
               {enElMes} {enElMes === 1 ? "capacitación" : "capacitaciones"}
@@ -149,6 +155,7 @@ export function CapacitacionesCalendario({ capacitaciones }: Props) {
               Hoy
             </Button>
           </div>
+          )}
         </div>
       </CardHeader>
       {abierto && (
