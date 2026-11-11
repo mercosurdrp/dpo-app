@@ -240,7 +240,7 @@ export function CapacitacionesClient({
   const [avanceOpen, setAvanceOpen] = useState(false)
 
   const [realizadasOpen, setRealizadasOpen] = useState(false)
-  const [indicadoresOpen, setIndicadoresOpen] = useState(false)
+  const [indicadoresOpen, setIndicadoresOpen] = useState(true)
 
   async function handleCreate() {
     if (!form.titulo.trim() || !form.instructor.trim() || !form.fecha) {
