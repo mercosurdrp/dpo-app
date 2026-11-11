@@ -45,7 +45,7 @@ function colorSemaforo(pct: number | null): string {
 export function CapacitacionesAdherencia({ capacitaciones, hoy }: Props) {
   const a = useMemo(() => calcularAdherencia(capacitaciones, hoy), [capacitaciones, hoy])
 
-  const [abierto, setAbierto] = useState(true)
+  const [abierto, setAbierto] = useState(false)
   const [verAtrasadas, setVerAtrasadas] = useState(false)
   const [verPilares, setVerPilares] = useState(false)
 
@@ -56,7 +56,7 @@ export function CapacitacionesAdherencia({ capacitaciones, hoy }: Props) {
 
   return (
     <Card>
-      <CardHeader className="pb-3">
+      <CardHeader className={abierto ? "pb-3" : "py-3"}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button
             type="button"
@@ -71,6 +71,15 @@ export function CapacitacionesAdherencia({ capacitaciones, hoy }: Props) {
               <Gauge className="size-4 text-slate-400" />
               Adherencia al Cronograma {a.anio}
             </CardTitle>
+            {!abierto && (
+              <span className="text-xs text-slate-500">
+                · YTD{" "}
+                <b style={{ color: colorYtd }}>
+                  {a.adherenciaYtd === null ? "—" : `${a.adherenciaYtd} %`}
+                </b>{" "}
+                · {a.atrasadas.length} atrasadas · anual {a.cumplimientoAnual} %
+              </span>
+            )}
           </button>
           <Badge
             variant="secondary"

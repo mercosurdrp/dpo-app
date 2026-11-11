@@ -63,7 +63,7 @@ export function CapacitacionesAsistencia({ capacitaciones, hoy, porEmpleado }: P
     [porEmpleado, capacitaciones, hoy]
   )
 
-  const [abierto, setAbierto] = useState(true)
+  const [abierto, setAbierto] = useState(false)
   const [verBajoMeta, setVerBajoMeta] = useState(false)
   const [verDetalle, setVerDetalle] = useState(false)
   const [verPilares, setVerPilares] = useState(false)
@@ -90,7 +90,7 @@ export function CapacitacionesAsistencia({ capacitaciones, hoy, porEmpleado }: P
 
   return (
     <Card>
-      <CardHeader className="pb-3">
+      <CardHeader className={abierto ? "pb-3" : "py-3"}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button
             type="button"
@@ -105,6 +105,13 @@ export function CapacitacionesAsistencia({ capacitaciones, hoy, porEmpleado }: P
               <UserCheck className="size-4 text-slate-400" />
               Asistencia a las Capacitaciones {a.anio}
             </CardTitle>
+            {!abierto && (
+              <span className="text-xs text-slate-500">
+                · YTD{" "}
+                <b style={{ color: colorYtd }}>{a.pctYtd === null ? "—" : `${a.pctYtd} %`}</b>{" "}
+                · {a.ausentes} ausencias
+              </span>
+            )}
           </button>
           <Badge
             variant="secondary"
