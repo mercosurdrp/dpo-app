@@ -13,6 +13,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { getGopsCambios, type GopCambio } from "./gops"
 import {
   archivosDeFila,
   archivosDelForm,
@@ -489,4 +490,209 @@ export async function listarResponsablesGops(): Promise<
     .in("role", ["admin", "supervisor", "admin_rrhh"])
     .order("nombre")
   return (data ?? []) as Array<{ id: string; nombre: string }>
+}
+
+// ---------------------------------------------------------------------------
+// Mejoras: qué se dio vuelta a Si y con qué plan
+// ---------------------------------------------------------------------------
+
+/** El plan detrás de una mejora, con sus avances y evidencia. */
+export interface GopMejoraPlan {
+  id: string
+  titulo: string
+  descripcion: string | null
+  estado: EstadoGopPlan
+  responsable_nombre: string | null
+  fecha_objetivo: string | null
+  created_at: string
+  avances: GopPlanAvance[]
+}
+
+export interface GopMejoraDetalle extends GopCambio {
+  plan: GopMejoraPlan | null
+}
+
+/**
+ * Las preguntas que pasaron a Si en un mes (de un GOP, o de todos si `temaId` es null)
+ * con el plan que las explica. Es lo que se abre al clickear una celda que subió en el
+ * Resumen: el porcentaje dice que mejoró, esto dice en qué y qué se hizo.
+ */
+export async function getGopsMejorasDetalle(
+  anio: number,
+  mes: number,
+  temaId: string | null,
+): Promise<Result<GopMejoraDetalle[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const mejoras = (await getGopsCambios(anio, mes)).filter(
+      (c) => c.sentido === "mejora" && (!temaId || c.tema_id === temaId),
+    )
+    const planIds = [
+      ...new Set(
+        mejoras
+          .map((c) => (c.decision?.destino === "plan" ? c.decision.plan_id : null))
+          .filter((x): x is string => !!x),
+      ),
+    ]
+
+    const planes = new Map<string, GopMejoraPlan>()
+    if (planIds.length) {
+      const [{ data: filas, error: errP }, { data: avs, error: errA }] = await Promise.all([
+        supabase
+          .from("gops_planes")
+          .select(
+            "id, titulo, descripcion, estado, fecha_objetivo, created_at, responsable:profiles!gops_planes_responsable_id_fkey(nombre)",
+          )
+          .in("id", planIds),
+        supabase
+          .from("gops_planes_avances")
+          .select("*, autor:profiles!gops_planes_avances_autor_id_fkey(id, nombre)")
+          .in("plan_id", planIds)
+          .order("created_at", { ascending: true }),
+      ])
+      if (errP) return { error: errP.message }
+      if (errA) return { error: errA.message }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of (filas ?? []) as unknown as any[]) {
+        planes.set(r.id, {
+          id: r.id,
+          titulo: r.titulo,
+          descripcion: r.descripcion ?? null,
+          estado: (r.estado as EstadoGopPlan) ?? "pendiente",
+          responsable_nombre: r.responsable?.nombre ?? null,
+          fecha_objetivo: r.fecha_objetivo ?? null,
+          created_at: r.created_at,
+          avances: [],
+        })
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of (avs ?? []) as unknown as any[]) {
+        planes.get(r.plan_id)?.avances.push({
+          id: r.id,
+          plan_id: r.plan_id,
+          comentario: r.comentario ?? null,
+          archivos: archivosDeFila(r),
+          estado_resultante: (r.estado_resultante as EstadoGopPlan | null) ?? null,
+          autor_id: r.autor_id ?? null,
+          autor_nombre: r.autor?.nombre ?? null,
+          created_at: r.created_at,
+        })
+      }
+    }
+
+    return {
+      data: mejoras.map((c) => ({
+        ...c,
+        plan:
+          c.decision?.destino === "plan" && c.decision.plan_id
+            ? (planes.get(c.decision.plan_id) ?? null)
+            : null,
+      })),
+    }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando las mejoras" }
+  }
+}
+
+/**
+ * Registra a posteriori cómo se cerró un punto que pasó a Si sin plan en la app: crea el
+ * plan ya completado, lo deja como decisión del punto y suma un avance con lo que se hizo
+ * y la evidencia. Es para los cierres que se hicieron pero nunca se cargaron (feb–ago
+ * 2026, antes de que el módulo tuviera planes), así el auditor ve qué hay detrás de cada
+ * mejora del puntaje.
+ */
+export async function registrarCierreGop(formData: FormData): Promise<Result<{ id: string }>> {
+  try {
+    const profile = await requireAuth()
+    if (!isEditorRole(profile.role)) return { error: "Solo editores pueden registrar cierres" }
+    const supabase = await createClient()
+
+    const preguntaId = String(formData.get("pregunta_id") ?? "").trim()
+    const temaId = String(formData.get("tema_id") ?? "").trim()
+    const titulo = String(formData.get("titulo") ?? "").trim()
+    const comentario = String(formData.get("comentario") ?? "").trim()
+    const mesLabel = String(formData.get("mes_label") ?? "").trim()
+    const fechaCierre = String(formData.get("fecha_cierre") ?? "").trim() || null
+    if (!preguntaId || !temaId) return { error: "Falta el punto del GOP" }
+    if (!titulo) return { error: "El título es obligatorio" }
+    if (!comentario) return { error: "Contá qué se hizo para cerrar el punto" }
+
+    // Si el punto ya tiene un plan, el cierre va como avance de ese plan, no como otro.
+    const { data: dec } = await supabase
+      .from("gops_decisiones")
+      .select("destino, plan_id")
+      .eq("pregunta_id", preguntaId)
+      .maybeSingle()
+    const d = dec as { destino: string; plan_id: string | null } | null
+    if (d?.destino === "plan" && d.plan_id) {
+      return { error: "Este punto ya tiene un plan: cargá el cierre como avance de ese plan" }
+    }
+
+    const files = archivosDelForm(formData)
+
+    const { data: plan, error: errPlan } = await supabase
+      .from("gops_planes")
+      .insert({
+        tema_id: temaId,
+        titulo,
+        descripcion: comentario,
+        horizonte: "corto",
+        prioridad: "media",
+        estado: "completado",
+        responsable_id: String(formData.get("responsable_id") ?? "").trim() || null,
+        fecha_objetivo: fechaCierre,
+        created_by: profile.id,
+      })
+      .select("id")
+      .single()
+    if (errPlan || !plan) return { error: errPlan?.message ?? "No se pudo crear el plan" }
+    const planId = (plan as { id: string }).id
+
+    const ahora = new Date().toISOString()
+    const { error: errDec } = await supabase.from("gops_decisiones").upsert(
+      {
+        pregunta_id: preguntaId,
+        destino: "plan",
+        motivo: `Registrado a posteriori: el punto pasó a Si${mesLabel ? ` en ${mesLabel}` : ""}.`,
+        fecha_revision: null,
+        plan_id: planId,
+        decidido_por: profile.id,
+        decidido_en: ahora,
+        updated_at: ahora,
+      },
+      { onConflict: "pregunta_id" },
+    )
+    if (errDec) {
+      await supabase.from("gops_planes").delete().eq("id", planId)
+      return { error: `No se pudo asociar el punto: ${errDec.message}` }
+    }
+
+    let archivos: ArchivoAvance[] = []
+    if (files.length) {
+      const subida = await subirArchivosAvance(supabase, BUCKET, planId, files)
+      if ("error" in subida) {
+        return { error: `Plan registrado, pero falló la evidencia: ${subida.error}` }
+      }
+      archivos = subida.archivos
+    }
+
+    const { error: errAv } = await supabase.from("gops_planes_avances").insert({
+      plan_id: planId,
+      comentario: fechaCierre ? `${comentario} (cerrado el ${fechaCierre})` : comentario,
+      ...columnasArchivos(archivos),
+      estado_resultante: "completado",
+      autor_id: profile.id,
+    })
+    if (errAv) {
+      return { error: `Plan registrado, pero no se pudo guardar el avance: ${errAv.message}` }
+    }
+
+    revalidatePath(GOPS_PATH)
+    return { data: { id: planId } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error registrando el cierre" }
+  }
 }
