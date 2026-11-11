@@ -1,17 +1,20 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { ArrowRight, Minus, TrendingDown, TrendingUp } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import type { GopCambio, GopTemaResumen } from "@/actions/gops"
 import { COLOR_TONO, DESTINO_LABEL, ESTADO_LABEL, MES_NOMBRE, pct, tonoPuntaje } from "./formato"
+import { MejorasDialog, type CeldaMejoras } from "./mejoras-dialog"
 
 interface Props {
   resumen: GopTemaResumen[]
   cambios: GopCambio[]
   periodo: { anio: number; mes: number }
   onVerPlan: (planId: string) => void
+  responsables: Array<{ id: string; nombre: string }>
+  canEdit: boolean
 }
 
 const MES_CORTO: Record<number, string> = {
@@ -40,7 +43,17 @@ const FONDO_TONO: Record<"ok" | "cerca" | "lejos", string> = {
  * por columna, real contra target. Lo que el Excel no muestra va abajo: qué punto
  * concreto se dio vuelta y qué plan de acción lo explica.
  */
-export function ResumenTab({ resumen, cambios, periodo, onVerPlan }: Props) {
+export function ResumenTab({
+  resumen,
+  cambios,
+  periodo,
+  onVerPlan,
+  responsables,
+  canEdit,
+}: Props) {
+  // Celda que subió y se clickeó: abre qué puntos pasaron a Si y con qué plan.
+  const [celda, setCelda] = useState<CeldaMejoras | null>(null)
+
   // Columnas: desde enero hasta el último mes con carga (o el mes elegido, si es
   // posterior). No tiene sentido mostrar vacíos hasta diciembre.
   const meses = useMemo(() => {
@@ -171,6 +184,9 @@ export function ResumenTab({ resumen, cambios, periodo, onVerPlan }: Props) {
                           previo={previo}
                           target={t.target}
                           destacada={m === periodo.mes}
+                          onClick={() =>
+                            setCelda({ anio: periodo.anio, mes: m, temaId: t.id, titulo: t.nombre })
+                          }
                         />
                       )
                     })}
@@ -198,6 +214,14 @@ export function ResumenTab({ resumen, cambios, periodo, onVerPlan }: Props) {
                       target={resumen[0]?.target ?? 0.85}
                       destacada={m === periodo.mes}
                       negrita
+                      onClick={() =>
+                        setCelda({
+                          anio: periodo.anio,
+                          mes: m,
+                          temaId: null,
+                          titulo: "Total región",
+                        })
+                      }
                     />
                   )
                 })}
@@ -206,7 +230,8 @@ export function ResumenTab({ resumen, cambios, periodo, onVerPlan }: Props) {
           </table>
           <p className="mt-2 text-xs text-muted-foreground">
             Verde: en target · ámbar: a menos de 15 puntos · rojo: más lejos. La flecha compara
-            con el mes anterior con carga. Las bimestrales entran al total solo en los meses
+            con el mes anterior con carga: clic en una celda que subió para ver qué puntos
+            pasaron a Si y con qué plan. Las bimestrales entran al total solo en los meses
             que se cargan.
           </p>
         </CardContent>
@@ -234,7 +259,19 @@ export function ResumenTab({ resumen, cambios, periodo, onVerPlan }: Props) {
             ) : (
               <ul className="mt-3 space-y-2">
                 {mejoras.map((c) => (
-                  <CambioItem key={c.pregunta_id} cambio={c} onVerPlan={onVerPlan} />
+                  <CambioItem
+                    key={c.pregunta_id}
+                    cambio={c}
+                    onVerPlan={onVerPlan}
+                    onDetalle={() =>
+                      setCelda({
+                        anio: periodo.anio,
+                        mes: periodo.mes,
+                        temaId: c.tema_id,
+                        titulo: c.tema_nombre,
+                      })
+                    }
+                  />
                 ))}
               </ul>
             )}
@@ -268,6 +305,15 @@ export function ResumenTab({ resumen, cambios, periodo, onVerPlan }: Props) {
           </CardContent>
         </Card>
       </div>
+
+      <MejorasDialog
+        celda={celda}
+        onOpenChange={(o) => {
+          if (!o) setCelda(null)
+        }}
+        responsables={responsables}
+        canEdit={canEdit}
+      />
     </div>
   )
 }
@@ -305,12 +351,15 @@ function Celda({
   target,
   destacada,
   negrita,
+  onClick,
 }: {
   valor: number | null
   previo: number | null
   target: number
   destacada: boolean
   negrita?: boolean
+  /** Solo se usa si la celda subió contra el mes anterior: abre el detalle de la mejora. */
+  onClick?: () => void
 }) {
   if (valor === null) {
     return (
@@ -323,20 +372,39 @@ function Celda({
   }
   const tono = tonoPuntaje(valor, target)
   const d = previo !== null ? valor - previo : null
+  const subio = d !== null && d > 0.0001 && !!onClick
+  const contenido = (
+    <>
+      {pct(valor, 0)}
+      {d !== null && d > 0.0001 && <TrendingUp className="h-3 w-3" />}
+      {d !== null && d < -0.0001 && <TrendingDown className="h-3 w-3" />}
+    </>
+  )
+  const clases = `inline-flex min-w-[58px] items-center justify-center gap-0.5 rounded-md px-1.5 py-0.5 tabular-nums ${
+    FONDO_TONO[tono]
+  } ${COLOR_TONO[tono]} ${negrita ? "font-bold" : "font-semibold"}`
   return (
     <td
       className={`py-1.5 text-center ${destacada ? "bg-blue-50/60" : ""}`}
-      title={d !== null ? `Mes anterior con carga: ${pct(previo)}` : undefined}
+      title={
+        subio
+          ? `Mes anterior con carga: ${pct(previo)} · clic para ver qué mejoró`
+          : d !== null
+            ? `Mes anterior con carga: ${pct(previo)}`
+            : undefined
+      }
     >
-      <span
-        className={`inline-flex min-w-[58px] items-center justify-center gap-0.5 rounded-md px-1.5 py-0.5 tabular-nums ${
-          FONDO_TONO[tono]
-        } ${COLOR_TONO[tono]} ${negrita ? "font-bold" : "font-semibold"}`}
-      >
-        {pct(valor, 0)}
-        {d !== null && d > 0.0001 && <TrendingUp className="h-3 w-3" />}
-        {d !== null && d < -0.0001 && <TrendingDown className="h-3 w-3" />}
-      </span>
+      {subio ? (
+        <button
+          type="button"
+          onClick={onClick}
+          className={`${clases} cursor-pointer ring-emerald-300 hover:ring-2`}
+        >
+          {contenido}
+        </button>
+      ) : (
+        <span className={clases}>{contenido}</span>
+      )}
     </td>
   )
 }
@@ -344,9 +412,12 @@ function Celda({
 function CambioItem({
   cambio,
   onVerPlan,
+  onDetalle,
 }: {
   cambio: GopCambio
   onVerPlan: (id: string) => void
+  /** Solo para las mejoras: abre el detalle con el plan y el registro del cierre. */
+  onDetalle?: () => void
 }) {
   const esMejora = cambio.sentido === "mejora"
   const d = cambio.decision
@@ -403,6 +474,14 @@ function CambioItem({
               ? "Sin plan registrado: se cerró sin pasar por la app."
               : "Sin decisión todavía."}
           </span>
+        )}
+        {onDetalle && (
+          <button
+            onClick={onDetalle}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 font-medium text-emerald-700 hover:bg-emerald-100"
+          >
+            {plan ? "Ver detalle" : "Registrar cómo se cerró"}
+          </button>
         )}
       </div>
     </li>

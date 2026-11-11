@@ -213,6 +213,8 @@ export function GopsClient({
                 cambios={cambios}
                 periodo={periodo}
                 onVerPlan={verPlan}
+                responsables={responsables}
+                canEdit={canEdit}
               />
             </TabsContent>
 
