@@ -240,7 +240,6 @@ export function CapacitacionesClient({
   const [avanceOpen, setAvanceOpen] = useState(false)
 
   const [realizadasOpen, setRealizadasOpen] = useState(false)
-  const [indicadoresOpen, setIndicadoresOpen] = useState(true)
 
   async function handleCreate() {
     if (!form.titulo.trim() || !form.instructor.trim() || !form.fecha) {
@@ -448,25 +447,7 @@ export function CapacitacionesClient({
         </div>
       </div>
 
-      {/* Stats — plegados por defecto, se abren con el desplegable */}
-      <button
-        type="button"
-        onClick={() => setIndicadoresOpen((v) => !v)}
-        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-white px-3 py-2 text-left text-xs text-slate-600 outline-none hover:bg-slate-50"
-        title={indicadoresOpen ? "Ocultar indicadores" : "Ver indicadores"}
-      >
-        <ChevronDown
-          className={`size-4 text-slate-400 transition-transform ${indicadoresOpen ? "" : "-rotate-90"}`}
-        />
-        <span className="text-sm font-semibold text-slate-700">Indicadores</span>
-        {!indicadoresOpen && (
-          <span className="text-slate-500">
-            {stats.total} calendarizadas · {stats.programadas} pendientes · {stats.enCurso} en curso ·{" "}
-            {stats.completadas} completadas · <b className="text-sky-600">{stats.pctRealizadas} %</b> cumplimiento anual
-          </span>
-        )}
-      </button>
-      {indicadoresOpen && (
+      {/* Stats */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard label="Calendarizadas" value={stats.total} color="#6366F1" />
         <StatCard label="Pendientes" value={stats.programadas} color={ESTADO_CAPACITACION_COLORS.programada} />
@@ -494,7 +475,6 @@ export function CapacitacionesClient({
           </Card>
         </button>
       </div>
-      )}
 
       {/* Adherencia al cronograma (Gantt) — meta 90 % a fin de año */}
       <CapacitacionesAdherencia capacitaciones={withDerived} hoy={hoy} />
