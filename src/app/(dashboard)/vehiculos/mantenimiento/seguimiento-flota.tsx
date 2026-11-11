@@ -15,8 +15,26 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
-import { CalendarDays, ChevronLeft, ChevronRight, Gauge, Plus, Trash2 } from "lucide-react"
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  FileText,
+  Gauge,
+  Plus,
+  Trash2,
+  Wrench,
+} from "lucide-react"
 import { KpiCard, type EstadoKpi } from "./_components/kpi-card"
 import {
   Bar,
@@ -41,13 +59,20 @@ import type {
   MantenimientoRealizado,
 } from "@/types/database"
 import {
+  MANTENIMIENTO_ESTADO_LABELS,
+  MANTENIMIENTO_SISTEMA_LABELS,
+} from "@/types/database"
+import {
   TARGET_DISP,
   calcularDisponibilidadMes,
   calcularDisponibilidadPeriodo,
   calcularDisponibilidadRango,
+  etiquetaOt,
   flotaDeRuta,
   ruteoSetDe,
   type EstadoDiaFlota as Estado,
+  type ParadaFlota,
+  type ParadaPeriodo,
   type UnidadFlota,
 } from "@/lib/vehiculos/disponibilidad-flota"
 
@@ -72,6 +97,59 @@ const hoyISO = () => {
 }
 const fmtFecha = (f: string | null) =>
   !f ? "—" : f.slice(0, 10).split("-").reverse().join("/")
+/** Fecha+hora de entrada/salida de taller (ISO). */
+const fmtFechaHora = (f: string | null) =>
+  !f ? "—" : `${fmtFecha(f.slice(0, 10))} ${f.slice(11, 16)}`
+const fmtMoney = (v: number) =>
+  new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    maximumFractionDigits: 0,
+  }).format(v)
+
+const TIPO_OT_LABEL: Record<"preventivo" | "correctivo" | "proactivo", string> = {
+  preventivo: "Preventivo",
+  correctivo: "Correctivo",
+  proactivo: "Proactivo",
+}
+
+const CAUSA_LABEL: Record<ParadaFlota["causa"], string> = {
+  PMC: "Parado por correctivo",
+  PMP: "Parado por preventivo",
+  IND: "Indisponible (no mantenimiento)",
+}
+const CAUSA_BADGE: Record<ParadaFlota["causa"], string> = {
+  PMC: "border-destructive/30 bg-destructive/10 text-destructive",
+  PMP: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400",
+  IND: "border-border bg-muted text-muted-foreground",
+}
+
+/**
+ * Lo que se está mirando en el detalle de una parada: de qué unidad es y, si se
+ * entró por el calendario, qué día se clickeó.
+ */
+type DetalleParada = {
+  dominio: string
+  modelo: string | null
+  parada: ParadaFlota
+  /** Día del calendario. null = se abrió desde la tabla de paradas. */
+  dia: string | null
+}
+
+/**
+ * Los trabajos de una OT, en texto. La tarea del plan se nombra con el catálogo
+ * (`tareasById`); sin catálogo —la pantalla de Vehículos no lo trae— se la
+ * saltea en vez de poner "Tarea del plan", así el lugar lo ocupa la observación
+ * de la OT, que sí dice algo.
+ */
+function trabajosDeOt(
+  ot: NonNullable<ParadaFlota["ot"]>,
+  tareasById?: Map<string, { nombre: string }>
+): string[] {
+  return ot.tareas
+    .map((t) => (t.tareaId ? tareasById?.get(t.tareaId)?.nombre ?? null : t.descripcion))
+    .filter((x): x is string => Boolean(x && x.trim()))
+}
 
 interface Props {
   mantenimientos: MantenimientoRealizado[]
@@ -79,6 +157,14 @@ interface Props {
   diasRuteo: DiaRuteo[]
   indisponibilidades: FlotaIndisponibilidad[]
   puedeEditar: boolean
+  /** Catálogo de tareas del plan: para nombrar los trabajos de la OT. */
+  tareasById?: Map<string, { nombre: string }>
+  /**
+   * Abre la OT completa (la ficha con repuestos, facturas y evidencia). Lo pasa
+   * la pantalla de Mantenimiento, que tiene ese diálogo; sin él el detalle de la
+   * parada igual muestra la OT, pero sin el botón para abrirla entera.
+   */
+  onVerOt?: (otId: string) => void
 }
 
 export function SeguimientoFlota({
@@ -87,6 +173,8 @@ export function SeguimientoFlota({
   diasRuteo,
   indisponibilidades,
   puedeEditar,
+  tareasById,
+  onVerOt,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -99,6 +187,8 @@ export function SeguimientoFlota({
    * porcentaje del mes se sigue viendo igual.
    */
   const [vista, setVista] = useState<"mes" | "dia">("dia")
+  /** Parada abierta en el detalle (click en un día parado o en la tabla). */
+  const [detalle, setDetalle] = useState<DetalleParada | null>(null)
 
   const flota = useMemo(() => flotaDeRuta(unidades), [unidades])
 
@@ -272,6 +362,9 @@ export function SeguimientoFlota({
             ),
     [rango, mesSel, mesesDelPeriodo, mantenimientos, indisponibilidades, flota, ruteoSet]
   )
+
+  /** Mes que dibuja el calendario: con él, el número de columna es una fecha. */
+  const mesDelCalendario = rango ? rango.desde.slice(0, 7) : mesSel
 
   const colorPct = (pct: number | null, target = TARGET_DISP) =>
     pct == null
@@ -665,6 +758,13 @@ export function SeguimientoFlota({
             <Leyendas />
           </CardContent>
         </Card>
+
+        <ParadasConOt
+          paradas={calc.paradas}
+          periodoLabel={periodoLabel}
+          tareasById={tareasById}
+          onVer={setDetalle}
+        />
       </TabsContent>
 
       <TabsContent value="dia">
@@ -717,10 +817,40 @@ export function SeguimientoFlota({
                                 : est === "DRT" ? "disponible y ruteó"
                                   : est === "DSP" ? "disponible sin uso"
                                     : "día no laboral"
+                      // La parada que dejó la unidad fuera ese día, con su OT:
+                      // es lo que hace demostrable el cuadradito rojo.
+                      const parada = f.paradaPorDia.get(d)
+                      const detalleTxt = parada
+                        ? `${parada.ot ? ` · ${etiquetaOt(parada.ot)}` : ""}` +
+                          `${parada.ot?.taller ? ` · ${parada.ot.taller}` : ""}` +
+                          `${parada.motivo ? ` · ${parada.motivo.slice(0, 90)}` : ""}` +
+                          " — click para ver la OT"
+                        : ""
+                      const titulo = `${f.dominio} · día ${d}: ${txt}${detalleTxt}`
                       return (
                         <td key={d} className="p-px">
-                          <div className={cn("h-5 w-6 rounded-sm", claseDia(est, fuera))}
-                            title={`${f.dominio} · día ${d}: ${txt}`} />
+                          {parada ? (
+                            <button
+                              type="button"
+                              title={titulo}
+                              aria-label={titulo}
+                              onClick={() =>
+                                setDetalle({
+                                  dominio: f.dominio,
+                                  modelo: f.modelo,
+                                  parada,
+                                  dia: `${mesDelCalendario}-${pad(d)}`,
+                                })
+                              }
+                              className={cn(
+                                "block h-5 w-6 cursor-pointer rounded-sm ring-offset-1 ring-offset-card transition hover:ring-2 hover:ring-foreground/50 focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:outline-none",
+                                claseDia(est, fuera)
+                              )}
+                            />
+                          ) : (
+                            <div className={cn("h-5 w-6 rounded-sm", claseDia(est, fuera))}
+                              title={titulo} />
+                          )}
                         </td>
                       )
                     })}
@@ -734,6 +864,13 @@ export function SeguimientoFlota({
             <Leyendas />
           </CardContent>
         </Card>
+
+        <ParadasConOt
+          paradas={calc.paradas}
+          periodoLabel={periodoLabel}
+          tareasById={tareasById}
+          onVer={setDetalle}
+        />
       </TabsContent>
 
       {/* Indisponibilidades (no mantenimiento) */}
@@ -743,7 +880,301 @@ export function SeguimientoFlota({
         puedeEditar={puedeEditar}
         onChange={refresh}
       />
+
+      {detalle && (
+        <DetalleParadaDialog
+          detalle={detalle}
+          tareasById={tareasById}
+          onVerOt={onVerOt}
+          onClose={() => setDetalle(null)}
+        />
+      )}
     </Tabs>
+  )
+}
+
+/**
+ * Las paradas del período con la OT que las respalda. Es la evidencia del
+ * calendario puesta en filas: cada cuadradito rojo o ámbar tiene acá su N° de
+ * OT, su taller y el trabajo que se hizo, así la parada se puede demostrar sin
+ * salir de la pantalla. Las IND no tienen OT —no son de mantenimiento— y van
+ * con el motivo que se cargó a mano.
+ */
+function ParadasConOt({
+  paradas,
+  periodoLabel,
+  tareasById,
+  onVer,
+}: {
+  paradas: ParadaPeriodo[]
+  periodoLabel: string
+  tareasById?: Map<string, { nombre: string }>
+  onVer: (d: DetalleParada) => void
+}) {
+  if (paradas.length === 0) return null
+  const dias = paradas.reduce((a, p) => a + p.dias, 0)
+  const sinOt = paradas.filter((p) => p.causa !== "IND" && !p.ot).length
+  return (
+    <Card id="paradas-con-ot">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+          <FileText className="size-4 text-muted-foreground" aria-hidden />
+          Paradas del período y su OT
+          <span className="text-sm font-normal capitalize text-muted-foreground">
+            · {periodoLabel}
+          </span>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Una fila por parada que descontó días de disponibilidad, con la orden
+          de trabajo que la explica. Los días son los que el calendario pintó: si
+          la unidad ruteó igual, ese día no figura.
+          {sinOt > 0 && ` ${sinOt} parada${sinOt === 1 ? "" : "s"} sin N° de OT cargado.`}
+        </p>
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-left text-xs text-muted-foreground">
+              <th className="px-3 py-2">Unidad</th>
+              <th className="px-2 py-2">Causa</th>
+              <th className="px-2 py-2">Desde</th>
+              <th className="px-2 py-2">Hasta</th>
+              <th className="px-2 py-2 text-right">Días</th>
+              <th className="px-2 py-2">OT</th>
+              <th className="px-2 py-2">Taller</th>
+              <th className="px-3 py-2">Trabajo / motivo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paradas.map((pa, i) => {
+              const trabajos = pa.ot ? trabajosDeOt(pa.ot, tareasById) : []
+              const detalleTxt =
+                trabajos.join(" · ") || pa.ot?.observaciones || pa.motivo || "—"
+              return (
+                <tr
+                  key={`${pa.dominio}-${pa.causa}-${pa.desde}-${pa.ot?.id ?? i}`}
+                  className={cn(
+                    "cursor-pointer border-b border-border/50 hover:bg-muted/50",
+                    i % 2 === 1 && "bg-muted/20"
+                  )}
+                  onClick={() =>
+                    onVer({
+                      dominio: pa.dominio,
+                      modelo: pa.modelo,
+                      parada: pa,
+                      dia: null,
+                    })
+                  }
+                  title="Ver el detalle de la parada y su OT"
+                >
+                  <td className="px-3 py-2 font-semibold whitespace-nowrap text-foreground">
+                    {pa.dominio}
+                    {pa.modelo && (
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">
+                        {pa.modelo}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2">
+                    <Badge variant="outline" className={cn("text-xs", CAUSA_BADGE[pa.causa])}>
+                      {pa.causa}
+                    </Badge>
+                  </td>
+                  <td className="px-2 py-2 whitespace-nowrap tabular-nums text-muted-foreground">
+                    {fmtFecha(pa.desde)}
+                  </td>
+                  <td className="px-2 py-2 whitespace-nowrap tabular-nums text-muted-foreground">
+                    {pa.abierta ? "sin retorno" : fmtFecha(pa.hasta)}
+                  </td>
+                  <td className="px-2 py-2 text-right font-medium tabular-nums">{pa.dias}</td>
+                  <td className="px-2 py-2 whitespace-nowrap font-medium tabular-nums">
+                    {pa.causa === "IND" ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      etiquetaOt(pa.ot)
+                    )}
+                  </td>
+                  <td className="px-2 py-2 whitespace-nowrap text-muted-foreground">
+                    {pa.ot?.taller || "—"}
+                  </td>
+                  <td className="max-w-80 px-3 py-2 text-xs text-muted-foreground">
+                    <span className="line-clamp-2">{detalleTxt}</span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="text-xs text-muted-foreground">
+              <td className="px-3 py-2" colSpan={4}>
+                {paradas.length} {paradas.length === 1 ? "parada" : "paradas"}
+              </td>
+              <td className="px-2 py-2 text-right font-semibold tabular-nums">{dias}</td>
+              <td colSpan={3} className="px-2 py-2">
+                días fuera de servicio en el período
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** La parada de un día con su OT: lo que se muestra para justificarla. */
+function DetalleParadaDialog({
+  detalle,
+  tareasById,
+  onVerOt,
+  onClose,
+}: {
+  detalle: DetalleParada
+  tareasById?: Map<string, { nombre: string }>
+  onVerOt?: (otId: string) => void
+  onClose: () => void
+}) {
+  const { dominio, modelo, parada, dia } = detalle
+  const ot = parada.ot
+  const trabajos = ot ? trabajosDeOt(ot, tareasById) : []
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            {dominio}
+            {modelo && (
+              <span className="text-sm font-normal text-muted-foreground">{modelo}</span>
+            )}
+            <Badge variant="outline" className={cn("text-xs", CAUSA_BADGE[parada.causa])}>
+              {CAUSA_LABEL[parada.causa]}
+            </Badge>
+          </DialogTitle>
+          <DialogDescription>
+            {dia ? `${fmtFecha(dia)} · ` : ""}
+            parada del {fmtFecha(parada.desde)}{" "}
+            {parada.abierta
+              ? "— sin fecha de retorno (la OT sigue abierta)"
+              : `al ${fmtFecha(parada.hasta)}`}
+          </DialogDescription>
+        </DialogHeader>
+
+        {ot ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Wrench className="size-4 text-muted-foreground" aria-hidden />
+                <span className="text-base font-semibold tabular-nums">{etiquetaOt(ot)}</span>
+                <Badge variant="outline" className="text-xs">
+                  {TIPO_OT_LABEL[ot.tipo]}
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {MANTENIMIENTO_ESTADO_LABELS[ot.estado]}
+                </Badge>
+                {ot.esServiceGeneral && (
+                  <Badge variant="outline" className="text-xs">
+                    Service general
+                  </Badge>
+                )}
+                {ot.auxilioRuta && (
+                  <Badge variant="outline" className={cn("text-xs", CAUSA_BADGE.PMC)}>
+                    Auxilio en ruta
+                  </Badge>
+                )}
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <Dato k="Fecha de la OT" v={fmtFecha(ot.fecha)} />
+                <Dato k="Taller" v={ot.taller || "—"} />
+                <Dato
+                  k="Sistema"
+                  v={ot.sistema ? MANTENIMIENTO_SISTEMA_LABELS[ot.sistema] : "—"}
+                />
+                <Dato k="Costo" v={ot.costo == null ? "—" : fmtMoney(ot.costo)} />
+                <Dato k="Entrada al taller" v={fmtFechaHora(ot.entradaTaller)} />
+                <Dato k="Salida del taller" v={fmtFechaHora(ot.salidaTaller)} />
+                {ot.numeroFactura && <Dato k="Factura" v={ot.numeroFactura} />}
+              </dl>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground">Trabajo realizado</p>
+              {trabajos.length > 0 ? (
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm">
+                  {trabajos.map((t, i) => (
+                    <li key={i}>{t}</li>
+                  ))}
+                </ul>
+              ) : ot.tareas.length > 0 ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {ot.tareas.length}{" "}
+                  {ot.tareas.length === 1 ? "tarea del plan" : "tareas del plan"} de
+                  mantenimiento (se listan en la ficha de la OT).
+                </p>
+              ) : (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Sin tareas cargadas en la OT.
+                </p>
+              )}
+              {ot.observaciones && (
+                <p className="mt-2 text-sm whitespace-pre-wrap text-muted-foreground">
+                  {ot.observaciones}
+                </p>
+              )}
+            </div>
+
+            {ot.evidenciaUrls.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground">Evidencia</p>
+                <div className="mt-1 flex flex-wrap gap-3">
+                  {ot.evidenciaUrls.map((url, i) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-sm text-sky-600 hover:underline dark:text-sky-400"
+                    >
+                      <ExternalLink className="size-3.5" aria-hidden /> Archivo {i + 1}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {onVerOt && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onVerOt(ot.id)
+                  onClose()
+                }}
+              >
+                <FileText aria-hidden /> Ver la OT completa
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm">
+              Parada que <strong>no es de mantenimiento</strong>: se cargó a mano
+              en «Indisponibilidades», así que no tiene OT.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Motivo: {parada.motivo || "sin motivo cargado"}
+            </p>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function Dato({ k, v }: { k: string; v: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-muted-foreground">{k}</dt>
+      <dd className="font-medium text-foreground">{v}</dd>
+    </div>
   )
 }
 
@@ -757,6 +1188,10 @@ function Leyendas() {
       <Leyenda clase="bg-slate-500" txt="Indisponible (IND)" />
       <Leyenda clase="border border-dashed border-border bg-card" txt="Día no laboral (no cuenta utilización)" />
       <Leyenda clase="bg-muted" txt="Fuera del período" />
+      <span className="text-muted-foreground/80">
+        Los días parados (rojo, ámbar y gris) se pueden clickear: abren la OT que
+        dejó la unidad fuera de servicio.
+      </span>
     </div>
   )
 }

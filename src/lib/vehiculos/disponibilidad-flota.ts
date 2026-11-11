@@ -5,7 +5,10 @@
 import type {
   DiaRuteo,
   FlotaIndisponibilidad,
+  MantenimientoEstado,
   MantenimientoRealizado,
+  MantenimientoSistema,
+  MantenimientoTipo,
   VehiculoSector,
   VehiculoTipo,
 } from "@/types/database"
@@ -41,6 +44,12 @@ export interface FilaDisp {
   pctDisp: number | null
   pctUtil: number | null
   porDia: Map<number, EstadoDiaFlota>
+  /**
+   * La parada que explica el color de cada día (sólo PMC/PMP/IND). Es la MISMA
+   * que eligió el cálculo, así que la OT que muestra el calendario es la que de
+   * verdad descontó ese día de la disponibilidad.
+   */
+  paradaPorDia: Map<number, ParadaFlota>
 }
 
 export interface CalcDisponibilidadMes {
@@ -51,6 +60,12 @@ export interface CalcDisponibilidadMes {
   flotaDisp: number | null
   flotaUtil: number | null
   camionesConParada: number
+  /**
+   * Las paradas que descontaron días en el período, con la OT que las explica.
+   * Sale del mismo recorrido día a día que el %, así que una parada que el
+   * calendario no pintó (porque la unidad ruteó igual) no aparece acá.
+   */
+  paradas: ParadaPeriodo[]
 }
 
 const pad = (n: number) => String(n).padStart(2, "0")
@@ -78,6 +93,40 @@ export function ruteoSetDe(diasRuteo: DiaRuteo[]): Set<string> {
   return new Set(diasRuteo.map((r) => `${r.dominio}|${r.fecha}`))
 }
 
+/**
+ * La OT que explica una parada de mantenimiento. Es la evidencia del día
+ * pintado en el calendario: con el N° de OT, el taller y el trabajo se puede
+ * demostrar por qué la unidad no estaba disponible.
+ */
+export interface OtDeParada {
+  id: string
+  numeroOt: string | null
+  cloudfleetNumber: number | null
+  fecha: string
+  tipo: MantenimientoTipo
+  estado: MantenimientoEstado
+  taller: string | null
+  sistema: MantenimientoSistema | null
+  observaciones: string | null
+  /** Tareas de la OT: nombre del plan si lo trae, o el texto libre. */
+  tareas: Array<{ tareaId: string | null; descripcion: string | null }>
+  costo: number | null
+  auxilioRuta: boolean
+  entradaTaller: string | null
+  salidaTaller: string | null
+  esServiceGeneral: boolean
+  evidenciaUrls: string[]
+  numeroFactura: string | null
+}
+
+/** Cómo se nombra una OT en pantalla: N° propio, o el de Cloudfleet. */
+export function etiquetaOt(ot: OtDeParada | null): string {
+  if (!ot) return "—"
+  if (ot.numeroOt) return `OT ${ot.numeroOt}`
+  if (ot.cloudfleetNumber != null) return `OT CF #${ot.cloudfleetNumber}`
+  return "OT s/n°"
+}
+
 /** Una parada concreta: el tramo que sacó a la unidad de circulación. */
 export interface ParadaFlota {
   desde: string
@@ -86,6 +135,19 @@ export interface ParadaFlota {
   motivo: string | null
   /** OT sin fecha de retorno: `hasta` es provisorio (se arrastra hasta hoy). */
   abierta: boolean
+  /** La OT que la causó. NULL en las IND, que no son de mantenimiento. */
+  ot: OtDeParada | null
+}
+
+/** Una parada vista desde el período que se está mirando. */
+export interface ParadaPeriodo extends ParadaFlota {
+  dominio: string
+  modelo: string | null
+  /** Días del período que esta parada efectivamente pintó en el calendario. */
+  dias: number
+  /** Primer y último día del período que pintó (puede ser menor al tramo). */
+  primerDia: string
+  ultimoDia: string
 }
 
 /**
@@ -114,6 +176,28 @@ export function paradasPorDominio(
       causa: m.tipo === "correctivo" ? "PMC" : "PMP",
       motivo: m.observaciones ?? null,
       abierta: abierta && !m.fuera_servicio_hasta,
+      ot: {
+        id: m.id,
+        numeroOt: m.numero_ot ?? null,
+        cloudfleetNumber: m.cloudfleet_number ?? null,
+        fecha: m.fecha,
+        tipo: m.tipo,
+        estado: m.estado,
+        taller: m.taller ?? null,
+        sistema: m.sistema ?? null,
+        observaciones: m.observaciones ?? null,
+        tareas: (m.tareas ?? []).map((t) => ({
+          tareaId: t.tarea_id ?? null,
+          descripcion: t.descripcion ?? null,
+        })),
+        costo: m.costo ?? null,
+        auxilioRuta: m.auxilio_ruta === true,
+        entradaTaller: m.entrada_taller ?? null,
+        salidaTaller: m.salida_taller ?? null,
+        esServiceGeneral: m.es_service_general === true,
+        evidenciaUrls: m.evidencia_urls ?? [],
+        numeroFactura: m.numero_factura ?? null,
+      },
     })
     paradas.set(m.dominio, arr)
   }
@@ -133,6 +217,7 @@ export function indisponibilidadesPorDominio(
       causa: "IND",
       motivo: i.motivo ?? null,
       abierta: false,
+      ot: null,
     })
     inds.set(i.dominio, arr)
   }
@@ -251,8 +336,14 @@ export function calcularDisponibilidadRango(
     }
   }
 
+  // Paradas que descontaron días, para la tabla de evidencia del período.
+  const paradasPeriodo: ParadaPeriodo[] = []
+
   const filas: FilaDisp[] = flota.map((u) => {
     const porDia = new Map<number, EstadoDiaFlota>()
+    const paradaPorDia = new Map<number, ParadaFlota>()
+    // Días que cada parada efectivamente pintó (las que el ruteo tapó quedan en 0).
+    const diasDeParada = new Map<ParadaFlota, { dias: number; primero: string; ultimo: string }>()
     const ps = paradas.get(u.dominio) ?? []
     const is = inds.get(u.dominio) ?? []
     let pmc = 0, pmp = 0, ind = 0, drt = 0, dsp = 0, lib = 0
@@ -271,19 +362,31 @@ export function calcularDisponibilidadRango(
       // el AF028YB daba 73,1 % con 7 días parados sobre 26, y 4 de esos 7 los
       // ruteó completos.
       let est: EstadoDiaFlota | null = ruteoSet.has(`${u.dominio}|${fecha}`) ? "DRT" : null
+      // La parada concreta que dejó la unidad fuera ese día: es la que después
+      // muestra el calendario con su OT, así que se elige acá y no aparte.
+      let paradaDelDia: ParadaFlota | null = null
       if (est == null) for (const p of ps) {
         if (fecha >= p.desde && fecha <= p.hasta) {
-          if (p.causa === "PMC") { est = "PMC"; break }
+          if (p.causa === "PMC") { est = "PMC"; paradaDelDia = p; break }
           est = "PMP"
+          paradaDelDia ??= p
         }
       }
       if (est == null) {
         for (const i of is) {
-          if (fecha >= i.desde && fecha <= i.hasta) { est = "IND"; break }
+          if (fecha >= i.desde && fecha <= i.hasta) { est = "IND"; paradaDelDia = i; break }
         }
       }
       if (est == null) est = laboral.has(fecha) ? "DSP" : "LIB" // LIB = día no laboral
-      if (unSoloMes) porDia.set(Number(fecha.slice(8, 10)), est)
+      if (unSoloMes) {
+        porDia.set(Number(fecha.slice(8, 10)), est)
+        if (paradaDelDia) paradaPorDia.set(Number(fecha.slice(8, 10)), paradaDelDia)
+      }
+      if (paradaDelDia) {
+        const acc = diasDeParada.get(paradaDelDia)
+        if (acc) { acc.dias++; acc.ultimo = fecha }
+        else diasDeParada.set(paradaDelDia, { dias: 1, primero: fecha, ultimo: fecha })
+      }
 
       if (est === "PMC") pmc++
       else if (est === "PMP") pmp++
@@ -298,12 +401,27 @@ export function calcularDisponibilidadRango(
     // Utilización: solo sobre días laborales disponibles (DRT + DSP), sin contar LIB.
     const baseUtil = drt + dsp
     const pctUtil = baseUtil > 0 ? (drt / baseUtil) * 100 : null
+    for (const [parada, acc] of diasDeParada) {
+      paradasPeriodo.push({
+        ...parada,
+        dominio: u.dominio,
+        modelo: u.modelo ?? null,
+        dias: acc.dias,
+        primerDia: acc.primero,
+        ultimoDia: acc.ultimo,
+      })
+    }
     return {
       dominio: u.dominio, modelo: u.modelo ?? null, anio: u.anio ?? null,
       diasPeriodo, pmc, pmp, ind, drt, dsp, lib,
-      parado, disponibles, pctDisp, pctUtil, porDia,
+      parado, disponibles, pctDisp, pctUtil, porDia, paradaPorDia,
     }
   })
+
+  // Orden cronológico: así se lee como el relato del mes en la reunión.
+  paradasPeriodo.sort(
+    (a, b) => a.primerDia.localeCompare(b.primerDia) || a.dominio.localeCompare(b.dominio)
+  )
 
   const conDisp = filas.filter((f) => f.pctDisp != null)
   const flotaDisp = conDisp.length
@@ -330,6 +448,7 @@ export function calcularDisponibilidadRango(
     flotaDisp,
     flotaUtil,
     camionesConParada: filas.filter((f) => f.parado > 0).length,
+    paradas: paradasPeriodo,
   }
 }
 
@@ -376,7 +495,7 @@ export function calcularDisponibilidadPeriodo(
   if (meses.length === 0) {
     return {
       diasDelMes: 0, diasPeriodo: 0, diasLaborales: 0, filas: [],
-      flotaDisp: null, flotaUtil: null, camionesConParada: 0,
+      flotaDisp: null, flotaUtil: null, camionesConParada: 0, paradas: [],
     }
   }
   const ordenados = [...meses].sort()

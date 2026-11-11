@@ -1123,6 +1123,11 @@ export function MantenimientoClient({
             diasRuteo={diasRuteo}
             indisponibilidades={indisponibilidades}
             puedeEditar={puedeEditar}
+            tareasById={tareasById}
+            onVerOt={(id) => {
+              const m = mantenimientos.find((x) => x.id === id)
+              if (m) setVerMant(m)
+            }}
           />
         </TabsContent>
 
