@@ -22,6 +22,7 @@ import {
   Shirt,
   Sparkles,
   TrendingUp,
+  Trophy,
   Lightbulb,
   Wrench,
 } from "lucide-react"
@@ -61,6 +62,8 @@ export interface ContextoPortal {
   puedeRecepcion: boolean
   /** Admin/supervisor o maquinistas habilitados (`puedeOperarVehiculos`). */
   puedeVehiculos: boolean
+  /** El legajo vinculado es del sector Depósito (ranking 5S de ayudantes). */
+  esDeposito: boolean
 }
 
 export interface ModuloPortal {
@@ -162,6 +165,17 @@ export const MODULOS_PORTAL: ModuloPortal[] = [
     icon: Sparkles,
     empresas: PAMPEANA,
     grupo: "trabajo",
+  },
+  // Ranking 3R (ayudantes) del bimestre en curso: sólo el personal de
+  // Depósito, que es el que compite (11/11/2026).
+  {
+    id: "ranking-5s",
+    label: "Ranking 3R",
+    href: "/mi-ranking-5s",
+    icon: Trophy,
+    empresas: PAMPEANA,
+    grupo: "trabajo",
+    visible: (ctx) => ctx.esDeposito,
   },
   {
     id: "heladeras",

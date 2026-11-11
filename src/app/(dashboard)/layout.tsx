@@ -1,5 +1,5 @@
 import { NuqsAdapter } from "nuqs/adapters/next/app"
-import { requireAuth } from "@/lib/session"
+import { getMiEmpleado, requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
 import { Sidebar } from "@/components/layout/sidebar"
 import { MobileNav } from "@/components/layout/mobile-nav"
@@ -24,7 +24,8 @@ export default async function DashboardLayout({
   // Empleados: mismo menú lateral que el resto (columna izquierda), con sus
   // ítems curados. Reemplaza la vieja nav superior de tabs.
   if (role === "empleado") {
-    const ctxPortal = { puedeRecepcion, puedeVehiculos }
+    const esDeposito = (await getMiEmpleado())?.sector === "Depósito"
+    const ctxPortal = { puedeRecepcion, puedeVehiculos, esDeposito }
     return (
       <EmpleadoGuard ctx={ctxPortal}>
         <div className="flex min-h-screen">

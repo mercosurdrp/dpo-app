@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
-import { requireAuth, requireRole } from "@/lib/session"
+import { createAdminClient } from "@/lib/supabase/admin"
+import { getMiEmpleado, requireAuth, requireRole } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import type {
   S5AyudantesConfig,
@@ -494,6 +495,27 @@ export async function getRankingDeposito(
       return { error: "El ranking de depósito es exclusivo de Pampeana." }
     }
     const supabase = await createClient()
+    return { data: await calcularRankingDeposito(supabase, periodoDesde) }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando el ranking",
+    }
+  }
+}
+
+/**
+ * El cálculo del ranking, sin chequeo de permisos: NO se exporta (en un
+ * archivo "use server" cada export es un endpoint). Lo usan
+ * `getRankingDeposito` (con la sesión del usuario) y `getMiRanking5S` (con el
+ * cliente admin, porque la RLS de auditorías y responsables no deja leer al
+ * rol empleado).
+ */
+async function calcularRankingDeposito(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  periodoDesde?: string,
+): Promise<S5RankingDepositoData> {
+  {
     const config = await readConfig(supabase)
 
     const ventana = Math.max(1, Math.min(6, config.meses_ventana))
@@ -872,22 +894,193 @@ export async function getRankingDeposito(
     const fotos_ganadores = await fotosGanadoresDePeriodo(desde)
 
     return {
+      periodo_desde: desde,
+      periodo_hasta: hasta,
+      meses,
+      ranking: rows,
+      errores_modo: erroresModo,
+      premios_deposito: premios.filter((p) => p.area === "deposito"),
+      premios_distribucion: premios.filter((p) => p.area === "distribucion"),
+      fotos_ganadores,
+      config,
+    }
+  }
+}
+
+// ── Vista del operario: cómo voy en el bimestre en curso ──
+
+export interface MiRanking5SFila {
+  posicion: number
+  nombre: string
+  puntos: number
+  soy_yo: boolean
+}
+
+export interface MiRanking5SDetalle {
+  posicion: number
+  puntos: number
+  /** Nota promedio de las auditorías 5S de sus sectores; null = sin auditoría todavía. */
+  nota_5s: number | null
+  sectores: string[]
+  errores_cant: number | null
+  bultos_cant: number | null
+  errores_x1000: number | null
+  errores_score: number | null
+  /** bul/HH promedio de picking. */
+  productividad: number | null
+  /** Pal/HH promedio en despacho. */
+  productividad_maq: number | null
+  productividad_score: number | null
+  reportes_cant: number
+  reportes_score: number
+  /** Reportes que faltan para llegar al máximo del componente. */
+  reportes_faltan: number
+  elegible: boolean
+  no_elegible_motivo: string | null
+}
+
+export interface MiRanking5S {
+  periodo_desde: string
+  meses: string[]
+  /** Días que faltan para que cierre el bimestre (hora AR). */
+  dias_restantes: number
+  /** Hay al menos una auditoría 5S cargada en el bimestre. */
+  hay_auditoria_5s: boolean
+  errores_modo: "cantidad" | "x1000"
+  /** Peso de cada componente en %, sobre 100 (los que están activos). */
+  pesos: { s5: number; errores: number; productividad: number; reportes: number }
+  tope_errores_x1000: number
+  tope_errores_bimestre: number
+  tope_reportes_bimestre: number
+  prod_target: number
+  prod_target_maq: number
+  tabla: MiRanking5SFila[]
+  mio: MiRanking5SDetalle | null
+  nombre: string
+}
+
+/** Primer mes ("YYYY-MM-01") del bimestre calendario en curso, en hora AR. */
+function bimestreEnCurso(ventana: number): { desde: string; hoy: Date } {
+  const hoy = new Date(Date.now() - 3 * 60 * 60 * 1000)
+  const y = hoy.getUTCFullYear()
+  const m = hoy.getUTCMonth() + 1
+  return { desde: anclarPeriodo(`${y}-${String(m).padStart(2, "0")}-01`, ventana), hoy }
+}
+
+/**
+ * El ranking de ayudantes del bimestre EN CURSO, para que lo vea el personal
+ * de Depósito desde el portal. Va con el cliente admin (el rol empleado no
+ * lee auditorías ni responsables) y devuelve sólo lo que puede ver cualquiera:
+ * posición, nombre y puntos de todos, y el desglose completo de uno mismo.
+ * El ausentismo de los demás NO sale de acá (es dato de RRHH); por eso
+ * tampoco se marca el podio, que lo saltea.
+ */
+export async function getMiRanking5S(): Promise<{ data: MiRanking5S } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (IS_MISIONES) return { error: "El ranking 3R es de Pampeana." }
+    const emp = await getMiEmpleado()
+    const gestion = ["admin", "auditor", "supervisor"].includes(profile.role)
+    if (!gestion && emp?.sector !== "Depósito") {
+      return { error: "El ranking 3R es para el personal de Depósito." }
+    }
+
+    const admin = createAdminClient()
+    const config = await readConfig(admin)
+    const ventana = Math.max(1, Math.min(6, config.meses_ventana))
+    const { desde, hoy } = bimestreEnCurso(ventana)
+    const r = await calcularRankingDeposito(admin, desde)
+
+    // Uno mismo: por legajo, o por nombre (los pickers que no son responsables
+    // de sector vienen con el nombre del WMS y sin empleado_id).
+    const miTk = emp ? tokens(emp.nombre) : new Set<string>()
+    const miIdx = emp
+      ? r.ranking.findIndex(
+          (x) =>
+            x.empleado_id === emp.id ||
+            (x.empleado_id == null && miTk.size > 0 && compartenEstricto(tokens(x.nombre), miTk)),
+        )
+      : -1
+
+    const tabla: MiRanking5SFila[] = r.ranking.map((x, i) => ({
+      posicion: i + 1,
+      nombre: x.nombre,
+      puntos: Math.round(x.score),
+      soy_yo: i === miIdx,
+    }))
+
+    const topeReportes = Math.max(0.5, r.config.tope_reportes * ventana)
+    let mio: MiRanking5SDetalle | null = null
+    if (miIdx >= 0) {
+      const x = r.ranking[miIdx]
+      mio = {
+        posicion: miIdx + 1,
+        puntos: Math.round(x.score),
+        nota_5s: x.nota_5s,
+        sectores: x.sectores,
+        errores_cant: x.errores_cant,
+        bultos_cant: x.bultos_cant,
+        errores_x1000: x.errores_x1000,
+        errores_score: x.errores_score,
+        productividad: x.productividad,
+        productividad_maq: x.productividad_maq,
+        productividad_score: x.productividad_score,
+        reportes_cant: x.reportes_cant,
+        reportes_score: x.reportes_score,
+        reportes_faltan: Math.max(0, Math.ceil(topeReportes - x.reportes_cant)),
+        elegible: x.elegible,
+        no_elegible_motivo: x.no_elegible_motivo,
+      }
+    }
+
+    const c = r.config
+    const w = {
+      s5: Math.max(0, c.peso_5s),
+      errores: Math.max(0, c.peso_errores),
+      productividad: Math.max(0, c.peso_productividad),
+      reportes: Math.max(0, c.peso_reportes),
+    }
+    const tw = w.s5 + w.errores + w.productividad + w.reportes || 1
+    const pct = (v: number) => Math.round((v / tw) * 100)
+
+    // Días hasta el último día del bimestre, contando hoy.
+    const [hy, hm] = r.periodo_hasta.split("-").map(Number)
+    const finBimestre = Date.UTC(hy, hm, 0)
+    const hoyUTC = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate())
+    const dias_restantes = Math.max(0, Math.round((finBimestre - hoyUTC) / 86400000) + 1)
+
+    const { count } = await admin
+      .from("s5_auditorias")
+      .select("id", { count: "exact", head: true })
+      .eq("tipo", "almacen")
+      .eq("estado", "completada")
+      .in("periodo", r.meses)
+
+    return {
       data: {
-        periodo_desde: desde,
-        periodo_hasta: hasta,
-        meses,
-        ranking: rows,
-        errores_modo: erroresModo,
-        premios_deposito: premios.filter((p) => p.area === "deposito"),
-        premios_distribucion: premios.filter((p) => p.area === "distribucion"),
-        fotos_ganadores,
-        config,
+        periodo_desde: r.periodo_desde,
+        meses: r.meses,
+        dias_restantes,
+        hay_auditoria_5s: (count ?? 0) > 0,
+        errores_modo: r.errores_modo,
+        pesos: {
+          s5: pct(w.s5),
+          errores: pct(w.errores),
+          productividad: pct(w.productividad),
+          reportes: pct(w.reportes),
+        },
+        tope_errores_x1000: c.tope_errores_x1000,
+        tope_errores_bimestre: Math.max(1, c.tope_errores * ventana),
+        tope_reportes_bimestre: topeReportes,
+        prod_target: c.prod_target,
+        prod_target_maq: c.prod_target_maq,
+        tabla,
+        mio,
+        nombre: emp?.nombre ?? profile.nombre ?? "",
       },
     }
   } catch (err) {
-    return {
-      error: err instanceof Error ? err.message : "Error cargando el ranking",
-    }
+    return { error: err instanceof Error ? err.message : "Error cargando el ranking" }
   }
 }
 
