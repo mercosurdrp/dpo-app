@@ -318,6 +318,7 @@ export function ArbolKpiClient({ data, config, puedeEditar }: Props) {
         ytd={detalle ? valorDe(detalle.key).ytd : null}
         mesLabel={data.mesLabel}
         anio={data.anio}
+        mes={data.mes}
         puedeEditar={puedeEditar}
         exigePlan={
           detalle

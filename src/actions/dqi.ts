@@ -6,7 +6,16 @@ import { createPlanAccion } from "@/actions/gestion"
 import { getRoturasChofer } from "@/actions/roturas-calle"
 import { PREGUNTA_KEY, preguntaIdPorKey } from "@/lib/dpo/pregunta-por-key"
 import type { PrioridadPlan } from "@/types/database"
-import type { RoturaConDetalle } from "@/types/roturas"
+import type { RoturaConDetalle, RoturaMotivo } from "@/types/roturas"
+import { ROTURA_MOTIVO_LABELS } from "@/types/roturas"
+import {
+  clasificarSku,
+  type DqiGrupoCalibre,
+  type DqiGrupoEnvase,
+  type DqiSkuFila,
+  type DqiTipoSkuData,
+  type EnvaseSku,
+} from "@/lib/dqi/tipo-sku"
 
 // ===== DQI — Delivered Quality Index (Calidad de entrega, DPO Entrega 1.4) =====
 // Roturas ocurridas EN LA ENTREGA/RUTA (categoría "ROTURA DISTRIBUCIÓN") ÷ HL
@@ -682,5 +691,271 @@ export async function getDqiPorPatenteRanking(
       filas_sin_patente: base.data.filas_sin_patente,
       sin_volumen: sinVolumen,
     },
+  }
+}
+
+// ===== DQI por tipo de SKU (envase › calibre › SKU) =====
+// Pedido de la auditoría (punto 1.4): ver QUÉ se rompe para encontrar el motivo.
+// Fuente: la serie diaria del tablero de pérdidas, que publica las dos partes
+// del DQI corregido con detalle por SKU:
+//   - roturas_detalle_dia  (origen "distribucion" = rotura en ruta)
+//   - reempaque_detalle_dia (lo que vuelve de ruta con el packaging roto)
+// El denominador es el mismo HL entregado del mes que usa getDqi, así que la
+// suma de los grupos + "sin detalle" da exacto el DQI corregido publicado.
+//
+// "Sin detalle": el `dqi_detalle.hl_mes` del tablero (lo que usa el DQI oficial
+// para las roturas en ruta) es mayor que la suma de roturas de distribución por
+// SKU (oct'26: 1,36 vs 0,44 HL). Esa diferencia se muestra aparte, sin
+// asignarla a ningún SKU.
+
+interface SerieDiariaItemRotura {
+  sku?: string | number
+  descripcion?: string
+  origen?: string
+  patentes?: string[]
+  unidades?: number
+  hl?: number
+}
+interface SerieDiariaItemReempaque {
+  sku?: string | number
+  descripcion?: string
+  bultos?: number
+  hl?: number
+}
+
+async function fetchSerieDiariaDetalle(
+  year: number,
+  month: number,
+): Promise<{
+  roturas: SerieDiariaItemRotura[]
+  reempaque: SerieDiariaItemReempaque[]
+} | null> {
+  try {
+    const res = await fetch(
+      `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
+      { cache: "no-store", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+    )
+    if (!res.ok) return null
+    const j = (await res.json()) as {
+      roturas_detalle_dia?: Record<string, SerieDiariaItemRotura[] | null>
+      reempaque_detalle_dia?: Record<string, SerieDiariaItemReempaque[] | null>
+    }
+    const roturas: SerieDiariaItemRotura[] = []
+    for (const arr of Object.values(j.roturas_detalle_dia ?? {})) {
+      for (const it of arr ?? []) if (it?.origen === "distribucion") roturas.push(it)
+    }
+    const reempaque: SerieDiariaItemReempaque[] = []
+    for (const arr of Object.values(j.reempaque_detalle_dia ?? {})) {
+      for (const it of arr ?? []) if (it) reempaque.push(it)
+    }
+    return { roturas, reempaque }
+  } catch {
+    return null
+  }
+}
+
+async function fetchDqiHlRutaMes(year: number, month: number): Promise<number | null> {
+  try {
+    const res = await fetch(`${DEPOSITO_API_BASE}/api/dqi?year=${year}&month=${month}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    if (!res.ok) return null
+    const j = (await res.json()) as { dqi_detalle?: { hl_mes?: number | null } }
+    const v = j?.dqi_detalle?.hl_mes
+    return typeof v === "number" ? v : null
+  } catch {
+    return null
+  }
+}
+
+const tipoSkuCache = new Map<string, { t: number; v: DqiTipoSkuData }>()
+
+export async function getDqiPorTipoSku(
+  year: number,
+  month: number,
+): Promise<{ data: DqiTipoSkuData } | { error: string }> {
+  await requireAuth()
+  const key = `${year}-${month}`
+  const hit = tipoSkuCache.get(key)
+  if (hit && Date.now() - hit.t < HL_TTL_MS) return { data: hit.v }
+
+  try {
+    const [detalle, hlRutaOficial, hlEntregados, roturasChofer] = await Promise.all([
+      fetchSerieDiariaDetalle(year, month),
+      fetchDqiHlRutaMes(year, month),
+      getHlEntregados(year, month),
+      getRoturasChofer(year, month),
+    ])
+    if (!detalle) {
+      return { error: "El tablero de pérdidas no respondió el detalle por SKU." }
+    }
+
+    const ppm = (hl: number) =>
+      hlEntregados ? Math.round((hl / hlEntregados) * 1_000_000 * 10) / 10 : null
+    const r4 = (n: number) => Math.round(n * 10000) / 10000
+
+    // ── Acumular por SKU ────────────────────────────────────────────────
+    type Acc = {
+      descripcion: string
+      hl_ruta: number
+      hl_reempaque: number
+      unidades_ruta: number
+      bultos_reempaque: number
+      patentes: Set<string>
+    }
+    const porSku = new Map<string, Acc>()
+    const acc = (sku: string, desc: string): Acc => {
+      let a = porSku.get(sku)
+      if (!a) {
+        a = {
+          descripcion: desc,
+          hl_ruta: 0,
+          hl_reempaque: 0,
+          unidades_ruta: 0,
+          bultos_reempaque: 0,
+          patentes: new Set(),
+        }
+        porSku.set(sku, a)
+      }
+      return a
+    }
+    for (const it of detalle.roturas) {
+      const a = acc(String(it.sku ?? "?"), it.descripcion ?? "")
+      a.hl_ruta += Number(it.hl ?? 0)
+      a.unidades_ruta += Number(it.unidades ?? 0)
+      for (const p of it.patentes ?? []) if (p) a.patentes.add(p)
+    }
+    for (const it of detalle.reempaque) {
+      const a = acc(String(it.sku ?? "?"), it.descripcion ?? "")
+      a.hl_reempaque += Number(it.hl ?? 0)
+      a.bultos_reempaque += Number(it.bultos ?? 0)
+    }
+
+    // ── Familia desde el maestro de Chess ───────────────────────────────
+    const ids = [...porSku.keys()].map(Number).filter((n) => Number.isFinite(n))
+    const uneg = new Map<string, string | null>()
+    if (ids.length > 0) {
+      const supabase = await createClient()
+      const { data: arts } = await supabase
+        .from("chess_articulos")
+        .select("id_articulo, uneg")
+        .in("id_articulo", ids)
+      for (const a of (arts ?? []) as { id_articulo: number; uneg: string | null }[]) {
+        uneg.set(String(a.id_articulo), a.uneg)
+      }
+    }
+
+    // ── Motivos que cargó el chofer en /mis-roturas, por SKU ────────────
+    const motivos = new Map<string, Set<string>>()
+    if ("data" in roturasChofer) {
+      for (const r of roturasChofer.data) {
+        const label = ROTURA_MOTIVO_LABELS[r.motivo as RoturaMotivo] ?? String(r.motivo ?? "")
+        for (const it of r.items ?? []) {
+          if (it.id_articulo == null || !label) continue
+          const k = String(it.id_articulo)
+          if (!motivos.has(k)) motivos.set(k, new Set())
+          motivos.get(k)!.add(label)
+        }
+      }
+    }
+
+    // ── Agrupar envase › calibre › SKU ──────────────────────────────────
+    const grupos = new Map<EnvaseSku, Map<string, DqiGrupoCalibre>>()
+    for (const [codigo, a] of porSku) {
+      const tipo = clasificarSku(a.descripcion, uneg.get(codigo))
+      const hlTotal = a.hl_ruta + a.hl_reempaque
+      const fila: DqiSkuFila = {
+        codigo,
+        descripcion: a.descripcion,
+        tipo,
+        hl_ruta: r4(a.hl_ruta),
+        hl_reempaque: r4(a.hl_reempaque),
+        hl_total: r4(hlTotal),
+        unidades_ruta: a.unidades_ruta,
+        bultos_reempaque: a.bultos_reempaque,
+        ppm: ppm(hlTotal),
+        patentes: [...a.patentes].sort(),
+        motivos_chofer: [...(motivos.get(codigo) ?? [])],
+      }
+      if (!grupos.has(tipo.envase)) grupos.set(tipo.envase, new Map())
+      const porCal = grupos.get(tipo.envase)!
+      let g = porCal.get(tipo.calibre)
+      if (!g) {
+        g = {
+          calibre: tipo.calibre,
+          calibre_cc: tipo.calibre_cc,
+          hl_ruta: 0,
+          hl_reempaque: 0,
+          hl_total: 0,
+          ppm: null,
+          skus: [],
+        }
+        porCal.set(tipo.calibre, g)
+      }
+      g.hl_ruta += a.hl_ruta
+      g.hl_reempaque += a.hl_reempaque
+      g.hl_total += hlTotal
+      g.skus.push(fila)
+    }
+
+    const totalRutaSku = [...porSku.values()].reduce((s, a) => s + a.hl_ruta, 0)
+    const totalReemp = [...porSku.values()].reduce((s, a) => s + a.hl_reempaque, 0)
+    // El DQI oficial toma las roturas en ruta de dqi_detalle.hl_mes; si no vino,
+    // se usa la suma por SKU (sin "sin detalle").
+    const hlRutaDqi = hlRutaOficial != null ? Math.max(hlRutaOficial, totalRutaSku) : totalRutaSku
+    const sinDetalleHl = Math.max(0, hlRutaDqi - totalRutaSku)
+    const totalHl = hlRutaDqi + totalReemp
+    const ppmTotal = hlEntregados ? Math.round((totalHl / hlEntregados) * 1_000_000) : null
+
+    const envases: DqiGrupoEnvase[] = [...grupos.entries()]
+      .map(([envase, porCal]) => {
+        const calibres = [...porCal.values()]
+          .map((g) => ({
+            ...g,
+            hl_ruta: r4(g.hl_ruta),
+            hl_reempaque: r4(g.hl_reempaque),
+            hl_total: r4(g.hl_total),
+            ppm: ppm(g.hl_total),
+            skus: g.skus.sort((x, y) => y.hl_total - x.hl_total),
+          }))
+          .sort((x, y) => y.hl_total - x.hl_total)
+        const hlR = calibres.reduce((s, c) => s + c.hl_ruta, 0)
+        const hlE = calibres.reduce((s, c) => s + c.hl_reempaque, 0)
+        const hlT = hlR + hlE
+        return {
+          envase,
+          hl_ruta: r4(hlR),
+          hl_reempaque: r4(hlE),
+          hl_total: r4(hlT),
+          ppm: ppm(hlT),
+          pct_dqi: totalHl > 0 ? Math.round((hlT / totalHl) * 1000) / 10 : null,
+          calibres,
+        }
+      })
+      .sort((x, y) => y.hl_total - x.hl_total)
+
+    const data: DqiTipoSkuData = {
+      year,
+      month,
+      hl_entregados: hlEntregados,
+      envases,
+      sin_detalle: { hl: r4(sinDetalleHl), ppm: ppm(sinDetalleHl) },
+      total: {
+        hl_ruta: r4(hlRutaDqi),
+        hl_reempaque: r4(totalReemp),
+        hl_total: r4(totalHl),
+        ppm: ppmTotal,
+      },
+    }
+    tipoSkuCache.set(key, { t: Date.now(), v: data })
+    return { data }
+  } catch (e) {
+    return {
+      error:
+        e instanceof Error
+          ? `No se pudo armar la apertura por SKU: ${e.message}`
+          : "Error armando la apertura por SKU.",
+    }
   }
 }

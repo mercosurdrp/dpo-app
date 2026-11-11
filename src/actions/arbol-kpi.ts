@@ -18,7 +18,8 @@ import { IS_MISIONES } from "@/lib/empresa"
 import { cumplimientoPct } from "@/lib/ocupacion-bodega"
 import { esRutaLimpia } from "@/lib/foxtrot/ruta-limpia"
 import { getFueraRutaMensual } from "@/actions/fuera-ruta"
-import { getDqi } from "@/actions/dqi"
+import { getDqi, getDqiPorTipoSku } from "@/actions/dqi"
+import { ENVASE_SKU_ORDEN, nodoArbolEnvase } from "@/lib/dqi/tipo-sku"
 import { resumirModulacion, type AlertaModulacion } from "@/lib/foxtrot-alertas/modulacion"
 
 export interface NodoValor {
@@ -397,16 +398,33 @@ export async function getArbolKpiRechazo(): Promise<
     // ── DQI: viene del tablero del depósito, un fetch por mes ────────────
     // Se pide sólo el mes en curso: el YTD exigiría 12 llamadas al tablero y
     // hoy ese endpoint no publica la serie corregida (pendiente del punto 1.4).
-    try {
-      const dqi = await getDqi(anio, mes)
-      if ("data" in dqi) {
-        const d = dqi.data as { correccion?: { ppm_corregido?: number | null } | null }
-        mth.dqi = d.correccion?.ppm_corregido ?? null
-      }
-    } catch {
-      mth.dqi = null
+    // La apertura por envase (hijos del DQI) se pide en paralelo: mismo
+    // tablero, otro endpoint; no suma latencia.
+    const [dqiRes, tipoSkuRes] = await Promise.allSettled([
+      getDqi(anio, mes),
+      getDqiPorTipoSku(anio, mes),
+    ])
+    mth.dqi = null
+    if (dqiRes.status === "fulfilled" && "data" in dqiRes.value) {
+      const d = dqiRes.value.data as { correccion?: { ppm_corregido?: number | null } | null }
+      mth.dqi = d.correccion?.ppm_corregido ?? null
     }
     ytd.dqi = null
+    for (const envase of ENVASE_SKU_ORDEN) {
+      const k = nodoArbolEnvase(envase)
+      mth[k] = null
+      ytd[k] = null
+    }
+    if (tipoSkuRes.status === "fulfilled" && "data" in tipoSkuRes.value) {
+      for (const g of tipoSkuRes.value.data.envases) {
+        mth[nodoArbolEnvase(g.envase)] = g.ppm
+      }
+      // Un envase que no tuvo roturas en el mes vale 0, no "sin dato".
+      for (const envase of ENVASE_SKU_ORDEN) {
+        const k = nodoArbolEnvase(envase)
+        if (mth[k] == null) mth[k] = 0
+      }
+    }
 
     const valores: Record<string, NodoValor> = {}
     for (const key of new Set([...Object.keys(mth), ...Object.keys(ytd)])) {
@@ -476,6 +494,10 @@ export async function getArbolKpiRechazoSeries(): Promise<
     // versión corregida con reempaque (pendiente del punto 1.4 de la auditoría).
     sinSerie.dqi =
       "El DQI lo calcula el tablero del depósito mes a mes y todavía no publica la serie corregida con reempaque."
+    for (const envase of ENVASE_SKU_ORDEN) {
+      sinSerie[nodoArbolEnvase(envase)] =
+        "La apertura por envase se arma con el detalle por SKU del mes en curso; abajo está el desglose por calibre y SKU."
+    }
 
     return { data: { meses, series, sinSerie } }
   } catch (e) {

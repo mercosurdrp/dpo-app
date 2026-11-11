@@ -21,6 +21,10 @@ import { getArbolKpiRechazoSeries, type ArbolKpiSeries } from "@/actions/arbol-k
 import { NIVEL_KPI_LABEL, type NodoResuelto } from "@/lib/arbol-kpi/rechazo"
 import { ObjetivoNodoForm } from "./objetivo-nodo-form"
 import { PlanesNodo } from "./planes-nodo"
+import {
+  DqiTipoSkuTabla,
+  useDqiTipoSku,
+} from "@/app/(dashboard)/indicadores/dqi/_components/dqi-tipo-sku-card"
 
 interface Props {
   nodo: NodoResuelto | null
@@ -30,6 +34,8 @@ interface Props {
   ytd: number | null
   mesLabel: string
   anio: number
+  /** Mes en curso (1-12): lo usa la apertura por SKU del DQI. */
+  mes: number
   puedeEditar: boolean
   /** El nodo cruzó su gatillo: el diálogo empuja a abrir un plan. */
   exigePlan: boolean
@@ -70,6 +76,7 @@ export function NodoDetalleDialog({
   ytd,
   mesLabel,
   anio,
+  mes,
   puedeEditar,
   exigePlan,
   onClose,
@@ -230,6 +237,11 @@ export function NodoDetalleDialog({
                 )}
               </div>
 
+              {/* DQI y sus envases: qué SKUs se rompen (auditoría 1.4) */}
+              {(nodo.key === "dqi" || nodo.key.startsWith("dqi_")) && (
+                <AperturaSkuNodo nodoKey={nodo.key} anio={anio} mes={mes} />
+              )}
+
               {/* Objetivo y dueño del PI: lo primero que pregunta el auditor */}
               <ObjetivoNodoForm
                 nodo={nodo}
@@ -266,5 +278,29 @@ export function NodoDetalleDialog({
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** Apertura envase › calibre › SKU del mes, filtrada al envase del nodo
+ * (el nodo DQI muestra todos). Misma tabla que /indicadores/dqi. */
+function AperturaSkuNodo({ nodoKey, anio, mes }: { nodoKey: string; anio: number; mes: number }) {
+  const { data, error, pending } = useDqiTipoSku(anio, mes)
+  const envase = nodoKey === "dqi" ? null : nodoKey.slice("dqi_".length)
+  const envases = (data?.envases ?? []).filter((e) => envase == null || e.envase === envase)
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        Apertura por SKU · mes en curso
+      </p>
+      {pending && !data && (
+        <div className="flex items-center justify-center py-6 text-muted-foreground">
+          <Loader2 className="mr-2 size-4 animate-spin" /> Cargando SKUs…
+        </div>
+      )}
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
+      )}
+      {data && <DqiTipoSkuTabla envases={envases} compacta />}
+    </div>
   )
 }

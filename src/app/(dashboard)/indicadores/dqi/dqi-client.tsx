@@ -39,6 +39,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { DqiPorPatenteCard } from "./_components/dqi-por-patente-card"
+import { DqiTipoSkuCard } from "./_components/dqi-tipo-sku-card"
 import { getDqi, crearPlanDqi, type DqiData } from "@/actions/dqi"
 import { ROTURA_MOTIVO_LABELS, ROTURA_ESTADO_LABELS, ROTURA_TIPO_LABELS } from "@/types/roturas"
 
@@ -131,11 +132,13 @@ export function DqiClient({ initial, initialYear, initialMonth }: Props) {
     [`LY ${year - 1}`]: dqi.serie_ly?.[i] != null ? +(+dqi.serie_ly[i]!).toFixed(1) : null,
   }))
 
-  const openPlanDialog = (m: number) => {
+  const openPlanDialog = (m: number, descripcionInicial?: string) => {
     const val = dqi.serie_real?.[m - 1]
     setPlanMonth(m)
     setDescripcion(
-      val != null
+      descripcionInicial
+        ? descripcionInicial
+        : val != null
         ? `Reducir las roturas en distribución de ${MESES_FULL[m - 1]} ${year}: el DQI fue ${val} PPM` +
             (target != null ? ` (meta ${target} PPM).` : ".")
         : `Plan de acción de calidad de entrega — ${MESES_FULL[m - 1]} ${year}.`,
@@ -435,6 +438,9 @@ export function DqiClient({ initial, initialYear, initialMonth }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* Apertura por tipo de SKU (envase › calibre › SKU) — pedido auditoría 1.4 */}
+      <DqiTipoSkuCard year={year} month={month} onCrearPlan={(desc) => openPlanDialog(month, desc)} />
 
       {/* Top SKUs rotos en ruta */}
       <Card>
