@@ -7,7 +7,7 @@ import { foxtrotDcIds } from "@/lib/foxtrot"
 // La semana se calcula en un solo lugar: el filtro del detalle usa la misma
 // función, así los números coinciden con la serie semanal.
 import { semanaDelAnio } from "@/lib/tiempo-interno"
-import { parseClaveDesvio, type ReglaDesvio } from "@/lib/tiempo-interno-analisis"
+import { parseClaveDesvio, type PrefijoDesvio, type ReglaDesvio } from "@/lib/tiempo-interno-analisis"
 import { PREGUNTA_KEY, preguntaIdPorKey } from "@/lib/dpo/pregunta-por-key"
 import { createPlanAccion } from "@/actions/gestion"
 import type {
@@ -117,10 +117,17 @@ export async function getTiKpis(filters?: {
    * `bajo_umbral` para poder auditar a quién y cuántas veces le pasa.
    */
   minTiMinutos?: number
+  /**
+   * De quién es el tiempo (SOP 1.3): "chofer" = cierre financiero (default,
+   * el TI histórico); "ayudante" = verificación física, desde la llegada del
+   * camión hasta el fichaje de salida de cada ayudante.
+   */
+  rol?: "chofer" | "ayudante"
 }): Promise<{ data: TiKpis } | { error: string }> {
   try {
     await requireAuth()
     const supabase = await createClient()
+    const rol = filters?.rol ?? "chofer"
 
     // 1) Retornos
     // Paginado: hoy son ~675 desde abril, pero crece ~200/mes y al pasar las 1000
@@ -139,6 +146,51 @@ export async function getTiKpis(filters?: {
       return q.order("fecha", { ascending: true }).order("id").range(f, t)
     })
     retornos.sort((a, b) => a.fecha.localeCompare(b.fecha))
+
+    // 1.a) Qué se mide. Para el chofer, cada retorno tal cual. Para el
+    // ayudante (verificación física), los ayudantes del ÚLTIMO egreso de
+    // portería de ese camión ese día (si hizo 2 viajes, vuelven con el último),
+    // un registro por ayudante y por día (queda el último retorno). `persona`
+    // es a quién se le mide la salida; `chofer` sigue siendo el de la ruta,
+    // que es con quien se cruza la llegada de Foxtrot.
+    type ItemTi = { fecha: string; persona: string; chofer: string; dominio: string; hora: string }
+    let items: ItemTi[] = retornos.map((r) => ({ ...r, persona: r.chofer }))
+    let sinAyudanteRegistrado = 0
+    if (rol === "ayudante") {
+      const desdeEg = filters?.fechaDesde || retornos[0]?.fecha || "2026-01-01"
+      const egresos = await leerTodo<{
+        fecha: string; dominio: string; hora: string; ayudante1: string | null; ayudante2: string | null
+      }>((f, t) => {
+        let q = supabase
+          .from("registros_vehiculos")
+          .select("fecha,dominio,hora,ayudante1,ayudante2")
+          .eq("tipo", "egreso")
+          .gte("fecha", desdeEg)
+        if (filters?.fechaHasta) q = q.lte("fecha", filters.fechaHasta)
+        return q.order("fecha", { ascending: true }).order("id").range(f, t)
+      })
+      const ultimoEgreso = new Map<string, { hora: string; ayudantes: string[] }>()
+      for (const e of egresos) {
+        const k = `${e.fecha}|${norm(e.dominio)}`
+        const ayudantes = [e.ayudante1, e.ayudante2].map((a) => norm(a)).filter(Boolean)
+        const prev = ultimoEgreso.get(k)
+        if (!prev || e.hora >= prev.hora) ultimoEgreso.set(k, { hora: e.hora, ayudantes })
+      }
+      const porPersonaDia = new Map<string, ItemTi>()
+      for (const r of retornos) {
+        const ayudantes = ultimoEgreso.get(`${r.fecha}|${norm(r.dominio)}`)?.ayudantes ?? []
+        if (ayudantes.length === 0) {
+          sinAyudanteRegistrado++
+          continue
+        }
+        for (const a of ayudantes) {
+          const k = `${r.fecha}|${a}`
+          const prev = porPersonaDia.get(k)
+          if (!prev || r.hora > prev.hora) porPersonaDia.set(k, { ...r, persona: a })
+        }
+      }
+      items = [...porPersonaDia.values()].sort((a, b) => a.fecha.localeCompare(b.fecha))
+    }
 
     // 1.b) Llegada GPS al CD (Foxtrot, `raw_data.tml_actual_arrival` = "Actual
     // Route Arrival Time" del CSV: geofence del teléfono al entrar al radio del
@@ -276,13 +328,13 @@ export async function getTiKpis(filters?: {
     const minTi = filters?.minTiMinutos ?? 0
     let conGps = 0
     let conFoxtrotFin = 0
-    for (const r of retornos) {
-      const emp = resolveLegajo(r.chofer)
+    for (const r of items) {
+      const emp = resolveLegajo(r.persona)
       const kFx = claveFx(r.fecha, r.chofer)
       const llegadaMs = llegadaPorChoferFecha.get(kFx)
       const finFxMs = finPorChoferFecha.get(kFx)
       const base = {
-        fecha: r.fecha, chofer: r.chofer, dominio: r.dominio, hora_retorno: r.hora,
+        fecha: r.fecha, chofer: r.persona, dominio: r.dominio, hora_retorno: r.hora,
         hora_llegada_gps: llegadaMs != null ? new Date(llegadaMs).toISOString() : null,
         hora_fin_foxtrot: finFxMs != null ? new Date(finFxMs).toISOString() : null,
       }
@@ -292,7 +344,7 @@ export async function getTiKpis(filters?: {
       }
       if (!legajosQueFichan.has(emp.legajo)) {
         noFicha++
-        sinFichajeSet.add(norm(r.chofer))
+        sinFichajeSet.add(norm(r.persona))
         registros.push({ ...base, legajo: emp.legajo, hora_salida: null, ti_minutos: null, motivo_sin_dato: "no_ficha" })
         continue
       }
@@ -391,7 +443,8 @@ export async function getTiKpis(filters?: {
 
     return {
       data: {
-        totalRetornos: retornos.length,
+        totalRetornos: items.length,
+        rol, sinAyudanteRegistrado,
         conTi, conGps, conFoxtrotFin, sinBiometrico: sinBio, excluidos,
         noFicha, choferesSinFichaje: [...sinFichajeSet].sort(),
         minTiMinutos: minTi, bajoUmbral,
@@ -706,7 +759,9 @@ export interface TiPlanDesvio {
   semana: string
 }
 
-export async function getTiPlanesDesvio(): Promise<{ data: TiPlanDesvio[] } | { error: string }> {
+export async function getTiPlanesDesvio(
+  prefijo: PrefijoDesvio = "ti_desvio",
+): Promise<{ data: TiPlanDesvio[] } | { error: string }> {
   try {
     await requireAuth()
     const supabase = await createClient()
@@ -716,13 +771,13 @@ export async function getTiPlanesDesvio(): Promise<{ data: TiPlanDesvio[] } | { 
       .from("planes_accion")
       .select("id, descripcion, estado, prioridad, responsable, fecha_limite, created_at, notas")
       .eq("pregunta_id", pregunta)
-      .like("notas", "%ti_desvio=%")
+      .like("notas", `%${prefijo}=%`)
       .order("created_at", { ascending: false })
     if (error) return { error: error.message }
     const out: TiPlanDesvio[] = []
     for (const p of data ?? []) {
       const k = parseClaveDesvio(p.notas as string | null)
-      if (!k) continue
+      if (!k || k.prefijo !== prefijo) continue
       out.push({
         id: p.id as string,
         descripcion: p.descripcion as string,

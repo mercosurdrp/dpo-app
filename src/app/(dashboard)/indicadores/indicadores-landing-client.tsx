@@ -350,10 +350,29 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                   </div>
                   <div>
                     <p className="font-semibold text-slate-900">
-                      Tiempo Interno
+                      Tiempo Interno · cierre financiero
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Retorno al CD → fichaje de salida — Pilar Entrega 1.3
+                      Retorno al CD → fichaje de salida del chofer — Pilar Entrega 1.3
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
+          {!IS_MISIONES && (
+            <Link href="/indicadores/verificacion-fisica">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-cyan-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-cyan-100 text-cyan-600 group-hover:bg-cyan-200 transition-colors">
+                    <Clock className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      Verificación física (ayudantes)
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Retorno al CD → fichaje de salida del ayudante — Pilar Entrega 1.3
                     </p>
                   </div>
                 </CardContent>

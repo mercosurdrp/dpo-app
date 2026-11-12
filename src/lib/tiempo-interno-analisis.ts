@@ -20,6 +20,14 @@ export const TI_VENTANA_COLA_MIN = 30
 
 const AR_OFFSET_MS = 3 * 3600 * 1000
 
+/** De quién es el tiempo (SOP 1.3): chofer = cierre financiero, ayudante = verificación física. */
+export type RolTi = "chofer" | "ayudante"
+export const PERSONA: Record<RolTi, { singular: string; plural: string; Singular: string; Plural: string }> = {
+  chofer: { singular: "chofer", plural: "choferes", Singular: "Chofer", Plural: "Choferes" },
+  ayudante: { singular: "ayudante", plural: "ayudantes", Singular: "Ayudante", Plural: "Ayudantes" },
+}
+export const PREFIJO_POR_ROL = { chofer: "ti_desvio", ayudante: "vf_desvio" } as const
+
 export const DIAS_SEMANA = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"] as const
 
 export type TiRegistroValido = TiRegistro & { ti_minutos: number }
@@ -153,18 +161,25 @@ export function efectoCola(
   soloDe?: Set<TiRegistroValido>,
   ventana = TI_VENTANA_COLA_MIN,
 ): GrupoCola[] {
-  const porFecha = new Map<string, number[]>()
+  // Se cuentan CAMIONES, no personas: los dos ayudantes de un mismo camión
+  // llegan juntos y no se hacen cola entre ellos.
+  const camion = (r: TiRegistroValido) => r.dominio || normChofer(r.chofer)
+  const porFecha = new Map<string, { ms: number; camion: string }[]>()
   for (const r of registros) {
     if (!porFecha.has(r.fecha)) porFecha.set(r.fecha, [])
-    porFecha.get(r.fecha)!.push(inicioMs(r))
+    porFecha.get(r.fecha)!.push({ ms: inicioMs(r), camion: camion(r) })
   }
   const grupos: Record<0 | 1 | 2, number[]> = { 0: [], 1: [], 2: [] }
   for (const r of registros) {
     if (soloDe && !soloDe.has(r)) continue
     const mio = inicioMs(r)
     const desde = mio - ventana * 60000
-    // Se resta uno: el propio retorno siempre cae en su ventana.
-    const antes = (porFecha.get(r.fecha) ?? []).filter((t) => t >= desde && t <= mio).length - 1
+    const propio = camion(r)
+    const antes = new Set(
+      (porFecha.get(r.fecha) ?? [])
+        .filter((x) => x.camion !== propio && x.ms >= desde && x.ms <= mio)
+        .map((x) => x.camion),
+    ).size
     grupos[Math.min(Math.max(antes, 0), 2) as 0 | 1 | 2].push(r.ti_minutos)
   }
   return ([0, 1, 2] as const)
@@ -176,6 +191,8 @@ export function efectoCola(
 }
 
 export type ReglaDesvio = "semana_sobre_meta" | "reincidencia"
+/** ti_desvio = chofer (cierre financiero) · vf_desvio = ayudante (verificación física). */
+export type PrefijoDesvio = "ti_desvio" | "vf_desvio"
 
 export interface DesvioTi {
   /** Se guarda en planes_accion.notas para vincular el plan con el desvío. */
@@ -199,16 +216,27 @@ export interface DesvioTi {
   ultimaFecha: string
 }
 
-export function claveDesvio(regla: ReglaDesvio, chofer: string, semana: string): string {
-  return `ti_desvio=${regla}|${normChofer(chofer)}|${semana}`
+export function claveDesvio(
+  regla: ReglaDesvio,
+  chofer: string,
+  semana: string,
+  prefijo: PrefijoDesvio = "ti_desvio",
+): string {
+  return `${prefijo}=${regla}|${normChofer(chofer)}|${semana}`
 }
 
-export function parseClaveDesvio(
-  notas: string | null | undefined,
-): { regla: ReglaDesvio; chofer: string; semana: string; clave: string } | null {
-  const m = (notas ?? "").match(/ti_desvio=(semana_sobre_meta|reincidencia)\|([^|\n]+)\|(\d{4}-\d{1,2})/)
+export function parseClaveDesvio(notas: string | null | undefined): {
+  prefijo: PrefijoDesvio
+  regla: ReglaDesvio
+  chofer: string
+  semana: string
+  clave: string
+} | null {
+  const m = (notas ?? "").match(
+    /(ti_desvio|vf_desvio)=(semana_sobre_meta|reincidencia)\|([^|\n]+)\|(\d{4}-\d{1,2})/,
+  )
   if (!m) return null
-  return { regla: m[1] as ReglaDesvio, chofer: m[2], semana: m[3], clave: m[0] }
+  return { prefijo: m[1] as PrefijoDesvio, regla: m[2] as ReglaDesvio, chofer: m[3], semana: m[4], clave: m[0] }
 }
 
 /**
@@ -218,7 +246,10 @@ export function parseClaveDesvio(
  * Si el chofer dispara las dos reglas en la misma semana sale UNA fila (y un
  * solo plan) con las dos marcadas.
  */
-export function detectarDesvios(registros: TiRegistroValido[]): DesvioTi[] {
+export function detectarDesvios(
+  registros: TiRegistroValido[],
+  prefijo: PrefijoDesvio = "ti_desvio",
+): DesvioTi[] {
   const grupos = new Map<string, TiRegistroValido[]>()
   for (const r of registros) {
     const k = `${claveSemana(r.fecha)}|${normChofer(r.chofer)}`
@@ -248,7 +279,7 @@ export function detectarDesvios(registros: TiRegistroValido[]): DesvioTi[] {
     if (diasMalos >= TI_REINCIDENCIA_DIAS) reglas.push("reincidencia")
     if (regs.length >= TI_MIN_RETORNOS_SEMANA && promedio > TI_META) reglas.push("semana_sobre_meta")
     if (reglas.length === 0) continue
-    out.push({ ...base, regla: reglas[0], reglas, clave: claveDesvio(reglas[0], chofer, semana) })
+    out.push({ ...base, regla: reglas[0], reglas, clave: claveDesvio(reglas[0], chofer, semana, prefijo) })
   }
   return out.sort((a, b) => b.ultimaFecha.localeCompare(a.ultimaFecha) || b.promedio - a.promedio)
 }

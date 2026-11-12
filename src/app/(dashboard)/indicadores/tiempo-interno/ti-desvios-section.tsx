@@ -36,8 +36,11 @@ import {
   detectarDesvios,
   efectoPlan,
   registrosValidos,
+  PERSONA,
+  PREFIJO_POR_ROL,
   type DesvioTi,
   type EfectoPlan,
+  type RolTi,
 } from "@/lib/tiempo-interno-analisis"
 
 const SEMANAS_DEFAULT = 8
@@ -87,9 +90,11 @@ function Efecto({ e }: { e: EfectoPlan }) {
 export function TiDesviosSection({
   registros,
   planes,
+  rol = "chofer",
 }: {
   registros: TiRegistro[]
   planes: TiPlanDesvio[]
+  rol?: RolTi
 }) {
   const refrescar = useRefrescarConScroll()
   const [filtro, setFiltro] = useState<Filtro>("sin_plan")
@@ -97,7 +102,7 @@ export function TiDesviosSection({
   const [abrirPara, setAbrirPara] = useState<DesvioTi | null>(null)
 
   const validos = useMemo(() => registrosValidos(registros), [registros])
-  const desvios = useMemo(() => detectarDesvios(validos), [validos])
+  const desvios = useMemo(() => detectarDesvios(validos, PREFIJO_POR_ROL[rol]), [validos, rol])
   const planPorClave = useMemo(() => new Map(planes.map((p) => [p.clave, p])), [planes])
 
   const semanasRecientes = useMemo(() => {
@@ -127,10 +132,10 @@ export function TiDesviosSection({
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <AlertTriangle className="h-4 w-4 text-amber-500" />
-              Desvíos por chofer y planes de acción
+              Desvíos por {PERSONA[rol].singular} y planes de acción
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Se marca un desvío cuando el chofer promedia más de {TI_META} min en la semana o pasa los{" "}
+              Se marca un desvío cuando el {PERSONA[rol].singular} promedia más de {TI_META} min en la semana o pasa los{" "}
               {TI_REINCIDENCIA_MINUTOS} min {TI_REINCIDENCIA_DIAS} o más días. Los planes quedan en el punto 1.3 de
               Entrega: con responsable, evidencia y en Mis tareas.
             </p>
@@ -178,7 +183,7 @@ export function TiDesviosSection({
               <TableHeader>
                 <TableRow>
                   <TableHead>Semana</TableHead>
-                  <TableHead>Chofer</TableHead>
+                  <TableHead>{PERSONA[rol].Singular}</TableHead>
                   <TableHead>Desvío</TableHead>
                   <TableHead className="text-right">Promedio</TableHead>
                   <TableHead className="text-right">Días &gt; {TI_REINCIDENCIA_MINUTOS}</TableHead>
@@ -247,7 +252,7 @@ export function TiDesviosSection({
               </TableBody>
             </Table>
             <p className="mt-3 text-xs text-muted-foreground">
-              Seguimiento: TI del chofer en las 4 semanas anteriores al plan contra las 4 siguientes. Verde si bajó 3
+              Seguimiento: TI del {PERSONA[rol].singular} en las 4 semanas anteriores al plan contra las 4 siguientes. Verde si bajó 3
               minutos o más.
             </p>
           </div>
@@ -257,6 +262,7 @@ export function TiDesviosSection({
       {abrirPara && (
         <AbrirPlanDialog
           desvio={abrirPara}
+          rol={rol}
           onClose={() => setAbrirPara(null)}
           onCreated={() => {
             setAbrirPara(null)
@@ -270,10 +276,12 @@ export function TiDesviosSection({
 
 function AbrirPlanDialog({
   desvio,
+  rol,
   onClose,
   onCreated,
 }: {
   desvio: DesvioTi
+  rol: RolTi
   onClose: () => void
   onCreated: () => void
 }) {
@@ -286,10 +294,12 @@ function AbrirPlanDialog({
     .filter(Boolean)
     .join(" y ")
   const [accion, setAccion] = useState(
-    `Bajar el tiempo de rendición de ${desvio.chofer}: semana ${desvio.semanaNum} (${desvio.rango}) con ${detalle}.`,
+    `Bajar el tiempo de ${rol === "ayudante" ? "verificación física" : "rendición"} de ${desvio.chofer}: semana ${desvio.semanaNum} (${desvio.rango}) con ${detalle}.`,
   )
   const [causa, setCausa] = useState("")
-  const [responsable, setResponsable] = useState("Supervisor de distribución")
+  const [responsable, setResponsable] = useState(
+    rol === "ayudante" ? "Supervisor de almacén" : "Supervisor de distribución",
+  )
   const [fechaLimite, setFechaLimite] = useState(enDias(7))
   const [prioridad, setPrioridad] = useState<"alta" | "media" | "baja">(
     desvio.regla === "reincidencia" ? "alta" : "media",
@@ -333,7 +343,11 @@ function AbrirPlanDialog({
               id="ti-causa"
               value={causa}
               onChange={(e) => setCausa(e.target.value)}
-              placeholder="Ej.: llega con la caja sin ordenar, espera al cajero, diferencias de dinero, devoluciones sin controlar…"
+              placeholder={
+                rol === "ayudante"
+                  ? "Ej.: espera al autoelevador, diferencias en el control de envases, devoluciones sin separar, limpieza o checklist demorados…"
+                  : "Ej.: llega con la caja sin ordenar, espera al cajero, diferencias de dinero, devoluciones sin controlar…"
+              }
               rows={3}
             />
           </div>

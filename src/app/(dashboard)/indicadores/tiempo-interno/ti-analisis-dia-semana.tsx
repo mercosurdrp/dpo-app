@@ -10,7 +10,9 @@ import {
   TI_REINCIDENCIA_MINUTOS,
   matrizDiaSemana,
   registrosValidos,
+  PERSONA,
   type Celda,
+  type RolTi,
 } from "@/lib/tiempo-interno-analisis"
 
 const PERIODOS = [
@@ -45,7 +47,7 @@ function CeldaTi({ c, negrita }: { c: Celda | null; negrita?: boolean }) {
   )
 }
 
-export function TiAnalisisDiaSemana({ registros }: { registros: TiRegistro[] }) {
+export function TiAnalisisDiaSemana({ registros, rol = "chofer" }: { registros: TiRegistro[]; rol?: RolTi }) {
   const [periodo, setPeriodo] = useState<Periodo>("90")
 
   const matriz = useMemo(() => {
@@ -76,10 +78,10 @@ export function TiAnalisisDiaSemana({ registros }: { registros: TiRegistro[] }) 
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <CalendarDays className="h-4 w-4 text-slate-500" />
-              TI por día de la semana y chofer
+              TI por día de la semana y {PERSONA[rol].singular}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Promedio de minutos entre la llegada y el fichaje de salida. Verde ≤ {TI_META} · ámbar ≤{" "}
+              Promedio de minutos entre la llegada del camión y el fichaje de salida del {PERSONA[rol].singular}. Verde ≤ {TI_META} · ámbar ≤{" "}
               {TI_REINCIDENCIA_MINUTOS} · rojo &gt; {TI_REINCIDENCIA_MINUTOS}. Pasá el mouse para ver el % dentro de meta.
             </p>
           </div>
@@ -105,7 +107,7 @@ export function TiAnalisisDiaSemana({ registros }: { registros: TiRegistro[] }) 
               <table className="w-full border-separate border-spacing-1 text-sm">
                 <thead>
                   <tr className="text-xs text-muted-foreground">
-                    <th className="px-2 py-1 text-left font-medium">Chofer</th>
+                    <th className="px-2 py-1 text-left font-medium">{PERSONA[rol].Singular}</th>
                     {matriz.dias.map((d) => (
                       <th key={d} className="px-2 py-1 font-medium">
                         {DIAS_SEMANA[d]}

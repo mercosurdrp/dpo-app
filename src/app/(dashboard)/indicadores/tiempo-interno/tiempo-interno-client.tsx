@@ -34,6 +34,8 @@ import { TiAnalisisDiaSemana } from "./ti-analisis-dia-semana"
 import { TiAnalisisHoraLlegada } from "./ti-analisis-hora-llegada"
 import { TiDesviosSection } from "./ti-desvios-section"
 import type { TiPlanDesvio } from "@/actions/tiempo-interno"
+import { PERSONA, type RolTi } from "@/lib/tiempo-interno-analisis"
+import Link from "next/link"
 import {
   Clock,
   Target,
@@ -95,6 +97,9 @@ interface Props {
 
 export function TiempoInternoClient({ kpis, planesResumen, planesDesvio }: Props) {
   const [tab, setTab] = useState("semanal")
+  const rol: RolTi = kpis.rol ?? "chofer"
+  const esAyudante = rol === "ayudante"
+  const persona = PERSONA[rol]
 
   const semanalData = kpis.semanal.map((s) => ({
     name: `S${s.semana}`, ti: s.promedio_minutos, pctMeta: s.pct_dentro_meta, total: s.total,
@@ -107,12 +112,23 @@ export function TiempoInternoClient({ kpis, planesResumen, planesDesvio }: Props
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Tiempo Interno (TI)</h1>
-        <p className="text-sm text-muted-foreground">
-          Desde la llegada al CD (GPS o fin de ruta de Foxtrot, o checklist de retorno) hasta el
-          fichaje de salida del chofer — Pilar Entrega 1.3
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            {esAyudante ? "Verificación física (ayudantes)" : "Tiempo Interno (TI) · cierre financiero"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Desde la llegada al CD (GPS o fin de ruta de Foxtrot, o checklist de retorno) hasta el
+            fichaje de salida del {persona.singular} — Pilar Entrega 1.3
+            {esAyudante && " (descarga, control de envases, estacionamiento, limpieza y checklist de retorno)"}
+          </p>
+        </div>
+        <Link
+          href={esAyudante ? "/indicadores/tiempo-interno" : "/indicadores/verificacion-fisica"}
+          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+        >
+          {esAyudante ? "Ver cierre financiero (choferes) →" : "Ver verificación física (ayudantes) →"}
+        </Link>
       </div>
 
       {/* KPI Cards */}
@@ -177,7 +193,9 @@ export function TiempoInternoClient({ kpis, planesResumen, planesDesvio }: Props
               </div>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              {kpis.conTi}/{kpis.totalRetornos} retornos con TI calculable
+              {kpis.conTi}/{kpis.totalRetornos} {esAyudante ? "ayudante-días" : "retornos"} con TI calculable
+              {esAyudante && (kpis.sinAyudanteRegistrado ?? 0) > 0 &&
+                ` · ${kpis.sinAyudanteRegistrado} retornos sin ayudante cargado en portería`}
               {kpis.conGps > 0 && ` · ${kpis.conGps} con llegada GPS`}
               {kpis.conFoxtrotFin > 0 && ` · ${kpis.conFoxtrotFin} con fin de ruta Foxtrot`}
             </p>
@@ -202,7 +220,7 @@ export function TiempoInternoClient({ kpis, planesResumen, planesDesvio }: Props
               {kpis.noFicha > 0 && (
                 <>
                   {" · "}
-                  <span className="font-medium">{kpis.noFicha}</span> de choferes que
+                  <span className="font-medium">{kpis.noFicha}</span> de {persona.plural} que
                   no fichan, contados aparte
                 </>
               )}
@@ -289,20 +307,20 @@ export function TiempoInternoClient({ kpis, planesResumen, planesDesvio }: Props
       </Tabs>
 
       {/* Análisis: ¿qué días y a qué hora se tarda más en rendir? */}
-      <TiAnalisisDiaSemana registros={kpis.registros} />
-      <TiAnalisisHoraLlegada registros={kpis.registros} />
+      <TiAnalisisDiaSemana registros={kpis.registros} rol={rol} />
+      <TiAnalisisHoraLlegada registros={kpis.registros} rol={rol} />
 
       {/* Desvíos semanales por chofer → planes del sistema general (1.3) */}
-      <TiDesviosSection registros={kpis.registros} planes={planesDesvio} />
+      <TiDesviosSection registros={kpis.registros} planes={planesDesvio} rol={rol} />
 
-      {/* Plan de Acción R1.3.4 */}
-      <TiPlanAccionSection resumen={planesResumen} />
+      {/* Plan de Acción R1.3.4 (mensual, sólo del TI del chofer) */}
+      {!esAyudante && <TiPlanAccionSection resumen={planesResumen} />}
 
-      {/* Resumen por chofer */}
-      <ChoferesTable registros={kpis.registros} metaMinutos={kpis.metaMinutos} />
+      {/* Resumen por persona */}
+      <ChoferesTable registros={kpis.registros} metaMinutos={kpis.metaMinutos} rol={rol} />
 
       {/* Registros */}
-      <RegistrosTable registros={kpis.registros} />
+      <RegistrosTable registros={kpis.registros} rol={rol} />
 
       {/* Calidad del dato: sin esto, dos ajustes quedan invisibles y el que mire
           la serie no entiende por qué mayo cambió ni qué pasó con los faltantes. */}
@@ -419,9 +437,11 @@ interface FilaChofer {
 function ChoferesTable({
   registros,
   metaMinutos,
+  rol,
 }: {
   registros: TiRegistro[]
   metaMinutos: number
+  rol: RolTi
 }) {
   const filas = useMemo<FilaChofer[]>(() => {
     const porChofer = new Map<string, { tis: number[]; sinDato: number }>()
@@ -459,9 +479,9 @@ function ChoferesTable({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Resumen por chofer</CardTitle>
+        <CardTitle className="text-base">Resumen por {PERSONA[rol].singular}</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Mediana del tiempo interno, del más rápido al más lento. Solo choferes con{" "}
+          Mediana del tiempo interno, del más rápido al más lento. Solo {PERSONA[rol].plural} con{" "}
           {MIN_REGISTROS_CHOFER} registros o más.
         </p>
       </CardHeader>
@@ -470,7 +490,7 @@ function ChoferesTable({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Chofer</TableHead>
+                <TableHead>{PERSONA[rol].Singular}</TableHead>
                 <TableHead className="text-right">Retornos medidos</TableHead>
                 <TableHead className="text-right">Mediana</TableHead>
                 <TableHead className="text-right">Promedio</TableHead>
@@ -530,7 +550,7 @@ function ChoferesTable({
           )}
           <p>
             La columna <span className="font-medium text-slate-700">Sin dato</span> son
-            retornos de ese chofer que no se pudieron medir (sin fichaje, fuera de rango o
+            retornos de ese {PERSONA[rol].singular} que no se pudieron medir (sin fichaje, fuera de rango o
             fuera del reloj). Un número alto ahí relativiza el resto de la fila.
           </p>
         </div>
@@ -539,7 +559,7 @@ function ChoferesTable({
   )
 }
 
-function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
+function RegistrosTable({ registros, rol }: { registros: TiRegistro[]; rol: RolTi }) {
   const [semanaSel, setSemanaSel] = useState<string>(TODAS_LAS_SEMANAS)
   const [fuenteSel, setFuenteSel] = useState<"todos" | "gps" | "foxtrot_fin" | "checklist">("todos")
   const [tope, setTope] = useState(FILAS_POR_PAGINA)
@@ -599,7 +619,7 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
             <CardTitle className="text-base">Detalle por retorno</CardTitle>
             <p className="text-xs text-muted-foreground">
               TI = fichaje de salida − inicio (llegada GPS al CD; si no, fin de ruta
-              marcado en Foxtrot; si no, checklist de retorno), por chofer/día. Las filas sin TI se muestran con su motivo.
+              marcado en Foxtrot; si no, checklist de retorno), por {PERSONA[rol].singular}/día. Las filas sin TI se muestran con su motivo.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -672,7 +692,7 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Fecha</TableHead>
-                  <TableHead>Chofer</TableHead>
+                  <TableHead>{PERSONA[rol].Singular}</TableHead>
                   <TableHead>Dominio</TableHead>
                   <TableHead>Inicio</TableHead>
                   <TableHead>Salida</TableHead>
@@ -716,7 +736,9 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
                         <TiBadge ti={r.ti_minutos} />
                       ) : (
                         <span className="text-xs text-muted-foreground">
-                          {MOTIVO_LABEL[r.motivo_sin_dato ?? ""] ?? "—"}
+                          {r.motivo_sin_dato === "sin_match"
+                            ? `${PERSONA[rol].Singular} sin legajo`
+                            : (MOTIVO_LABEL[r.motivo_sin_dato ?? ""] ?? "—")}
                         </span>
                       )}
                     </TableCell>

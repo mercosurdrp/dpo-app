@@ -22,16 +22,18 @@ import {
   normChofer,
   porFranjaLlegada,
   registrosValidos,
+  PERSONA,
+  type RolTi,
 } from "@/lib/tiempo-interno-analisis"
 
 const TODOS = "__todos__"
-const LABEL_COLA = ["Nadie antes", "1 chofer antes", "2 o más antes"] as const
+const LABEL_COLA = ["Ningún camión antes", "1 camión antes", "2 o más camiones antes"] as const
 
 function colorTi(ti: number) {
   return ti <= 30 ? "text-green-700" : ti <= 45 ? "text-amber-700" : "text-red-700"
 }
 
-export function TiAnalisisHoraLlegada({ registros }: { registros: TiRegistro[] }) {
+export function TiAnalisisHoraLlegada({ registros, rol = "chofer" }: { registros: TiRegistro[]; rol?: RolTi }) {
   const [chofer, setChofer] = useState<string>(TODOS)
   const validos = useMemo(() => registrosValidos(registros), [registros])
   const choferes = useMemo(
@@ -67,7 +69,7 @@ export function TiAnalisisHoraLlegada({ registros }: { registros: TiRegistro[] }
             onChange={(e) => setChofer(e.target.value)}
             className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700"
           >
-            <option value={TODOS}>Todos los choferes</option>
+            <option value={TODOS}>Todos los {PERSONA[rol].plural}</option>
             {choferes.map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -110,10 +112,10 @@ export function TiAnalisisHoraLlegada({ registros }: { registros: TiRegistro[] }
         <div>
           <p className="mb-1 flex items-center gap-1.5 text-sm font-medium text-slate-700">
             <Users className="h-4 w-4 text-slate-500" />
-            ¿Se hace cola para rendir?
+            {rol === "ayudante" ? "¿Se hace cola para descargar?" : "¿Se hace cola para rendir?"}
           </p>
           <p className="mb-3 text-xs text-muted-foreground">
-            TI según cuántos choferes llegaron al CD en los {TI_VENTANA_COLA_MIN} minutos previos.
+            TI según cuántos camiones llegaron al CD en los {TI_VENTANA_COLA_MIN} minutos previos.
           </p>
           <div className="grid gap-3 sm:grid-cols-3">
             {([0, 1, 2] as const).map((k) => {
@@ -135,7 +137,7 @@ export function TiAnalisisHoraLlegada({ registros }: { registros: TiRegistro[] }
               )
             })}
           </div>
-          <ConclusionCola cola={cola} />
+          <ConclusionCola cola={cola} rol={rol} />
         </div>
       </CardContent>
     </Card>
@@ -143,7 +145,13 @@ export function TiAnalisisHoraLlegada({ registros }: { registros: TiRegistro[] }
 }
 
 // Lectura en una línea: ¿llegar detrás de otros alarga el TI?
-function ConclusionCola({ cola }: { cola: { antes: 0 | 1 | 2; n: number; promedio: number }[] }) {
+function ConclusionCola({
+  cola,
+  rol,
+}: {
+  cola: { antes: 0 | 1 | 2; n: number; promedio: number }[]
+  rol: RolTi
+}) {
   const solo = cola.find((g) => g.antes === 0)
   const conCola = cola.filter((g) => g.antes > 0)
   if (!solo || conCola.length === 0 || solo.n < 10) return null
@@ -156,13 +164,18 @@ function ConclusionCola({ cola }: { cola: { antes: 0 | 1 | 2; n: number; promedi
       {diff >= 3 ? (
         <>
           <span className="font-medium text-red-700">Hay efecto cola:</span> el que llega detrás de otros tarda{" "}
-          {diff} min más ({promCola} contra {solo.promedio}). Conviene escalonar las llegadas o sumar gente en la caja.
+          {diff} min más ({promCola} contra {solo.promedio}).{" "}
+          {rol === "ayudante"
+            ? "Conviene escalonar las llegadas o sumar autoelevadores/controladores en la descarga."
+            : "Conviene escalonar las llegadas o sumar gente en la caja."}
         </>
       ) : diff <= -3 ? (
         <>
           <span className="font-medium text-slate-700">No hay efecto cola:</span> el que llega detrás de otros tarda{" "}
-          {-diff} min menos ({promCola} contra {solo.promedio}). La demora no viene de esperar la caja; hay que
-          mirar cómo llega cada chofer (caja, devoluciones, documentación).
+          {-diff} min menos ({promCola} contra {solo.promedio}).{" "}
+          {rol === "ayudante"
+            ? "La demora no viene de esperar la descarga; hay que mirar el control de envases, la limpieza y el checklist."
+            : "La demora no viene de esperar la caja; hay que mirar cómo llega cada chofer (caja, devoluciones, documentación)."}
         </>
       ) : (
         <>

@@ -1355,6 +1355,10 @@ export interface TiRegistro {
 
 export interface TiKpis {
   totalRetornos: number
+  /** De quién es el tiempo: chofer (cierre financiero) o ayudante (verificación física). */
+  rol?: "chofer" | "ayudante"
+  /** Sólo ayudante: retornos cuyo egreso de portería no tiene ayudante cargado. */
+  sinAyudanteRegistrado?: number
   conTi: number // retornos con TI calculable
   /** Retornos válidos cuyo inicio salió de la llegada GPS de Foxtrot. */
   conGps: number
