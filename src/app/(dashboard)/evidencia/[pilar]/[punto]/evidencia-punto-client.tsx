@@ -651,7 +651,7 @@ export function EvidenciaPuntoClient({
             return (
               <Card
                 key={a.id}
-                className={`flex h-full flex-col p-4 ${a.archivado ? "border-slate-200 bg-slate-50/60 opacity-75" : ""}`}
+                className={`relative flex h-full flex-col overflow-visible p-4 ${actionsOpen === a.id ? "z-30" : ""} ${a.archivado ? "border-slate-200 bg-slate-50/60 opacity-75" : ""}`}
               >
                 <div className="flex items-start gap-3">
                   <div className="rounded-lg bg-slate-100 p-2 text-slate-700">
