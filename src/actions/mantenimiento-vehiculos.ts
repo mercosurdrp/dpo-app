@@ -4573,9 +4573,42 @@ export async function getSalidasPanol(
       filas.map((f) => f.id)
     )
 
+    /*
+     * Ajustes de conteo ya imputados.
+     *
+     * Cuando una salida «usada sin cargar» se le imputa después a una unidad,
+     * la pieza no se descuenta dos veces: entra un ingreso que revierte el
+     * ajuste y el egreso real lo hace la OT interna. El ajuste queda en el
+     * historial —un auditor espera ver el movimiento y su reverso, no un
+     * número que cambió sin rastro—, pero acá ya no es una salida: si se
+     * listara igual, las 7 cortinas del NY aparecerían dos veces, una con
+     * unidad y otra sin.
+     *
+     * Se descuenta por pieza y de lo más viejo a lo más nuevo, que es el orden
+     * en que se imputan. Si se imputó de a partes (2 de 4 focos), el resto
+     * sigue figurando sin unidad, que es exactamente lo que queda por aclarar.
+     */
+    const revertido = new Map<string, number>()
+    const { data: reversos } = await supabase
+      .from("mantenimiento_repuestos_movimientos")
+      .select("repuesto_id, cantidad, motivo")
+      .eq("tipo", "ingreso")
+      .ilike("motivo", "Reverso del ajuste del conteo%")
+      .limit(limite)
+    for (const r of (reversos || []) as unknown as Array<{ repuesto_id: string; cantidad: number }>) {
+      revertido.set(r.repuesto_id, (revertido.get(r.repuesto_id) ?? 0) + Number(r.cantidad))
+    }
+
     const salidas: SalidaPanol[] = []
-    for (const f of filas) {
+    for (const f of [...filas].reverse()) {
       const u = unidades.get(f.id)
+      const pendiente = revertido.get(f.repuesto_id) ?? 0
+      if (!u && pendiente > 0 && f.motivo?.startsWith("Ajuste por conteo")) {
+        const usa = Math.min(pendiente, Number(f.cantidad))
+        revertido.set(f.repuesto_id, pendiente - usa)
+        if (usa >= Number(f.cantidad)) continue
+        f.cantidad = Number(f.cantidad) - usa
+      }
       /*
        * Egreso con motivo de OT pero sin fila viva que lo sostenga = quedó
        * revertido (editar o borrar la OT devuelve la pieza con un ingreso
@@ -4598,6 +4631,9 @@ export async function getSalidasPanol(
         motivo: f.motivo,
       })
     }
+    // El recorrido fue de lo más viejo a lo más nuevo para netear los ajustes;
+    // la pantalla los quiere al revés.
+    salidas.reverse()
     return { data: salidas }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
