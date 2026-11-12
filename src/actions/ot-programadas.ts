@@ -232,6 +232,17 @@ export async function llevarOtAlTaller(input: {
   /** Service general (rodado): reinicia el contador del próximo service. */
   esServiceGeneral?: boolean
   /**
+   * Para cuándo prometió el taller entregarla (ANS, cláusula 3).
+   *
+   * Es el dato que falta para medir la puntualidad: la cláusula 5 de los seis
+   * acuerdos firmados el 06/11/2026 manda registrar "la fecha comprometida por
+   * el proveedor y la fecha real de entrega". Se pide acá, al dejar la unidad,
+   * que es el único momento en que el taller lo dice.
+   */
+  salidaComprometidaFecha?: string | null
+  /** Hora comprometida, "HH:MM". Sin ella se guarda la fecha sola. */
+  salidaComprometidaHora?: string | null
+  /**
    * Taller tal como quedó escrito en el diálogo. Pisa al de la orden: el que
    * cierra suele corregirlo recién ahí ("iba a Pozzi, terminó yendo a Luval") y
    * antes ese cambio se perdía salvo que además tocara "Guardar cambios".
@@ -274,6 +285,9 @@ export async function llevarOtAlTaller(input: {
       taller: taller || undefined,
       observaciones: ot.notas || undefined,
       es_service_general: input.esServiceGeneral ?? false,
+      salida_comprometida: input.salidaComprometidaFecha
+        ? conHora(input.salidaComprometidaFecha, input.salidaComprometidaHora)
+        : null,
       tareas,
     })
     if ("error" in res) return { error: res.error }

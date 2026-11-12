@@ -1014,6 +1014,10 @@ function TallerPanel({
   /** Horas del taller: entrada y resolución. Vacías = se guarda sólo la fecha. */
   const [horaEntrada, setHoraEntrada] = useState("")
   const [horaSalida, setHoraSalida] = useState("")
+  // Para cuándo prometió entregarla el taller (ANS, cláusula 3). Sin este dato
+  // la puntualidad del proveedor no se puede medir y el mes queda en gris.
+  const [fechaComprometida, setFechaComprometida] = useState("")
+  const [horaComprometida, setHoraComprometida] = useState("")
   // La primera fila viene con el taller puesto: casi siempre la factura es de
   // él. Se cambia si la emitió otro (repuestos, gomería).
   const tallerSugerido = tallerActual.trim() || ot.taller || ""
@@ -1066,6 +1070,8 @@ function TallerPanel({
       nombresDelPlan: nombresTildados(),
       esServiceGeneral,
       taller: tallerSugerido,
+      salidaComprometidaFecha: fechaComprometida || null,
+      salidaComprometidaHora: horaComprometida || null,
       ...medicionParaEnviar(),
     })
     setSaving(false)
@@ -1260,6 +1266,36 @@ function TallerPanel({
             onChange={(e) => setHoraEntrada(e.target.value)}
           />
         </div>
+        {/* Sólo al dejar la unidad: si el trabajo ya está hecho, prometer una
+            fecha de entrega hacia atrás no mide nada. Ver ANS cláusula 5. */}
+        {modo === "en_taller" && (
+          <>
+            <div className="space-y-1">
+              <Label>Entrega comprometida</Label>
+              <Input
+                type="date"
+                value={fechaComprometida}
+                min={fechaTaller || undefined}
+                onChange={(e) => setFechaComprometida(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>A qué hora</Label>
+              <Input
+                type="time"
+                value={horaComprometida}
+                onChange={(e) => setHoraComprometida(e.target.value)}
+                disabled={!fechaComprometida}
+              />
+            </div>
+            <p className="col-span-2 -mt-1 text-[11px] text-muted-foreground">
+              Para cuándo dijo el taller que la entrega. Es lo que mide la puntualidad del
+              proveedor en su acuerdo de nivel de servicio: sin esta fecha el mes queda sin
+              datos. Si no la comprometió, dejala vacía.
+            </p>
+          </>
+        )}
+
         <div className="space-y-1">
           <Label>Tipo</Label>
           <Select value={tipo} onValueChange={(v) => setTipo(v as MantenimientoTipo)}>
