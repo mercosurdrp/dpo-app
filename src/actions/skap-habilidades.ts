@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { leerClave } from "@/lib/clima-store"
+import { escribirClave, leerClave } from "@/lib/clima-store"
 import { createClient } from "@/lib/supabase/server"
 import { getProfile, requireAuth, getEmpleadoIdFromAuth } from "@/lib/session"
 import { calcularCelda } from "@/lib/skap/gap"
@@ -415,6 +415,44 @@ export async function actualizarAccion(input: {
     return { data: { ok: true } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error al actualizar la acción" }
+  }
+}
+
+/**
+ * Elimina una acción del plan de formación (cargada por error o que ya no
+ * aplica). Borra la fila y su vínculo con la capacitación del PAC; las notas de
+ * la matriz no se tocan, así que si el gap sigue abierto se puede volver a crear.
+ */
+export async function eliminarAccion(input: { id: string; rol: SkapRol }): Promise<Result<{ ok: true }>> {
+  try {
+    await assertPuedeEditar(input.rol)
+    const db = createAdminClient()
+
+    // La acción tiene que ser de una habilidad del rol que se está editando.
+    const { data: acc, error: errAcc } = await db
+      .from("skap_acciones")
+      .select("id, skap_habilidades!inner(rol)")
+      .eq("id", input.id)
+      .eq("skap_habilidades.rol", input.rol)
+      .maybeSingle()
+    if (errAcc) return { error: errAcc.message }
+    if (!acc) return { error: "La acción no existe o no es de este rol" }
+
+    const { error } = await db.from("skap_acciones").delete().eq("id", input.id)
+    if (error) return { error: error.message }
+
+    const mapa = (await leerClave<Record<string, string>>("skap:acc-pac")) ?? {}
+    if (input.id in mapa) {
+      delete mapa[input.id]
+      const profile = await getProfile()
+      const res = await escribirClave("skap:acc-pac", mapa, profile?.id ?? null)
+      if ("error" in res) return { error: res.error }
+    }
+
+    revalidatePath("/gente/matriz-skap")
+    return { data: { ok: true } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error al eliminar la acción" }
   }
 }
 

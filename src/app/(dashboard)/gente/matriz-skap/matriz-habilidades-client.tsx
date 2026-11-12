@@ -28,6 +28,7 @@ import {
   guardarEvaluacion,
   generarAccionesDesdeGaps,
   actualizarAccion,
+  eliminarAccion,
   getPlanFormacion,
   cargarNotaBase,
   getEmpleadosDisponibles,
@@ -802,6 +803,22 @@ function AccionesTab({
   const [pending, startTransition] = useTransition()
   const [editando, setEditando] = useState<SkapAccionDetalle | null>(null)
 
+  function eliminar(a: SkapAccionDetalle) {
+    if (
+      !window.confirm(
+        `¿Eliminar la acción de ${a.empleado_nombre} — ${a.habilidad}?\n\nSe borra del plan de formación. Las notas de la matriz no se tocan.`,
+      )
+    )
+      return
+    startTransition(async () => {
+      const res = await eliminarAccion({ id: a.id, rol })
+      if ("error" in res) { toast.error(res.error); return }
+      toast.success("Acción eliminada")
+      setEditando(null)
+      refrescarConScroll()
+    })
+  }
+
   if (acciones.length === 0) {
     return (
       <Card>
@@ -870,9 +887,20 @@ function AccionesTab({
                   <td className="p-2 text-slate-500">{a.fecha_programada ?? "—"}</td>
                   <td className="p-2 text-slate-500">{a.responsable ?? "—"}</td>
                   {canEdit && (
-                    <td className="p-2">
+                    <td className="p-2 whitespace-nowrap">
                       <Button size="sm" variant="ghost" onClick={() => setEditando(a)}>
                         Editar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                        title="Eliminar acción"
+                        aria-label="Eliminar acción"
+                        disabled={pending}
+                        onClick={() => eliminar(a)}
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </td>
                   )}
@@ -950,6 +978,16 @@ function AccionesTab({
                 registrado que el gap se cerró.
               </p>
               <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="mr-auto text-red-600 hover:bg-red-50 hover:text-red-700"
+                  disabled={pending}
+                  onClick={() => eliminar(editando)}
+                >
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  Eliminar
+                </Button>
                 <Button type="button" variant="outline" onClick={() => setEditando(null)}>
                   Cancelar
                 </Button>
