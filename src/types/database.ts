@@ -877,6 +877,12 @@ export interface MaestroFlotaUnidad {
     categoria: string
     vencimiento: string | null
     tieneArchivo: boolean
+    /**
+     * Quién responde por la renovación de ESE papel (control documentario).
+     * El punto 1.1 pide un proceso de renovación definido; sin dueño visible,
+     * el proceso existe en el SOP pero no en la pantalla.
+     */
+    responsable: string | null
     estado: "vigente" | "por_vencer" | "vencido" | "sin_fecha"
   }>
   docsVencidos: number

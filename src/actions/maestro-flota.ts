@@ -87,7 +87,7 @@ export async function getMaestroFlota(): Promise<
       supabase
         .from("requisitos_legales")
         .select(
-          "nombre, fecha_vencimiento, archivo_url, categoria:requisitos_legales_categorias!inner(nombre)"
+          "nombre, fecha_vencimiento, archivo_url, categoria:requisitos_legales_categorias!inner(nombre), responsable:profiles!requisitos_legales_responsable_id_fkey(nombre)"
         ),
       fetchLecturas(undefined, supabase),
     ])
@@ -135,6 +135,7 @@ export async function getMaestroFlota(): Promise<
       fecha_vencimiento: string | null
       archivo_url: string | null
       categoria: { nombre: string } | { nombre: string }[] | null
+      responsable: { nombre: string } | { nombre: string }[] | null
     }>)
       .map((r) => ({
         nombre: r.nombre,
@@ -144,6 +145,9 @@ export async function getMaestroFlota(): Promise<
         categoria: Array.isArray(r.categoria)
           ? (r.categoria[0]?.nombre ?? "")
           : (r.categoria?.nombre ?? ""),
+        responsable: Array.isArray(r.responsable)
+          ? (r.responsable[0]?.nombre ?? null)
+          : (r.responsable?.nombre ?? null),
       }))
       .filter((r) => CATEGORIAS_DE_UNIDAD.includes(r.categoria))
 
@@ -186,6 +190,7 @@ export async function getMaestroFlota(): Promise<
           categoria: r.categoria,
           vencimiento: r.vencimiento,
           tieneArchivo: r.tieneArchivo,
+          responsable: r.responsable,
           estado:
             r.vencimiento == null
               ? ("sin_fecha" as const)

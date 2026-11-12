@@ -546,6 +546,7 @@ export function MaestroFlotaPanel({
                       <TableHead>SENASA</TableHead>
                       <TableHead>Extintor</TableHead>
                       <TableHead>Estado</TableHead>
+                      <TableHead>Responsable</TableHead>
                     </>
                   )}
                   {vista === "estado" && (
@@ -640,7 +641,10 @@ function Papel({
 
   return (
     <TableCell>
-      <span className={cn("tabular-nums text-sm", clase)}>
+      <span
+        className={cn("tabular-nums text-sm", clase)}
+        title={p.responsable ? `Responsable de la renovación: ${p.responsable}` : undefined}
+      >
         {p.vencimiento ? fmtFecha(p.vencimiento) : "sin fecha"}
       </span>
       {!p.tieneArchivo && (
@@ -648,6 +652,44 @@ function Papel({
           ⚠
         </span>
       )}
+    </TableCell>
+  )
+}
+
+/**
+ * Quién responde por los papeles de esta unidad (R1.1.3: "se define y sigue un
+ * proceso para garantizar que los vehículos cuenten con la documentación
+ * adecuada y actualizada"). El proceso estaba escrito en el SOP pero no se veía
+ * en ninguna pantalla: el auditor podía leer el circuito y no saber a quién
+ * preguntarle por la VTV de un camión.
+ *
+ * Casi siempre es una sola persona para toda la fila; cuando son varias se
+ * listan todas, porque el dato interesante es justamente ése.
+ */
+function Responsables({ u }: { u: MaestroFlotaUnidad }) {
+  const nombres = [...new Set(u.papeles.map((p) => p.responsable).filter(Boolean))] as string[]
+
+  if (nombres.length === 0) {
+    return (
+      <TableCell>
+        <span className="text-xs text-amber-600" title="Ningún papel de esta unidad tiene responsable asignado">
+          sin asignar
+        </span>
+      </TableCell>
+    )
+  }
+
+  return (
+    <TableCell>
+      <span
+        className="text-sm"
+        title={u.papeles
+          .filter((p) => p.responsable)
+          .map((p) => `${p.categoria}: ${p.responsable}`)
+          .join("\n")}
+      >
+        {nombres.join(" · ")}
+      </span>
     </TableCell>
   )
 }
@@ -790,6 +832,7 @@ function FilaUnidad({
               </span>
             )}
           </TableCell>
+          <Responsables u={u} />
         </>
       )}
 
