@@ -30,6 +30,10 @@ import {
 } from "recharts"
 import type { TiKpis, TiMensual, TiRegistro } from "@/types/database"
 import { TiPlanAccionSection } from "./tiempo-interno-plan-accion-section"
+import { TiAnalisisDiaSemana } from "./ti-analisis-dia-semana"
+import { TiAnalisisHoraLlegada } from "./ti-analisis-hora-llegada"
+import { TiDesviosSection } from "./ti-desvios-section"
+import type { TiPlanDesvio } from "@/actions/tiempo-interno"
 import {
   Clock,
   Target,
@@ -86,9 +90,10 @@ function Tendencia({ mensual }: { mensual: TiMensual[] }) {
 interface Props {
   kpis: TiKpis
   planesResumen: import("@/types/database").TiPlanResumen[]
+  planesDesvio: TiPlanDesvio[]
 }
 
-export function TiempoInternoClient({ kpis, planesResumen }: Props) {
+export function TiempoInternoClient({ kpis, planesResumen, planesDesvio }: Props) {
   const [tab, setTab] = useState("semanal")
 
   const semanalData = kpis.semanal.map((s) => ({
@@ -282,6 +287,13 @@ export function TiempoInternoClient({ kpis, planesResumen }: Props) {
           )
         })}
       </Tabs>
+
+      {/* Análisis: ¿qué días y a qué hora se tarda más en rendir? */}
+      <TiAnalisisDiaSemana registros={kpis.registros} />
+      <TiAnalisisHoraLlegada registros={kpis.registros} />
+
+      {/* Desvíos semanales por chofer → planes del sistema general (1.3) */}
+      <TiDesviosSection registros={kpis.registros} planes={planesDesvio} />
 
       {/* Plan de Acción R1.3.4 */}
       <TiPlanAccionSection resumen={planesResumen} />

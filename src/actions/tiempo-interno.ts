@@ -7,7 +7,11 @@ import { foxtrotDcIds } from "@/lib/foxtrot"
 // La semana se calcula en un solo lugar: el filtro del detalle usa la misma
 // función, así los números coinciden con la serie semanal.
 import { semanaDelAnio } from "@/lib/tiempo-interno"
+import { parseClaveDesvio, type ReglaDesvio } from "@/lib/tiempo-interno-analisis"
+import { PREGUNTA_KEY, preguntaIdPorKey } from "@/lib/dpo/pregunta-por-key"
+import { createPlanAccion } from "@/actions/gestion"
 import type {
+  PrioridadPlan,
   TiKpis,
   TiRegistro,
   TiSemanal,
@@ -676,6 +680,106 @@ export async function deleteTiPlanItem(id: string): Promise<{ success: true } | 
     const { error } = await supabase.from("ti_plan_accion_items").delete().eq("id", id)
     if (error) return { error: error.message }
     return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== PLANES POR DESVÍO (sistema general) ====================
+// Los desvíos semanales por chofer (ver lib/tiempo-interno-analisis.ts) se
+// tratan con planes de `planes_accion` colgados del punto 1.3 de Entrega: así
+// tienen responsables, evidencia, aparecen en Mis tareas y cuentan para la
+// auditoría. El desvío que originó el plan queda en `notas`
+// (ti_desvio=<regla>|<CHOFER>|<AAAA-semana>), mismo patrón que el DQI.
+
+export interface TiPlanDesvio {
+  id: string
+  descripcion: string
+  estado: string
+  prioridad: string
+  responsable: string
+  fecha_limite: string | null
+  created_at: string
+  clave: string
+  regla: ReglaDesvio
+  chofer: string
+  semana: string
+}
+
+export async function getTiPlanesDesvio(): Promise<{ data: TiPlanDesvio[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const pregunta = await preguntaIdPorKey(supabase, PREGUNTA_KEY.ENTREGA_1_3)
+    if (!pregunta) return { data: [] }
+    const { data, error } = await supabase
+      .from("planes_accion")
+      .select("id, descripcion, estado, prioridad, responsable, fecha_limite, created_at, notas")
+      .eq("pregunta_id", pregunta)
+      .like("notas", "%ti_desvio=%")
+      .order("created_at", { ascending: false })
+    if (error) return { error: error.message }
+    const out: TiPlanDesvio[] = []
+    for (const p of data ?? []) {
+      const k = parseClaveDesvio(p.notas as string | null)
+      if (!k) continue
+      out.push({
+        id: p.id as string,
+        descripcion: p.descripcion as string,
+        estado: p.estado as string,
+        prioridad: p.prioridad as string,
+        responsable: (p.responsable as string) ?? "",
+        fecha_limite: (p.fecha_limite as string | null) ?? null,
+        created_at: p.created_at as string,
+        clave: k.clave,
+        regla: k.regla,
+        chofer: k.chofer,
+        semana: k.semana,
+      })
+    }
+    return { data: out }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function crearPlanTiDesvio(input: {
+  clave: string
+  descripcion: string
+  causa: string
+  responsable: string
+  fecha_limite?: string
+  prioridad?: PrioridadPlan
+}): Promise<{ data: { id: string } } | { error: string }> {
+  try {
+    await requireAuth()
+    const k = parseClaveDesvio(input.clave)
+    if (!k) return { error: "Desvío inválido." }
+    if (!input.descripcion.trim()) return { error: "La acción es obligatoria." }
+    if (!input.causa.trim()) return { error: "La causa es obligatoria." }
+    if (!input.responsable.trim()) return { error: "El responsable es obligatorio." }
+    const supabase = await createClient()
+    const pregunta = await preguntaIdPorKey(supabase, PREGUNTA_KEY.ENTREGA_1_3)
+    if (!pregunta) return { error: "No se encontró el punto 1.3 de Entrega en el manual DPO." }
+    // Un plan por desvío: si ya existe, no se duplica.
+    const { data: existe } = await supabase
+      .from("planes_accion")
+      .select("id")
+      .eq("pregunta_id", pregunta)
+      .like("notas", `%${k.clave}%`)
+      .limit(1)
+    if (existe && existe.length > 0) return { error: "Ese desvío ya tiene un plan." }
+    const res = await createPlanAccion({
+      pregunta_id: pregunta,
+      descripcion: `${input.descripcion.trim()}\n\nCausa: ${input.causa.trim()}`,
+      responsable: input.responsable.trim(),
+      fecha_inicio: new Date().toISOString().slice(0, 10),
+      fecha_limite: input.fecha_limite || undefined,
+      prioridad: input.prioridad ?? "media",
+      notas: k.clave,
+    })
+    if ("error" in res) return { error: res.error }
+    return { data: { id: res.data.id } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

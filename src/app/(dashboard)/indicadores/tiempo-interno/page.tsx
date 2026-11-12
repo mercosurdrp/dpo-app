@@ -1,4 +1,4 @@
-import { getTiKpis, getTiPlanesResumen } from "@/actions/tiempo-interno"
+import { getTiKpis, getTiPlanesDesvio, getTiPlanesResumen } from "@/actions/tiempo-interno"
 import { TiempoInternoClient } from "./tiempo-interno-client"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
@@ -17,9 +17,10 @@ export default async function TiempoInternoPage({
   const sp = await searchParams
   const minTiMinutos = sp.min === String(MIN_TI_OPERATIVO) ? MIN_TI_OPERATIVO : 0
 
-  const [kpisRes, planesRes] = await Promise.all([
+  const [kpisRes, planesRes, planesDesvioRes] = await Promise.all([
     getTiKpis({ minTiMinutos }),
     getTiPlanesResumen(),
+    getTiPlanesDesvio(),
   ])
 
   if ("error" in kpisRes) {
@@ -32,6 +33,7 @@ export default async function TiempoInternoPage({
   }
 
   const planesResumen = "data" in planesRes ? planesRes.data : []
+  const planesDesvio = "data" in planesDesvioRes ? planesDesvioRes.data : []
 
   return (
     <div className="space-y-4">
@@ -41,7 +43,11 @@ export default async function TiempoInternoPage({
       >
         <ArrowLeft className="h-4 w-4" /> Volver a Indicadores
       </Link>
-      <TiempoInternoClient kpis={kpisRes.data} planesResumen={planesResumen} />
+      <TiempoInternoClient
+        kpis={kpisRes.data}
+        planesResumen={planesResumen}
+        planesDesvio={planesDesvio}
+      />
     </div>
   )
 }
