@@ -69,10 +69,17 @@ const DOMINIOS_INTERVENIDOS_POR_KPI: Record<string, string[]> = {
 
 /**
  * Iniciativas de VIAJES: las que ahorran km porque se va menos veces a un
- * destino. El KPI es viajes por semana a la localidad (Foxtrot: rutas del día
- * con paradas completadas en esa localidad, la haga la ruta que la haga), y
- * el ahorro son los viajes que no se hicieron contra la línea base, en km y
- * de ahí en litros y en plata.
+ * destino. El KPI es viajes por semana a la localidad y el ahorro son los
+ * viajes que no se hicieron contra la línea base, en km y de ahí en litros y
+ * en plata.
+ *
+ * Desde el 12/11/2026 los viajes se cuentan con las VENTAS (Chess + Gestión,
+ * `ventas_diarias_cliente`): un viaje es un camión (patente) que ese día
+ * entregó a `minParadas` clientes o más de la localidad. Es la misma fuente
+ * con la que Costo por PDV cuenta los viajes a cada ciudad, así que el ahorro
+ * de la iniciativa y el costo de la ciudad salen del mismo conteo. Foxtrot
+ * (rutas con paradas completadas en la localidad) queda como CONTROL: se
+ * muestra al lado y se marca si el mes no coincide.
  *
  * 🚨 Colón: la línea base NO es 5. Desde abril de 2026 se fue 4 días por
  * semana (mar-vie); el quinto día de la ruta 10 era un reparto local de ~75 km
@@ -165,10 +172,10 @@ export interface KpiCombustibleMes {
   viajes?: number
   semanas?: number
   /**
-   * Modo viajes: de esos viajes, los que Foxtrot no registró (día sin
-   * paradas completadas en la localidad) y se tomaron del reparto de Chess.
+   * Modo viajes: los mismos viajes contados en Foxtrot (control). null si
+   * Foxtrot no cubre el período completo del mes (todavía no sincronizó).
    */
-  viajesChess?: number
+  viajesFoxtrot?: number | null
   /** km/l de los camiones ya intervenidos. null si no hay dato ese mes. */
   intervenidos: number | null
   /** km/l de los camiones sin intervenir (grupo de control). */
@@ -500,7 +507,8 @@ async function calcularKpiCombustibleResult(
   for (const [kpi, cfg] of Object.entries(VIAJES_POR_KPI)) {
     const serie = await serieViajes(supabase, anio, cfg)
     if ("error" in serie) return { error: serie.error }
-    const { viajesPorDia, chessPorDia, desdeDatos, hastaDatos } = serie.data
+    const { viajesPorDia, foxtrotPorDia, foxtrotDesde, foxtrotHasta, desdeDatos, hastaDatos } =
+      serie.data
     if (!desdeDatos || !hastaDatos) continue
 
     const viajesEntre = (d1: string, d2: string) => {
@@ -508,9 +516,12 @@ async function calcularKpiCombustibleResult(
       for (const [f, v] of viajesPorDia) if (f >= d1 && f <= d2) n += v
       return n
     }
-    const chessEntre = (d1: string, d2: string) => {
+    // Control de Foxtrot: sólo si Foxtrot cubre TODO el tramo; si no, el
+    // número sería un faltante de sincronización, no una diferencia.
+    const foxtrotEntre = (d1: string, d2: string): number | null => {
+      if (!foxtrotDesde || !foxtrotHasta || foxtrotDesde > d1 || foxtrotHasta < d2) return null
       let n = 0
-      for (const [f, v] of chessPorDia) if (f >= d1 && f <= d2) n += v
+      for (const [f, v] of foxtrotPorDia) if (f >= d1 && f <= d2) n += v
       return n
     }
 
@@ -520,8 +531,8 @@ async function calcularKpiCombustibleResult(
     for (let mes = 1; mes <= 12; mes++) {
       const ini = `${anio}-${String(mes).padStart(2, "0")}-01`
       const fin = finDeMes(anio, mes)
-      // Sólo meses con datos de Foxtrot: antes del primer día sincronizado el
-      // cero no es "no se fue", es "no hay dato".
+      // Sólo hasta el último día con ventas cerradas: el día en curso queda a
+      // medias y contarlo como "no se fue" inflaría el ahorro.
       const d1 = ini < desdeDatos ? desdeDatos : ini
       const d2 = fin > hastaDatos ? hastaDatos : fin
       if (d1 > d2) continue
@@ -535,7 +546,7 @@ async function calcularKpiCombustibleResult(
         real: Math.round((viajes / semanas) * 100) / 100,
         viajes,
         semanas: Math.round(semanas * 10) / 10,
-        viajesChess: chessEntre(d1, d2),
+        viajesFoxtrot: foxtrotEntre(d1, d2),
         intervenidos: null,
         control: null,
         km: viajes * cfg.kmViaje,
@@ -643,10 +654,15 @@ function diasHabiles(d1: string, d2: string): number {
 }
 
 /**
- * Viajes por día a la localidad: rutas de Foxtrot con al menos `minParadas`
- * paradas completadas ahí ese día. `desdeDatos`/`hastaDatos` son el primer y
- * último día con rutas sincronizadas en el año, para no contar como cero los
- * días que Foxtrot todavía no trajo.
+ * Viajes por día a la localidad, contados con las ventas (Chess + Gestión):
+ * un camión (patente) con al menos `minParadas` clientes de la localidad ese
+ * día. Las ventas sin patente no cuentan (no se sabe qué camión fue).
+ * `hastaDatos` es AYER (o el último día con ventas, si es anterior): el día
+ * en curso todavía no está cerrado.
+ *
+ * Foxtrot va como control: rutas con `minParadas` paradas completadas en la
+ * localidad, hasta el día anterior al último sincronizado (el último día
+ * queda a medias hasta la sincronización siguiente).
  */
 async function serieViajes(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -655,82 +671,38 @@ async function serieViajes(
 ): Promise<
   Result<{
     viajesPorDia: Map<string, number>
-    /** Días en que el viaje salió de Chess porque Foxtrot no tenía paradas. */
-    chessPorDia: Map<string, number>
+    foxtrotPorDia: Map<string, number>
+    foxtrotDesde: string | null
+    foxtrotHasta: string | null
     desdeDatos: string | null
     hastaDatos: string | null
   }>
 > {
-  // El corte es el día ANTERIOR al último con paradas completadas. La ruta de
-  // hoy ya existe en Foxtrot antes de que el camión vuelva, y el último día
-  // sincronizado queda a medias hasta la sincronización siguiente (el 15/09/
-  // 2026 la ruta 10 tenía 285 km planificados a Colón y cero paradas
-  // completadas mientras otras rutas del día ya figuraban cerradas): contarlo
-  // como "día sin viaje" inflaba el ahorro del mes en curso.
-  const [primera, ultima] = await Promise.all([
-    supabase
-      .from("foxtrot_waypoints_visita")
-      .select("fecha")
-      .eq("status", "COMPLETED")
-      .gte("fecha", `${anio}-01-01`)
-      .lte("fecha", `${anio}-12-31`)
-      .order("fecha", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("foxtrot_waypoints_visita")
-      .select("fecha")
-      .eq("status", "COMPLETED")
-      .gte("fecha", `${anio}-01-01`)
-      .lte("fecha", `${anio}-12-31`)
-      .order("fecha", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ])
-  if (primera.error) return { error: `No se pudo leer Foxtrot: ${primera.error.message}` }
-  if (ultima.error) return { error: `No se pudo leer Foxtrot: ${ultima.error.message}` }
-  const ultimaFecha = (ultima.data as { fecha: string } | null)?.fecha ?? null
-  let hastaDatos: string | null = null
-  if (ultimaFecha !== null) {
-    const d = new Date(`${ultimaFecha}T12:00:00Z`)
-    d.setUTCDate(d.getUTCDate() - 1)
-    hastaDatos = d.toISOString().slice(0, 10)
-  }
-
-  const paradasPorRuta = new Map<string, { fecha: string; n: number }>()
   const PAGE = 1000
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from("v_tiempo_ruta_ciclos")
-      .select("route_id, fecha")
-      .eq("localidad", cfg.localidad)
-      .gte("fecha", `${anio}-01-01`)
-      .lte("fecha", `${anio}-12-31`)
-      .range(from, from + PAGE - 1)
-    if (error) return { error: `No se pudieron leer las paradas: ${error.message}` }
-    for (const r of (data ?? []) as { route_id: string; fecha: string }[]) {
-      const cur = paradasPorRuta.get(r.route_id) ?? { fecha: r.fecha, n: 0 }
-      cur.n++
-      paradasPorRuta.set(r.route_id, cur)
-    }
-    if (!data || data.length < PAGE) break
-  }
+  const ayer = (() => {
+    const d = new Date()
+    d.setUTCHours(12, 0, 0, 0)
+    d.setUTCDate(d.getUTCDate() - 1)
+    return d.toISOString().slice(0, 10)
+  })()
+  const finAnio = `${anio}-12-31`
+  const topeAnio = ayer < finAnio ? ayer : finAnio
+
+  // --- Ventas: fuente principal
+  const { data: ultimaVenta, error: errUlt } = await supabase
+    .from("ventas_diarias_cliente")
+    .select("fecha")
+    .in("origen", ["chess", "gestion"])
+    .gte("fecha", `${anio}-01-01`)
+    .lte("fecha", topeAnio)
+    .order("fecha", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (errUlt) return { error: `No se pudieron leer las ventas: ${errUlt.message}` }
+  const hastaDatos = (ultimaVenta as { fecha: string } | null)?.fecha ?? null
+  const desdeDatos = hastaDatos ? `${anio}-01-01` : null
 
   const viajesPorDia = new Map<string, number>()
-  for (const { fecha, n } of paradasPorRuta.values()) {
-    if (n < cfg.minParadas) continue
-    viajesPorDia.set(fecha, (viajesPorDia.get(fecha) ?? 0) + 1)
-  }
-
-  // Respaldo con Chess. Hay días en que el camión repartió en la localidad y
-  // Foxtrot no tiene ninguna parada completada (el 15/09 y el 23/09/2026 en
-  // Colón: 42 y 34 entregas en Chess, cero paradas). Sin esto el día cuenta
-  // como viaje evitado y el ahorro se infla. Sólo para días SIN viaje en
-  // Foxtrot: si Foxtrot vio algo ese día, manda Foxtrot. Un viaje de Chess
-  // es un camión (patente) con al menos `minParadas` clientes de la
-  // localidad ese día, misma regla que para las rutas de Foxtrot.
-  const chessPorDia = new Map<string, number>()
-  const desdeDatos = (primera.data as { fecha: string } | null)?.fecha ?? null
   if (desdeDatos && hastaDatos) {
     const { data: clientes, error: errCli } = await supabase
       .from("bot_clientes_cache")
@@ -750,15 +722,17 @@ async function serieViajes(
           .in("id_cliente", ids)
           .gte("fecha", desdeDatos)
           .lte("fecha", hastaDatos)
+          .order("fecha", { ascending: true })
+          .order("id_cliente", { ascending: true })
           .range(from, from + PAGE - 1)
-        if (error) return { error: `No se pudo leer el reparto de Chess: ${error.message}` }
+        if (error) return { error: `No se pudo leer el reparto: ${error.message}` }
         for (const r of (data ?? []) as {
           fecha: string
           patente: string | null
           id_cliente: number
         }[]) {
           const patente = (r.patente ?? "").trim()
-          if (!patente || viajesPorDia.has(r.fecha)) continue
+          if (!patente) continue
           const k = `${r.fecha}|${patente}`
           const set = clientesPorCamion.get(k) ?? new Set<number>()
           set.add(r.id_cliente)
@@ -769,18 +743,82 @@ async function serieViajes(
       for (const [k, set] of clientesPorCamion) {
         if (set.size < cfg.minParadas) continue
         const fecha = k.slice(0, 10)
-        chessPorDia.set(fecha, (chessPorDia.get(fecha) ?? 0) + 1)
+        viajesPorDia.set(fecha, (viajesPorDia.get(fecha) ?? 0) + 1)
       }
-      for (const [fecha, v] of chessPorDia) {
-        viajesPorDia.set(fecha, (viajesPorDia.get(fecha) ?? 0) + v)
+    }
+  }
+
+  // --- Foxtrot: control
+  const [primera, ultima] = await Promise.all([
+    supabase
+      .from("foxtrot_waypoints_visita")
+      .select("fecha")
+      .eq("status", "COMPLETED")
+      .gte("fecha", `${anio}-01-01`)
+      .lte("fecha", finAnio)
+      .order("fecha", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("foxtrot_waypoints_visita")
+      .select("fecha")
+      .eq("status", "COMPLETED")
+      .gte("fecha", `${anio}-01-01`)
+      .lte("fecha", finAnio)
+      .order("fecha", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+  const foxtrotPorDia = new Map<string, number>()
+  let foxtrotDesde: string | null = null
+  let foxtrotHasta: string | null = null
+  // Si Foxtrot falla, el ahorro igual se calcula: sólo se pierde el control.
+  if (!primera.error && !ultima.error) {
+    foxtrotDesde = (primera.data as { fecha: string } | null)?.fecha ?? null
+    const ultimaFecha = (ultima.data as { fecha: string } | null)?.fecha ?? null
+    if (ultimaFecha !== null) {
+      const d = new Date(`${ultimaFecha}T12:00:00Z`)
+      d.setUTCDate(d.getUTCDate() - 1)
+      foxtrotHasta = d.toISOString().slice(0, 10)
+    }
+    const paradasPorRuta = new Map<string, { fecha: string; n: number }>()
+    let ok = true
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("v_tiempo_ruta_ciclos")
+        .select("route_id, fecha")
+        .eq("localidad", cfg.localidad)
+        .gte("fecha", `${anio}-01-01`)
+        .lte("fecha", finAnio)
+        .range(from, from + PAGE - 1)
+      if (error) {
+        ok = false
+        break
       }
+      for (const r of (data ?? []) as { route_id: string; fecha: string }[]) {
+        const cur = paradasPorRuta.get(r.route_id) ?? { fecha: r.fecha, n: 0 }
+        cur.n++
+        paradasPorRuta.set(r.route_id, cur)
+      }
+      if (!data || data.length < PAGE) break
+    }
+    if (ok) {
+      for (const { fecha, n } of paradasPorRuta.values()) {
+        if (n < cfg.minParadas) continue
+        foxtrotPorDia.set(fecha, (foxtrotPorDia.get(fecha) ?? 0) + 1)
+      }
+    } else {
+      foxtrotDesde = null
+      foxtrotHasta = null
     }
   }
 
   return {
     data: {
       viajesPorDia,
-      chessPorDia,
+      foxtrotPorDia,
+      foxtrotDesde,
+      foxtrotHasta,
       desdeDatos,
       hastaDatos,
     },

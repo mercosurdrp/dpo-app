@@ -648,10 +648,22 @@ function KpiCombustibleBlock({
                   <>
                     <FilaDetalle
                       etiqueta="Viajes en el mes"
+                      valor={String(detalleMes.viajes ?? 0)}
+                    />
+                    <FilaDetalle
+                      etiqueta="Control Foxtrot"
                       valor={
-                        detalleMes.viajesChess
-                          ? `${detalleMes.viajes ?? 0} (${detalleMes.viajesChess} por Chess)`
-                          : String(detalleMes.viajes ?? 0)
+                        detalleMes.viajesFoxtrot == null
+                          ? "sin sincronizar"
+                          : detalleMes.viajesFoxtrot === detalleMes.viajes
+                            ? `${detalleMes.viajesFoxtrot} (coincide)`
+                            : `${detalleMes.viajesFoxtrot} (no coincide: revisar patentes)`
+                      }
+                      className={
+                        detalleMes.viajesFoxtrot != null &&
+                        detalleMes.viajesFoxtrot !== detalleMes.viajes
+                          ? "text-amber-700"
+                          : undefined
                       }
                     />
                     <FilaDetalle
@@ -684,7 +696,7 @@ function KpiCombustibleBlock({
               </div>
               <p className="text-xs text-muted-foreground">
                 {esViajes
-                  ? "Viajes = rutas de Foxtrot con reparto en la localidad, la haga la ruta que la haga. Si un día Foxtrot no registró paradas y Chess muestra el reparto, el viaje cuenta por Chess. Semanas = días hábiles ÷ 5."
+                  ? "Viajes = camiones (patente) que ese día entregaron a 5 clientes o más de la localidad, según las ventas de Chess y Gestión (la misma cuenta que Costo por PDV). Foxtrot va como control: si no coincide, revisar la patente cargada en las ventas del mes. Semanas = días hábiles ÷ 5."
                   : "Razón de sumas (Σ km ÷ Σ litros), sólo gasoil; se descartan las cargas con odómetro salteado o tanque incompleto."}
               </p>
             </div>
@@ -694,8 +706,8 @@ function KpiCombustibleBlock({
       <p className="text-xs text-muted-foreground">
         {esViajes && kpi.viajes && (
           <>
-            Rutas de Foxtrot con reparto en {kpi.viajes.localidad}, la haga la
-            ruta que la haga (y Chess cuando Foxtrot no registró el día) ·{" "}
+            Camiones con 5 clientes o más en {kpi.viajes.localidad} según las
+            ventas de Chess y Gestión (Foxtrot como control) ·{" "}
             {kpi.viajes.kmViaje} km por viaje · semanas = días hábiles ÷ 5
           </>
         )}
