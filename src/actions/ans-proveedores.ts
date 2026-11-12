@@ -12,6 +12,7 @@ import { requireAuth, requireRole } from "@/lib/session"
 import { getMantenimientos } from "@/actions/mantenimiento-vehiculos"
 import {
   calcularCumplimientoAns,
+  esDelProveedor,
   ymSumar,
   type AnsProveedorCumplimiento,
   type AnsProveedorIn,
@@ -59,12 +60,38 @@ export interface RecargaMatafuegos extends RecargaAnsIn {
   observaciones: string | null
 }
 
+/**
+ * Una OT hecha con el proveedor del acuerdo (R2.3.2a: trazabilidad).
+ *
+ * Los indicadores sólo muestran las OT que entran en SU cuenta —puntualidad
+ * mira las que tienen fecha comprometida, retrabajo las que volvieron—, así que
+ * un proveedor podía tener seis trabajos en el mes y el tablero no nombraba
+ * ninguno. Esto es el respaldo del semáforo: contra qué trabajos se midió.
+ */
+export interface TrabajoAns {
+  id: string
+  numeroOt: string | null
+  fecha: string
+  dominio: string
+  tipo: string
+  estado: string
+  costo: number | null
+  /** null = el acuerdo no pedía fecha, o todavía no se cargó. */
+  salidaComprometida: string | null
+  salidaTaller: string | null
+  /** true/false sólo cuando hay compromiso Y salida: si no, no se puede juzgar. */
+  enFecha: boolean | null
+  descripcion: string | null
+}
+
 export interface CumplimientoAnsRespuesta {
   ym: string
   hoy: string
   cumplimientos: AnsProveedorCumplimiento[]
   planes: PlanAns[]
   recargas: RecargaMatafuegos[]
+  /** Todas las OT del período por acuerdo (`ansId`), de la más nueva a la más vieja. */
+  trabajos: Record<string, TrabajoAns[]>
   /** Falta aplicar APLICAR_EN_PAMPEANA_ANS_PROVEEDORES.sql. */
   sqlPendiente: boolean
 }
@@ -127,7 +154,7 @@ export async function getCumplimientoAns(
       .eq("activo", true)
     if (ansRes.error) {
       if (faltaTabla(ansRes.error))
-        return { data: { ym, hoy, cumplimientos: [], planes: [], recargas: [], sqlPendiente: true } }
+        return { data: { ym, hoy, cumplimientos: [], planes: [], recargas: [], trabajos: {}, sqlPendiente: true } }
       return { error: ansRes.error.message }
     }
 
@@ -154,7 +181,7 @@ export async function getCumplimientoAns(
     for (const r of [pedRes, extRes, recRes, planRes]) {
       if (r.error) {
         if (faltaTabla(r.error))
-          return { data: { ym, hoy, cumplimientos: [], planes: [], recargas: [], sqlPendiente: true } }
+          return { data: { ym, hoy, cumplimientos: [], planes: [], recargas: [], trabajos: {}, sqlPendiente: true } }
         return { error: r.error.message }
       }
     }
@@ -254,7 +281,42 @@ export async function getCumplimientoAns(
       ahoraIso: new Date().toISOString(),
     })
 
-    return { data: { ym, hoy, cumplimientos, planes, recargas, sqlPendiente: false } }
+    // Trazabilidad (R2.3.2a): todas las OT del proveedor en la ventana que
+    // muestra el tablero, no sólo las que entran en algún indicador. Se usa el
+    // mismo `esDelProveedor` del cálculo, así la lista no puede discrepar del
+    // semáforo que está al lado.
+    const desdeHistoria = `${ymSumar(ym, -5)}-01`
+    const trabajos: Record<string, TrabajoAns[]> = {}
+    for (const prov of proveedores) {
+      trabajos[prov.ansId] = otRes.data
+        .filter(
+          (m) =>
+            m.fecha >= desdeHistoria &&
+            m.fecha < hasta &&
+            m.estado !== "cancelado" &&
+            esDelProveedor(m.taller, prov.nombre)
+        )
+        .map((m) => {
+          const comp = m.salida_comprometida ?? null
+          const salida = m.salida_taller ?? null
+          return {
+            id: m.id,
+            numeroOt: m.numero_ot ?? null,
+            fecha: m.fecha,
+            dominio: m.dominio,
+            tipo: m.tipo,
+            estado: m.estado,
+            costo: m.costo ?? null,
+            salidaComprometida: comp,
+            salidaTaller: salida,
+            enFecha: comp && salida ? salida <= comp : null,
+            descripcion: m.observaciones ?? null,
+          }
+        })
+        .sort((a, b) => b.fecha.localeCompare(a.fecha))
+    }
+
+    return { data: { ym, hoy, cumplimientos, planes, recargas, trabajos, sqlPendiente: false } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

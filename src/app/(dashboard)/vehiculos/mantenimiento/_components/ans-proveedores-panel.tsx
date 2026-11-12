@@ -39,6 +39,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import { fmtMoneyOt } from "./ot-formato"
 import {
   cerrarPlanAns,
   crearPlanAns,
@@ -49,6 +50,7 @@ import {
   type CumplimientoAnsRespuesta,
   type PlanAns,
   type RecargaMatafuegos,
+  type TrabajoAns,
 } from "@/actions/ans-proveedores"
 import {
   ANS_TIPO_LABEL,
@@ -263,6 +265,7 @@ export function AnsProveedoresPanel({ puedeEditar }: { puedeEditar: boolean }) {
             ym={res.ym}
             planes={res.planes.filter((p) => p.ansId === c.proveedor.ansId)}
             recargas={c.proveedor.tipo === "matafuegos" ? res.recargas : []}
+            trabajos={res.trabajos?.[c.proveedor.ansId] ?? []}
             hoy={res.hoy}
             puedeEditar={puedeEditar}
             onPlan={(r) => setPlan({ c, r })}
@@ -354,6 +357,7 @@ function TarjetaProveedor({
   ym,
   planes,
   recargas,
+  trabajos,
   hoy,
   puedeEditar,
   onPlan,
@@ -365,6 +369,8 @@ function TarjetaProveedor({
   ym: string
   planes: PlanAns[]
   recargas: RecargaMatafuegos[]
+  /** Todas las OT hechas con este proveedor en los 6 meses del tablero. */
+  trabajos: TrabajoAns[]
   hoy: string
   puedeEditar: boolean
   onPlan: (r: AnsResultado) => void
@@ -478,8 +484,102 @@ function TarjetaProveedor({
         {p.tipo === "matafuegos" && (
           <RecargasLista recargas={recargas} ym={ym} hoy={hoy} puedeEditar={puedeEditar} onEditar={onRecarga} />
         )}
+
+        <TrabajosDelProveedor trabajos={trabajos} ym={ym} />
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Las OT hechas con este proveedor en los 6 meses del tablero (R2.3.2a).
+ *
+ * El semáforo de arriba dice qué porcentaje cumplió; esto dice **con qué
+ * trabajos**. Sin la lista, el número del mes no se podía auditar: había que
+ * salir a Órdenes de trabajo y filtrar por taller a mano.
+ *
+ * El mes que se está viendo arriba va primero y abierto; los anteriores quedan
+ * plegados, porque lo que se discute con el proveedor es el mes en curso.
+ */
+function TrabajosDelProveedor({ trabajos, ym }: { trabajos: TrabajoAns[]; ym: string }) {
+  const [abierto, setAbierto] = useState(false)
+
+  const delMes = trabajos.filter((t) => t.fecha.slice(0, 7) === ym)
+  const otros = trabajos.filter((t) => t.fecha.slice(0, 7) !== ym)
+  const gastoMes = delMes.reduce((a, t) => a + (t.costo ?? 0), 0)
+
+  if (trabajos.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Sin órdenes de trabajo registradas con este proveedor en los últimos 6 meses.
+      </p>
+    )
+  }
+
+  return (
+    <div className="rounded-md border">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <p className="text-xs font-medium">
+          Órdenes de trabajo del proveedor
+          <span className="ml-2 font-normal text-muted-foreground">
+            {delMes.length} en {mesLabel(ym)}
+            {gastoMes > 0 && ` · ${fmtMoneyOt(gastoMes)}`}
+            {otros.length > 0 && ` · ${otros.length} en los 5 meses anteriores`}
+          </span>
+        </p>
+        <button
+          type="button"
+          onClick={() => setAbierto((v) => !v)}
+          className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+        >
+          {abierto ? "Ocultar" : "Ver las OT"}
+          <ChevronDown className={cn("size-3.5 transition-transform", abierto && "rotate-180")} />
+        </button>
+      </div>
+
+      {abierto && (
+        <div className="divide-y border-t">
+          {[...delMes, ...otros].map((t) => (
+            <div
+              key={t.id}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 text-xs"
+              title={
+                t.salidaComprometida
+                  ? `Comprometida ${fmtFecha(t.salidaComprometida)}${t.salidaTaller ? ` · entregada ${fmtFecha(t.salidaTaller)}` : " · todavía en taller"}`
+                  : "Sin fecha comprometida cargada"
+              }
+            >
+              <span className="w-16 shrink-0 font-mono font-semibold">
+                {t.numeroOt ? `OT ${t.numeroOt}` : "s/n"}
+              </span>
+              <span className="w-14 shrink-0 tabular-nums text-muted-foreground">{fmtFecha(t.fecha)}</span>
+              <span className="w-20 shrink-0 font-medium">{t.dominio}</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {t.descripcion || t.tipo}
+              </span>
+              {t.enFecha === false && (
+                <Badge variant="outline" className="border-destructive/40 bg-destructive/5 px-1.5 py-0 text-[10px] text-destructive">
+                  fuera de fecha
+                </Badge>
+              )}
+              {t.enFecha === true && (
+                <Badge variant="outline" className="border-emerald-300 bg-emerald-50 px-1.5 py-0 text-[10px] text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+                  en fecha
+                </Badge>
+              )}
+              {t.estado === "en_taller" && (
+                <Badge variant="outline" className="border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                  en taller
+                </Badge>
+              )}
+              <span className="w-24 shrink-0 text-right tabular-nums">
+                {t.costo != null ? fmtMoneyOt(t.costo) : "—"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
