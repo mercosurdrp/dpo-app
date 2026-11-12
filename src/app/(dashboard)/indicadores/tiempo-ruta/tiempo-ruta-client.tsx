@@ -36,6 +36,7 @@ import type {
 import type { TiempoRutaClientesData } from "@/actions/tiempo-ruta-cliente"
 import { ClientesTiempo } from "./_components/clientes-tiempo"
 import { PlanesTiempoRuta } from "./_components/planes-tiempo-ruta"
+import { DetalleCiudadCamion } from "./_components/detalle-ciudad-camion"
 import type { TiempoRutaPlan } from "@/actions/tiempo-ruta-planes"
 import {
   TIEMPO_RUTA_META_MINUTOS,
@@ -56,6 +57,7 @@ import {
   Minus,
   Eye,
   Activity,
+  MapPin,
 } from "lucide-react"
 
 interface KpiData {
@@ -181,11 +183,22 @@ export function TiempoRutaClient({ kpis, vehiculos, clientes, planes }: Props) {
             Tiempo en Ruta (puerta a puerta) — Pilar Entrega 1.2
           </p>
         </div>
-        <Link href="/vehiculos/checklist">
-          <Button>
-            <Activity className="mr-2 h-4 w-4" /> Nuevo Checklist
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setTab("ciudad")
+              document.getElementById("tiempo-ruta-graficos")?.scrollIntoView({ behavior: "smooth", block: "start" })
+            }}
+          >
+            <MapPin className="mr-2 h-4 w-4" /> Ver detalle por ciudad
           </Button>
-        </Link>
+          <Link href="/vehiculos/checklist">
+            <Button>
+              <Activity className="mr-2 h-4 w-4" /> Nuevo Checklist
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Filtros: zona y descuento del traslado a las zonas lejanas */}
@@ -309,10 +322,11 @@ export function TiempoRutaClient({ kpis, vehiculos, clientes, planes }: Props) {
       </div>
 
       {/* Charts */}
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
+      <Tabs value={tab} onValueChange={setTab} id="tiempo-ruta-graficos" className="scroll-mt-4">
+        <TabsList className="flex-wrap">
           <TabsTrigger value="semanal">Semanal</TabsTrigger>
           <TabsTrigger value="mensual">Mensual</TabsTrigger>
+          <TabsTrigger value="ciudad">Por ciudad y camión</TabsTrigger>
           {clientes && !clientes.sinDatos && (
             <TabsTrigger value="pdv">Por punto de venta</TabsTrigger>
           )}
@@ -437,6 +451,10 @@ export function TiempoRutaClient({ kpis, vehiculos, clientes, planes }: Props) {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="ciudad">
+          <DetalleCiudadCamion retornos={kpis.retornos} ajustar={ajustar} />
         </TabsContent>
 
         {clientes && !clientes.sinDatos && (
