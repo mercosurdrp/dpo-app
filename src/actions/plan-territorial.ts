@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { getKmCiudades } from "./costo-pdv"
+import { getMetaSueno } from "@/lib/sueno/meta"
 
 const PATH = "/planeamiento/plan-territorial"
 const ROLES_EDITORES = ["admin", "supervisor", "admin_rrhh"]
@@ -68,6 +69,23 @@ export interface Territorio {
     costo_x_hl: number
     entregas: number
   }
+  /**
+   * La red con la MISMA cuenta que el VLC/HL del Árbol del Sueño: lo de los
+   * PDV (las ciudades) más la "bolsa" de depósito (lo que se retira en el CD:
+   * HL vendidos que no salen a reparto, que llevan su parte de almacén y nada
+   * de distribución). Así el $/HL de la red de esta página y el del Árbol son
+   * el mismo número, y se pueden comparar contra la misma meta.
+   */
+  red: {
+    hl: number
+    costo_total: number
+    costo_x_hl: number
+    bolsa_hl: number
+    bolsa_costo: number
+    serie: { mes: number; hl: number; costo_total: number }[]
+  }
+  /** Meta y gatillo (rojo) del VLC/HL en el Árbol del Sueño para el año. */
+  meta_arbol: { meta: number | null; gatillo: number | null }
 }
 
 /**
@@ -97,6 +115,8 @@ export async function getTerritorio(anio: number): Promise<Result<Territorio>> {
           meses: [],
           ciudades: [],
           total: { pdv: 0, hl: 0, costo_total: 0, costo_x_hl: 0, entregas: 0 },
+          red: { hl: 0, costo_total: 0, costo_x_hl: 0, bolsa_hl: 0, bolsa_costo: 0, serie: [] },
+          meta_arbol: { meta: null, gatillo: null },
         },
       }
     }
@@ -109,11 +129,29 @@ export async function getTerritorio(anio: number): Promise<Result<Territorio>> {
     // salían juntas, competían por la CPU y algunas morían: los costos por ciudad
     // quedaban cortos y una línea base de plan podía nacer contra un total
     // incompleto, sin ninguna señal. Ahora un fallo se propaga como error.
-    const [{ data: terr, error: eTerr }, kmCiudades] = await Promise.all([
+    const [{ data: terr, error: eTerr }, kmCiudades, bolsas, metaArbol] = await Promise.all([
       supabase.rpc("get_territorio_json", { p_anio: anio }),
       getKmCiudades(),
+      // Bolsa de depósito de cada mes (RPC liviana, ~0,1 s): sin ella el $/HL
+      // de la red no es el del Árbol del Sueño.
+      Promise.all(
+        meses.map((mes) => supabase.rpc("get_bolsa_deposito", { p_anio: anio, p_mes: mes })),
+      ),
+      getMetaSueno(supabase, "vlc_hl", anio),
     ])
     if (eTerr) return { error: eTerr.message }
+    const eBolsa = bolsas.find((b) => b.error)?.error
+    if (eBolsa) return { error: eBolsa.message }
+    const bolsaPorMes = new Map<number, { hl: number; costo: number }>()
+    bolsas.forEach((b, i) => {
+      const fila = (Array.isArray(b.data) ? b.data[0] : b.data) as
+        | { hl?: unknown; costo_almacen?: unknown }
+        | null
+      bolsaPorMes.set(meses[i], {
+        hl: Number(fila?.hl ?? 0),
+        costo: Number(fila?.costo_almacen ?? 0),
+      })
+    })
     const kmPorCiudad = new Map(kmCiudades.map((k) => [k.ciudad, k.km]))
 
     const payload = (terr ?? {}) as { ciudades?: unknown }
@@ -173,7 +211,41 @@ export async function getTerritorio(anio: number): Promise<Result<Territorio>> {
     )
     total.costo_x_hl = total.hl ? total.costo_total / total.hl : 0
 
-    return { data: { anio, meses, ciudades, total } }
+    const serieRed = meses.map((mes) => {
+      let hl = bolsaPorMes.get(mes)?.hl ?? 0
+      let costo = bolsaPorMes.get(mes)?.costo ?? 0
+      for (const c of ciudades) {
+        const m = c.serie.find((x) => x.mes === mes)
+        if (m) {
+          hl += m.hl
+          costo += m.costo_total
+        }
+      }
+      return { mes, hl, costo_total: costo }
+    })
+    const bolsaHl = [...bolsaPorMes.values()].reduce((a, b) => a + b.hl, 0)
+    const bolsaCosto = [...bolsaPorMes.values()].reduce((a, b) => a + b.costo, 0)
+    const redHl = total.hl + bolsaHl
+    const redCosto = total.costo_total + bolsaCosto
+    const red = {
+      hl: redHl,
+      costo_total: redCosto,
+      costo_x_hl: redHl ? redCosto / redHl : 0,
+      bolsa_hl: bolsaHl,
+      bolsa_costo: bolsaCosto,
+      serie: serieRed,
+    }
+
+    return {
+      data: {
+        anio,
+        meses,
+        ciudades,
+        total,
+        red,
+        meta_arbol: { meta: metaArbol.meta, gatillo: metaArbol.gatillo },
+      },
+    }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error cargando el territorio",

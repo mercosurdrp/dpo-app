@@ -1,5 +1,6 @@
 "use client"
 
+import { estadoSemaforo } from "@/lib/sueno/semaforo"
 import Link from "next/link"
 import { ExternalLink, Truck, Lightbulb, MessageSquareText } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -84,18 +85,18 @@ export function SeccionCostoLogistico({
 }) {
   const nombreMes = `${MESES[data.mes - 1]} ${data.anio}`
   const nombreAnterior = `${MESES[data.anterior.mes - 1]} ${data.anterior.anio}`
-  // VLC/HL: mejor menor. Rojo si pasó la meta (15.000 en 2026), ámbar si pasó
-  // el gatillo (14.500) sin llegar a la meta, verde por debajo del gatillo.
+  // VLC/HL: mejor menor. Mismo semáforo que el Árbol del Sueño (meta = verde,
+  // gatillo = umbral del rojo, POR ENCIMA de la meta): ≤ meta verde, entre
+  // meta y gatillo ámbar, > gatillo rojo. 2026: meta 15.500, gatillo 16.000.
+  const ytdEstado = estadoSemaforo(data.ytd.valor, data.ytd.meta, data.ytd.gatillo, "menor")
   const ytdTono =
-    data.ytd.valor === null
-      ? "neutro"
-      : data.ytd.meta !== null && data.ytd.valor > data.ytd.meta
-        ? "mal"
-        : data.ytd.gatillo !== null && data.ytd.valor > data.ytd.gatillo
-          ? "atencion"
-          : data.ytd.meta !== null || data.ytd.gatillo !== null
-            ? "bien"
-            : "neutro"
+    ytdEstado === "verde"
+      ? "bien"
+      : ytdEstado === "amarillo"
+        ? "atencion"
+        : ytdEstado === "rojo"
+          ? "mal"
+          : "neutro"
 
   return (
     <Card>

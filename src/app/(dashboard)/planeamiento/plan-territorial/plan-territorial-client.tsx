@@ -119,18 +119,11 @@ function serieRedTotal(
   territorio: Territorio | null,
 ): { mes: number; vlc: number }[] {
   if (!territorio) return []
-  const acc = new Map<number, { costo: number; hl: number }>()
-  for (const c of territorio.ciudades) {
-    for (const m of c.serie) {
-      const a = acc.get(m.mes) ?? { costo: 0, hl: 0 }
-      a.costo += m.costo_total
-      a.hl += m.hl
-      acc.set(m.mes, a)
-    }
-  }
-  return [...acc.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([mes, a]) => ({ mes, vlc: a.hl ? a.costo / a.hl : 0 }))
+  // Misma cuenta que el VLC/HL del Árbol del Sueño: ciudades + bolsa de
+  // depósito, sumando costo y HL del mes y recién ahí dividiendo.
+  return territorio.red.serie
+    .filter((m) => m.hl > 0)
+    .map((m) => ({ mes: m.mes, vlc: m.costo_total / m.hl }))
 }
 
 /**
@@ -143,7 +136,7 @@ function objetivoDerivado(
   territorio: Territorio | null,
   planes: PlanTerritorial[],
 ): { vlc: number | null; aportes: AportePlan[] } {
-  if (!territorio || !territorio.total.hl) return { vlc: null, aportes: [] }
+  if (!territorio || !territorio.red.hl) return { vlc: null, aportes: [] }
 
   // Una ciudad puede tener más de un plan: nos quedamos con la meta más
   // ambiciosa (la más baja) para no contar el ahorro dos veces.
@@ -154,7 +147,9 @@ function objetivoDerivado(
     if (actual == null || p.meta < actual) metaPorCiudad.set(p.ciudad, p.meta)
   }
 
-  const totalHl = territorio.total.hl
+  // Sobre la red del Árbol (ciudades + bolsa de depósito): la bolsa no tiene
+  // plan, así que no aporta ahorro, pero sí pesa en el denominador.
+  const totalHl = territorio.red.hl
   let ahorro = 0
   const aportes: AportePlan[] = []
   for (const [ciudad, meta] of metaPorCiudad) {
@@ -173,7 +168,7 @@ function objetivoDerivado(
     })
   }
   aportes.sort((a, b) => b.aporte_red - a.aporte_red)
-  const vlc = (territorio.total.costo_total - ahorro) / totalHl
+  const vlc = (territorio.red.costo_total - ahorro) / totalHl
   return { vlc, aportes }
 }
 
@@ -198,7 +193,7 @@ function ensuenoDerivado(
   territorio: Territorio | null,
   planes: PlanTerritorial[],
 ): { vlc: number | null; pct: number | null; aportes: AporteEnsueno[] } {
-  if (!territorio || !territorio.total.hl) return { vlc: null, pct: null, aportes: [] }
+  if (!territorio || !territorio.red.hl) return { vlc: null, pct: null, aportes: [] }
 
   const metaPorCiudad = new Map<string, number>()
   for (const p of planes) {
@@ -237,7 +232,12 @@ function ensuenoDerivado(
     })
   }
   aportes.sort((a, b) => b.hl - a.hl)
-  return { vlc: costoTotal / territorio.total.hl, pct, aportes }
+  // La bolsa de depósito (retiro en el CD) no se reestructura: queda igual.
+  return {
+    vlc: (costoTotal + territorio.red.bolsa_costo) / territorio.red.hl,
+    pct,
+    aportes,
+  }
 }
 
 interface Props {
@@ -288,8 +288,10 @@ export function PlanTerritorialClient({
   const objetivo = escenarios.find((e) => e.tipo === "objetivo")
   const dream = escenarios.find((e) => e.tipo === "dream")
 
-  // El VLC/HL "base" no se carga a mano: es el del territorio vivo.
-  const vlcBase = territorio?.total.costo_x_hl ?? null
+  // El VLC/HL "base" no se carga a mano: es el de la red con la cuenta del
+  // Árbol del Sueño (ciudades + bolsa de depósito), así coincide con él.
+  const vlcBase = territorio?.red.costo_x_hl ?? null
+  const metaArbol = territorio?.meta_arbol ?? { meta: null, gatillo: null }
 
   // El objetivo de la red sale de las metas de los planes. Si además alguien
   // cargó un número a mano en el escenario objetivo, ese manda.
@@ -364,6 +366,7 @@ export function PlanTerritorialClient({
             base={vlcBase}
             objetivo={vlcObjetivo}
             dream={vlcDream}
+            metaArbol={metaArbol}
             revisiones={revisiones}
           />
           {planes.length === 0 && (
@@ -499,7 +502,11 @@ export function PlanTerritorialClient({
               valor={vlcObjetivo}
               detalle={
                 vlcBase && vlcObjetivo != null
-                  ? `${num((100 * (vlcObjetivo - vlcBase)) / vlcBase, 1)}% vs base`
+                  ? `${num((100 * (vlcObjetivo - vlcBase)) / vlcBase, 1)}% vs base${
+                      metaArbol.meta != null
+                        ? ` · meta del Árbol ${pesos(metaArbol.meta)}`
+                        : ""
+                    }`
                   : "Cargá planes con meta para calcularlo"
               }
               color="#0d9488"
@@ -526,11 +533,12 @@ export function PlanTerritorialClient({
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
               <p>
-                VLC/HL = (costo de almacén + costo de distancia + costo de
-                distribución) ÷ hectolitros vendidos. Sale en vivo del mismo
-                modelo que alimenta el indicador Costo por PDV, así que el número
-                de esta página y el de ese indicador son el mismo por
-                construcción.
+                VLC/HL de la red = (costo de almacén + costo de distancia + costo
+                de distribución) ÷ hectolitros vendidos, contando también lo que
+                se retira en el depósito (lleva su parte de almacén y nada de
+                distribución). Es la misma cuenta que el VLC/HL del Árbol del
+                Sueño, así que se compara contra la misma meta. El $/HL de cada
+                ciudad es sólo lo entregado a sus PDV, igual que en Costo por PDV.
               </p>
               <p className="text-amber-700">
                 El costo por ciudad es un <strong>reparto</strong>, no un costo
@@ -548,13 +556,14 @@ export function PlanTerritorialClient({
             planes={planes}
             objetivo={vlcObjetivo}
             dream={vlcDream}
+            metaArbol={metaArbol.meta}
           />
 
           <PuenteObjetivo
             base={vlcBase}
             objetivo={vlcObjetivo}
             aportes={obj.aportes}
-            totalHl={territorio?.total.hl ?? 0}
+            totalHl={territorio?.red.hl ?? 0}
           />
 
           <EscenarioEnsuenoCard
@@ -798,12 +807,14 @@ function SerieRedTotal({
   planes,
   objetivo,
   dream,
+  metaArbol,
 }: {
   anio: number
   territorio: Territorio | null
   planes: PlanTerritorial[]
   objetivo: number | null
   dream: number | null
+  metaArbol: number | null
 }) {
   const datos = serieRedTotal(territorio).map((d) => ({
     mes: MESES[d.mes],
@@ -845,6 +856,19 @@ function SerieRedTotal({
                   fontSize: 10,
                   position: "insideTopRight",
                   fill: "#0d9488",
+                }}
+              />
+            )}
+            {metaArbol != null && (
+              <ReferenceLine
+                y={metaArbol}
+                stroke="#dc2626"
+                strokeDasharray="2 3"
+                label={{
+                  value: "Meta Árbol",
+                  fontSize: 10,
+                  position: "insideTopLeft",
+                  fill: "#dc2626",
                 }}
               />
             )}
@@ -1625,6 +1649,7 @@ function ResumenEscenarios({
   base,
   objetivo,
   dream,
+  metaArbol,
   revisiones,
 }: {
   anio: number
@@ -1632,6 +1657,7 @@ function ResumenEscenarios({
   base: number | null
   objetivo: number | null
   dream: number | null
+  metaArbol: { meta: number | null; gatillo: number | null }
   revisiones: RevisionTerritorial[]
 }) {
   const ultimoMes = meses.length ? meses[meses.length - 1] : null
@@ -1656,7 +1682,11 @@ function ResumenEscenarios({
       label: `VLC/HL red ${anio}`,
       valor: base,
       nota: ultimoMes
-        ? `acumulado a ${MESES[ultimoMes]} · sólo lo entregado a PDV, sin la bolsa de depósito (no es el VLC/HL del Sueño)`
+        ? `acumulado a ${MESES[ultimoMes]} · el mismo VLC/HL del Árbol del Sueño (PDV + retiro en depósito)${
+            metaArbol.meta != null
+              ? ` · meta ${pesos(metaArbol.meta)}${metaArbol.gatillo != null ? `, rojo > ${pesos(metaArbol.gatillo)}` : ""}`
+              : ""
+          }`
         : "sin costo cargado",
       color: "#334155",
     },
@@ -2028,7 +2058,7 @@ function DiagnosticoCiudades({
               ))}
               {territorio && (
                 <TableRow className="border-t-2 font-semibold">
-                  <TableCell>Total</TableCell>
+                  <TableCell>Total PDV (sin retiro en depósito)</TableCell>
                   <TableCell className="text-right">
                     {pesos(territorio.total.costo_x_hl)}
                   </TableCell>
