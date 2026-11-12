@@ -251,10 +251,18 @@ export function GestionMtto({
       <Tabs defaultValue="repuestos">
         <TabsList>
           <TabsTrigger value="repuestos">Inventario</TabsTrigger>
+          <TabsTrigger value="salidas">Salidas a unidades</TabsTrigger>
           <TabsTrigger value="pedidos">Pedidos de repuestos</TabsTrigger>
           <TabsTrigger value="proveedores">Proveedores</TabsTrigger>
           <TabsTrigger value="residuos">Residuos</TabsTrigger>
         </TabsList>
+
+        {/* ===== Trazabilidad al revés: del pañol a la unidad (R2.3.2) =====
+            Vive en su propia solapa y no al pie del inventario: ahí, debajo de
+            una tabla de 14 columnas, no se encontraba. */}
+        <TabsContent value="salidas" className="space-y-3">
+          <SalidasPanolCard />
+        </TabsContent>
 
         {/* ===== Proveedores de piezas y ANS (DPO 2.3, R2.3.1a) ===== */}
         <TabsContent value="proveedores" className="space-y-3">
@@ -706,9 +714,6 @@ export function GestionMtto({
               )}
             </CardContent>
           </Card>
-
-          {/* Trazabilidad al revés: del pañol a la unidad (DPO 2.3 / R2.3.2) */}
-          <SalidasPanolCard />
 
           {/* Historial de conteos físicos (DPO 2.3) */}
           {conteos.length > 0 && (
