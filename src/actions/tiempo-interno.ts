@@ -156,14 +156,27 @@ export async function getTiKpis(filters?: {
     type ItemTi = { fecha: string; persona: string; chofer: string; dominio: string; hora: string }
     let items: ItemTi[] = retornos.map((r) => ({ ...r, persona: r.chofer }))
     let sinAyudanteRegistrado = 0
+    // Veces que cada nombre figura como chofer (checklist de retorno + egreso
+    // de portería) y como ayudante (egreso). La verificación física mide sólo
+    // a los ayudantes: un chofer que un día sale de ayudante de otro camión se
+    // descarta, pero un ayudante que una vez figuró como chofer (error de
+    // carga, o que maneja de vez en cuando) sigue contando. Se decide por
+    // mayoría, a nivel legajo (ver más abajo).
+    const vecesChofer = new Map<string, number>()
+    const vecesAyudante = new Map<string, number>()
+    const sumar = (m: Map<string, number>, n: string) => {
+      if (n) m.set(n, (m.get(n) ?? 0) + 1)
+    }
+    for (const r of retornos) sumar(vecesChofer, norm(r.chofer))
     if (rol === "ayudante") {
       const desdeEg = filters?.fechaDesde || retornos[0]?.fecha || "2026-01-01"
       const egresos = await leerTodo<{
-        fecha: string; dominio: string; hora: string; ayudante1: string | null; ayudante2: string | null
+        fecha: string; dominio: string; hora: string; chofer: string | null
+        ayudante1: string | null; ayudante2: string | null
       }>((f, t) => {
         let q = supabase
           .from("registros_vehiculos")
-          .select("fecha,dominio,hora,ayudante1,ayudante2")
+          .select("fecha,dominio,hora,chofer,ayudante1,ayudante2")
           .eq("tipo", "egreso")
           .gte("fecha", desdeEg)
         if (filters?.fechaHasta) q = q.lte("fecha", filters.fechaHasta)
@@ -173,6 +186,8 @@ export async function getTiKpis(filters?: {
       for (const e of egresos) {
         const k = `${e.fecha}|${norm(e.dominio)}`
         const ayudantes = [e.ayudante1, e.ayudante2].map((a) => norm(a)).filter(Boolean)
+        sumar(vecesChofer, norm(e.chofer))
+        for (const a of ayudantes) sumar(vecesAyudante, a)
         const prev = ultimoEgreso.get(k)
         if (!prev || e.hora >= prev.hora) ultimoEgreso.set(k, { hora: e.hora, ayudantes })
       }
@@ -328,6 +343,31 @@ export async function getTiKpis(filters?: {
     const minTi = filters?.minTiMinutos ?? 0
     let conGps = 0
     let conFoxtrotFin = 0
+    // Chofer o ayudante, por mayoría y por legajo (así "CORDONE LUIS" y
+    // "CORDONE LUIS DARIO" suman juntos). Sin legajo, por nombre.
+    const esChofer = new Map<string, boolean>()
+    if (rol === "ayudante") {
+      const porPersona = new Map<string, { chofer: number; ayudante: number }>()
+      const clavePersona = (n: string) => {
+        const e = resolveLegajo(n)
+        return e ? `L${e.legajo}` : `N${n}`
+      }
+      const acumular = (m: Map<string, number>, campo: "chofer" | "ayudante") => {
+        for (const [n, veces] of m) {
+          const k = clavePersona(n)
+          const p = porPersona.get(k) ?? { chofer: 0, ayudante: 0 }
+          p[campo] += veces
+          porPersona.set(k, p)
+        }
+      }
+      acumular(vecesChofer, "chofer")
+      acumular(vecesAyudante, "ayudante")
+      for (const [k, p] of porPersona) esChofer.set(k, p.chofer > p.ayudante)
+      items = items.filter((it) => {
+        const e = resolveLegajo(it.persona)
+        return !esChofer.get(e ? `L${e.legajo}` : `N${it.persona}`)
+      })
+    }
     for (const r of items) {
       const emp = resolveLegajo(r.persona)
       const kFx = claveFx(r.fecha, r.chofer)
