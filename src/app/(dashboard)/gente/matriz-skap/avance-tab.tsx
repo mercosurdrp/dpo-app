@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, Target } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import type { AvanceRol } from "@/actions/skap-avance"
-import { MIN_PDP, accionHecha, type AvancePersona } from "@/lib/skap/avance"
+import { accionHecha, type AvancePersona } from "@/lib/skap/avance"
 import type { SkapEstadoAccion } from "@/types/database"
 
 const LABEL_ESTADO: Record<SkapEstadoAccion, string> = {
@@ -62,7 +62,6 @@ export function AvanceTab({ avance }: { avance: AvanceRol | null }) {
   const acciones = personas.flatMap((p) => p.acciones)
   const hechas = acciones.filter((a) => accionHecha(a.estado)).length
   const conPdp = personas.filter((p) => p.pdp.length > 0).length
-  const cumplenMin = personas.filter((p) => p.pdp.length >= MIN_PDP).length
 
   return (
     <div className="space-y-3">
@@ -75,8 +74,7 @@ export function AvanceTab({ avance }: { avance: AvanceRol | null }) {
           SKAP: <b className="text-slate-900">{hechas}</b>/{acciones.length} acciones hechas
         </span>
         <span>
-          PDP {anioPdp}: <b className="text-slate-900">{conPdp}</b>/{personas.length} con PDP ·{" "}
-          <b className="text-slate-900">{cumplenMin}</b> con {MIN_PDP} o más
+          PDP {anioPdp}: <b className="text-slate-900">{conPdp}</b>/{personas.length} con PDP
         </span>
         <span className="ml-auto text-xs text-slate-400">
           Avance = promedio del plan SKAP (acciones cumplidas o cerradas) y del PDP (obtenido / meta), cada uno pesa igual.
@@ -149,9 +147,8 @@ function FilaPersona({ p, abierto, onToggle }: { p: AvancePersona; abierto: bool
           {p.pdp.length ? (
             <div className="flex items-center gap-2">
               <Barra v={p.avance_pdp} />
-              <span className={`text-xs ${p.pdp.length < MIN_PDP ? "text-amber-700" : "text-slate-500"}`}>
+              <span className="text-xs text-slate-500">
                 {p.pdp.length} objetivo{p.pdp.length === 1 ? "" : "s"}
-                {p.pdp.length < MIN_PDP && ` (mín. ${MIN_PDP})`}
               </span>
             </div>
           ) : (
