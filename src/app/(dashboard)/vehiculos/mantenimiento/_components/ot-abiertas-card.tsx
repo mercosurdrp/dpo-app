@@ -44,8 +44,17 @@ const OT_ACENTO: Record<OTPendiente["estado"], string> = {
   en_taller: "bg-amber-500",
 }
 
+/**
+ * Días que lleva abierta, contando días de calendario y no fracciones.
+ *
+ * 🚨 `Math.round` hacía que una orden abierta HOY dijera "ayer" a partir del
+ * mediodía: 15:00 son 0,625 días y redondeaba a 1. Pasó con la OT 1824 del
+ * AF028YB el 12/11/2026, cargada a las 10:00 y leída a la tarde. Se cuenta
+ * contra el arranque del día de hoy, que es lo que significa "hace N días".
+ */
 function diasAbierta(fecha: string): number {
   const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
   const f = new Date(fecha + "T00:00:00")
   return Math.max(0, Math.round((hoy.getTime() - f.getTime()) / 86_400_000))
 }
