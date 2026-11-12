@@ -3,17 +3,22 @@
 // Avance por persona: su plan de acción SKAP (acciones de formación) + sus
 // PDP de Desempeño (los importa rrhh-app a app_config `des:pdp:<año>`).
 
+import { revalidatePath } from "next/cache"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireAuth } from "@/lib/session"
-import { getMatrizRol } from "@/actions/skap-habilidades"
+import { getProfile, requireAuth } from "@/lib/session"
+import { getMatrizRol, puedeEditarRol } from "@/actions/skap-habilidades"
 import { leerAcciones } from "@/lib/skap/store"
+import { escribirClave, leerClave } from "@/lib/clima-store"
 import {
-  avanceObjetivo,
+  aAvancePdp,
   calcularAvance,
+  claveObjetivoPdp,
+  claveObtenidoManualPdp,
   clavePdp,
   normalizarDni,
   type AvancePersona,
   type ObjetivoPdp,
+  type ObtenidoManualPdp,
 } from "@/lib/skap/avance"
 import type { SkapRol } from "@/types/database"
 
@@ -46,7 +51,12 @@ export async function getAvancePersonas(rol: SkapRol): Promise<Result<AvanceRol>
   try {
     await requireAuth()
     const anio = new Date().getFullYear()
-    const [matriz, acciones, pdp] = await Promise.all([getMatrizRol(rol), leerAcciones(rol), leerPdp(anio)])
+    const [matriz, acciones, pdp, manuales] = await Promise.all([
+      getMatrizRol(rol),
+      leerAcciones(rol),
+      leerPdp(anio),
+      leerObtenidosManualPdp(anio),
+    ])
     if ("error" in matriz) return { error: matriz.error }
 
     const ids = matriz.data.personas.map((p) => p.empleado_id)
@@ -88,14 +98,7 @@ export async function getAvancePersonas(rol: SkapRol): Promise<Result<AvanceRol>
                 a.fecha_programada < hoy,
             }
           }),
-        pdp: (dni ? pdpPorDni.get(dni) ?? [] : []).map((o) => ({
-          objetivo: o.objetivo,
-          descripcion: o.descripcion,
-          jefe: o.jefe?.nombre ?? "",
-          meta: o.meta,
-          obtenido: o.obtenido,
-          avance: avanceObjetivo(o),
-        })),
+        pdp: (dni ? pdpPorDni.get(dni) ?? [] : []).map((o) => aAvancePdp(o, manuales[claveObjetivoPdp(o)])),
       })
     })
 
@@ -106,5 +109,46 @@ export async function getAvancePersonas(rol: SkapRol): Promise<Result<AvanceRol>
     return { data: { personas, anioPdp: anio, hayPdp: pdp !== null } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error al calcular el avance" }
+  }
+}
+
+/** Obtenido de PDP cargado a mano: claveObjetivoPdp → valor. */
+async function leerObtenidosManualPdp(anio: number): Promise<Record<string, ObtenidoManualPdp>> {
+  return (await leerClave<Record<string, ObtenidoManualPdp>>(claveObtenidoManualPdp(anio))) ?? {}
+}
+
+/**
+ * Carga a mano el obtenido de un PDP (manda sobre el de la plataforma aunque se
+ * reimporte). `obtenido: null` borra el valor manual y vuelve al de la plataforma.
+ */
+export async function guardarObtenidoPdp(input: {
+  rol: SkapRol
+  anio: number
+  clave: string
+  obtenido: number | null
+}): Promise<Result<{ ok: true }>> {
+  try {
+    if (!(await puedeEditarRol(input.rol))) return { error: "No tenés permiso para cargar avances de PDP" }
+    if (input.obtenido !== null && (!Number.isFinite(input.obtenido) || input.obtenido < 0)) {
+      return { error: "El obtenido tiene que ser un número mayor o igual a 0" }
+    }
+    const pdp = await leerPdp(input.anio)
+    if (!pdp?.some((o) => claveObjetivoPdp(o) === input.clave)) return { error: "No se encontró ese PDP" }
+
+    const profile = await getProfile()
+    const manuales = await leerObtenidosManualPdp(input.anio)
+    if (input.obtenido === null) delete manuales[input.clave]
+    else
+      manuales[input.clave] = {
+        obtenido: input.obtenido,
+        fecha: new Date().toISOString().slice(0, 10),
+        por: profile?.id ?? null,
+      }
+    const res = await escribirClave(claveObtenidoManualPdp(input.anio), manuales, profile?.id ?? null)
+    if ("error" in res) return { error: res.error }
+    revalidatePath("/gente/matriz-skap")
+    return { data: { ok: true } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error al guardar el avance del PDP" }
   }
 }

@@ -1,12 +1,14 @@
 "use client"
 
-import { useState } from "react"
-import { ChevronDown, ChevronRight, Target } from "lucide-react"
+import { useState, useTransition } from "react"
+import { toast } from "sonner"
+import { Check, ChevronDown, ChevronRight, Pencil, Target, X } from "lucide-react"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import type { AvanceRol } from "@/actions/skap-avance"
-import { accionHecha, type AvancePersona } from "@/lib/skap/avance"
-import type { SkapEstadoAccion } from "@/types/database"
+import { guardarObtenidoPdp, type AvanceRol } from "@/actions/skap-avance"
+import { accionHecha, type AvancePdp, type AvancePersona } from "@/lib/skap/avance"
+import type { SkapEstadoAccion, SkapRol } from "@/types/database"
 
 const LABEL_ESTADO: Record<SkapEstadoAccion, string> = {
   pendiente: "pendiente",
@@ -38,8 +40,27 @@ function Barra({ v }: { v: number | null }) {
   )
 }
 
-export function AvanceTab({ avance }: { avance: AvanceRol | null }) {
+type OnObtenido = (o: AvancePdp, obtenido: number | null, listo: () => void) => void
+
+export function AvanceTab({ avance, rol, canEdit }: { avance: AvanceRol | null; rol: SkapRol; canEdit: boolean }) {
   const [abierto, setAbierto] = useState<string | null>(null)
+  const [pendiente, startTransition] = useTransition()
+  const refrescar = useRefrescarConScroll()
+
+  /** `obtenido: null` vuelve al valor de la plataforma. */
+  const cambiarObtenido: OnObtenido = (o, obtenido, listo) => {
+    if (!avance) return
+    startTransition(async () => {
+      const res = await guardarObtenidoPdp({ rol, anio: avance.anioPdp, clave: o.clave, obtenido })
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success(obtenido === null ? "Vuelve al avance de la plataforma" : "Avance del PDP guardado")
+      listo()
+      refrescar()
+    })
+  }
 
   if (!avance) {
     return (
@@ -105,6 +126,9 @@ export function AvanceTab({ avance }: { avance: AvanceRol | null }) {
                   p={p}
                   abierto={abierto === p.empleado_id}
                   onToggle={() => setAbierto(abierto === p.empleado_id ? null : p.empleado_id)}
+                  canEdit={canEdit}
+                  pendiente={pendiente}
+                  onObtenido={cambiarObtenido}
                 />
               ))}
             </tbody>
@@ -113,13 +137,28 @@ export function AvanceTab({ avance }: { avance: AvanceRol | null }) {
       </Card>
       <p className="text-xs text-slate-400">
         Los PDP los cargan los líderes en la plataforma de la compañía y RRHH los importa en Desempeño; se cruzan por
-        DNI. Para actualizar lo obtenido, reimportar el archivo de PDP en RRHH.
+        DNI. El avance cargado a mano («Avance», al desplegar la persona) manda sobre el de la plataforma aunque RRHH
+        reimporte, hasta que se toque «usar plataforma».
       </p>
     </div>
   )
 }
 
-function FilaPersona({ p, abierto, onToggle }: { p: AvancePersona; abierto: boolean; onToggle: () => void }) {
+function FilaPersona({
+  p,
+  abierto,
+  onToggle,
+  canEdit,
+  pendiente,
+  onObtenido,
+}: {
+  p: AvancePersona
+  abierto: boolean
+  onToggle: () => void
+  canEdit: boolean
+  pendiente: boolean
+  onObtenido: OnObtenido
+}) {
   const hechas = p.acciones.filter((a) => accionHecha(a.estado)).length
   const vencidas = p.acciones.filter((a) => a.vencida).length
   return (
@@ -201,16 +240,14 @@ function FilaPersona({ p, abierto, onToggle }: { p: AvancePersona; abierto: bool
                   <p className="text-xs text-slate-400">Su líder no le cargó PDP en la plataforma.</p>
                 ) : (
                   <ul className="space-y-1.5">
-                    {p.pdp.map((o, i) => (
-                      <li key={i} className="text-xs">
+                    {p.pdp.map((o) => (
+                      <li key={o.clave} className="text-xs">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <Target className="size-3.5 text-slate-400" />
                           <span className="font-medium text-slate-700" title={o.descripcion}>
                             {o.objetivo}
                           </span>
-                          <span className={`font-semibold tabular-nums ${colorAvance(o.avance).text}`}>
-                            {o.obtenido ?? 0}/{o.meta ?? "—"} · {pctTxt(o.avance)}
-                          </span>
+                          <ObtenidoPdp o={o} canEdit={canEdit} pendiente={pendiente} onObtenido={onObtenido} />
                         </div>
                         {o.descripcion && <p className="ml-5 text-slate-500">{o.descripcion}</p>}
                         {o.jefe && <p className="ml-5 text-slate-400">Líder: {o.jefe}</p>}
@@ -222,6 +259,107 @@ function FilaPersona({ p, abierto, onToggle }: { p: AvancePersona; abierto: bool
             </div>
           </td>
         </tr>
+      )}
+    </>
+  )
+}
+
+/** Obtenido / meta del PDP; quien edita la matriz lo puede cargar a mano. */
+function ObtenidoPdp({
+  o,
+  canEdit,
+  pendiente,
+  onObtenido,
+}: {
+  o: AvancePdp
+  canEdit: boolean
+  pendiente: boolean
+  onObtenido: OnObtenido
+}) {
+  const [editando, setEditando] = useState(false)
+  const [valor, setValor] = useState("")
+
+  if (editando) {
+    const guardar = () => {
+      const n = Number(valor.replace(",", "."))
+      if (valor.trim() === "" || !Number.isFinite(n) || n < 0) {
+        toast.error("Poné un número mayor o igual a 0")
+        return
+      }
+      onObtenido(o, n, () => setEditando(false))
+    }
+    return (
+      <span className="inline-flex items-center gap-1">
+        <input
+          autoFocus
+          inputMode="decimal"
+          value={valor}
+          onChange={(e) => setValor(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") guardar()
+            if (e.key === "Escape") setEditando(false)
+          }}
+          className="h-6 w-16 rounded border px-1 text-right text-xs tabular-nums"
+          aria-label="Obtenido"
+        />
+        <span className="text-slate-500">/{o.meta ?? "—"}</span>
+        <button
+          type="button"
+          disabled={pendiente}
+          onClick={guardar}
+          className="rounded p-0.5 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+          title="Guardar"
+        >
+          <Check className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditando(false)}
+          className="rounded p-0.5 text-slate-500 hover:bg-slate-100"
+          title="Cancelar"
+        >
+          <X className="size-3.5" />
+        </button>
+      </span>
+    )
+  }
+
+  return (
+    <>
+      <span className={`font-semibold tabular-nums ${colorAvance(o.avance).text}`}>
+        {o.obtenido ?? 0}/{o.meta ?? "—"} · {pctTxt(o.avance)}
+      </span>
+      {canEdit && (
+        <button
+          type="button"
+          disabled={pendiente}
+          onClick={() => {
+            setValor(o.obtenido === null ? "" : String(o.obtenido))
+            setEditando(true)
+          }}
+          className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+          title="Cargar el avance a mano"
+        >
+          <Pencil className="size-3" /> Avance
+        </button>
+      )}
+      {o.manual && (
+        <span
+          className="inline-flex items-center gap-1 rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-800"
+          title="Cargado a mano: manda sobre la plataforma aunque RRHH reimporte"
+        >
+          a mano {fechaCorta(o.manual.fecha)} · plataforma {o.manual.plataforma ?? "—"}
+          {canEdit && (
+            <button
+              type="button"
+              disabled={pendiente}
+              onClick={() => onObtenido(o, null, () => {})}
+              className="ml-0.5 underline hover:text-sky-950 disabled:opacity-50"
+            >
+              usar plataforma
+            </button>
+          )}
+        </span>
       )}
     </>
   )

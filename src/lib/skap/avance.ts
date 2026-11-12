@@ -26,6 +26,23 @@ export interface ObjetivoPdp {
 
 export const clavePdp = (anio: number) => `des:pdp:${anio}`
 
+/**
+ * Obtenido cargado a mano desde la matriz: { claveObjetivoPdp: ObtenidoManualPdp }.
+ * MANDA sobre el de la plataforma aunque rrhh-app reimporte (mismo criterio que
+ * Misiones, 26/10/2026); se vuelve al de la plataforma borrándolo.
+ */
+export const claveObtenidoManualPdp = (anio: number) => `skap:pdp-obtenido:${anio}`
+
+export interface ObtenidoManualPdp {
+  obtenido: number
+  fecha: string
+  por: string | null
+}
+
+/** Identifica un objetivo PDP (el archivo de la plataforma no trae id). */
+export const claveObjetivoPdp = (o: Pick<ObjetivoPdp, "dni" | "objetivo" | "descripcion">) =>
+  [normalizarDni(o.dni), (o.objetivo ?? "").trim(), (o.descripcion ?? "").trim()].join("|")
+
 /** Mismo criterio que rrhh-app: obtenido/meta topeado en 100; sin meta ⇒ null. */
 export function avanceObjetivo(o: Pick<ObjetivoPdp, "meta" | "obtenido">): number | null {
   if (!o.meta) return null
@@ -48,12 +65,29 @@ export interface AvanceAccionSkap {
 }
 
 export interface AvancePdp {
+  clave: string
   objetivo: string
   descripcion: string
   jefe: string
   meta: number | null
   obtenido: number | null
   avance: number | null
+  /** Si el obtenido se cargó a mano en la matriz (manda sobre la plataforma). */
+  manual: { fecha: string; plataforma: number | null } | null
+}
+
+export function aAvancePdp(o: ObjetivoPdp, manual?: ObtenidoManualPdp): AvancePdp {
+  const obtenido = manual ? manual.obtenido : o.obtenido
+  return {
+    clave: claveObjetivoPdp(o),
+    objetivo: o.objetivo,
+    descripcion: o.descripcion,
+    jefe: o.jefe?.nombre ?? "",
+    meta: o.meta,
+    obtenido,
+    avance: avanceObjetivo({ meta: o.meta, obtenido }),
+    manual: manual ? { fecha: manual.fecha, plataforma: o.obtenido } : null,
+  }
 }
 
 export interface AvancePersona {

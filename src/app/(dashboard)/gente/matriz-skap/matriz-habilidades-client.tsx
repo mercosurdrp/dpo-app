@@ -434,7 +434,7 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles, plan
       ) : vista === "pac" ? (
         <PlanPacTab rol={matriz.rol} plan={planPac} canEdit={canEdit} />
       ) : vista === "avance" ? (
-        <AvanceTab avance={avance} />
+        <AvanceTab avance={avance} rol={matriz.rol} canEdit={canEdit} />
       ) : (
         <AccionesTab acciones={acciones} rol={matriz.rol} canEdit={canEdit} />
       )}
