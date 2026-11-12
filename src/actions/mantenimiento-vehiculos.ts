@@ -4372,6 +4372,14 @@ export interface MovimientoRepuesto {
   created_at: string
   /** Nombre de quien registró el movimiento (null si no se pudo resolver). */
   autor: string | null
+  /**
+   * A qué unidad fue la pieza. Sale del vínculo real —la fila de repuesto de la
+   * OT, o el plan de acción del checklist—, no del texto del motivo: el motivo
+   * se tipea a mano y no sirve ni para filtrar ni para sumar.
+   */
+  dominio: string | null
+  otId: string | null
+  otNumero: string | null
 }
 
 /**
@@ -4442,6 +4450,160 @@ export async function getRepuestosPanol(): Promise<
   }
 }
 
+/**
+ * ¿A qué unidad fue cada egreso? El vínculo vive en dos lados: la fila de
+ * repuesto de la OT (`mantenimiento_realizado_repuestos.movimiento_id`) y el
+ * plan de acción del checklist que descontó sin OT. Lo que no aparece en
+ * ninguno de los dos salió del pañol sin decir para qué unidad — y eso es justo
+ * lo que hay que poder ver.
+ */
+async function unidadPorMovimiento(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  movimientoIds: string[]
+): Promise<Map<string, UnidadDeMovimiento>> {
+  const mapa = new Map<string, UnidadDeMovimiento>()
+  if (movimientoIds.length === 0) return mapa
+  const [otRes, planRes] = await Promise.all([
+    supabase
+      .from("mantenimiento_realizado_repuestos")
+      .select("movimiento_id, ot:mantenimiento_realizados(id, numero_ot, dominio, taller)")
+      .in("movimiento_id", movimientoIds),
+    supabase
+      .from("checklist_planes_accion")
+      .select("movimiento_id, respuesta:checklist_respuestas(cv:checklist_vehiculos(dominio))")
+      .in("movimiento_id", movimientoIds),
+  ])
+  for (const r of (otRes.data || []) as unknown as Array<{
+    movimiento_id: string | null
+    ot: { id: string; numero_ot: string | null; dominio: string; taller: string | null } | null
+  }>) {
+    if (!r.movimiento_id || !r.ot) continue
+    mapa.set(r.movimiento_id, {
+      dominio: r.ot.dominio,
+      otId: r.ot.id,
+      otNumero: r.ot.numero_ot,
+      taller: r.ot.taller,
+      origen: "ot",
+    })
+  }
+  // El plan sólo completa lo que la OT no explicó. Si la columna no está
+  // aplicada (Misiones), `planRes.data` viene vacío y no pasa nada.
+  for (const p of (planRes.data || []) as unknown as Array<{
+    movimiento_id: string | null
+    respuesta: { cv: { dominio: string } | null } | null
+  }>) {
+    if (!p.movimiento_id || mapa.has(p.movimiento_id)) continue
+    const dominio = p.respuesta?.cv?.dominio ?? null
+    if (!dominio) continue
+    mapa.set(p.movimiento_id, {
+      dominio,
+      otId: null,
+      otNumero: null,
+      taller: null,
+      origen: "checklist",
+    })
+  }
+  return mapa
+}
+
+interface UnidadDeMovimiento {
+  dominio: string | null
+  otId: string | null
+  otNumero: string | null
+  taller: string | null
+  origen: SalidaOrigen
+}
+
+/** De dónde salió el egreso: OT, plan del checklist, ajuste de conteo o a mano. */
+export type SalidaOrigen = "ot" | "checklist" | "conteo" | "manual"
+
+export interface SalidaPanol {
+  /** Id del movimiento de stock. */
+  id: string
+  fecha: string
+  repuestoId: string
+  repuesto: string
+  unidadMedida: string | null
+  cantidad: number
+  /** Unidad a la que fue la pieza. null = salió sin destino declarado. */
+  dominio: string | null
+  otId: string | null
+  otNumero: string | null
+  taller: string | null
+  origen: SalidaOrigen
+  motivo: string | null
+}
+
+/**
+ * Trazabilidad del pañol al revés (DPO 2.3 / R2.3.2): qué salió, cuándo y a qué
+ * unidad fue — sin tener que abrir las OT una por una.
+ *
+ * Lo que sale con `dominio` en null es el agujero: pieza que bajó del stock sin
+ * decir a qué camión fue. Hasta el 06/11/2026 eran los 15 ajustes del conteo
+ * físico («se usó sin cargar»), que es la forma cara de enterarse.
+ */
+export async function getSalidasPanol(
+  limite = 400
+): Promise<{ data: SalidaPanol[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("mantenimiento_repuestos_movimientos")
+      .select(
+        "id, repuesto_id, cantidad, motivo, fecha, created_at, repuesto:mantenimiento_repuestos(nombre, unidad)"
+      )
+      .eq("tipo", "egreso")
+      .order("fecha", { ascending: false })
+      .limit(limite)
+    if (error) return { error: error.message }
+
+    type Row = {
+      id: string
+      repuesto_id: string
+      cantidad: number
+      motivo: string | null
+      fecha: string
+      created_at: string
+      repuesto: { nombre: string; unidad: string | null } | null
+    }
+    const filas = (data || []) as unknown as Row[]
+    const unidades = await unidadPorMovimiento(
+      supabase,
+      filas.map((f) => f.id)
+    )
+
+    const salidas: SalidaPanol[] = []
+    for (const f of filas) {
+      const u = unidades.get(f.id)
+      /*
+       * Egreso con motivo de OT pero sin fila viva que lo sostenga = quedó
+       * revertido (editar o borrar la OT devuelve la pieza con un ingreso
+       * «Reverso ·»). La salida real es la fila nueva, que sí está vinculada:
+       * si se listara igual, el mismo foco contaría dos veces.
+       */
+      if (!u && f.motivo?.startsWith("OT ")) continue
+      salidas.push({
+        id: f.id,
+        fecha: f.fecha,
+        repuestoId: f.repuesto_id,
+        repuesto: f.repuesto?.nombre ?? "(pieza dada de baja)",
+        unidadMedida: f.repuesto?.unidad ?? null,
+        cantidad: Number(f.cantidad),
+        dominio: u?.dominio ?? null,
+        otId: u?.otId ?? null,
+        otNumero: u?.otNumero ?? null,
+        taller: u?.taller ?? null,
+        origen: u?.origen ?? (f.motivo?.startsWith("Ajuste por conteo") ? "conteo" : "manual"),
+        motivo: f.motivo,
+      })
+    }
+    return { data: salidas }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 /** Historial de movimientos de un repuesto (más recientes primero). */
 export async function getMovimientosRepuesto(
   repuestoId: string
@@ -4485,6 +4647,13 @@ export async function getMovimientosRepuesto(
       }
     }
 
+    // A qué unidad fue cada salida: es la pregunta que antes obligaba a abrir
+    // Órdenes de Trabajo y revisar OT por OT qué había salido del pañol.
+    const unidades = await unidadPorMovimiento(
+      supabase,
+      rows.map((r) => r.id)
+    )
+
     const movimientos: MovimientoRepuesto[] = rows.map((r) => ({
       id: r.id,
       repuesto_id: r.repuesto_id,
@@ -4495,6 +4664,9 @@ export async function getMovimientosRepuesto(
       fecha: r.fecha,
       created_at: r.created_at,
       autor: r.created_by ? (autorById.get(r.created_by) ?? null) : null,
+      dominio: unidades.get(r.id)?.dominio ?? null,
+      otId: unidades.get(r.id)?.otId ?? null,
+      otNumero: unidades.get(r.id)?.otNumero ?? null,
     }))
     return { data: movimientos }
   } catch (e) {

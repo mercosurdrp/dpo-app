@@ -297,6 +297,18 @@ export function DetalleOrdenDialog({
                         {Number(r.cantidad) !== 1 && (
                           <span className="text-muted-foreground/70"> ×{fmtNumOt(Number(r.cantidad))}</span>
                         )}
+                        {/* Si salió del pañol el stock ya bajó con esta OT; si
+                            no, se compró para el arreglo y no descuenta nada.
+                            Verlo acá evita el viaje a Repuestos para saberlo. */}
+                        <span
+                          className={
+                            r.repuesto_id
+                              ? "ml-2 rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-700 dark:text-sky-400"
+                              : "ml-2 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                          }
+                        >
+                          {r.repuesto_id ? "del pañol · descontado" : "comprado para la OT"}
+                        </span>
                       </span>
                       {sub != null && (
                         <span className="shrink-0 tabular-nums text-xs text-muted-foreground">

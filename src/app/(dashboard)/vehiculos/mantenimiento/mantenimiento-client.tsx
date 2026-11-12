@@ -2422,6 +2422,7 @@ function NuevoMantenimientoDialog({
               repuestos={repuestos}
               setRepuestos={setRepuestos}
               inventario={inventario}
+              esInterna={tallerEsInterno(taller)}
             />
             <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} facturas={facturas} />
           </div>
@@ -3334,10 +3335,59 @@ interface RepuestoForm {
   costoUnitario: string
   /** Ítem del pañol del que sale la pieza. "" = comprada para esta OT. */
   repuestoId: string
+  /**
+   * El que carga dijo explícitamente que la pieza NO sale del pañol (o la fila
+   * ya venía así de la base). Apaga la vinculación automática por nombre: sin
+   * esto, abrir y guardar una OT vieja descontaría stock que nunca salió.
+   */
+  noEsDelPanol?: boolean
 }
 
 function nuevoRepuesto(): RepuestoForm {
   return { descripcion: "", cantidad: "1", costoUnitario: "", repuestoId: "" }
+}
+
+/**
+ * OT hecha en casa: el foco, la mica o el destellador salen del pañol, no de un
+ * taller. Es el caso que venía quedando sin descontar — el egreso recién
+ * aparecía en el conteo físico del mes, como diferencia sin causa.
+ *
+ * Mismo criterio que `esOtInterna` (correctivo-analisis) pero sobre el campo del
+ * formulario, y SIN el taller vacío: la OT recién abierta todavía no eligió
+ * taller y vincular por adelantado descontaría el pañol en una OT que termina
+ * siendo de Bettiolo.
+ */
+const TALLER_INTERNO = /^(dep|casa|interno|interna|propio|taller propio)/i
+function tallerEsInterno(taller: string): boolean {
+  const t = taller.trim()
+  return t !== "" && TALLER_INTERNO.test(t)
+}
+
+/**
+ * Busca la pieza del pañol que corresponde a lo tipeado. Match exacto primero;
+ * si no, el que contiene (o está contenido en) el texto, y SÓLO si es uno solo:
+ * con "foco" a secas hay cinco y adivinar sería peor que no vincular.
+ *
+ * Se usa nada más que en las OT internas: en una OT de taller, "filtro aceite"
+ * es la pieza que puso el taller y no tiene por qué descontar del pañol.
+ */
+function buscarEnPanol(descripcion: string, inventario: Repuesto[]): Repuesto | null {
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .replace(/\s+/g, " ")
+      .trim()
+  const d = norm(descripcion)
+  if (d.length < 3) return null
+  const exacto = inventario.filter((i) => norm(i.nombre) === d)
+  if (exacto.length === 1) return exacto[0]
+  const parcial = inventario.filter((i) => {
+    const n = norm(i.nombre)
+    return n.length >= 3 && (d.includes(n) || n.includes(d))
+  })
+  return parcial.length === 1 ? parcial[0] : null
 }
 
 // Subtotal de repuestos = Σ (cantidad × costo unitario) de las filas con datos.
@@ -3356,6 +3406,9 @@ function repuestosDesde(m: MantenimientoRealizado): RepuestoForm[] {
     cantidad: r.cantidad != null ? String(r.cantidad) : "1",
     costoUnitario: r.costo_unitario != null ? String(r.costo_unitario) : "",
     repuestoId: r.repuesto_id ?? "",
+    // La fila guardada sin pañol se respeta tal cual: vincularla sola al abrir
+    // la OT descontaría una pieza que ya se cargó como comprada.
+    noEsDelPanol: !r.repuesto_id,
   }))
 }
 
@@ -3412,11 +3465,19 @@ function RepuestosEditor({
   repuestos,
   setRepuestos,
   inventario,
+  esInterna = false,
 }: {
   repuestos: RepuestoForm[]
   setRepuestos: (r: RepuestoForm[]) => void
   /** Ítems del pañol, para vincular la fila y descontar el stock. */
   inventario: Repuesto[]
+  /**
+   * OT hecha en el depósito. Ahí la pieza sale del pañol salvo excepción, así
+   * que el formulario la vincula solo y avisa cuando una fila queda sin
+   * vincular: ése era el agujero por el que los focos bajaban del stock sin
+   * que nadie lo registrara.
+   */
+  esInterna?: boolean
 }) {
   const update = (i: number, patch: Partial<RepuestoForm>) =>
     setRepuestos(repuestos.map((r, j) => (j === i ? { ...r, ...patch } : r)))
@@ -3426,14 +3487,44 @@ function RepuestosEditor({
   // Al elegir el ítem del pañol se completa la descripción si estaba vacía: es
   // el nombre que después sale impreso en la OT.
   const elegirItem = (i: number, valor: string) => {
-    if (valor === REPUESTO_SIN_PANOL) return update(i, { repuestoId: "" })
+    if (valor === REPUESTO_SIN_PANOL) return update(i, { repuestoId: "", noEsDelPanol: true })
     const item = itemPorId.get(valor)
     const fila = repuestos[i]
     update(i, {
       repuestoId: valor,
+      noEsDelPanol: false,
       descripcion: fila.descripcion.trim() ? fila.descripcion : (item?.nombre ?? ""),
     })
   }
+
+  /**
+   * Lo tipeado se vincula solo con la pieza del pañol — pero nada más que en la
+   * OT interna. En una OT de taller "filtro aceite" es la pieza que puso el
+   * taller: vincularla descontaría un filtro que nunca salió del pañol.
+   */
+  const escribirDescripcion = (i: number, texto: string) => {
+    const fila = repuestos[i]
+    if (!esInterna || fila.repuestoId || fila.noEsDelPanol) {
+      return update(i, { descripcion: texto })
+    }
+    const match = buscarEnPanol(texto, inventario)
+    update(i, { descripcion: texto, repuestoId: match?.id ?? "" })
+  }
+
+  /** Alta directa desde el pañol: la fila nace vinculada y con el nombre puesto. */
+  const agregarDelPanol = (id: string) => {
+    const item = itemPorId.get(id)
+    if (!item) return
+    setRepuestos([
+      ...repuestos,
+      { descripcion: item.nombre, cantidad: "1", costoUnitario: "", repuestoId: item.id },
+    ])
+  }
+
+  // Filas que en una OT interna deberían salir del pañol y quedaron sueltas.
+  const sueltasInternas = esInterna
+    ? repuestos.filter((r) => r.descripcion.trim() && !r.repuestoId && !r.noEsDelPanol).length
+    : 0
 
   return (
     <div>
@@ -3442,6 +3533,16 @@ function RepuestosEditor({
         Los repuestos comprados aparte, para que queden separados de la mano de obra. Si la
         pieza sale del pañol, elegila del inventario y el stock se descuenta solo.
       </p>
+      {esInterna && (
+        /* OT hecha en el depósito: el foco, la mica o el destellador salen del
+           pañol. Antes la fila quedaba como texto libre y el stock no bajaba:
+           el faltante recién aparecía en el conteo del mes, sin causa. */
+        <p className="mb-2 rounded-md border border-sky-500/30 bg-sky-500/5 p-2 text-xs text-sky-800 dark:text-sky-300">
+          <span className="font-medium">OT interna (depósito):</span> la pieza sale del pañol.
+          Agregala con «Del pañol» —o escribila y se vincula sola si coincide con el nombre del
+          inventario— y el egreso queda registrado con esta unidad y esta OT.
+        </p>
+      )}
       {repuestos.length > 0 && (
         <div className="mt-1.5 space-y-2">
           {repuestos.map((r, i) => {
@@ -3454,7 +3555,7 @@ function RepuestosEditor({
               <div className="flex items-center gap-2">
                 <Input
                   value={r.descripcion}
-                  onChange={(e) => update(i, { descripcion: e.target.value })}
+                  onChange={(e) => escribirDescripcion(i, e.target.value)}
                   placeholder="Repuesto"
                   className="flex-1"
                 />
@@ -3505,6 +3606,20 @@ function RepuestosEditor({
                   esta OT.
                 </p>
               )}
+              {esInterna && !r.repuestoId && r.descripcion.trim() && !esCubierta && (
+                /* En una OT de depósito la pieza salió del pañol: si la fila
+                   queda suelta el stock no baja y el faltante reaparece recién
+                   en el conteo del mes. */
+                <p className="flex items-start gap-1.5 rounded-md border border-amber-300/60 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <span>
+                    <span className="font-medium">Esta pieza no descuenta del pañol.</span> La OT
+                    es interna: elegí arriba el ítem del inventario y el egreso queda registrado
+                    con la unidad y la OT. Dejala así sólo si se compró para este arreglo y nunca
+                    pasó por el pañol.
+                  </span>
+                </p>
+              )}
               {esCubierta && (
                 <p className="flex items-start gap-1.5 rounded-md border border-amber-300/60 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                   <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
@@ -3522,15 +3637,40 @@ function RepuestosEditor({
           })}
         </div>
       )}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="mt-2"
-        onClick={() => setRepuestos([...repuestos, nuevoRepuesto()])}
-      >
-        <Plus className="mr-1 size-4" /> Agregar repuesto
-      </Button>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setRepuestos([...repuestos, nuevoRepuesto()])}
+        >
+          <Plus className="mr-1 size-4" /> Agregar repuesto
+        </Button>
+        {/* Atajo del pañol: la fila nace vinculada, que es lo único que hace
+            que el stock baje. Escribir el nombre a mano y olvidarse del
+            selector era el camino largo a un faltante sin causa. */}
+        {inventario.length > 0 && (
+          <Select value="" onValueChange={(v) => v && agregarDelPanol(v)}>
+            <SelectTrigger className="h-8 w-56 text-xs">
+              <SelectValue placeholder="+ Del pañol (descuenta stock)" />
+            </SelectTrigger>
+            <SelectContent>
+              {inventario.map((it) => (
+                <SelectItem key={it.id} value={it.id}>
+                  {it.nombre} — hay {Number(it.stock_actual)} {it.unidad}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+      {sueltasInternas > 0 && (
+        <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">
+          {sueltasInternas === 1
+            ? "1 repuesto de esta OT interna no descuenta del pañol."
+            : `${sueltasInternas} repuestos de esta OT interna no descuentan del pañol.`}
+        </p>
+      )}
       {subtotalRepuestos(repuestos) > 0 && (
         <p className="mt-1.5 text-xs text-muted-foreground">
           Subtotal repuestos: {fmtMoney(subtotalRepuestos(repuestos))}
@@ -3853,6 +3993,7 @@ function EditarMantenimientoDialog({
               repuestos={repuestos}
               setRepuestos={setRepuestos}
               inventario={inventario}
+              esInterna={tallerEsInterno(taller)}
             />
             <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} facturas={facturas} />
           </div>

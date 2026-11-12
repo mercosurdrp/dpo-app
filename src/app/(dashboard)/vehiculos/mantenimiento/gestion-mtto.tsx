@@ -42,6 +42,7 @@ import {
   Plus,
   Printer,
   Trash2,
+  Truck,
   Wand2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -62,6 +63,7 @@ import {
   deleteResiduo,
   getConteoDetalle,
   getMovimientosRepuesto,
+  getSalidasPanol,
   registrarMovimientoRepuesto,
   setFrecuenciaRecuento,
   upsertRepuesto,
@@ -72,6 +74,7 @@ import {
   type PoliticaInventario,
   type Repuesto,
   type Residuo,
+  type SalidaPanol,
 } from "@/actions/mantenimiento-vehiculos"
 import {
   CAUSA_DIFERENCIA_LABEL,
@@ -704,6 +707,9 @@ export function GestionMtto({
             </CardContent>
           </Card>
 
+          {/* Trazabilidad al revés: del pañol a la unidad (DPO 2.3 / R2.3.2) */}
+          <SalidasPanolCard />
+
           {/* Historial de conteos físicos (DPO 2.3) */}
           {conteos.length > 0 && (
             <Card>
@@ -1171,6 +1177,219 @@ function ConteoDetalleDialog({
   )
 }
 
+/**
+ * Salidas del pañol: a qué unidad fue cada pieza.
+ *
+ * La trazabilidad existía al revés —desde la OT se veía qué repuesto se usó—,
+ * pero para saber dónde terminaron los focos del pañol había que abrir Órdenes
+ * de Trabajo y revisarlas una por una. Acá está la lista completa y filtrable
+ * por unidad (DPO 2.3 / R2.3.2).
+ *
+ * Lo que aparece en ámbar es el agujero: stock que bajó sin decir a qué camión
+ * fue. Casi siempre son los ajustes del conteo físico («se usó sin cargar»),
+ * que es la forma cara de enterarse de una salida.
+ */
+const ORIGEN_SALIDA_LABEL: Record<SalidaPanol["origen"], string> = {
+  ot: "OT",
+  checklist: "Plan del checklist",
+  conteo: "Ajuste de conteo",
+  manual: "Cargado a mano",
+}
+
+function SalidasPanolCard() {
+  const [salidas, setSalidas] = useState<SalidaPanol[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [unidad, setUnidad] = useState("todas")
+  const [busqueda, setBusqueda] = useState("")
+
+  useEffect(() => {
+    getSalidasPanol().then((res) => {
+      if ("error" in res) setError(res.error)
+      else setSalidas(res.data)
+    })
+  }, [])
+
+  // Cuánto salió para cada unidad, de mayor a menor. Los badges filtran.
+  const porUnidad = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const s of salidas ?? []) {
+      const k = s.dominio ?? "__sin__"
+      m.set(k, (m.get(k) ?? 0) + s.cantidad)
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1])
+  }, [salidas])
+
+  const filtradas = useMemo(() => {
+    const t = busqueda.trim().toLowerCase()
+    return (salidas ?? []).filter((s) => {
+      if (unidad === "sin" && s.dominio) return false
+      if (unidad !== "todas" && unidad !== "sin" && s.dominio !== unidad) return false
+      if (t && !`${s.repuesto} ${s.motivo ?? ""} ${s.otNumero ?? ""}`.toLowerCase().includes(t))
+        return false
+      return true
+    })
+  }, [salidas, unidad, busqueda])
+
+  const sinUnidad = (salidas ?? []).filter((s) => !s.dominio)
+  const totalSinUnidad = sinUnidad.reduce((a, s) => a + s.cantidad, 0)
+
+  return (
+    <Card>
+      <CardContent className="overflow-x-auto pt-6">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Truck className="size-4 text-muted-foreground" />
+          <p className="text-sm font-medium text-foreground">
+            Salidas del pañol — a qué unidad fue
+          </p>
+          <DpoResponde puntos={["2.3"]} requisitos={["R2.3.2"]} />
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Cada pieza que bajó del stock, con la unidad y la OT que la consumió. No hace falta abrir
+          Órdenes de Trabajo para saber dónde terminó un foco.
+        </p>
+
+        {error ? (
+          <p className="py-4 text-sm text-destructive">{error}</p>
+        ) : salidas == null ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">Cargando…</p>
+        ) : salidas.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Todavía no hay egresos registrados.
+          </p>
+        ) : (
+          <>
+            {totalSinUnidad > 0 && (
+              <p className="mb-3 rounded-md border border-amber-300/60 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                <span className="font-medium">
+                  {fmtNum(totalSinUnidad)} piezas salieron sin unidad asignada
+                </span>{" "}
+                ({sinUnidad.length} movimiento{sinUnidad.length === 1 ? "" : "s"}). Son las que el
+                conteo físico detectó como «usadas sin cargar»: el stock baja pero no queda dicho a
+                qué camión fueron. Cargá la OT interna eligiendo la pieza del pañol y la salida
+                queda registrada sola.
+              </p>
+            )}
+
+            <div className="mb-3 flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setUnidad("todas")}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                  unidad === "todas"
+                    ? "border-sky-500/50 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                    : "border-border text-muted-foreground hover:bg-muted"
+                )}
+              >
+                Todas
+              </button>
+              {porUnidad.map(([dom, cant]) => {
+                const esSin = dom === "__sin__"
+                const valor = esSin ? "sin" : dom
+                return (
+                  <button
+                    key={dom}
+                    type="button"
+                    onClick={() => setUnidad(unidad === valor ? "todas" : valor)}
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                      unidad === valor
+                        ? "border-sky-500/50 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                        : esSin
+                          ? "border-amber-300/60 text-amber-700 hover:bg-amber-50 dark:border-amber-500/30 dark:text-amber-400 dark:hover:bg-amber-500/10"
+                          : "border-border text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    {esSin ? "Sin unidad" : dom} · {fmtNum(cant)}
+                  </button>
+                )
+              })}
+              <Input
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Buscar pieza u OT…"
+                className="h-8 w-44 text-xs"
+              />
+            </div>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Pieza</TableHead>
+                  <TableHead className="text-right">Cant.</TableHead>
+                  <TableHead>Unidad</TableHead>
+                  <TableHead>OT</TableHead>
+                  <TableHead>De dónde salió</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtradas.map((s) => (
+                  <TableRow
+                    key={s.id}
+                    className={!s.dominio ? "bg-amber-50/50 dark:bg-amber-500/5" : undefined}
+                  >
+                    <TableCell className="whitespace-nowrap">{fmtFecha(s.fecha)}</TableCell>
+                    <TableCell className="text-foreground">{s.repuesto}</TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {fmtNum(s.cantidad)}
+                      {s.unidadMedida && (
+                        <span className="ml-1 text-xs text-muted-foreground">{s.unidadMedida}</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {s.dominio ? (
+                        <Badge variant="outline" className="font-medium text-foreground">
+                          {s.dominio}
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-300/60 text-amber-700 dark:border-amber-500/30 dark:text-amber-400"
+                        >
+                          sin unidad
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {s.otNumero ? (
+                        <>
+                          N° {s.otNumero}
+                          {s.taller && (
+                            <span className="block text-xs text-muted-foreground/70">
+                              {s.taller}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell className="max-w-64 text-xs text-muted-foreground">
+                      <span className="text-foreground">{ORIGEN_SALIDA_LABEL[s.origen]}</span>
+                      {s.motivo && s.origen !== "ot" && <span className="block">{s.motivo}</span>}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {filtradas.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="py-6 text-center text-sm text-muted-foreground"
+                    >
+                      Sin salidas para ese filtro.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function MovimientoDialog({
   repuesto,
   tipoInicial,
@@ -1313,6 +1532,7 @@ function HistorialMovimientosDialog({
                   <TableHead>Fecha</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead className="text-right">Cantidad</TableHead>
+                  <TableHead>Unidad</TableHead>
                   <TableHead>Motivo</TableHead>
                   <TableHead className="text-right">Stock después</TableHead>
                   <TableHead>Registró</TableHead>
@@ -1340,6 +1560,24 @@ function HistorialMovimientosDialog({
                     >
                       {m.tipo === "ingreso" ? "+" : "−"}
                       {fmtNum(m.cantidad)}
+                    </TableCell>
+                    {/* A qué camión fue la pieza: sale del vínculo con la OT,
+                        no del texto del motivo. */}
+                    <TableCell className="whitespace-nowrap">
+                      {m.dominio ? (
+                        <>
+                          <Badge variant="outline" className="font-medium text-foreground">
+                            {m.dominio}
+                          </Badge>
+                          {m.otNumero && (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              OT {m.otNumero}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="max-w-56 text-muted-foreground">
                       {m.motivo ?? "—"}
