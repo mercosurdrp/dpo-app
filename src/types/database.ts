@@ -1331,10 +1331,15 @@ export interface TiRegistro {
   hora_retorno: string // ISO UTC del checklist de retorno
   hora_salida: string | null // ISO UTC normalizado del biométrico
   ti_minutos: number | null
-  /** Inicio usado para el TI: llegada GPS al CD (Foxtrot) o checklist de retorno. */
-  fuente_inicio?: "gps" | "checklist"
+  /**
+   * Inicio usado para el TI: llegada GPS al CD (Foxtrot), fin de ruta marcado
+   * por el chofer en Foxtrot (respaldo sin geofence) o checklist de retorno.
+   */
+  fuente_inicio?: "gps" | "foxtrot_fin" | "checklist"
   /** ISO UTC de la llegada GPS al CD (raw_data.tml_actual_arrival), si existe. */
   hora_llegada_gps?: string | null
+  /** ISO UTC del fin de ruta marcado por el chofer en Foxtrot (raw_data.fx_driver_end), si existe. */
+  hora_fin_foxtrot?: string | null
   // "no_ficha": el chofer no pasa por el reloj biométrico (cero marcas en todo el
    // período). No es un dato faltante: está fuera del alcance de la medición, y
    // por eso no cuenta en el denominador.
@@ -1353,6 +1358,8 @@ export interface TiKpis {
   conTi: number // retornos con TI calculable
   /** Retornos válidos cuyo inicio salió de la llegada GPS de Foxtrot. */
   conGps: number
+  /** Retornos válidos cuyo inicio salió del fin de ruta marcado en Foxtrot (sin llegada GPS). */
+  conFoxtrotFin: number
   sinBiometrico: number
   /** Retornos de choferes que no fichan nunca: fuera del alcance, no son error de dato. */
   noFicha: number

@@ -105,7 +105,7 @@ export function TiempoInternoClient({ kpis, planesResumen }: Props) {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Tiempo Interno (TI)</h1>
         <p className="text-sm text-muted-foreground">
-          Desde la llegada al CD (GPS de Foxtrot, o checklist de retorno) hasta el
+          Desde la llegada al CD (GPS o fin de ruta de Foxtrot, o checklist de retorno) hasta el
           fichaje de salida del chofer — Pilar Entrega 1.3
         </p>
       </div>
@@ -174,6 +174,7 @@ export function TiempoInternoClient({ kpis, planesResumen }: Props) {
             <p className="mt-2 text-xs text-muted-foreground">
               {kpis.conTi}/{kpis.totalRetornos} retornos con TI calculable
               {kpis.conGps > 0 && ` · ${kpis.conGps} con llegada GPS`}
+              {kpis.conFoxtrotFin > 0 && ` · ${kpis.conFoxtrotFin} con fin de ruta Foxtrot`}
             </p>
           </CardContent>
         </Card>
@@ -528,7 +529,7 @@ function ChoferesTable({
 
 function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
   const [semanaSel, setSemanaSel] = useState<string>(TODAS_LAS_SEMANAS)
-  const [fuenteSel, setFuenteSel] = useState<"todos" | "gps" | "checklist">("todos")
+  const [fuenteSel, setFuenteSel] = useState<"todos" | "gps" | "foxtrot_fin" | "checklist">("todos")
   const [tope, setTope] = useState(FILAS_POR_PAGINA)
 
   // Semanas presentes en los datos, de la más reciente a la más vieja, con el
@@ -565,10 +566,15 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
     () => porSemana.filter((r) => r.fuente_inicio === "gps").length,
     [porSemana],
   )
+  const conFinN = useMemo(
+    () => porSemana.filter((r) => r.fuente_inicio === "foxtrot_fin").length,
+    [porSemana],
+  )
   const filtrados = useMemo(() => {
     if (fuenteSel === "todos") return porSemana
     if (fuenteSel === "gps") return porSemana.filter((r) => r.fuente_inicio === "gps")
-    return porSemana.filter((r) => r.fuente_inicio !== "gps")
+    if (fuenteSel === "foxtrot_fin") return porSemana.filter((r) => r.fuente_inicio === "foxtrot_fin")
+    return porSemana.filter((r) => r.fuente_inicio !== "gps" && r.fuente_inicio !== "foxtrot_fin")
   }, [porSemana, fuenteSel])
 
   const visibles = filtrados.slice(0, tope)
@@ -580,8 +586,8 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
           <div>
             <CardTitle className="text-base">Detalle por retorno</CardTitle>
             <p className="text-xs text-muted-foreground">
-              TI = fichaje de salida − inicio (llegada GPS al CD, o checklist de
-              retorno), por chofer/día. Las filas sin TI se muestran con su motivo.
+              TI = fichaje de salida − inicio (llegada GPS al CD; si no, fin de ruta
+              marcado en Foxtrot; si no, checklist de retorno), por chofer/día. Las filas sin TI se muestran con su motivo.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -590,7 +596,8 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
                 [
                   ["todos", `Todos (${porSemana.length})`],
                   ["gps", `GPS (${conGpsN})`],
-                  ["checklist", `Checklist (${porSemana.length - conGpsN})`],
+                  ["foxtrot_fin", `Fin Foxtrot (${conFinN})`],
+                  ["checklist", `Checklist (${porSemana.length - conGpsN - conFinN})`],
                 ] as const
               ).map(([valor, label]) => (
                 <button
@@ -604,7 +611,9 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
                     fuenteSel === valor
                       ? valor === "gps"
                         ? "bg-teal-600 text-white"
-                        : "bg-slate-900 text-white"
+                        : valor === "foxtrot_fin"
+                          ? "bg-sky-600 text-white"
+                          : "bg-slate-900 text-white"
                       : "bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                 >
@@ -641,7 +650,9 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
               ? "Sin retornos en el período."
               : fuenteSel === "gps"
                 ? "Sin retornos con llegada GPS en la selección."
-                : "Sin retornos en la selección."}
+                : fuenteSel === "foxtrot_fin"
+                  ? "Sin retornos con fin de ruta Foxtrot en la selección."
+                  : "Sin retornos en la selección."}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -671,6 +682,16 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
                           {horaArg(r.hora_llegada_gps)}
                           <Badge className="bg-teal-100 text-teal-700 hover:bg-teal-100 text-[10px] px-1.5">
                             GPS
+                          </Badge>
+                        </span>
+                      ) : r.fuente_inicio === "foxtrot_fin" && r.hora_fin_foxtrot ? (
+                        <span
+                          className="inline-flex items-center gap-1.5"
+                          title={`Fin de ruta marcado por el chofer en Foxtrot ${horaArg(r.hora_fin_foxtrot)} (sin llegada GPS) · checklist de retorno ${horaArg(r.hora_retorno)}`}
+                        >
+                          {horaArg(r.hora_fin_foxtrot)}
+                          <Badge className="bg-sky-100 text-sky-700 hover:bg-sky-100 text-[10px] px-1.5">
+                            Fin FX
                           </Badge>
                         </span>
                       ) : (

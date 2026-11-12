@@ -23,7 +23,8 @@ import type {
 // TI = (fichaje biométrico de salida) − (inicio), por chofer/día. El inicio es
 // la llegada GPS al CD de Foxtrot (`tml_actual_arrival`, geofence al entrar al
 // radio del depósito — mejora H2 pedida por el auditor) cuando existe (~38% de
-// las rutas), y si no la hora del checklist de retorno (criterio histórico).
+// las rutas); si no, el fin de ruta marcado por el chofer en Foxtrot
+// (`fx_driver_end`); y si tampoco, la hora del checklist de retorno.
 const TI_META_MINUTOS = 30
 const PCT_META_MINIMO = 65
 const TI_OUTLIER_MINUTOS = 180 // > 3h se descarta como anomalía (no es tiempo interno)
@@ -144,32 +145,59 @@ export async function getTiKpis(filters?: {
     // query por statement timeout — ver lib/foxtrot/ruta-limpia.ts).
     const desdeFx = filters?.fechaDesde || retornos[0]?.fecha || "2026-01-01"
     const llegadaPorChoferFecha = new Map<string, number>()
+    // Respaldo cuando no hay llegada GPS: fin de ruta marcado por el chofer en
+    // la app de Foxtrot (`raw_data.fx_driver_end`, "Driver Marked Route End
+    // Timestamp" del mismo CSV). No es geofence, pero es hora de Foxtrot.
+    const finPorChoferFecha = new Map<string, number>()
+    // Nombres de Foxtrot por día, para cruzar con el checklist aunque no
+    // coincidan exacto: el checklist dice "FRIAS ANGEL ERMINDO" y Foxtrot
+    // "FRIAS ANGEL" (Pergamino no cruzaba nunca).
+    const nombresFxPorFecha = new Map<string, Set<string>>()
     try {
       const rutasFx = await leerTodo<{
         fecha: string
         driver_name: string | null
         llegada: string | null
+        fin: string | null
       }>((f, t) => {
         let q = supabase
           .from("foxtrot_routes")
-          .select("fecha, driver_name, llegada:raw_data->>tml_actual_arrival")
+          .select("fecha, driver_name, llegada:raw_data->>tml_actual_arrival, fin:raw_data->>fx_driver_end")
           .in("dc_id", foxtrotDcIds())
           .gte("fecha", desdeFx)
         if (filters?.fechaHasta) q = q.lte("fecha", filters.fechaHasta)
         return q.order("route_id").range(f, t)
       })
+      // Si un chofer tuviera más de una ruta en el día, vale la última hora.
+      const guardarUltima = (mapa: Map<string, number>, k: string, iso: string | null) => {
+        if (!iso) return
+        const ms = new Date(iso).getTime()
+        if (!Number.isFinite(ms)) return
+        if (!mapa.has(k) || ms > mapa.get(k)!) mapa.set(k, ms)
+      }
       for (const rf of rutasFx) {
-        if (!rf.llegada || !rf.driver_name) continue
-        const ms = new Date(rf.llegada).getTime()
-        if (!Number.isFinite(ms)) continue
-        const k = `${rf.fecha}|${norm(rf.driver_name)}`
-        // Si un chofer tuviera más de una ruta en el día, vale la última llegada.
-        if (!llegadaPorChoferFecha.has(k) || ms > llegadaPorChoferFecha.get(k)!) {
-          llegadaPorChoferFecha.set(k, ms)
-        }
+        const nombre = norm(rf.driver_name)
+        if (!nombre) continue
+        if (!nombresFxPorFecha.has(rf.fecha)) nombresFxPorFecha.set(rf.fecha, new Set())
+        nombresFxPorFecha.get(rf.fecha)!.add(nombre)
+        const k = `${rf.fecha}|${nombre}`
+        guardarUltima(llegadaPorChoferFecha, k, rf.llegada)
+        guardarUltima(finPorChoferFecha, k, rf.fin)
       }
     } catch {
       // sin Foxtrot el TI sigue funcionando con el checklist, como siempre
+    }
+
+    // Clave Foxtrot del chofer del checklist: nombre exacto, o el nombre de
+    // Foxtrot de ese día que sea prefijo (por palabra) del otro o viceversa.
+    function claveFx(fecha: string, chofer: string): string {
+      const n = norm(chofer)
+      const nombres = nombresFxPorFecha.get(fecha)
+      if (!nombres || nombres.has(n)) return `${fecha}|${n}`
+      for (const fx of nombres) {
+        if (n.startsWith(fx + " ") || fx.startsWith(n + " ")) return `${fecha}|${fx}`
+      }
+      return `${fecha}|${n}`
     }
 
     // 2) Resolver chofer → empleado (legajo). Usa mapeo_empleado_chofer + match por nombre.
@@ -243,12 +271,16 @@ export async function getTiKpis(filters?: {
     let sinBio = 0, excluidos = 0, noFicha = 0, bajoUmbral = 0
     const minTi = filters?.minTiMinutos ?? 0
     let conGps = 0
+    let conFoxtrotFin = 0
     for (const r of retornos) {
       const emp = resolveLegajo(r.chofer)
-      const llegadaMs = llegadaPorChoferFecha.get(`${r.fecha}|${norm(r.chofer)}`)
+      const kFx = claveFx(r.fecha, r.chofer)
+      const llegadaMs = llegadaPorChoferFecha.get(kFx)
+      const finFxMs = finPorChoferFecha.get(kFx)
       const base = {
         fecha: r.fecha, chofer: r.chofer, dominio: r.dominio, hora_retorno: r.hora,
         hora_llegada_gps: llegadaMs != null ? new Date(llegadaMs).toISOString() : null,
+        hora_fin_foxtrot: finFxMs != null ? new Date(finFxMs).toISOString() : null,
       }
       if (!emp) {
         registros.push({ ...base, legajo: null, hora_salida: null, ti_minutos: null, motivo_sin_dato: "sin_match" })
@@ -266,18 +298,22 @@ export async function getTiKpis(filters?: {
         registros.push({ ...base, legajo: emp.legajo, hora_salida: null, ti_minutos: null, motivo_sin_dato: "sin_biometrico" })
         continue
       }
-      // Inicio del TI: llegada GPS al CD si existe y da un TI plausible (0..
-      // outlier); si el geofence disparó mal (TI negativo o gigante), se cae al
-      // checklist de retorno, que era el comportamiento histórico.
+      // Inicio del TI, en orden de preferencia y sólo si da un TI plausible
+      // (0..outlier):
+      //   1. llegada GPS al CD (geofence de Foxtrot);
+      //   2. fin de ruta marcado por el chofer en Foxtrot (sin geofence; si se
+      //      olvidó de cerrarla y la cerró al otro día, el rango la descarta);
+      //   3. checklist de retorno, que era el comportamiento histórico.
       const tiCk = Math.round((salMs - new Date(r.hora).getTime()) / 60000)
       let ti = tiCk
-      let fuente: "gps" | "checklist" = "checklist"
-      if (llegadaMs != null) {
-        const tiGps = Math.round((salMs - llegadaMs) / 60000)
-        if (tiGps >= 0 && tiGps <= TI_OUTLIER_MINUTOS) {
-          ti = tiGps
-          fuente = "gps"
-        }
+      let fuente: "gps" | "foxtrot_fin" | "checklist" = "checklist"
+      const plausible = (t: number) => t >= 0 && t <= TI_OUTLIER_MINUTOS
+      if (llegadaMs != null && plausible(Math.round((salMs - llegadaMs) / 60000))) {
+        ti = Math.round((salMs - llegadaMs) / 60000)
+        fuente = "gps"
+      } else if (finFxMs != null && plausible(Math.round((salMs - finFxMs) / 60000))) {
+        ti = Math.round((salMs - finFxMs) / 60000)
+        fuente = "foxtrot_fin"
       }
       const salidaIso = new Date(salMs).toISOString()
       if (ti < 0) {
@@ -297,6 +333,7 @@ export async function getTiKpis(filters?: {
       }
       tis.push(ti)
       if (fuente === "gps") conGps++
+      if (fuente === "foxtrot_fin") conFoxtrotFin++
       registros.push({ ...base, legajo: emp.legajo, hora_salida: salidaIso, ti_minutos: ti, fuente_inicio: fuente, motivo_sin_dato: null })
     }
 
@@ -351,7 +388,7 @@ export async function getTiKpis(filters?: {
     return {
       data: {
         totalRetornos: retornos.length,
-        conTi, conGps, sinBiometrico: sinBio, excluidos,
+        conTi, conGps, conFoxtrotFin, sinBiometrico: sinBio, excluidos,
         noFicha, choferesSinFichaje: [...sinFichajeSet].sort(),
         minTiMinutos: minTi, bajoUmbral,
         promedioMinutos, mediana, dentroMeta, pctDentroMeta,

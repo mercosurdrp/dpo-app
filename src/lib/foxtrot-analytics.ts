@@ -148,6 +148,10 @@ export async function syncFoxtrotRouteAnalytics(
     // Llegada real al CD (geofence GPS del teléfono al entrar al radio del
     // depósito): inicio del Tiempo Interno (TI = biométrico salida − llegada).
     const idxArr = header.indexOf("Actual Route Arrival Time")
+    // Fin de ruta marcado por el chofer en la app de Foxtrot ("terminar ruta").
+    // Respaldo del inicio del TI cuando el geofence no registra la llegada
+    // (~2/3 de las rutas de Ramallo y casi todas las de Pergamino).
+    const idxDrvEnd = header.indexOf("Driver Marked Route End Timestamp")
     // Tiempo por PDV: segundos de paradas autorizadas / clientes visitados.
     // 🚨 Las columnas de paradas salen del GPS del camión y Foxtrot las manda
     // VACÍAS (solo ~2% de las rutas las trae). El tiempo en PDV real se despeja
@@ -195,6 +199,7 @@ export async function syncFoxtrotRouteAnalytics(
     type Metrics = {
       departure?: string
       arrival?: string
+      driverEnd?: string
       authStopsSec?: number
       visited?: number
       plannedDrvSec?: number
@@ -225,6 +230,10 @@ export async function syncFoxtrotRouteAnalytics(
       if (idxArr >= 0) {
         const isoArr = arLocalToIso(row[idxArr])
         if (isoArr) m.arrival = isoArr
+      }
+      if (idxDrvEnd >= 0) {
+        const isoEnd = arLocalToIso(row[idxDrvEnd])
+        if (isoEnd) m.driverEnd = isoEnd
       }
       m.authStopsSec = numAt(row, idxAuthSec) ?? m.authStopsSec
       m.visited = numAt(row, idxVisited) ?? m.visited
@@ -281,6 +290,7 @@ export async function syncFoxtrotRouteAnalytics(
         const extra: Record<string, unknown> = {}
         if (m.departure) extra.tml_actual_departure = m.departure
         if (m.arrival) extra.tml_actual_arrival = m.arrival
+        if (m.driverEnd) extra.fx_driver_end = m.driverEnd
         if (m.authStopsSec != null) extra.tml_authorized_stops_seconds = m.authStopsSec
         if (m.visited != null) extra.tml_visited_customers = m.visited
         if (m.plannedDrvSec != null) extra.fx_planned_driving_sec = m.plannedDrvSec
