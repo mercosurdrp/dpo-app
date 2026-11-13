@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/dialog"
 import { DqiPorPatenteCard } from "./_components/dqi-por-patente-card"
 import { DqiTipoSkuCard } from "./_components/dqi-tipo-sku-card"
+import { DqiSeguimientoMensualCard } from "./_components/dqi-seguimiento-mensual-card"
 import { getDqi, crearPlanDqi, type DqiData } from "@/actions/dqi"
 import { ROTURA_MOTIVO_LABELS, ROTURA_ESTADO_LABELS, ROTURA_TIPO_LABELS } from "@/types/roturas"
 
@@ -57,25 +58,14 @@ const fmtPesos = (n: number | null | undefined) => {
   return `$${Math.round(n)}`
 }
 
-const ESTADO_BADGE: Record<string, string> = {
-  pendiente: "bg-amber-100 text-amber-700",
-  en_progreso: "bg-blue-100 text-blue-700",
-  completado: "bg-emerald-100 text-emerald-700",
-  cancelado: "bg-slate-100 text-slate-500",
-}
-const PRIORIDAD_BADGE: Record<string, string> = {
-  alta: "bg-red-100 text-red-700",
-  media: "bg-amber-100 text-amber-700",
-  baja: "bg-slate-100 text-slate-600",
-}
-
 interface Props {
   initial: DqiData
   initialYear: number
   initialMonth: number
+  puedeEditar: boolean
 }
 
-export function DqiClient({ initial, initialYear, initialMonth }: Props) {
+export function DqiClient({ initial, initialYear, initialMonth, puedeEditar }: Props) {
   const [data, setData] = useState<DqiData>(initial)
   const [year, setYear] = useState(initialYear)
   const [month, setMonth] = useState(initialMonth)
@@ -394,50 +384,15 @@ export function DqiClient({ initial, initialYear, initialMonth }: Props) {
         </CardContent>
       </Card>
 
-      {/* Planes de acción del año */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="mb-3 flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-emerald-600" />
-            <h2 className="text-sm font-semibold text-slate-700">Planes de acción · DQI {year}</h2>
-          </div>
-          {planesDelAnio.length ? (
-            <div className="space-y-2">
-              {planesDelAnio
-                .slice()
-                .sort((a, b) => (b.month ?? 0) - (a.month ?? 0))
-                .map((p) => (
-                  <div key={p.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-100 p-3">
-                    <div className="min-w-0">
-                      <div className="mb-0.5 flex items-center gap-2">
-                        {p.month != null && (
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
-                            {MESES[p.month - 1]} {p.year}
-                          </span>
-                        )}
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${PRIORIDAD_BADGE[p.prioridad] ?? "bg-slate-100 text-slate-600"}`}>
-                          {p.prioridad}
-                        </span>
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${ESTADO_BADGE[p.estado] ?? "bg-slate-100 text-slate-600"}`}>
-                          {p.estado}
-                        </span>
-                      </div>
-                      <p className="text-sm text-slate-700">{p.descripcion}</p>
-                      <p className="mt-0.5 text-[11px] text-slate-400">
-                        {p.responsable ?? "—"}
-                        {p.fecha_limite ? ` · vence ${p.fecha_limite}` : ""}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          ) : (
-            <p className="py-6 text-center text-sm text-slate-400">
-              Sin planes cargados para {year}. Hacé click en un punto del gráfico para crear el primero.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      {/* Seguimiento mensual: observaciones + planes + acciones de la matinal (evidencia de meses fuera de meta) */}
+      <DqiSeguimientoMensualCard
+        year={year}
+        serie={dqi.serie_real ?? []}
+        target={target}
+        planes={planesDelAnio}
+        puedeEditar={puedeEditar}
+        onCrearPlan={(m) => openPlanDialog(m)}
+      />
 
       {/* Apertura por tipo de SKU (envase › calibre › SKU) — pedido auditoría 1.4 */}
       <DqiTipoSkuCard year={year} month={month} onCrearPlan={(desc) => openPlanDialog(month, desc)} />

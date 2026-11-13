@@ -1,4 +1,5 @@
 import { getDqi } from "@/actions/dqi"
+import { requireAuth } from "@/lib/session"
 import { DqiClient } from "./dqi-client"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
@@ -11,7 +12,8 @@ export default async function DqiPage() {
   const now = new Date()
   const year = now.getFullYear()
   const month = now.getMonth() + 1
-  const res = await getDqi(year, month)
+  const [res, profile] = await Promise.all([getDqi(year, month), requireAuth()])
+  const puedeEditar = ["admin", "supervisor", "admin_rrhh"].includes(profile.role)
 
   return (
     <div className="space-y-4">
@@ -29,7 +31,7 @@ export default async function DqiPage() {
           <p className="mt-2 text-red-500">Error: {res.error}</p>
         </div>
       ) : (
-        <DqiClient initial={res.data} initialYear={year} initialMonth={month} />
+        <DqiClient initial={res.data} initialYear={year} initialMonth={month} puedeEditar={puedeEditar} />
       )}
     </div>
   )
