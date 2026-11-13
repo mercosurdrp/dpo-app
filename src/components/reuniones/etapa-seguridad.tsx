@@ -29,6 +29,7 @@ import {
   type PiramideItem,
 } from "@/components/reportes-seguridad/piramide-seguridad"
 import { calcularPiramides } from "@/lib/seguridad/piramide"
+import { BenchSeguridadSection } from "@/components/reuniones/bench-seguridad"
 import { ReporteDetalleDialog } from "@/components/reportes-seguridad/reporte-detalle-dialog"
 import {
   REPORTE_SEGURIDAD_TIPO_LABELS,
@@ -411,6 +412,14 @@ export function EtapaSeguridad({
             />
           )}
         </section>
+
+        {/* Reporte Bench de Seguridad: investigación del día de otro
+            distribuidor, se trabaja y se vuelca a Entrega y Almacén. */}
+        <BenchSeguridadSection
+          fechaReunion={fechaReunion}
+          puedeEditar={puedeEditar}
+          areaFoco={areaFoco}
+        />
 
         {/* Reportes ocurridos desde la reunión anterior (por fecha del evento) */}
         <section className="space-y-2">
