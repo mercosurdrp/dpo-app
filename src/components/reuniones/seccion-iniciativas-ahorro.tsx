@@ -1,10 +1,16 @@
 "use client"
 
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
+import { toast } from "sonner"
 import { ExternalLink, PiggyBank } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { IniciativasAhorroSection } from "@/components/presupuesto/iniciativas-ahorro-section"
+import { SeccionObservaciones } from "./seccion-observaciones"
+import { listObservacionesSeccion } from "@/actions/reuniones-indicadores-observaciones"
+import { seccionIndicadorId } from "@/lib/reuniones-seccion-observaciones"
+import type { ReunionIndicadorObservacionConAutor } from "@/types/database"
 import {
   FOCO_LABEL,
   focoDe,
@@ -21,13 +27,42 @@ import {
  * calcule en un solo lugar; la edición pasa por las mismas acciones y
  * `router.refresh()` vuelve a leer todo desde la página (server).
  */
+/** Slug de la sección: clave `seccion_iniciativas-ahorro` en las observaciones. */
+export const SECCION_INICIATIVAS_AHORRO = "iniciativas-ahorro"
+
 export function SeccionIniciativasAhorro({
+  reunionId,
   data,
   puedeEditar,
+  onActividadesChanged,
 }: {
+  reunionId: string
   data: IniciativasAhorroReunionData
   puedeEditar: boolean
+  onActividadesChanged: () => void
 }) {
+  // Observaciones de la reunión sobre las iniciativas (lo que se aclaró y no
+  // necesita una acción con responsable), igual que en Dimensionamiento.
+  const [observaciones, setObservaciones] = useState<ReunionIndicadorObservacionConAutor[]>([])
+  const [obsReload, setObsReload] = useState(0)
+  useEffect(() => {
+    let cancel = false
+    void listObservacionesSeccion(reunionId, seccionIndicadorId(SECCION_INICIATIVAS_AHORRO)).then(
+      (res) => {
+        if (cancel) return
+        if ("error" in res) toast.error(res.error)
+        else setObservaciones(res.data)
+      },
+    )
+    return () => {
+      cancel = true
+    }
+  }, [reunionId, obsReload])
+  const onObsChanged = useCallback(() => {
+    setObsReload((n) => n + 1)
+    onActividadesChanged()
+  }, [onActividadesChanged])
+
   const ordenadas = ordenarPorFoco(data.iniciativas)
   const conteo = ordenadas.reduce<Record<FocoIniciativa, number>>(
     (acc, ini) => {
@@ -81,6 +116,17 @@ export function SeccionIniciativasAhorro({
           costoHl={data.costoHl}
           responsables={data.responsables}
           puedeEditar={puedeEditar}
+        />
+        <SeccionObservaciones
+          reunionId={reunionId}
+          reunionTipo="iniciativas-ahorro"
+          seccion={SECCION_INICIATIVAS_AHORRO}
+          nombre="Iniciativas de Ahorro"
+          observaciones={observaciones}
+          responsables={data.responsables}
+          puedeEditar={puedeEditar}
+          onChanged={onObsChanged}
+          hint="Lo que se aclaró sobre las iniciativas (ej. cuánto del ahorro es propio y cuánto es volumen) y no necesita una acción con responsable. Si hace falta seguimiento, creá una acción: queda en el Action Log."
         />
       </CardContent>
     </Card>

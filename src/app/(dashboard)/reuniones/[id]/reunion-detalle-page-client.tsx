@@ -104,7 +104,10 @@ import {
   SECCION_PEDIDOS_PROBLEMAS,
 } from "@/components/reuniones/seccion-pedidos-problemas"
 import { SeccionDesviosPresupuesto } from "@/components/reuniones/seccion-desvios-presupuesto"
-import { SeccionIniciativasAhorro } from "@/components/reuniones/seccion-iniciativas-ahorro"
+import {
+  SeccionIniciativasAhorro,
+  SECCION_INICIATIVAS_AHORRO,
+} from "@/components/reuniones/seccion-iniciativas-ahorro"
 import { SeccionCostoLogistico } from "@/components/reuniones/seccion-costo-logistico"
 import { SeccionInversionesCapex } from "@/components/reuniones/seccion-inversiones-capex"
 import type { InversionesCapexReunionData } from "@/lib/reuniones-inversiones-capex"
@@ -1312,7 +1315,10 @@ export function ReunionDetallePageClient({
         (a) =>
           !a.seccion ||
           a.seccion === SECCION_DIMENSIONAMIENTO ||
-          a.seccion === SECCION_PERIODOS_CRITICOS,
+          a.seccion === SECCION_PERIODOS_CRITICOS ||
+          // Iniciativas de Ahorro no tiene Action Log propio: las acciones
+          // creadas desde sus observaciones van al general.
+          a.seccion === SECCION_INICIATIVAS_AHORRO,
       ),
     [actividadesAll],
   )
@@ -1621,8 +1627,10 @@ export function ReunionDetallePageClient({
           ahorro y KPI. Es el temario, igual que los desvíos en Presupuesto. */}
       {detalle.tipo === "iniciativas-ahorro" && iniciativasAhorro && (
         <SeccionIniciativasAhorro
+          reunionId={detalle.id}
           data={iniciativasAhorro}
           puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
         />
       )}
 
