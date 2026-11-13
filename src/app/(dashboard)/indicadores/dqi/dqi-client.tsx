@@ -41,6 +41,7 @@ import {
 import { DqiPorPatenteCard } from "./_components/dqi-por-patente-card"
 import { DqiTipoSkuCard } from "./_components/dqi-tipo-sku-card"
 import { DqiSeguimientoMensualCard } from "./_components/dqi-seguimiento-mensual-card"
+import { DqiAperturasCard } from "./_components/dqi-aperturas-card"
 import { getDqi, crearPlanDqi, type DqiData } from "@/actions/dqi"
 import { ROTURA_MOTIVO_LABELS, ROTURA_ESTADO_LABELS, ROTURA_TIPO_LABELS } from "@/types/roturas"
 
@@ -439,6 +440,9 @@ export function DqiClient({ initial, initialYear, initialMonth, puedeEditar }: P
 
       {/* DQI por camión: el mismo PPM, repartido por patente */}
       <DqiPorPatenteCard year={year} month={month} target={data.target} />
+
+      {/* Apertura por chofer, día de la semana y zona (base: roturas en ruta con detalle diario) */}
+      <DqiAperturasCard year={year} month={month} target={target} onCrearPlan={(desc) => openPlanDialog(month, desc)} />
 
       {/* Roturas reportadas por choferes desde la app (registro, no recalcula el PPM) */}
       <Card>
