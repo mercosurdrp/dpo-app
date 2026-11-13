@@ -65,6 +65,7 @@ import {
   type PalancaPlan,
 } from "@/actions/plan-territorial"
 import type { RuteroVigente } from "@/actions/territorial-rutero"
+import type { ViajesCiudad } from "@/actions/territorial-viajes"
 import { MESES, num, pesos } from "./formato"
 import { RedisenoRutasSection } from "./rediseno-rutas"
 import {
@@ -260,6 +261,9 @@ interface Props {
   planes: PlanTerritorial[]
   /** Rutero vigente de promotores por ciudad (base comercial); null si no respondió. */
   ruteros: Record<string, RuteroVigente | null>
+  /** Viajes por semana de las ciudades que se siguen así (hoy Ramallo). */
+  viajes: Record<string, ViajesCiudad>
+  viajesError: string | null
   revisiones: RevisionTerritorial[]
   perfiles: Array<{ id: string; nombre: string }>
   /** Archivos de evidencia del 5.1 (presentaciones de rutas) para linkear desde cada etapa. */
@@ -280,6 +284,8 @@ export function PlanTerritorialClient({
   escenarios,
   planes,
   ruteros,
+  viajes,
+  viajesError,
   revisiones,
   perfiles,
   archivos,
@@ -347,6 +353,15 @@ export function PlanTerritorialClient({
         </div>
       </div>
 
+      {viajesError && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="flex items-start gap-2 pt-6 text-sm text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>No se pudieron contar los viajes por semana: {viajesError}</span>
+          </CardContent>
+        </Card>
+      )}
+
       {territorioError && (
         <Card className="border-amber-300 bg-amber-50">
           <CardContent className="flex items-start gap-2 pt-6 text-sm text-amber-900">
@@ -393,6 +408,7 @@ export function PlanTerritorialClient({
                 plan={p}
                 ciudad={territorio?.ciudades.find((c) => c.ciudad === p.ciudad)}
                 territorio={territorio}
+                viajes={viajes[p.ciudad] ?? null}
               />
             ))}
           </div>
@@ -442,6 +458,7 @@ export function PlanTerritorialClient({
                           (x) => x.ciudad === p.ciudad,
                         )}
                         rutero={ruteros[p.ciudad] ?? null}
+                        viajes={viajes[p.ciudad] ?? null}
                         esEditor={esEditor}
                         ciudades={(territorio?.ciudades ?? []).map(
                           (x) => x.ciudad,
@@ -1005,6 +1022,7 @@ function PlanCard({
   plan,
   ciudad,
   rutero,
+  viajes,
   esEditor,
   ciudades,
   perfiles,
@@ -1014,6 +1032,7 @@ function PlanCard({
   plan: PlanTerritorial
   ciudad: CiudadResumen | undefined
   rutero: RuteroVigente | null
+  viajes: ViajesCiudad | null
   esEditor: boolean
   ciudades: string[]
   perfiles: Array<{ id: string; nombre: string }>
@@ -1108,6 +1127,7 @@ function PlanCard({
         )}
 
         <TablaDistribucion plan={plan} territorio={territorio} />
+        <TablaViajes plan={plan} viajes={viajes} />
 
         <RedisenoRutasSection
           plan={plan}
@@ -1759,10 +1779,12 @@ function ResumenCiudadCard({
   plan,
   ciudad,
   territorio,
+  viajes,
 }: {
   plan: PlanTerritorial
   ciudad: CiudadResumen | undefined
   territorio: Territorio | null
+  viajes: ViajesCiudad | null
 }) {
   const ultimo = ciudad?.serie.length
     ? ciudad.serie[ciudad.serie.length - 1]
@@ -1874,6 +1896,7 @@ function ResumenCiudadCard({
         </div>
 
         <TablaDistribucion plan={plan} territorio={territorio} />
+        <TablaViajes plan={plan} viajes={viajes} />
 
         {ciudad && (
           <SerieCiudad ciudad={ciudad} planes={[plan]} compacta />
@@ -1899,6 +1922,84 @@ function TextoMejora({ m }: { m: ReturnType<typeof mejoraPeriodo> }) {
       distribución vs red {m.mejora > 0 ? "+" : ""}
       {num(100 * m.mejora, 0)}% · índice {num(m.punto.indice, 2)}
     </p>
+  )
+}
+
+/**
+ * Viajes por semana a la ciudad: la base (promedio de las semanas de la línea
+ * base) y cada mes desde el fin de la base (promedio de las semanas completas
+ * que empiezan en ese mes), contra la meta. En una ciudad cercana es lo que
+ * muestra la reestructuración: el $/HL casi no ve un viaje menos.
+ */
+function TablaViajes({
+  plan,
+  viajes,
+}: {
+  plan: PlanTerritorial
+  viajes: ViajesCiudad | null
+}) {
+  if (!viajes || !viajes.semanas.length) return null
+  const mesDe = (lunes: string) => Number(lunes.slice(5, 7))
+  const promedio = (xs: { viajes: number }[]) =>
+    xs.length ? xs.reduce((a, x) => a + x.viajes, 0) / xs.length : null
+  const desde = plan.linea_base_desde ? Number(plan.linea_base_desde.slice(5, 7)) : 1
+  const hasta = plan.linea_base_hasta ? Number(plan.linea_base_hasta.slice(5, 7)) : 0
+  const semBase = viajes.semanas.filter((w) => mesDe(w.lunes) >= desde && mesDe(w.lunes) <= hasta)
+  const base = promedio(semBase)
+  const meses = [...new Set(viajes.semanas.map((w) => mesDe(w.lunes)))].filter((m) => m > hasta)
+  const color = (v: number | null) =>
+    v == null ? "" : v <= viajes.meta + 1e-9 ? "text-emerald-600" : "text-red-600"
+  return (
+    <div className="space-y-1 border-t pt-3">
+      <p className="text-xs font-semibold text-muted-foreground">
+        Viajes por semana · meta ≤ {num(viajes.meta, 0)}
+      </p>
+      <p className="text-[11px] text-muted-foreground">
+        Viaje = un camión con {viajes.minClientes} clientes o más de {plan.ciudad} ese día
+        (ventas de Chess y Gestión). Promedio de las semanas completas que empiezan
+        en el mes.
+      </p>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Período</TableHead>
+              <TableHead className="text-right">Semanas</TableHead>
+              <TableHead className="text-right">Viajes por semana</TableHead>
+              <TableHead>Detalle</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {base != null && (
+              <TableRow className="bg-slate-50">
+                <TableCell>
+                  Base ({MESES[desde]}–{MESES[hasta]})
+                </TableCell>
+                <TableCell className="text-right">{semBase.length}</TableCell>
+                <TableCell className="text-right font-semibold">{num(base, 1)}</TableCell>
+                <TableCell />
+              </TableRow>
+            )}
+            {meses.map((m) => {
+              const ws = viajes.semanas.filter((w) => mesDe(w.lunes) === m)
+              const v = promedio(ws)
+              return (
+                <TableRow key={m}>
+                  <TableCell>{MESES[m]}</TableCell>
+                  <TableCell className="text-right">{ws.length}</TableCell>
+                  <TableCell className={`text-right font-semibold ${color(v)}`}>
+                    {v == null ? "—" : num(v, 1)}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {ws.map((w) => w.viajes).join(" · ")}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   )
 }
 

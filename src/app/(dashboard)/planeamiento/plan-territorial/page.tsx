@@ -9,6 +9,7 @@ import {
   listarRevisiones,
 } from "@/actions/plan-territorial"
 import { getRuteroVigente, type RuteroVigente } from "@/actions/territorial-rutero"
+import { getViajesCiudades } from "@/actions/territorial-viajes"
 import { getArchivos } from "@/actions/dpo-evidencia"
 import { PlanTerritorialClient } from "./plan-territorial-client"
 
@@ -52,11 +53,15 @@ export default async function PlanTerritorialPage() {
   const planesData = "data" in planes ? planes.data : []
   const ciudadesConPlan = [...new Set(planesData.map((p) => p.ciudad))]
   const ruteros: Record<string, RuteroVigente | null> = {}
-  await Promise.all(
-    ciudadesConPlan.map(async (c) => {
-      ruteros[c] = await getRuteroVigente(c)
-    }),
-  )
+  const [, viajesRes] = await Promise.all([
+    Promise.all(
+      ciudadesConPlan.map(async (c) => {
+        ruteros[c] = await getRuteroVigente(c)
+      }),
+    ),
+    // Viajes por semana (sólo las ciudades configuradas, hoy Ramallo).
+    getViajesCiudades(anio, ciudadesConPlan),
+  ])
 
   return (
     <PlanTerritorialClient
@@ -67,6 +72,8 @@ export default async function PlanTerritorialPage() {
       escenarios={"data" in escenarios ? escenarios.data : []}
       planes={planesData}
       ruteros={ruteros}
+      viajes={"data" in viajesRes ? viajesRes.data : {}}
+      viajesError={"error" in viajesRes ? viajesRes.error : null}
       revisiones={"data" in revisiones ? revisiones.data : []}
       perfiles={
         (perfilesRes.data ?? []) as Array<{ id: string; nombre: string }>
