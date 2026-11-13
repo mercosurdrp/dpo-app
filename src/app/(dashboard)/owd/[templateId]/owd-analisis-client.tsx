@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { Fragment, useMemo, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -34,6 +35,9 @@ import {
   Trash2,
   ClipboardList,
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
 } from "lucide-react"
 import type {
   OwdTendenciaOperario,
@@ -100,6 +104,19 @@ export function OwdAnalisisClient({
   canManage,
 }: Props) {
   const router = useRouter()
+
+  // ---- Detalle de las OWD de cada operario (fila desplegable) ----
+  const [operarioAbierto, setOperarioAbierto] = useState<string | null>(null)
+  const obsPorOperario = useMemo(() => {
+    const m = new Map<string, ObsMini[]>()
+    for (const o of observaciones) {
+      const lista = m.get(o.empleado_observado) ?? []
+      lista.push(o)
+      m.set(o.empleado_observado, lista)
+    }
+    for (const lista of m.values()) lista.sort((a, b) => b.fecha.localeCompare(a.fecha))
+    return m
+  }, [observaciones])
 
   // ---- Crear plan ----
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -211,18 +228,32 @@ export function OwdAnalisisClient({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {tendencias.map((t) => (
-                    <TableRow key={t.operario}>
+                  {tendencias.map((t) => {
+                    const abierto = operarioAbierto === t.operario
+                    const obsOp = obsPorOperario.get(t.operario) ?? []
+                    return (
+                    <Fragment key={t.operario}>
+                    <TableRow className={abierto ? "bg-slate-50" : undefined}>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className={`size-2.5 rounded-full ${ESTADO_DOT[t.estado]}`} />
+                        <button
+                          type="button"
+                          onClick={() => setOperarioAbierto(abierto ? null : t.operario)}
+                          className="flex items-center gap-2 text-left"
+                          title="Ver las OWD de este operario"
+                        >
+                          {abierto ? (
+                            <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                          )}
+                          <span className={`size-2.5 shrink-0 rounded-full ${ESTADO_DOT[t.estado]}`} />
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-slate-900">{t.operario}</p>
                             <p className="text-xs text-muted-foreground">
                               {t.rol || "—"} · {ESTADO_LABEL[t.estado]}
                             </p>
                           </div>
-                        </div>
+                        </button>
                       </TableCell>
                       <TableCell className="text-center text-sm">{t.auditorias}</TableCell>
                       <TableCell className="text-right">
@@ -294,7 +325,48 @@ export function OwdAnalisisClient({
                         </TableCell>
                       )}
                     </TableRow>
-                  ))}
+                    {abierto && (
+                      <TableRow className="bg-slate-50 hover:bg-slate-50">
+                        <TableCell colSpan={canManage ? 6 : 5} className="py-2">
+                          {obsOp.length === 0 ? (
+                            <p className="pl-6 text-xs text-muted-foreground">
+                              No se encontraron las OWD de este operario.
+                            </p>
+                          ) : (
+                            <div className="flex flex-wrap gap-2 pl-6">
+                              {obsOp.map((o) => (
+                                <Link
+                                  key={o.id}
+                                  href={`/owd/${templateId}/${o.id}`}
+                                  className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs transition-colors hover:border-blue-300 hover:bg-blue-50"
+                                >
+                                  <span className="text-slate-600">
+                                    {o.fecha.split("-").reverse().join("/")}
+                                  </span>
+                                  <span
+                                    className={`font-semibold ${
+                                      o.pct_cumplimiento >= meta
+                                        ? "text-green-600"
+                                        : o.pct_cumplimiento >= meta - 15
+                                        ? "text-amber-600"
+                                        : "text-red-600"
+                                    }`}
+                                  >
+                                    {o.pct_cumplimiento.toFixed(0)}%
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 text-blue-600">
+                                    Ver detalle <ExternalLink className="h-3 w-3" />
+                                  </span>
+                                </Link>
+                              ))}
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    </Fragment>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </div>
