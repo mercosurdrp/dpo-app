@@ -67,7 +67,13 @@ import {
 import type { RuteroVigente } from "@/actions/territorial-rutero"
 import { MESES, num, pesos } from "./formato"
 import { RedisenoRutasSection } from "./rediseno-rutas"
-import { indicePeriodo, indicesPlan, metaPeriodo, metaPorMes } from "./meta-indice"
+import {
+  baseDistribucion,
+  mejoraPeriodo,
+  mesesBase,
+  metaReduccion,
+  metaTotalPeriodo,
+} from "./meta-indice"
 
 const PILAR_PLANEAMIENTO_COLOR = "#EC4899"
 
@@ -144,7 +150,7 @@ function objetivoDerivado(
   // Meta del acumulado del año: índice meta × $/HL de la red en esos meses.
   const metaPorCiudad = new Map<string, number>()
   for (const p of planes) {
-    const m = metaPeriodo(p, territorio, territorio.meses)
+    const m = metaTotalPeriodo(p, territorio, territorio.meses)
     if (m == null) continue
     const actual = metaPorCiudad.get(p.ciudad)
     if (actual == null || m < actual) metaPorCiudad.set(p.ciudad, m)
@@ -201,7 +207,7 @@ function ensuenoDerivado(
   // Meta del acumulado del año: índice meta × $/HL de la red en esos meses.
   const metaPorCiudad = new Map<string, number>()
   for (const p of planes) {
-    const m = metaPeriodo(p, territorio, territorio.meses)
+    const m = metaTotalPeriodo(p, territorio, territorio.meses)
     if (m == null) continue
     const actual = metaPorCiudad.get(p.ciudad)
     if (actual == null || m < actual) metaPorCiudad.set(p.ciudad, m)
@@ -547,13 +553,16 @@ export function PlanTerritorialClient({
                 ciudad es sólo lo entregado a sus PDV, igual que en Costo por PDV.
               </p>
               <p>
-                La meta de cada ciudad se mide contra la red: índice = $/HL de la
-                ciudad ÷ $/HL de las ciudades en los mismos meses. El índice meta
-                es el de la línea base con la reducción comprometida, y la meta en
-                pesos de cada mes es ese índice × el $/HL de la red del mes. Así
-                la paritaria, la inflación o la temporada, que mueven a toda la
-                red, no hacen cumplir ni incumplir la meta: sólo lo que hace el
-                plan.
+                El cumplimiento de cada plan se mide con la DISTRIBUCIÓN contra
+                la red, no con el $/HL total: el plan cambia rutas, no el
+                almacén (que se reparte por bulto igual en todas las ciudades).
+                Índice = $/HL de distribución de la ciudad ÷ $/HL de distribución
+                de la red (las ciudades juntas) en el mismo período. La base es el
+                índice de los meses de la línea base, congelado en el plan. La
+                mejora es el índice del mes contra la base, y la meta es la
+                reducción comprometida (−4 %). La paritaria, el gasoil o la
+                temporada mueven a toda la red y se cancelan: queda lo que hizo
+                el plan.
               </p>
               <p className="text-amber-700">
                 El costo por ciudad es un <strong>reparto</strong>, no un costo
@@ -633,16 +642,10 @@ function EscenarioCard({
 function SerieCiudad({
   ciudad,
   planes,
-  meta,
   compacta = false,
 }: {
   ciudad: CiudadResumen
   planes: PlanTerritorial[]
-  /**
-   * Meta de $/HL del plan mes a mes (índice meta × red del mes): se dibuja
-   * como línea punteada.
-   */
-  meta?: Map<number, number> | null
   /** Sin tarjeta ni título, más bajo: para embeber en otra tarjeta. */
   compacta?: boolean
 }) {
@@ -650,7 +653,6 @@ function SerieCiudad({
     mes: MESES[m.mes],
     mesNum: m.mes,
     costo: Math.round(m.costo_x_hl),
-    meta: meta?.has(m.mes) ? Math.round(meta.get(m.mes) as number) : null,
   }))
 
   // Cada etapa de rutas implementada en esta ciudad marca su mes: es lo que
@@ -672,21 +674,9 @@ function SerieCiudad({
               tickFormatter={(v) => `${Math.round(v / 1000)}k`}
             />
             <RTooltip
-              formatter={(v, n) => [pesos(Number(v)), n === "meta" ? "meta" : "$/HL"]}
+              formatter={(v) => [pesos(Number(v)), "$/HL"]}
               labelClassName="text-xs"
             />
-            {meta != null && meta.size > 0 && (
-              <Line
-                type="monotone"
-                dataKey="meta"
-                name="meta"
-                stroke="#0d9488"
-                strokeWidth={1.5}
-                strokeDasharray="5 4"
-                dot={false}
-                connectNulls
-              />
-            )}
             {marcas.map((m, i) => (
               <ReferenceLine
                 key={`${m.mes}-${i}`}
@@ -1031,7 +1021,7 @@ function PlanCard({
   archivos: ArchivoEvidencia[]
 }) {
   const actual = ciudad?.costo_x_hl ?? null
-  const metaAcum = metaPeriodo(plan, territorio, territorio?.meses ?? [])
+  const meta = metaReduccion(plan)
   const delta =
     plan.linea_base && actual
       ? (100 * (actual - plan.linea_base)) / plan.linea_base
@@ -1062,9 +1052,10 @@ function PlanCard({
             <p className="font-semibold">{pesos(plan.linea_base)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Meta del acumulado</p>
-            <p className="font-semibold">{pesos(metaAcum)}</p>
-            <TextoIndice plan={plan} territorio={territorio} />
+            <p className="text-xs text-muted-foreground">Meta</p>
+            <p className="font-semibold">
+              {meta == null ? "—" : `${num(100 * meta, 0)}% de distribución vs red`}
+            </p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Acumulado del año</p>
@@ -1112,14 +1103,11 @@ function PlanCard({
             <p className="mb-1 text-xs font-semibold text-muted-foreground">
               $/HL mes a mes · {plan.ciudad}
             </p>
-            <SerieCiudad
-              ciudad={ciudad}
-              planes={[plan]}
-              meta={metaPorMes(plan, territorio)}
-              compacta
-            />
+            <SerieCiudad ciudad={ciudad} planes={[plan]} compacta />
           </div>
         )}
+
+        <TablaDistribucion plan={plan} territorio={territorio} />
 
         <RedisenoRutasSection
           plan={plan}
@@ -1784,17 +1772,13 @@ function ResumenCiudadCard({
       ? ciudad.serie[ciudad.serie.length - 2]
       : null
   const desde = costoDesde(ciudad, primeraImplementacion(plan))
-  // La meta en pesos depende del período: índice meta × $/HL de la red.
-  const metaUltimo = ultimo ? metaPeriodo(plan, territorio, [ultimo.mes]) : plan.meta
-  const metaDesde = desde.meses.length
-    ? metaPeriodo(plan, territorio, desde.meses)
-    : plan.meta
-  const colorVsMeta = (v: number | null, meta: number | null) =>
-    v == null || meta == null
-      ? "text-slate-900"
-      : v <= meta
-        ? "text-emerald-600"
-        : "text-red-600"
+  // El cumplimiento se mide con la distribución contra la red (meta-indice.ts).
+  const meta = metaReduccion(plan)
+  const base = baseDistribucion(plan, territorio)
+  const mejUltimo = ultimo ? mejoraPeriodo(plan, territorio, [ultimo.mes]) : null
+  const mejDesde = desde.meses.length
+    ? mejoraPeriodo(plan, territorio, desde.meses)
+    : null
   const rangoBase =
     plan.linea_base_desde && plan.linea_base_hasta
       ? ` (${MESES[Number(plan.linea_base_desde.slice(5, 7))]}–${MESES[Number(plan.linea_base_hasta.slice(5, 7))]})`
@@ -1848,17 +1832,21 @@ function ResumenCiudadCard({
             <p className="font-semibold">{pesos(plan.linea_base)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">
-              Meta{ultimo ? ` (${MESES[ultimo.mes]})` : ""}
+            <p className="text-xs text-muted-foreground">Meta</p>
+            <p className="font-semibold text-teal-700">
+              {meta == null ? "—" : `${num(100 * meta, 0)}%`}
             </p>
-            <p className="font-semibold text-teal-700">{pesos(metaUltimo)}</p>
-            <TextoIndice plan={plan} territorio={territorio} />
+            {base && meta != null && (
+              <p className="text-[11px] leading-tight text-muted-foreground">
+                índice {num(base.indice, 2)} → {num(base.indice * (1 + meta), 2)}
+              </p>
+            )}
           </div>
           <div>
             <p className="text-xs text-muted-foreground">
               Último mes{ultimo ? ` (${MESES[ultimo.mes]})` : ""}
             </p>
-            <p className={`font-semibold ${colorVsMeta(ultimo?.costo_x_hl ?? null, metaUltimo)}`}>
+            <p className={`font-semibold ${colorMejora(mejUltimo?.cumple ?? null)}`}>
               {pesos(ultimo?.costo_x_hl)}
               {anterior && ultimo && (
                 <span className="ml-1 text-xs font-normal text-muted-foreground">
@@ -1867,17 +1855,13 @@ function ResumenCiudadCard({
                 </span>
               )}
             </p>
-            <IndiceVsMeta
-              plan={plan}
-              territorio={territorio}
-              meses={ultimo ? [ultimo.mes] : []}
-            />
+            <TextoMejora m={mejUltimo} />
           </div>
           <div>
             <p className="text-xs text-muted-foreground">
               Desde la implementación{rangoDesde}
             </p>
-            <p className={`font-semibold ${colorVsMeta(desde.costo_x_hl, metaDesde)}`}>
+            <p className={`font-semibold ${colorMejora(mejDesde?.cumple ?? null)}`}>
               {pesos(desde.costo_x_hl)}
               {desde.costo_x_hl != null && plan.linea_base != null && (
                 <span className="ml-1 text-xs font-normal text-muted-foreground">
@@ -1885,60 +1869,108 @@ function ResumenCiudadCard({
                 </span>
               )}
             </p>
-            <IndiceVsMeta plan={plan} territorio={territorio} meses={desde.meses} />
+            <TextoMejora m={mejDesde} />
           </div>
         </div>
 
+        <TablaDistribucion plan={plan} territorio={territorio} />
+
         {ciudad && (
-          <SerieCiudad
-            ciudad={ciudad}
-            planes={[plan]}
-            meta={metaPorMes(plan, territorio)}
-            compacta
-          />
+          <SerieCiudad ciudad={ciudad} planes={[plan]} compacta />
         )}
       </CardContent>
     </Card>
   )
 }
 
-/** Cómo se arma la meta: índice de la base y la reducción comprometida. */
-function TextoIndice({
-  plan,
-  territorio,
-}: {
-  plan: PlanTerritorial
-  territorio: Territorio | null
-}) {
-  const idx = indicesPlan(plan, territorio)
-  if (!idx || plan.meta == null || !plan.linea_base) return null
-  const red = (100 * (plan.meta - plan.linea_base)) / plan.linea_base
+function colorMejora(cumple: boolean | null): string {
+  return cumple == null ? "text-slate-900" : cumple ? "text-emerald-600" : "text-red-600"
+}
+
+/** "mejora −14 % · índice 1,98" debajo de un $/HL. */
+function TextoMejora({ m }: { m: ReturnType<typeof mejoraPeriodo> }) {
+  if (!m) return null
   return (
-    <p className="text-[11px] leading-tight text-muted-foreground">
-      {num(idx.meta, 2)} × red ({num(red, 0)}% sobre {num(idx.base, 2)} de la base)
+    <p
+      className={`text-[11px] leading-tight ${
+        m.cumple == null ? "text-muted-foreground" : m.cumple ? "text-emerald-700" : "text-red-700"
+      }`}
+    >
+      distribución vs red {m.mejora > 0 ? "+" : ""}
+      {num(100 * m.mejora, 0)}% · índice {num(m.punto.indice, 2)}
     </p>
   )
 }
 
-/** Índice de la ciudad en el período contra el índice meta. */
-function IndiceVsMeta({
+/**
+ * Distribución contra la red, mes a mes: la base congelada y cada mes desde
+ * el fin de la base, con el $/HL de distribución de la ciudad, el de la red,
+ * el índice y la mejora contra la base. Es lo que dice si el plan cumple.
+ */
+function TablaDistribucion({
   plan,
   territorio,
-  meses,
 }: {
   plan: PlanTerritorial
   territorio: Territorio | null
-  meses: number[]
 }) {
-  const idx = indicesPlan(plan, territorio)
-  const v = meses.length ? indicePeriodo(plan.ciudad, territorio, meses) : null
-  if (!idx || v == null) return null
+  const base = baseDistribucion(plan, territorio)
+  const meta = metaReduccion(plan)
+  if (!territorio || !base) return null
+  const mb = mesesBase(plan, territorio)
+  const ultimoBase = mb.length ? mb[mb.length - 1] : 0
+  const meses = territorio.meses.filter((m) => m > ultimoBase)
+  const rango =
+    plan.linea_base_desde && plan.linea_base_hasta
+      ? `${MESES[Number(plan.linea_base_desde.slice(5, 7))]}–${MESES[Number(plan.linea_base_hasta.slice(5, 7))]}`
+      : "base"
   return (
-    <p
-      className={`text-[11px] leading-tight ${v <= idx.meta ? "text-emerald-700" : "text-red-700"}`}
-    >
-      índice {num(v, 2)} (meta {num(idx.meta, 2)})
-    </p>
+    <div className="space-y-1 border-t pt-3">
+      <p className="text-xs font-semibold text-muted-foreground">
+        Distribución contra la red
+        {meta != null && ` · meta ${num(100 * meta, 0)}% (índice ≤ ${num(base.indice * (1 + meta), 2)})`}
+      </p>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Período</TableHead>
+              <TableHead className="text-right">$/HL distr. {plan.ciudad}</TableHead>
+              <TableHead className="text-right">$/HL distr. red</TableHead>
+              <TableHead className="text-right">Índice</TableHead>
+              <TableHead className="text-right">vs base</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow className="bg-slate-50">
+              <TableCell>
+                Base ({rango}){base.congelada ? "" : " · en vivo"}
+              </TableCell>
+              <TableCell className="text-right">{pesos(base.ciudad)}</TableCell>
+              <TableCell className="text-right">{pesos(base.red)}</TableCell>
+              <TableCell className="text-right font-semibold">{num(base.indice, 2)}</TableCell>
+              <TableCell className="text-right">—</TableCell>
+            </TableRow>
+            {meses.map((m) => {
+              const r = mejoraPeriodo(plan, territorio, [m])
+              if (!r) return null
+              return (
+                <TableRow key={m}>
+                  <TableCell>{MESES[m]}</TableCell>
+                  <TableCell className="text-right">{pesos(r.punto.ciudad)}</TableCell>
+                  <TableCell className="text-right">{pesos(r.punto.red)}</TableCell>
+                  <TableCell className="text-right">{num(r.punto.indice, 2)}</TableCell>
+                  <TableCell className={`text-right font-semibold ${colorMejora(r.cumple)}`}>
+                    {r.mejora > 0 ? "+" : ""}
+                    {num(100 * r.mejora, 0)}%
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   )
 }
 
@@ -1975,12 +2007,10 @@ function RevisionCard({
     const c = territorio?.ciudades.find((x) => x.ciudad === nombre)
     const actual = mes != null ? (c?.serie.find((m) => m.mes === mes) ?? null) : null
     const previo = mes != null ? (c?.serie.find((m) => m.mes === mes - 1) ?? null) : null
-    const metas = planes
-      .filter((p) => p.ciudad === nombre)
-      .map((p) => (mes != null ? metaPeriodo(p, territorio, [mes]) : p.meta))
-      .filter((m): m is number => m != null)
-    const meta = metas.length ? Math.min(...metas) : null
-    return { nombre, actual, previo, meta }
+    const plan = planes.find((p) => p.ciudad === nombre)
+    const mejora = plan && mes != null ? mejoraPeriodo(plan, territorio, [mes]) : null
+    const meta = plan ? metaReduccion(plan) : null
+    return { nombre, actual, previo, mejora, meta }
   })
 
   return (
@@ -2013,7 +2043,14 @@ function RevisionCard({
                   f.actual?.costo_x_hl ?? null,
                 )}
                 deltaRef={f.previo ? MESES[f.previo.mes] : null}
-                meta={f.meta}
+                cumple={f.mejora?.cumple ?? null}
+                nota={
+                  f.mejora
+                    ? `distr. vs red ${f.mejora.mejora > 0 ? "+" : ""}${num(100 * f.mejora.mejora, 0)}%${
+                        f.meta != null ? ` (meta ${num(100 * f.meta, 0)}%)` : ""
+                      }`
+                    : null
+                }
               />
             ))}
           </div>
@@ -2036,16 +2073,18 @@ function Chip({
   valor,
   delta,
   deltaRef,
-  meta,
+  cumple,
+  nota,
 }: {
   label: string
   valor: number | null
   delta: string | null
   deltaRef: string | null
-  meta?: number | null
+  /** Si la ciudad cumple la meta del plan en el mes (null = sin plan). */
+  cumple?: boolean | null
+  nota?: string | null
 }) {
-  const vsMeta =
-    valor != null && meta != null ? (valor <= meta ? "ok" : "alto") : null
+  const vsMeta = cumple == null ? null : cumple ? "ok" : "alto"
   return (
     <div
       className={`rounded-md border px-3 py-1.5 text-sm ${
@@ -2064,10 +2103,8 @@ function Chip({
           {deltaRef ? ` vs ${deltaRef}` : ""}
         </span>
       )}
-      {meta != null && (
-        <span className="ml-1 text-xs text-muted-foreground">
-          · meta {pesos(meta)}
-        </span>
+      {nota && (
+        <span className="ml-1 text-xs text-muted-foreground">· {nota}</span>
       )}
     </div>
   )

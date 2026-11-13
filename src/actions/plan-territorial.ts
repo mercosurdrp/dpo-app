@@ -28,6 +28,12 @@ export interface CiudadMes {
   mes: number
   hl: number
   bultos: number
+  /**
+   * Costo de distribución del mes (costo total menos el almacén). El almacén
+   * se reparte por bulto a la misma tarifa en toda la red: se toma la del
+   * retiro en depósito del mes (`get_bolsa_deposito`).
+   */
+  costo_distribucion: number
   venta_neta: number
   costo_total: number
   costo_x_hl: number
@@ -142,17 +148,26 @@ export async function getTerritorio(anio: number): Promise<Result<Territorio>> {
     if (eTerr) return { error: eTerr.message }
     const eBolsa = bolsas.find((b) => b.error)?.error
     if (eBolsa) return { error: eBolsa.message }
-    const bolsaPorMes = new Map<number, { hl: number; costo: number }>()
+    const bolsaPorMes = new Map<number, { hl: number; bultos: number; costo: number }>()
     bolsas.forEach((b, i) => {
       const fila = (Array.isArray(b.data) ? b.data[0] : b.data) as
-        | { hl?: unknown; costo_almacen?: unknown }
+        | { hl?: unknown; bultos?: unknown; costo_almacen?: unknown }
         | null
       bolsaPorMes.set(meses[i], {
         hl: Number(fila?.hl ?? 0),
+        bultos: Number(fila?.bultos ?? 0),
         costo: Number(fila?.costo_almacen ?? 0),
       })
     })
     const kmPorCiudad = new Map(kmCiudades.map((k) => [k.ciudad, k.km]))
+
+    // Almacén por bulto del mes (misma tarifa para toda la red) → la
+    // distribución de una ciudad es su costo total menos sus bultos × tarifa.
+    const costoDistribucion = (m: Record<string, unknown>): number => {
+      const b = bolsaPorMes.get(Number(m.mes))
+      const tarifa = b && b.bultos > 0 ? b.costo / b.bultos : 0
+      return Number(m.costo_total ?? 0) - Number(m.bultos ?? 0) * tarifa
+    }
 
     const payload = (terr ?? {}) as { ciudades?: unknown }
     const crudas = Array.isArray(payload.ciudades)
@@ -172,6 +187,7 @@ export async function getTerritorio(anio: number): Promise<Result<Territorio>> {
             mes: Number(m.mes),
             hl: Number(m.hl ?? 0),
             bultos: Number(m.bultos ?? 0),
+            costo_distribucion: costoDistribucion(m),
             venta_neta: Number(m.venta_neta ?? 0),
             costo_total: Number(m.costo_total ?? 0),
             costo_x_hl: Number(m.costo_x_hl ?? 0),
@@ -368,6 +384,13 @@ export interface PlanTerritorial {
   linea_base_desde: string | null
   linea_base_hasta: string | null
   meta: number | null
+  /**
+   * Base CONGELADA de distribución (13/11/2026): $/HL de distribución de la
+   * ciudad y de la red en los meses de la línea base. Índice base = ciudad ÷
+   * red. null si no se congeló (se calcula en vivo).
+   */
+  base_dist_x_hl: number | null
+  base_red_dist_x_hl: number | null
   fecha_implementacion: string | null
   responsable_comercial_id: string | null
   responsable_comercial_nombre: string | null
@@ -494,6 +517,9 @@ export async function listarPlanesTerritoriales(): Promise<
           linea_base_desde: r.linea_base_desde ?? null,
           linea_base_hasta: r.linea_base_hasta ?? null,
           meta: r.meta != null ? Number(r.meta) : null,
+          base_dist_x_hl: r.base_dist_x_hl != null ? Number(r.base_dist_x_hl) : null,
+          base_red_dist_x_hl:
+            r.base_red_dist_x_hl != null ? Number(r.base_red_dist_x_hl) : null,
           fecha_implementacion: r.fecha_implementacion ?? null,
           responsable_comercial_id: r.responsable_comercial_id ?? null,
           responsable_comercial_nombre: r.comercial?.nombre ?? null,
