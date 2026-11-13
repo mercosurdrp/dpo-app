@@ -226,6 +226,8 @@ export function calcularAperturas(input: AperturasInput): AperturasResultado {
     const sinA = a.clave === SIN_CHOFER || a.clave === SIN_ZONA
     const sinB = b.clave === SIN_CHOFER || b.clave === SIN_ZONA
     if (sinA !== sinB) return sinA ? 1 : -1
+    // Base chica al final: su PPM se dispara con una sola rotura y no es comparable.
+    if (a.base_chica !== b.base_chica) return a.base_chica ? 1 : -1
     if (a.ppm == null && b.ppm == null) return b.hl_rotos - a.hl_rotos
     if (a.ppm == null) return 1
     if (b.ppm == null) return -1

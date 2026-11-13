@@ -101,7 +101,8 @@ export function DqiAperturasCard({
 
   const grafico = (filas: FilaApertura[], horizontal: boolean) => {
     const puntos = filas
-      .filter((f) => f.hl_movidos > 0)
+      // Las de base chica quedan sólo en la tabla: en el gráfico estiran la escala.
+      .filter((f) => f.hl_movidos > 0 && !f.base_chica)
       .map((f) => ({ nombre: titleCase(f.nombre), ppm: f.ppm ?? 0, base_chica: f.base_chica }))
     const alto = horizontal ? Math.max(160, puntos.length * 28) : 220
     return (
