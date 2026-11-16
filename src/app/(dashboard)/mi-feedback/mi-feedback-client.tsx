@@ -115,7 +115,7 @@ export function MiFeedbackClient({ feedback }: { feedback: FeedbackEmpleado[] })
                 {f.respuesta && (
                   <div className="rounded-md border-l-4 border-l-emerald-500 bg-emerald-50/60 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
-                      Respuesta
+                      Qué se hizo
                     </p>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
                       {f.respuesta}

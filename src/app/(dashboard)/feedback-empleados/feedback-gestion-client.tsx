@@ -40,6 +40,15 @@ const fmt = (iso: string) =>
     timeZone: "America/Argentina/Buenos_Aires",
   })
 
+const FILTROS: Record<string, string> = {
+  pendientes: "Pendientes (sin cerrar)",
+  todos: "Todos",
+  nuevo: "Sin tratar",
+  tratado: "Tratados",
+  con_accion: "Con acción",
+  cerrado: "Cerrados",
+}
+
 export function FeedbackGestionClient({
   feedback,
   resumen,
@@ -49,13 +58,18 @@ export function FeedbackGestionClient({
   resumen: Resumen
   currentRole: UserRole
 }) {
-  const [filtro, setFiltro] = useState<string>("todos")
+  const [filtro, setFiltro] = useState<string>("pendientes")
   const [abierto, setAbierto] = useState<string | null>(null)
   const [respuesta, setRespuesta] = useState("")
   const [pending, startTransition] = useTransition()
 
   const visibles = useMemo(
-    () => (filtro === "todos" ? feedback : feedback.filter((f) => f.estado === filtro)),
+    () =>
+      filtro === "todos"
+        ? feedback
+        : filtro === "pendientes"
+          ? feedback.filter((f) => f.estado !== "cerrado")
+          : feedback.filter((f) => f.estado === filtro),
     [feedback, filtro]
   )
 
@@ -132,11 +146,16 @@ export function FeedbackGestionClient({
       </Card>
 
       <div className="flex items-center gap-2">
-        <Select value={filtro} onValueChange={(v) => setFiltro(v ?? "todos")}>
+        <Select
+          value={filtro}
+          onValueChange={(v) => setFiltro(v ?? "pendientes")}
+          items={FILTROS}
+        >
           <SelectTrigger className="w-56">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="pendientes">Pendientes (sin cerrar)</SelectItem>
             <SelectItem value="todos">Todos</SelectItem>
             <SelectItem value="nuevo">Sin tratar</SelectItem>
             <SelectItem value="tratado">Tratados</SelectItem>
@@ -151,7 +170,9 @@ export function FeedbackGestionClient({
         {visibles.length === 0 && (
           <Card>
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No hay feedback con ese filtro.
+              {filtro === "pendientes"
+                ? "No hay feedback pendiente: todo está cerrado."
+                : "No hay feedback con ese filtro."}
             </CardContent>
           </Card>
         )}
@@ -194,7 +215,7 @@ export function FeedbackGestionClient({
 
               {f.respuesta && (
                 <p className="rounded bg-emerald-50/60 p-2 text-sm text-slate-700">
-                  <span className="font-semibold">Respuesta: </span>
+                  <span className="font-semibold">Qué se hizo: </span>
                   {f.respuesta}
                 </p>
               )}
@@ -210,7 +231,7 @@ export function FeedbackGestionClient({
                         setRespuesta(f.respuesta ?? "")
                       }}
                     >
-                      Responder / cerrar
+                      {f.respuesta ? "Editar respuesta / cerrar" : "Responder"}
                     </Button>
                   ) : (
                     <div className="space-y-2 rounded-md border p-3">
@@ -218,11 +239,15 @@ export function FeedbackGestionClient({
                         rows={2}
                         value={respuesta}
                         onChange={(e) => setRespuesta(e.target.value)}
-                        placeholder="Qué se le responde a la persona."
+                        placeholder="Qué se hizo. La persona lo ve en su app."
                       />
+                      <p className="text-xs text-muted-foreground">
+                        La persona ve esta respuesta en «Feedback» de su app. Al cerrarlo
+                        desaparece de los pendientes; ella lo sigue viendo con la respuesta.
+                      </p>
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" disabled={pending} onClick={() => cerrar(f, "cerrado")}>
-                          Cerrar
+                          Responder y cerrar
                         </Button>
                         <Button
                           size="sm"
@@ -230,7 +255,7 @@ export function FeedbackGestionClient({
                           disabled={pending}
                           onClick={() => cerrar(f, "tratado")}
                         >
-                          Guardar respuesta
+                          Responder sin cerrar
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setAbierto(null)}>
                           Cancelar
