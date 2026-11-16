@@ -758,13 +758,26 @@ async function fetchErroresCountDelSheet(
  * divide los errores de ese día por los bultos de otro. Mismo criterio que
  * `diaPickeoDeEntrega` en deposito-esteban (`src/lib/pickingPrecision.js`).
  */
-function diaPickeoDeEntrega(isoEntrega: string): string {
+function diaPickeoDeEntrega(
+  isoEntrega: string,
+  diasConEntrega?: Set<string>,
+): string {
+  const esLaborable = (d: string) =>
+    new Date(`${d}T00:00:00Z`).getUTCDay() !== 0 && !esFeriado(d)
   let d = diaAnterior(isoEntrega)
-  // Domingo: el 1° de enero de 1970 fue jueves; más simple, se pregunta al Date.
-  while (new Date(`${d}T00:00:00Z`).getUTCDay() === 0 || esFeriado(d)) {
-    d = diaAnterior(d)
+  while (!esLaborable(d)) d = diaAnterior(d)
+  const candidato = d
+  // 🚨 Un día laborable SIN entregas propias (lunes 16/11/26: no hubo despacho)
+  // no es el que pickeó la entrega siguiente: lo del martes 17 se pickeó el
+  // sábado 14, el último día con salida. Se retrocede hasta el último día
+  // laborable con entregas (tope 7 días; si no aparece, el hábil anterior).
+  if (diasConEntrega && diasConEntrega.size > 0) {
+    for (let i = 0; i < 7; i++) {
+      if (esLaborable(d) && diasConEntrega.has(d)) return d
+      d = diaAnterior(d)
+    }
   }
-  return d
+  return candidato
 }
 
 /**
@@ -802,7 +815,7 @@ function computePrecisionDelSheet(
   // Bultos del mes agrupados por DÍA DE PICKEO. Se recorre toda la planilla (no
   // sólo el mes) porque la entrega del 1° la pickeó el último día hábil del mes
   // anterior, y viceversa.
-  const bultosPorPickeo: Record<string, number> = {}
+  const filas: Array<{ entrega: string; bultos: number }> = []
   for (let i = 1; i < lines.length; i++) {
     const cells = parseCsvRow(lines[i])
     if (cells.length < 2) continue
@@ -810,7 +823,12 @@ function computePrecisionDelSheet(
     if (!entrega) continue
     const bultos = parseDecimalEs(cells[1] ?? "0")
     if (!(bultos > 0)) continue
-    const pickeo = diaPickeoDeEntrega(entrega)
+    filas.push({ entrega, bultos })
+  }
+  const diasConEntrega = new Set(filas.map((f) => f.entrega))
+  const bultosPorPickeo: Record<string, number> = {}
+  for (const { entrega, bultos } of filas) {
+    const pickeo = diaPickeoDeEntrega(entrega, diasConEntrega)
     if (!pickeo.startsWith(prefijo)) continue
     bultosPorPickeo[pickeo] = (bultosPorPickeo[pickeo] ?? 0) + bultos
   }

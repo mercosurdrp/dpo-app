@@ -208,8 +208,15 @@ export async function cargarSerieWnp(
     diasLaborales.push(f)
   }
 
-  const distribuidoPicking = imputarAlDiaDePicking(distribuido, diasLaborales)
-  const mostradorPicking = imputarAlDiaDePicking(mostradorPorFecha, diasLaborales)
+  // Días con despacho propio: un día laboral sin entregas (lunes 16/11/26) no
+  // pickeó la entrega siguiente, ver `imputarAlDiaDePicking`.
+  const diasConEntrega = new Set(
+    Object.entries(distribuido)
+      .filter(([, hl]) => hl > 0)
+      .map(([f]) => f),
+  )
+  const distribuidoPicking = imputarAlDiaDePicking(distribuido, diasLaborales, diasConEntrega)
+  const mostradorPicking = imputarAlDiaDePicking(mostradorPorFecha, diasLaborales, diasConEntrega)
   // Solo los días con venta reciben mostrador prorrateado (un día sin despacho
   // no es día operativo: no debe cargar volumen ajeno).
   const distribuidoOperativo: Record<string, number> = {}

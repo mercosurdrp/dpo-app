@@ -118,6 +118,7 @@ export function jornadaTeorica(fecha: string): number {
 export function imputarAlDiaDePicking(
   porFechaDeEntrega: Record<string, number>,
   diasLaborales: string[],
+  diasConEntrega?: Set<string>,
 ): Record<string, number> {
   const out: Record<string, number> = {}
   let i = 0
@@ -125,7 +126,17 @@ export function imputarAlDiaDePicking(
     while (i < diasLaborales.length && diasLaborales[i] < entrega) i++
     // `i` quedó en el primer día laboral >= entrega ⇒ el anterior es el que preparó.
     if (i === 0) continue
-    const picking = diasLaborales[i - 1]
+    let j = i - 1
+    // 🚨 Un día con horas pero SIN entregas propias (lunes 16/11/26: no hubo
+    // despacho) no pickeó la entrega siguiente: lo del martes 17 lo preparó el
+    // sábado 14. Se retrocede al último día laboral con entregas; si no hay
+    // ninguno en el rango, queda el día laboral anterior de siempre.
+    if (diasConEntrega && diasConEntrega.size > 0) {
+      let k = j
+      while (k >= 0 && !diasConEntrega.has(diasLaborales[k])) k--
+      if (k >= 0) j = k
+    }
+    const picking = diasLaborales[j]
     out[picking] = (out[picking] ?? 0) + porFechaDeEntrega[entrega]
   }
   return out
