@@ -825,7 +825,13 @@ function computePrecisionDelSheet(
     if (!(bultos > 0)) continue
     filas.push({ entrega, bultos })
   }
-  const diasConEntrega = new Set(filas.map((f) => f.entrega))
+  // Un día con errores de picking cargados SE PICKEÓ aunque no figure en la
+  // planilla de bultos (julio/26: salidas del lunes 6/7 tipeadas como domingo
+  // 5/7); sin esto se salteaba y perdía su precisión.
+  const diasConEntrega = new Set([
+    ...filas.map((f) => f.entrega),
+    ...Object.keys(erroresSheet.porDia),
+  ])
   const bultosPorPickeo: Record<string, number> = {}
   for (const { entrega, bultos } of filas) {
     const pickeo = diaPickeoDeEntrega(entrega, diasConEntrega)
