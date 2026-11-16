@@ -1349,6 +1349,7 @@ export function PreguntaGestionClient({
   mostrarVentanasHorarias = false,
   coberturaVh = null,
   coberturaVhError = null,
+  mostrarPospuestos = false,
 }: {
   pilar: Pilar
   pregunta: PreguntaGestionFull
@@ -1363,6 +1364,8 @@ export function PreguntaGestionClient({
   mostrarVentanasHorarias?: boolean
   coberturaVh?: CoberturaVh | null
   coberturaVhError?: string | null
+  /** Sólo el punto Entrega 4.2 muestra el tab de pedidos pospuestos. */
+  mostrarPospuestos?: boolean
 }) {
   const [guiaOpen, setGuiaOpen] = useState(false)
   const [verificarOpen, setVerificarOpen] = useState(false)
@@ -1674,6 +1677,13 @@ export function PreguntaGestionClient({
               </span>
             )}
           </TabsTrigger>
+          {mostrarPospuestos && (
+            <TabsTrigger value="pospuestos">
+              <ExternalLink className="mr-1 h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Pedidos pospuestos</span>
+              <span className="sm:hidden">Posp.</span>
+            </TabsTrigger>
+          )}
           {mostrarVentanasHorarias && (
             <TabsTrigger value="ventanas-horarias">
               <Clock className="mr-1 h-3.5 w-3.5" />
@@ -1801,6 +1811,25 @@ export function PreguntaGestionClient({
                     </Button>
                   </Link>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+
+        {mostrarPospuestos && (
+          <TabsContent value="pospuestos" className="mt-4">
+            <Card>
+              <CardContent className="space-y-3 pt-6">
+                <p className="text-sm text-muted-foreground">
+                  Cada día que un pedido no salió en la fecha pactada (logístico: corte del ruteo; comercial:
+                  retenido por crédito), con el motivo, quién lo registró y el PDF con el que Ventas avisa a esos
+                  clientes.
+                </p>
+                <Link href="/indicadores/comunicacion-cliente">
+                  <Button variant="outline">
+                    <ExternalLink className="mr-2 h-4 w-4" /> Ver pedidos pospuestos y avisos a Ventas
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           </TabsContent>

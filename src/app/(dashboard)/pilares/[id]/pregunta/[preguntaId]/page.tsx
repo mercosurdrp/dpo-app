@@ -1,3 +1,4 @@
+import { IS_MISIONES } from "@/lib/empresa"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { getPreguntaGestion } from "@/actions/gestion"
@@ -84,6 +85,11 @@ export default async function PreguntaPage({
   // dashboard Mercosur. Sólo se consulta en ese punto para no pagar la latencia
   // de la Railway en el resto de los puntos.
   const esPunto44 = preguntaId === PREGUNTA_44_ID
+  // Entrega 4.2 «Comunicación al cliente»: link a los pedidos pospuestos con su aviso a Ventas.
+  const esPunto42 =
+    !IS_MISIONES &&
+    result.data.numero === "4.2" &&
+    (pilar as Pilar).nombre.toLowerCase().includes("entrega")
   const vhRes = esPunto44 ? await getCoberturaVentanasHorarias() : null
   const coberturaVh = vhRes && "data" in vhRes ? vhRes.data : null
   const coberturaVhError = vhRes && "error" in vhRes ? vhRes.error : null
@@ -100,6 +106,7 @@ export default async function PreguntaPage({
       owdKpis={owdKpis}
       isAdmin={profile.role === "admin"}
       mostrarVentanasHorarias={esPunto44}
+      mostrarPospuestos={esPunto42}
       coberturaVh={coberturaVh}
       coberturaVhError={coberturaVhError}
     />

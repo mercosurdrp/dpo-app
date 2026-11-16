@@ -23,6 +23,7 @@ import {
   Route as RouteIcon,
   Store,
   LineChart as LineChartIcon,
+  Megaphone,
 } from "lucide-react"
 import type { PilarConIndicadoresCount } from "@/actions/indicadores"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -180,6 +181,23 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
+          {!IS_MISIONES && (
+            <Link href="/indicadores/comunicacion-cliente">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-amber-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-amber-100 text-amber-600 group-hover:bg-amber-200 transition-colors">
+                    <Megaphone className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">Pedidos pospuestos</p>
+                    <p className="text-sm text-muted-foreground">
+                      Días que no salió un pedido, motivo y aviso a Ventas — Pilar Entrega 4.2
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
           <Link href="/indicadores/puntualidad">
             <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-green-300">
               <CardContent className="flex items-center gap-4 pt-6">
