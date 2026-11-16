@@ -64,6 +64,8 @@ export interface ContextoPortal {
   puedeVehiculos: boolean
   /** El legajo vinculado es del sector Depósito (ranking 5S de ayudantes). */
   esDeposito: boolean
+  /** El legajo vinculado es del sector Distribución (3R de choferes y ayudantes). */
+  esDistribucion: boolean
 }
 
 export interface ModuloPortal {
@@ -175,7 +177,7 @@ export const MODULOS_PORTAL: ModuloPortal[] = [
     icon: Trophy,
     empresas: PAMPEANA,
     grupo: "trabajo",
-    visible: (ctx) => ctx.esDeposito,
+    visible: (ctx) => ctx.esDeposito || ctx.esDistribucion,
   },
   {
     id: "heladeras",

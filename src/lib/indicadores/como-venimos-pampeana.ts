@@ -199,6 +199,11 @@ function crearResolverNombre(
 export interface ComoVenimosPampeanaData {
   equipo: SeriesEquipoPampeana
   personas: Map<string, NumerosPersonaPampeana>
+  /**
+   * Camión-días ("fecha|PATENTE") de cada persona en [desdePersonas, hasta],
+   * para cruzar otras fuentes por camión-día (RMD, 5S del camión).
+   */
+  camionDias: Map<string, string[]>
 }
 
 /**
@@ -599,5 +604,14 @@ export async function buildComoVenimosPampeana(
     if (venta > 0) equipo.rechazo[fecha] = round2((100 * (hlRech.get(fecha) ?? 0)) / venta)
   }
 
-  return { equipo, personas }
+  const camionDias = new Map<string, string[]>()
+  for (const [id, cds] of camionDiasPorPersona) {
+    if (!personas.has(id)) continue
+    camionDias.set(
+      id,
+      cds.map((c) => c.clave).filter((clave) => clave.slice(0, 10) >= desdePersonas),
+    )
+  }
+
+  return { equipo, personas, camionDias }
 }

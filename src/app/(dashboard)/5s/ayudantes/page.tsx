@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react"
 import { getProfile } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getRankingDeposito } from "@/actions/s5-deposito"
+import { getRankingDistribucion } from "@/actions/tres-r-distribucion"
 import { getRankingMisiones } from "@/actions/s5-ayudantes-misiones"
 import { getEmpleadosActivos5S } from "@/actions/s5"
 import { DepositoClient } from "./deposito-client"
@@ -41,10 +42,14 @@ export default async function AyudantesPage({
   }
 
   const sp = await searchParams
-  const res = await getRankingDeposito(sp.periodo)
-  const empleadosRes = await getEmpleadosActivos5S()
+  const [res, empleadosRes, distribucion] = await Promise.all([
+    getRankingDeposito(sp.periodo),
+    getEmpleadosActivos5S(),
+    getRankingDistribucion(sp.periodo),
+  ])
   const empleados = "data" in empleadosRes ? empleadosRes.data : []
   const canEdit = profile?.role === "admin" || profile?.role === "auditor"
+  const canRaspones = canEdit || profile?.role === "supervisor"
 
   return (
     <div className="space-y-4">
@@ -62,7 +67,13 @@ export default async function AyudantesPage({
           <p className="text-red-500">{res.error}</p>
         </>
       ) : (
-        <DepositoClient data={res.data} empleados={empleados} canEdit={canEdit} />
+        <DepositoClient
+          data={res.data}
+          empleados={empleados}
+          canEdit={canEdit}
+          distribucion={distribucion}
+          canRaspones={canRaspones}
+        />
       )}
     </div>
   )

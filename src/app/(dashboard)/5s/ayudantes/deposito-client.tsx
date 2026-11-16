@@ -69,6 +69,8 @@ import type {
   S5RankingDepositoData,
   S5PremioArea,
 } from "@/types/database"
+import type { RankingDistribucionData } from "@/lib/tres-r/distribucion-types"
+import { DistribucionSection } from "./distribucion-section"
 
 const MESES = [
   "Ene", "Feb", "Mar", "Abr", "May", "Jun",
@@ -233,6 +235,10 @@ interface Props {
   data: S5RankingDepositoData
   empleados: { id: string; legajo: number; nombre: string; sector: string | null }[]
   canEdit: boolean
+  /** 3R de Distribución (calculado); null si no se pudo cargar. */
+  distribucion: { data: RankingDistribucionData } | { error: string }
+  /** Puede cargar raspones (admin, auditor, supervisor). */
+  canRaspones: boolean
 }
 
 interface EditState {
@@ -240,7 +246,7 @@ interface EditState {
   posicion: number
 }
 
-export function DepositoClient({ data, empleados, canEdit }: Props) {
+export function DepositoClient({ data, empleados, canEdit, distribucion, canRaspones }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
@@ -291,7 +297,12 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
 
   function abrirEdit(area: S5PremioArea, posicion: number) {
     const actual = premioDe(area, posicion)
-    const sug = area === "deposito" ? sugeridoDe(posicion) : undefined
+    const sug =
+      area === "deposito"
+        ? sugeridoDe(posicion)
+        : "data" in distribucion
+          ? distribucion.data.ranking.find((r) => r.posicion_sugerida === posicion)
+          : undefined
     setEmpSel(actual?.empleado_id ?? sug?.empleado_id ?? "")
     setFreeName(actual?.empleado_id ? "" : actual?.nombre ?? "")
     setScoreInput(
@@ -523,58 +534,11 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
         </CardContent>
       </Card>
 
-      {/* Distribución (manual) — debajo de depósito */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Truck className="size-4 text-emerald-600" /> Ganadores de distribución (manual)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 md:grid-cols-3">
-            {[1, 2, 3].map((pos) => {
-              const m = MEDAL[pos - 1]
-              const Icon = m.icon
-              const saved = premioDe("distribucion", pos)
-              return (
-                <div key={pos} className={`rounded-lg border p-4 ${m.bg}`}>
-                  <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-                    <Icon className={`size-4 ${m.color}`} /> {m.label}
-                  </span>
-                  <div className="mt-2 text-lg font-bold text-slate-900">
-                    {saved?.nombre ?? <span className="text-muted-foreground">—</span>}
-                  </div>
-                  {canEdit && (
-                    <div className="mt-3 flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => abrirEdit("distribucion", pos)} disabled={pending}>
-                        <Pencil className="mr-1 size-3.5" /> Editar
-                      </Button>
-                      {saved && (
-                        <Button size="sm" variant="ghost" className="text-red-600" onClick={() => quitarPremio("distribucion", pos)} disabled={pending}>
-                          Quitar
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-          <FotoGanadores
-            area="distribucion"
-            periodoDesde={data.periodo_desde}
-            url={data.fotos_ganadores?.distribucion ?? null}
-            canEdit={canEdit}
-            onChanged={refrescar}
-          />
-        </CardContent>
-      </Card>
-
       {/* Detalle del ranking (desplegable, cerrado por defecto) */}
       <Accordion>
         <AccordionItem value="detalle" className="rounded-lg border px-4">
           <AccordionTrigger className="text-base font-semibold">
-            Detalle del ranking
+            Detalle del ranking de depósito
           </AccordionTrigger>
           <AccordionContent>
           {data.ranking.length === 0 ? (
@@ -824,6 +788,37 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
             </AccordionContent>
           </AccordionItem>
         </Accordion>
+      )}
+
+      {/* 3R de Distribución: choferes y ayudantes */}
+      <div className="border-t pt-5">
+        <h2 className="flex items-center gap-2 text-xl font-bold tracking-tight text-slate-900">
+          <Truck className="size-5 text-emerald-600" /> 3R de distribución
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Choferes y ayudantes juntos · rechazo + RMD + reportes de seguridad + presentismo + 5S del camión + TML.
+          Un raspón con el camión deja fuera del premio.
+        </p>
+      </div>
+      {"data" in distribucion ? (
+        <DistribucionSection
+          data={distribucion.data}
+          canEdit={canEdit}
+          canRaspones={canRaspones}
+          onEditar={(pos) => abrirEdit("distribucion", pos)}
+          onQuitar={(pos) => quitarPremio("distribucion", pos)}
+          foto={
+            <FotoGanadores
+              area="distribucion"
+              periodoDesde={data.periodo_desde}
+              url={data.fotos_ganadores?.distribucion ?? null}
+              canEdit={canEdit}
+              onChanged={refrescar}
+            />
+          }
+        />
+      ) : (
+        <p className="text-sm text-red-500">{distribucion.error}</p>
       )}
 
       {/* Diálogo editar premio */}

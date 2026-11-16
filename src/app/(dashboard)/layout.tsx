@@ -24,8 +24,10 @@ export default async function DashboardLayout({
   // Empleados: mismo menú lateral que el resto (columna izquierda), con sus
   // ítems curados. Reemplaza la vieja nav superior de tabs.
   if (role === "empleado") {
-    const esDeposito = (await getMiEmpleado())?.sector === "Depósito"
-    const ctxPortal = { puedeRecepcion, puedeVehiculos, esDeposito }
+    const sector = (await getMiEmpleado())?.sector
+    const esDeposito = sector === "Depósito"
+    const esDistribucion = sector === "Distribución"
+    const ctxPortal = { puedeRecepcion, puedeVehiculos, esDeposito, esDistribucion }
     return (
       <EmpleadoGuard ctx={ctxPortal}>
         <div className="flex min-h-screen">
