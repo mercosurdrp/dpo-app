@@ -1,10 +1,11 @@
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { getDesvioPlanKpis } from "@/actions/desvio-plan"
+import { getSeguimientoDesvioPlan } from "@/actions/desvio-plan-seguimiento"
 import { DesvioPlanClient } from "./desvio-plan-client"
 
 export default async function DesvioPlanPage() {
-  const res = await getDesvioPlanKpis()
+  const [res, seg] = await Promise.all([getDesvioPlanKpis(), getSeguimientoDesvioPlan()])
 
   if ("error" in res) {
     return (
@@ -25,7 +26,11 @@ export default async function DesvioPlanPage() {
       >
         <ArrowLeft className="h-4 w-4" /> Volver a Indicadores
       </Link>
-      <DesvioPlanClient kpis={res.data} />
+      <DesvioPlanClient
+        kpis={res.data}
+        seguimiento={"error" in seg ? null : seg.data}
+        seguimientoError={"error" in seg ? seg.error : null}
+      />
     </div>
   )
 }

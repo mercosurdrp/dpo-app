@@ -30,11 +30,17 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  MessageSquarePlus,
 } from "lucide-react"
-import type { DesvioPlanKpis } from "@/lib/foxtrot/desvio-plan-types"
+import type { DesvioPlanKpis, DesvioPlanRuta } from "@/lib/foxtrot/desvio-plan-types"
+import type { SeguimientoDesvioPlan } from "@/actions/desvio-plan-seguimiento"
+import { Button } from "@/components/ui/button"
+import { SeguimientoDesvioPlanCard, type PrecargaSeguimiento } from "./seguimiento-desvio-plan"
 
 interface Props {
   kpis: DesvioPlanKpis
+  seguimiento: SeguimientoDesvioPlan | null
+  seguimientoError: string | null
 }
 
 const fmtPct = (v: number) => `${v > 0 ? "+" : ""}${v}%`
@@ -64,8 +70,16 @@ function DesvioBadge({ v, meta, gatillo }: { v: number; meta: number; gatillo: n
   return <Badge className={cls}>{fmtPct(v)}</Badge>
 }
 
-export function DesvioPlanClient({ kpis }: Props) {
+export function DesvioPlanClient({ kpis, seguimiento, seguimientoError }: Props) {
   const [tab, setTab] = useState("diario")
+  const [precarga, setPrecarga] = useState<PrecargaSeguimiento | null>(null)
+  const puedeCargar = !!seguimiento?.puedeEditar
+  const observarRuta = (r: DesvioPlanRuta) =>
+    setPrecarga({
+      tipo: "observacion",
+      fecha: r.fecha,
+      texto: `${r.nombre_ruta} · ${r.chofer}${r.patente ? ` (${r.patente})` : ""}: ${r.real_min} min contra ${r.plan_min} planificados (${fmtPct(r.desvio_pct)}). `,
+    })
   const { meta_pct: meta, gatillo_pct: gatillo } = kpis
 
   const diariaData = kpis.serie_diaria.slice(-45).map((d) => ({
@@ -434,12 +448,13 @@ export function DesvioPlanClient({ kpis }: Props) {
                   <TableHead className="text-right">Plan</TableHead>
                   <TableHead className="text-right">Real</TableHead>
                   <TableHead className="text-right">Desvío</TableHead>
+                  {puedeCargar && <TableHead className="w-10" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {kpis.peores_rutas.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                       Sin rutas medidas en los últimos 30 días
                     </TableCell>
                   </TableRow>
@@ -461,6 +476,19 @@ export function DesvioPlanClient({ kpis }: Props) {
                     <TableCell className="text-right">
                       <DesvioBadge v={r.desvio_pct} meta={meta} gatillo={gatillo} />
                     </TableCell>
+                    {puedeCargar && (
+                      <TableCell className="text-right">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          title="Cargar observación de esta ruta"
+                          onClick={() => observarRuta(r)}
+                        >
+                          <MessageSquarePlus className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -474,6 +502,19 @@ export function DesvioPlanClient({ kpis }: Props) {
           </p>
         </CardContent>
       </Card>
+
+      {/* Observaciones y planes de acción */}
+      {seguimiento ? (
+        <SeguimientoDesvioPlanCard
+          seguimiento={seguimiento}
+          precarga={precarga}
+          onPrecargaUsada={() => setPrecarga(null)}
+        />
+      ) : (
+        <p className="text-sm text-red-500">
+          No se pudieron cargar las observaciones y planes: {seguimientoError}
+        </p>
+      )}
     </div>
   )
 }
