@@ -546,6 +546,26 @@ export function OwdAnalisisClient({
   )
 }
 
+// "2026-07-15" → "15/07/2026".
+function fmtFechaOwd(iso: string | null | undefined): string {
+  const m = String(iso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso ?? "")
+}
+
+// Fecha de resolución = la del último avance que dejó el plan en "completado"
+// (el avance lleva la fecha real elegida al cargarlo, aunque se cargue tarde).
+// Si se completó sin avance, no hay fecha que mostrar.
+function fechaResuelto(plan: OwdPlanConDetalle): string | null {
+  const cierres = plan.avances
+    .filter((a) => a.estado_resultante === "completado")
+    .map((a) => a.created_at)
+    .sort()
+  if (!cierres.length) return null
+  return new Date(cierres[cierres.length - 1]).toLocaleDateString("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  })
+}
+
 // =============================================
 // Tarjeta de un plan con avances
 // =============================================
@@ -624,16 +644,16 @@ function PlanCard({
             </Badge>
           </div>
           <p className="mt-1 text-sm font-semibold text-slate-900">{plan.titulo}</p>
+          {/* Sin la fecha de carga a propósito (pedido 16-11-2026): varios planes
+              se cargaron tarde y esa fecha no dice nada. Van la fecha de la OWD
+              que lo dispara y la de resolución (avance que lo pasó a completado). */}
           <p className="text-xs text-muted-foreground">
-            {new Date(plan.created_at).toLocaleDateString("es-AR", {
-              timeZone: "America/Argentina/Buenos_Aires",
-            })}
-            {" · "}
             {plan.origen === "operario"
               ? `Operario: ${plan.operario || "—"}`
               : obs
-              ? `Observación: ${obs.fecha} · ${obs.empleado_observado}`
+              ? `OWD: ${fmtFechaOwd(obs.fecha)} · ${obs.empleado_observado}`
               : "Observación vinculada"}
+            {plan.estado === "completado" && fechaResuelto(plan) && ` · Resuelto: ${fechaResuelto(plan)}`}
             {plan.responsable_nombre && ` · Resp: ${plan.responsable_nombre}`}
             {plan.fecha_objetivo && ` · Objetivo: ${plan.fecha_objetivo}`}
             {plan.baseline_pct != null && ` · Baseline: ${Number(plan.baseline_pct).toFixed(0)}%`}
