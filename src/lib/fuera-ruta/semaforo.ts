@@ -28,5 +28,11 @@ export function motivoLabel(id: string): string {
  */
 export type EstadoDiaFueraRuta = "verde" | "rojo" | "justificado" | "pendiente" | "sin_reparto"
 
+/**
+ * Hasta esta cantidad de pedidos fuera de ruta en un día, Logística lo da por
+ * justificado y aceptado sin observación (Sebastián, 17/11/2026).
+ */
+export const TOLERANCIA_FUERA_RUTA = 3
+
 /** Marca que ata un plan de planes_accion a un día de fuera de ruta. */
 export const NOTA_FECHA_PREFIJO = "fuera_ruta_fecha="

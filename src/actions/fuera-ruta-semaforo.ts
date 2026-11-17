@@ -11,6 +11,7 @@ import { esFeriado, esPosteriorAFeriado } from "@/lib/feriados-ar"
 import {
   MOTIVOS_FUERA_RUTA,
   NOTA_FECHA_PREFIJO,
+  TOLERANCIA_FUERA_RUTA,
   type EstadoDiaFueraRuta,
 } from "@/lib/fuera-ruta/semaforo"
 import type { PrioridadPlan, EstadoPlan } from "@/types/database"
@@ -49,6 +50,8 @@ export interface FueraRutaDiaSemaforo {
   /** Entregados fuera de ruta (o, si es hoy/futuro, los que están en el ruteo). */
   pedidos: number
   bultos: number
+  /** Justificado sólo por la tolerancia de Logística (1 a 3 pedidos), sin observación. */
+  tolerancia: boolean
   posterior_feriado: boolean
   observaciones: number
   acciones_abiertas: number
@@ -160,9 +163,11 @@ export async function getFueraRutaSemaforoMes(anioMes: string): Promise<Result<F
     else if (pendiente) estado = "pendiente"
     else if (pedidos === 0) estado = "verde"
     else if (obsDia.some((o) => o.justifica)) estado = "justificado"
+    else if (pedidos <= TOLERANCIA_FUERA_RUTA) estado = "justificado"
     else estado = "rojo"
     return {
       fecha, estado, pedidos, bultos,
+      tolerancia: estado === "justificado" && !obsDia.some((o) => o.justifica),
       posterior_feriado: esPosteriorAFeriado(fecha),
       observaciones: obsDia.length,
       acciones_abiertas: acciones.filter((a) => a.fecha === fecha && a.estado !== "completado").length,

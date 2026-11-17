@@ -18,7 +18,7 @@ import {
   crearAccionFueraRuta,
   type FueraRutaSemaforoMes,
 } from "@/actions/fuera-ruta-semaforo"
-import { MOTIVOS_FUERA_RUTA, motivoLabel, type EstadoDiaFueraRuta } from "@/lib/fuera-ruta/semaforo"
+import { MOTIVOS_FUERA_RUTA, TOLERANCIA_FUERA_RUTA, motivoLabel, type EstadoDiaFueraRuta } from "@/lib/fuera-ruta/semaforo"
 
 const INICIAL_DOW = ["D", "L", "M", "X", "J", "V", "S"]
 const DIA_LARGO = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
@@ -122,7 +122,7 @@ export function SemaforoFueraRuta({ data, fecha }: { data: FueraRutaSemaforoMes;
                     <button
                       type="button"
                       onClick={() => ir(d.fecha)}
-                      title={`${fechaLabel(d.fecha)} · ${ESTILO[d.estado].texto}${d.pedidos ? ` · ${d.pedidos} pedidos, ${d.bultos} bultos` : ""}${d.posterior_feriado ? " · día posterior a feriado" : ""}`}
+                      title={`${fechaLabel(d.fecha)} · ${ESTILO[d.estado].texto}${d.pedidos ? ` · ${d.pedidos} pedidos, ${d.bultos} bultos` : ""}${d.tolerancia ? ` · aceptado por Logística (≤ ${TOLERANCIA_FUERA_RUTA} pedidos)` : ""}${d.posterior_feriado ? " · día posterior a feriado" : ""}`}
                       className={`relative mx-auto flex h-8 w-8 items-center justify-center rounded text-[11px] font-semibold tabular-nums transition ${ESTILO[d.estado].celda} ${sel ? "ring-2 ring-slate-900 ring-offset-1" : "hover:opacity-80"}`}
                     >
                       {d.estado === "verde" ? "✓" : d.pedidos > 0 ? d.pedidos : ""}
@@ -139,7 +139,8 @@ export function SemaforoFueraRuta({ data, fecha }: { data: FueraRutaSemaforoMes;
       </div>
       {data.aviso && <p className="text-xs text-amber-700">{data.aviso}</p>}
       <p className="text-xs text-slate-500">
-        El número es la cantidad de pedidos entregados fuera de ruta. Punto oscuro = tiene observación; azul = acción abierta.
+        El número es la cantidad de pedidos entregados fuera de ruta. Hasta {TOLERANCIA_FUERA_RUTA} pedidos
+        en el día, Logística lo acepta: queda justificado sin observación. Punto oscuro = tiene observación; azul = acción abierta.
       </p>
     </div>
   )
@@ -184,6 +185,11 @@ export function DiaFueraRuta({ data, fecha }: { data: FueraRutaSemaforoMes; fech
         <h2 className="text-base font-semibold text-slate-800">{fechaLabel(fecha)}</h2>
         {dia && (
           <Badge className={`border-0 ${ESTILO[dia.estado].celda}`}>{ESTILO[dia.estado].texto}</Badge>
+        )}
+        {dia?.tolerancia && (
+          <Badge variant="outline" className="border-amber-300 text-amber-800">
+            Aceptado por Logística (hasta {TOLERANCIA_FUERA_RUTA} pedidos)
+          </Badge>
         )}
         {dia?.posterior_feriado && (
           <Badge variant="outline" className="border-amber-300 text-amber-800">Día posterior a feriado</Badge>
