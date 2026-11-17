@@ -4,6 +4,7 @@ import { Fragment, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle2, AlertTriangle, Info, Recycle } from "lucide-react"
+import { DsEnvasesSeguimiento } from "./ds-envases-seguimiento"
 import {
   Bar,
   CartesianGrid,
@@ -20,8 +21,6 @@ import {
   DS_ENVASES_CALIBRES,
   DS_ENVASES_CENTROS,
   DS_ENVASES_CORTE,
-  DS_ENVASES_DESDE,
-  DS_ENVASES_EXPORT,
   DS_ENVASES_MESES,
 } from "@/lib/ds-envases-data"
 
@@ -79,7 +78,6 @@ export function DsEnvasesClient() {
   const estado = desvio <= TOL_VERDE ? "verde" : desvio <= TOL_AMARILLO ? "amarillo" : "rojo"
   const mesesEquilibrados = filas.filter((f) => f.neto === 0).length
   const ultimo = filas[filas.length - 1]
-  const mayorDesvio = [...filas].sort((a, b) => Math.abs(b.neto) - Math.abs(a.neto))[0]
 
   const porAnio = useMemo(() => {
     const m = new Map<string, { ingreso: number; retiro: number; movimientos: number }>()
@@ -106,11 +104,11 @@ export function DsEnvasesClient() {
           </h1>
           <p className="text-sm text-muted-foreground">
             Vacíos de vidrio retornable (RGB) devueltos y retirados en Quilmes por Mercosur Región
-            Pampeana SRL · del {fecha(DS_ENVASES_DESDE)} al {fecha(DS_ENVASES_CORTE)}
+            Pampeana SRL
           </p>
         </div>
         <Badge variant="secondary" className="text-xs">
-          Fuente: DS de vacíos (Power BI Quilmes) · export {fecha(DS_ENVASES_EXPORT)}
+          Actualizado al {fecha(DS_ENVASES_CORTE)}
         </Badge>
       </div>
 
@@ -150,6 +148,9 @@ export function DsEnvasesClient() {
         </CardContent>
       </Card>
 
+      {/* Observación y plan de acción */}
+      <DsEnvasesSeguimiento />
+
       {/* KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi titulo="Devuelto (Ingreso)" valor={nf.format(tot.ingreso)} nota={`bultos · ${nf.format(tot.hlIn)} HL`} color={COLOR_IN} />
@@ -158,7 +159,7 @@ export function DsEnvasesClient() {
         <Kpi
           titulo={`Último mes · ${mesLargo(ultimo.mes)}`}
           valor={signo(ultimo.neto)}
-          nota={`${nf.format(ultimo.ingreso)} devueltos · ${nf.format(ultimo.retiro)} retirados (al ${fecha(DS_ENVASES_CORTE)})`}
+          nota={`${nf.format(ultimo.ingreso)} devueltos · ${nf.format(ultimo.retiro)} retirados`}
           color={COLOR_SALDO}
         />
       </div>
@@ -168,8 +169,7 @@ export function DsEnvasesClient() {
         <CardHeader>
           <CardTitle className="text-base">Mes a mes</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Bultos devueltos y retirados por mes; la línea es el saldo acumulado (eje derecho). El mes de mayor
-            diferencia fue {mesLargo(mayorDesvio.mes).toLowerCase()} ({signo(mayorDesvio.neto)} bultos).
+            Bultos devueltos y retirados por mes; la línea es el saldo acumulado (eje derecho).
           </p>
         </CardHeader>
         <CardContent>
@@ -350,12 +350,12 @@ export function DsEnvasesClient() {
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <ul className="list-disc space-y-1 pl-4">
             <li>
-              Fuente: DS de vacíos de Quilmes (Power BI), exportado el {fecha(DS_ENVASES_EXPORT)}. En el DS, Ingreso
-              son los vacíos que devolvemos a Quilmes y Retiro los que retiramos.
+              Fuente: DS de vacíos de Quilmes (Power BI). En el DS, Ingreso son los vacíos que devolvemos a Quilmes
+              y Retiro los que retiramos.
             </li>
             <li>
               Filtros del reporte: categoría RGB, grupo comercial Mercosur Región Pampeana SRL, canal Distribuidores,
-              status Activo. Quedan afuera julio a septiembre de 2023 y el centro SDMC.
+              status Activo.
             </li>
             <li>Un bulto equivale a 12 L (1.200 bultos = 144 HL). Cajones, barriles y paletas no están en este reporte.</li>
             <li>
