@@ -2,7 +2,7 @@ import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { redirect } from "next/navigation"
 import { getPriorizacionEntrega, getVrlMensual } from "@/actions/priorizacion-entrega"
-import { getFueraRuta, getFueraRutaMensual } from "@/actions/fuera-ruta"
+import { getFueraRuta } from "@/actions/fuera-ruta"
 import { IS_MISIONES } from "@/lib/empresa"
 import { FUERA_RUTA_CHESS_DESDE } from "@/lib/fuera-ruta/chess"
 import { PriorizacionClient, FueraRutaSolo } from "./priorizacion-client"
@@ -33,12 +33,12 @@ export default async function PriorizacionEntregaPage({
   const { fecha } = await searchParams
   const fechaEntrega = /^\d{4}-\d{2}-\d{2}$/.test(fecha ?? "") ? fecha! : proximaFechaEntrega()
 
-  const [res, vrl, fueraRutaRes, frMensualRes] = await Promise.all([
+  // El acumulado mensual y el detalle completo del fuera de ruta viven en
+  // ./fuera-de-ruta; acá el fuera de ruta del día sólo marca filas y el botón.
+  const [res, vrl, fueraRutaRes] = await Promise.all([
     getPriorizacionEntrega(fechaEntrega),
-    // 13 meses: la pestaña Acumulado muestra el año completo hacia atrás.
     getVrlMensual(13),
     getFueraRuta(fechaEntrega),
-    getFueraRutaMensual(13),
   ])
   const vrlMeses = "error" in vrl ? [] : vrl.data
   const fueraRuta =
@@ -49,7 +49,6 @@ export default async function PriorizacionEntregaPage({
           fuente_ok: false, dias_pactados_en: null, foto: null, no_salieron: 0,
         }
       : fueraRutaRes.data
-  const fueraRutaMensual = "error" in frMensualRes ? [] : frMensualRes.data
 
   return (
     <div className="space-y-4">
@@ -61,20 +60,18 @@ export default async function PriorizacionEntregaPage({
       </Link>
 
       {"error" in res ? (
-        // Sin pedidos pendientes (p. ej. una fecha pasada): el registro de fuera
-        // de ruta se muestra igual, que para eso es un registro con historia.
+        // Sin pedidos pendientes (p. ej. una fecha pasada): quedan los cortes y
+        // el botón al registro de fuera de ruta, que tiene historia.
         <FueraRutaSolo
           error={res.error}
-          fueraRuta={fueraRuta}
-          vrl={vrlMeses}
-          fueraRutaMensual={fueraRutaMensual}
+          fecha={fechaEntrega}
+          nFueraRuta={fueraRuta.filas.length}
         />
       ) : (
         <PriorizacionClient
           data={res.data}
           vrl={vrlMeses}
           fueraRuta={fueraRuta}
-          fueraRutaMensual={fueraRutaMensual}
         />
       )}
     </div>
