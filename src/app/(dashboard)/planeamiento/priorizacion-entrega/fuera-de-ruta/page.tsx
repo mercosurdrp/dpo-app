@@ -8,6 +8,8 @@ import { IS_MISIONES } from "@/lib/empresa"
 import { FUERA_RUTA_CHESS_DESDE } from "@/lib/fuera-ruta/chess"
 import { FueraRutaPanel, AcumuladoMensualPanel } from "../fuera-ruta-panels"
 import { FechaFueraRuta } from "./fecha-fuera-ruta"
+import { SemaforoFueraRuta, DiaFueraRuta } from "./semaforo-fuera-ruta"
+import { getFueraRutaSemaforoMes } from "@/actions/fuera-ruta-semaforo"
 
 export const dynamic = "force-dynamic"
 
@@ -31,10 +33,11 @@ export default async function FueraDeRutaPage({
   const { fecha: f } = await searchParams
   const fecha = /^\d{4}-\d{2}-\d{2}$/.test(f ?? "") ? f! : hoyArg()
 
-  const [fueraRutaRes, frMensualRes, vrl] = await Promise.all([
+  const [fueraRutaRes, frMensualRes, vrl, semaforoRes] = await Promise.all([
     getFueraRuta(fecha),
     getFueraRutaMensual(13),
     getVrlMensual(13),
+    getFueraRutaSemaforoMes(fecha.slice(0, 7)),
   ])
   const fueraRuta =
     "error" in fueraRutaRes
@@ -68,8 +71,19 @@ export default async function FueraDeRutaPage({
         <FechaFueraRuta fecha={fecha} />
       </div>
 
+      {"error" in semaforoRes ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{semaforoRes.error}</div>
+      ) : (
+        <Card>
+          <CardContent className="pt-4">
+            <SemaforoFueraRuta data={semaforoRes.data} fecha={fecha} />
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
-        <CardContent className="pt-4">
+        <CardContent className="space-y-4 pt-4">
+          {!("error" in semaforoRes) && <DiaFueraRuta data={semaforoRes.data} fecha={fecha} />}
           <FueraRutaPanel fueraRuta={fueraRuta} />
         </CardContent>
       </Card>
