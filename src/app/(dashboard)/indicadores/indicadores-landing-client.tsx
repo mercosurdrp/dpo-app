@@ -24,6 +24,7 @@ import {
   Store,
   LineChart as LineChartIcon,
   Megaphone,
+  Recycle,
 } from "lucide-react"
 import type { PilarConIndicadoresCount } from "@/actions/indicadores"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -547,6 +548,23 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                   </p>
                   <p className="text-sm text-muted-foreground">
                     Día a día, qué producto quedó sin stock — Pilar Almacén
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/indicadores/ds-envases">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-emerald-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-emerald-100 text-emerald-700 group-hover:bg-emerald-200 transition-colors">
+                  <Recycle className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    DS de Envases · Quilmes
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Vacíos devueltos y retirados, mes a mes y saldo — Pilar Almacén
                   </p>
                 </div>
               </CardContent>
