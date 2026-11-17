@@ -194,11 +194,8 @@ export interface DqiSkuFila {
   tipo: TipoSku
   /** HL rotos en distribución (detalle por SKU del tablero). */
   hl_ruta: number
-  /** HL que entraron a reempaque. */
-  hl_reempaque: number
   hl_total: number
   unidades_ruta: number
-  bultos_reempaque: number
   ppm: number | null
   /** Patentes donde se registró la rotura en ruta. */
   patentes: string[]
@@ -210,7 +207,6 @@ export interface DqiGrupoCalibre {
   calibre: string
   calibre_cc: number | null
   hl_ruta: number
-  hl_reempaque: number
   hl_total: number
   ppm: number | null
   skus: DqiSkuFila[]
@@ -219,10 +215,9 @@ export interface DqiGrupoCalibre {
 export interface DqiGrupoEnvase {
   envase: EnvaseSku
   hl_ruta: number
-  hl_reempaque: number
   hl_total: number
   ppm: number | null
-  /** % del DQI corregido del mes que explica este envase. */
+  /** % del DQI del mes que explica este envase. */
   pct_dqi: number | null
   calibres: DqiGrupoCalibre[]
 }
@@ -236,14 +231,13 @@ export interface DqiTipoSkuData {
   /**
    * Roturas en ruta que el DQI oficial cuenta (`dqi_detalle.hl_mes`) pero que
    * el tablero no publica desglosadas por SKU. Se muestran aparte para que la
-   * suma cierre con el DQI corregido, sin inventar a qué SKU pertenecen.
+   * suma cierre con el DQI oficial, sin inventar a qué SKU pertenecen.
    */
   sin_detalle: { hl: number; ppm: number | null }
   total: {
     hl_ruta: number
-    hl_reempaque: number
-    hl_total: number
-    /** DQI corregido (ruta oficial + reempaque) en PPM. */
+      hl_total: number
+    /** DQI del mes (roturas en ruta, oficial del tablero) en PPM. */
     ppm: number | null
   }
 }

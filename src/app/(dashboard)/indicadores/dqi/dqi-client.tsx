@@ -192,7 +192,7 @@ export function DqiClient({ initial, initialYear, initialMonth, puedeEditar }: P
           <div>
             <h1 className="text-2xl font-bold text-slate-900">DQI · Calidad de entrega</h1>
             <p className="text-sm text-muted-foreground">
-              (Roturas en ruta + reempaque) ÷ HL entregados · Pilar Entrega DPO 1.4
+              HL rotos en ruta (rotura + reempacado) ÷ HL entregados · Pilar Entrega DPO 1.4
             </p>
           </div>
         </div>
@@ -233,35 +233,17 @@ export function DqiClient({ initial, initialYear, initialMonth, puedeEditar }: P
       )}
 
       {/* Métricas del mes */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="border-emerald-200 bg-emerald-50/40">
           <CardContent className="pt-6">
             <p className="text-[11px] uppercase tracking-wide text-emerald-700">
-              DQI corregido · {MESES_FULL[month - 1]}
-            </p>
-            <p className="text-3xl font-bold text-slate-900">
-              {fmtPPM(data.correccion?.ppm_corregido)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {data.correccion
-                ? `= roturas ${fmtPPM(dqi.mes)} + reempaque ${fmtPPM(data.correccion.reempaque_ppm)}`
-                : "el tablero no publicó el reempaque del mes"}
-            </p>
-            <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-600">
-              Medición H2 · incluye reempaque
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">
-              Solo roturas · {MESES_FULL[month - 1]}
+              DQI · {MESES_FULL[month - 1]}
             </p>
             <p className={`text-3xl font-bold ${target != null && dqi.mes != null && dqi.mes > target ? "text-red-600" : "text-emerald-700"}`}>
               {fmtPPM(dqi.mes)}
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              Medición anterior · meta: {target != null ? fmtPPM(target) : "sin definir"}
+              Meta: {target != null ? fmtPPM(target) : "sin definir"}
             </p>
             {vsLy != null && (
               <p className={`mt-0.5 inline-flex items-center gap-0.5 text-xs font-medium ${vsLy < 0 ? "text-emerald-600" : "text-red-500"}`}>
@@ -275,21 +257,15 @@ export function DqiClient({ initial, initialYear, initialMonth, puedeEditar }: P
           <CardContent className="pt-6">
             <p className="text-[11px] uppercase tracking-wide text-slate-400">Acumulado {year}</p>
             <p className="text-3xl font-bold text-slate-800">{fmtPPM(dqi.anual_acum)}</p>
-            <p className="mt-1 text-xs text-slate-400">Solo roturas · LY: {fmtPPM(dqi.ly_anual)}</p>
+            <p className="mt-1 text-xs text-slate-400">LY: {fmtPPM(dqi.ly_anual)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">HL afectados en el mes</p>
-            <p className="text-3xl font-bold text-slate-800">
-              {data.correccion
-                ? fmtHL(det.hl_mes + data.correccion.reempaque_hl)
-                : fmtHL(det.hl_mes)}
-            </p>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">HL rotos en ruta</p>
+            <p className="text-3xl font-bold text-slate-800">{fmtHL(det.hl_mes)}</p>
             <p className="mt-1 text-xs text-slate-400">
-              {data.correccion
-                ? `rotos ${fmtHL(det.hl_mes)} + reempaque ${fmtHL(data.correccion.reempaque_hl)}`
-                : `${fmtPesos(det.valor_mes)} en el mes`}
+              rotura + reempacado · {fmtPesos(det.valor_mes)} en el mes
             </p>
           </CardContent>
         </Card>

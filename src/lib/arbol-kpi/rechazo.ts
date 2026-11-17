@@ -151,7 +151,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     mejorSi: "menor",
     metaDefault: null,
     fuente:
-      "Delivery Quality Index corregido: roturas en ruta + reempaque sobre el volumen entregado (auditoría H2, punto 1.4).",
+      "Delivery Quality Index: HL rotos en ruta (rotura + volumen reempacado) sobre el volumen entregado, tal cual lo publica el tablero de pérdidas (punto 1.4).",
     href: "/indicadores/dqi",
   },
   {
@@ -171,7 +171,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
   // ── Actividad · DQI abierto por envase (auditoría 1.4: qué se rompe) ────
   // Mismo cálculo y fuente que la sección «¿Qué se rompe?» de /indicadores/dqi
   // (getDqiPorTipoSku): la suma de estos nodos + las roturas sin detalle por
-  // SKU da el DQI corregido del mes. Envase leído de la descripción de Chess.
+  // SKU da el DQI del mes. Envase leído de la descripción de Chess.
   {
     key: "dqi_vidrio_retornable",
     label: "DQI · Vidrio retornable",
@@ -181,7 +181,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     mejorSi: "menor",
     metaDefault: null,
     fuente:
-      "Roturas en ruta + reempaque de botellas de vidrio retornable (RET): 1 L, 975 cc, 340 cc, sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
+      "Roturas en ruta de botellas de vidrio retornable (RET): 1 L, 975 cc, 340 cc, sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
     href: "/indicadores/dqi",
   },
   {
@@ -193,7 +193,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     mejorSi: "menor",
     metaDefault: null,
     fuente:
-      "Roturas en ruta + reempaque de vidrio descartable (OW): 330, 710, 730 cc, sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
+      "Roturas en ruta de vidrio descartable (OW): 330, 710, 730 cc, sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
     href: "/indicadores/dqi",
   },
   {
@@ -205,7 +205,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     mejorSi: "menor",
     metaDefault: null,
     fuente:
-      "Roturas en ruta + reempaque de PET reutilizable (RECO): 2 L, 1,25 L, sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
+      "Roturas en ruta de PET reutilizable (RECO): 2 L, 1,25 L, sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
     href: "/indicadores/dqi",
   },
   {
@@ -217,7 +217,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     mejorSi: "menor",
     metaDefault: null,
     fuente:
-      "Roturas en ruta + reempaque de PET descartable: 500 cc a 3 L, sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
+      "Roturas en ruta de PET descartable: 500 cc a 3 L, sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
     href: "/indicadores/dqi",
   },
   {
@@ -229,7 +229,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     mejorSi: "menor",
     metaDefault: null,
     fuente:
-      "Roturas en ruta + reempaque de latas (CAN/LAT): 250 a 710 cc, sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
+      "Roturas en ruta de latas (CAN/LAT): 250 a 710 cc, sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
     href: "/indicadores/dqi",
   },
   {
@@ -241,7 +241,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     mejorSi: "menor",
     metaDefault: null,
     fuente:
-      "Roturas en ruta + reempaque de bidones de agua (PET de 5 L o más), sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
+      "Roturas en ruta de bidones de agua (PET de 5 L o más), sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
     href: "/indicadores/dqi",
   },
   {
@@ -253,7 +253,7 @@ export const ARBOL_RECHAZO: NodoArbolKpi[] = [
     mejorSi: "menor",
     metaDefault: null,
     fuente:
-      "Roturas en ruta + reempaque de artículos sin envase de bebida reconocible (almacén/marketplace, material POP), sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
+      "Roturas en ruta de artículos sin envase de bebida reconocible (almacén/marketplace, material POP), sobre los HL entregados del mes (mismo denominador que el DQI). Fuente: detalle diario por SKU del tablero de pérdidas.",
     href: "/indicadores/dqi",
   },
 

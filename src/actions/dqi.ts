@@ -77,28 +77,11 @@ export interface DqiPlan {
   month: number | null
 }
 
-/**
- * Corrección auditoría DPO H2 (punto 1.4): el DQI debe incluir el volumen que
- * entra a REEMPAQUE — un producto que vuelve de ruta con el packaging roto es
- * una falla de calidad de entrega aunque se recupere y vuelva al stock. La
- * medición anterior (solo merma de ruta) subestimaba ~25× el indicador.
- */
-export interface DqiCorreccion {
-  /** HL que entraron a reempaque en el mes (serie diaria del tablero). */
-  reempaque_hl: number
-  /** Aporte del reempaque en PPM sobre los HL entregados del mes. */
-  reempaque_ppm: number | null
-  /** DQI corregido: (HL rotos en ruta + HL a reempaque) ÷ HL entregados × 1M. */
-  ppm_corregido: number | null
-}
-
 export interface DqiData {
   year: number
   month: number
   dqi: DqiCard
   detalle: DqiDetalle
-  /** null si la serie diaria del tablero no respondió. */
-  correccion: DqiCorreccion | null
   /** Target en PPM tomado del indicador del punto 1.4 (meta). null si no está cargado. */
   target: number | null
   /** Planes de acción del punto 1.4 (todos los periodos). */
@@ -132,11 +115,17 @@ export async function getDqi(
     }
 
     // Target + planes del punto 1.4 (viven en dpo-app, no en el tablero) +
-    // roturas reportadas por choferes desde la app (registro) + insumos de la
-    // corrección H2 (reempaque del mes + HL entregados, en paralelo).
+    // roturas reportadas por choferes desde la app (registro).
+    //
+    // 🚨 El DQI es el del tablero tal cual (`dqi.mes`, `dqi_detalle.hl_mes`):
+    // las roturas de distribución YA incluyen la rotura + el volumen de ruta
+    // que se reempacó (sept'26: 1,79 HL → 163 PPM). Antes acá se le sumaba el
+    // `reempaque_hl_dia` de la serie diaria, que es el reempaque del DEPÓSITO
+    // (numerador del WQI): duplicaba lo reempacado y metía rotura de almacén
+    // en el DQI (sept'26 daba 1,79 + 10,51 HL). Corregido el 17/11/2026.
     const supabase = await createClient()
     const pregunta14 = (await preguntaIdPorKey(supabase, PREGUNTA_KEY.ENTREGA_1_4)) ?? ""
-    const [{ data: ind }, { data: planesRaw }, roturasRes, reempaqueHl, hlEntregados] = await Promise.all([
+    const [{ data: ind }, { data: planesRaw }, roturasRes] = await Promise.all([
       supabase
         .from("indicadores")
         .select("meta")
@@ -149,26 +138,8 @@ export async function getDqi(
         .eq("pregunta_id", pregunta14)
         .order("created_at", { ascending: false }),
       getRoturasChofer(year, month),
-      getReempaqueHlMes(year, month),
-      getHlEntregados(year, month),
     ])
     const roturas_chofer = "data" in roturasRes ? roturasRes.data : []
-
-    // DQI corregido (auditoría H2): roturas de ruta + reempaque, mismo
-    // denominador que la tarjeta mensual oficial (HL entregados del mes).
-    let correccion: DqiCorreccion | null = null
-    if (reempaqueHl != null) {
-      const hlRuta = j.dqi_detalle?.hl_mes ?? 0
-      correccion = {
-        reempaque_hl: Math.round(reempaqueHl * 100) / 100,
-        reempaque_ppm: hlEntregados
-          ? Math.round((reempaqueHl / hlEntregados) * 1_000_000)
-          : null,
-        ppm_corregido: hlEntregados
-          ? Math.round(((hlRuta + reempaqueHl) / hlEntregados) * 1_000_000)
-          : null,
-      }
-    }
 
     const target = ind?.meta && ind.meta > 0 ? Number(ind.meta) : null
     const planes: DqiPlan[] = (planesRaw ?? []).map((p) => {
@@ -199,7 +170,6 @@ export async function getDqi(
             pct_de_roturas: null,
             top_skus: [],
           },
-        correccion,
         target,
         planes,
         roturas_chofer,
@@ -213,42 +183,6 @@ export async function getDqi(
           : "Error consultando el tablero de pérdidas.",
     }
   }
-}
-
-/** HL que entraron a reempaque en el mes (Σ `reempaque_hl_dia` de la serie
- * diaria del tablero). Devuelve null si el tablero no responde: la corrección
- * del DQI simplemente no se muestra, la página no se rompe. */
-const reempaqueMesCache = new Map<string, { t: number; v: number | null }>()
-
-async function getReempaqueHlMes(
-  year: number,
-  month: number,
-): Promise<number | null> {
-  const key = `${year}-${month}`
-  const hit = reempaqueMesCache.get(key)
-  if (hit && Date.now() - hit.t < HL_TTL_MS) return hit.v
-  let total: number | null = null
-  try {
-    const res = await fetch(
-      `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
-      { cache: "no-store", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
-    )
-    if (res.ok) {
-      const j = (await res.json()) as {
-        reempaque_hl_dia?: Record<string, number | null>
-      }
-      if (j?.reempaque_hl_dia) {
-        total = 0
-        for (const v of Object.values(j.reempaque_hl_dia)) {
-          if (v != null && Number.isFinite(v)) total += v
-        }
-      }
-    }
-  } catch {
-    total = null
-  }
-  reempaqueMesCache.set(key, { t: Date.now(), v: total })
-  return total
 }
 
 /** Crea un plan de acción del punto 1.4 asociado a un mes concreto del DQI.
@@ -696,17 +630,14 @@ export async function getDqiPorPatenteRanking(
 
 // ===== DQI por tipo de SKU (envase › calibre › SKU) =====
 // Pedido de la auditoría (punto 1.4): ver QUÉ se rompe para encontrar el motivo.
-// Fuente: la serie diaria del tablero de pérdidas, que publica las dos partes
-// del DQI corregido con detalle por SKU:
-//   - roturas_detalle_dia  (origen "distribucion" = rotura en ruta)
-//   - reempaque_detalle_dia (lo que vuelve de ruta con el packaging roto)
-// El denominador es el mismo HL entregado del mes que usa getDqi, así que la
-// suma de los grupos + "sin detalle" da exacto el DQI corregido publicado.
+// Fuente: `roturas_detalle_dia` de la serie diaria del tablero de pérdidas,
+// origen "distribucion" (rotura en ruta). El `reempaque_detalle_dia` NO entra:
+// es el reempaque del depósito (WQI), y lo reempacado de ruta ya está dentro
+// del DQI oficial (`dqi_detalle.hl_mes`).
 //
-// "Sin detalle": el `dqi_detalle.hl_mes` del tablero (lo que usa el DQI oficial
-// para las roturas en ruta) es mayor que la suma de roturas de distribución por
-// SKU (oct'26: 1,36 vs 0,44 HL). Esa diferencia se muestra aparte, sin
-// asignarla a ningún SKU.
+// "Sin detalle": `dqi_detalle.hl_mes` es mayor que la suma de roturas de
+// distribución por SKU (sept'26: 1,79 vs 0,67 HL). Esa diferencia se muestra
+// aparte, sin asignarla a ningún SKU, para que la suma cierre con el DQI.
 
 interface SerieDiariaItemRotura {
   sku?: string | number
@@ -716,20 +647,11 @@ interface SerieDiariaItemRotura {
   unidades?: number
   hl?: number
 }
-interface SerieDiariaItemReempaque {
-  sku?: string | number
-  descripcion?: string
-  bultos?: number
-  hl?: number
-}
 
 async function fetchSerieDiariaDetalle(
   year: number,
   month: number,
-): Promise<{
-  roturas: SerieDiariaItemRotura[]
-  reempaque: SerieDiariaItemReempaque[]
-} | null> {
+): Promise<{ roturas: SerieDiariaItemRotura[] } | null> {
   try {
     const res = await fetch(
       `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
@@ -738,17 +660,12 @@ async function fetchSerieDiariaDetalle(
     if (!res.ok) return null
     const j = (await res.json()) as {
       roturas_detalle_dia?: Record<string, SerieDiariaItemRotura[] | null>
-      reempaque_detalle_dia?: Record<string, SerieDiariaItemReempaque[] | null>
     }
     const roturas: SerieDiariaItemRotura[] = []
     for (const arr of Object.values(j.roturas_detalle_dia ?? {})) {
       for (const it of arr ?? []) if (it?.origen === "distribucion") roturas.push(it)
     }
-    const reempaque: SerieDiariaItemReempaque[] = []
-    for (const arr of Object.values(j.reempaque_detalle_dia ?? {})) {
-      for (const it of arr ?? []) if (it) reempaque.push(it)
-    }
-    return { roturas, reempaque }
+    return { roturas }
   } catch {
     return null
   }
@@ -799,9 +716,7 @@ export async function getDqiPorTipoSku(
     type Acc = {
       descripcion: string
       hl_ruta: number
-      hl_reempaque: number
       unidades_ruta: number
-      bultos_reempaque: number
       patentes: Set<string>
     }
     const porSku = new Map<string, Acc>()
@@ -811,9 +726,7 @@ export async function getDqiPorTipoSku(
         a = {
           descripcion: desc,
           hl_ruta: 0,
-          hl_reempaque: 0,
           unidades_ruta: 0,
-          bultos_reempaque: 0,
           patentes: new Set(),
         }
         porSku.set(sku, a)
@@ -825,11 +738,6 @@ export async function getDqiPorTipoSku(
       a.hl_ruta += Number(it.hl ?? 0)
       a.unidades_ruta += Number(it.unidades ?? 0)
       for (const p of it.patentes ?? []) if (p) a.patentes.add(p)
-    }
-    for (const it of detalle.reempaque) {
-      const a = acc(String(it.sku ?? "?"), it.descripcion ?? "")
-      a.hl_reempaque += Number(it.hl ?? 0)
-      a.bultos_reempaque += Number(it.bultos ?? 0)
     }
 
     // ── Familia desde el maestro de Chess ───────────────────────────────
@@ -864,16 +772,14 @@ export async function getDqiPorTipoSku(
     const grupos = new Map<EnvaseSku, Map<string, DqiGrupoCalibre>>()
     for (const [codigo, a] of porSku) {
       const tipo = clasificarSku(a.descripcion, uneg.get(codigo))
-      const hlTotal = a.hl_ruta + a.hl_reempaque
+      const hlTotal = a.hl_ruta
       const fila: DqiSkuFila = {
         codigo,
         descripcion: a.descripcion,
         tipo,
         hl_ruta: r4(a.hl_ruta),
-        hl_reempaque: r4(a.hl_reempaque),
         hl_total: r4(hlTotal),
         unidades_ruta: a.unidades_ruta,
-        bultos_reempaque: a.bultos_reempaque,
         ppm: ppm(hlTotal),
         patentes: [...a.patentes].sort(),
         motivos_chofer: [...(motivos.get(codigo) ?? [])],
@@ -886,7 +792,6 @@ export async function getDqiPorTipoSku(
           calibre: tipo.calibre,
           calibre_cc: tipo.calibre_cc,
           hl_ruta: 0,
-          hl_reempaque: 0,
           hl_total: 0,
           ppm: null,
           skus: [],
@@ -894,18 +799,16 @@ export async function getDqiPorTipoSku(
         porCal.set(tipo.calibre, g)
       }
       g.hl_ruta += a.hl_ruta
-      g.hl_reempaque += a.hl_reempaque
       g.hl_total += hlTotal
       g.skus.push(fila)
     }
 
     const totalRutaSku = [...porSku.values()].reduce((s, a) => s + a.hl_ruta, 0)
-    const totalReemp = [...porSku.values()].reduce((s, a) => s + a.hl_reempaque, 0)
     // El DQI oficial toma las roturas en ruta de dqi_detalle.hl_mes; si no vino,
     // se usa la suma por SKU (sin "sin detalle").
     const hlRutaDqi = hlRutaOficial != null ? Math.max(hlRutaOficial, totalRutaSku) : totalRutaSku
     const sinDetalleHl = Math.max(0, hlRutaDqi - totalRutaSku)
-    const totalHl = hlRutaDqi + totalReemp
+    const totalHl = hlRutaDqi
     const ppmTotal = hlEntregados ? Math.round((totalHl / hlEntregados) * 1_000_000) : null
 
     const envases: DqiGrupoEnvase[] = [...grupos.entries()]
@@ -914,19 +817,16 @@ export async function getDqiPorTipoSku(
           .map((g) => ({
             ...g,
             hl_ruta: r4(g.hl_ruta),
-            hl_reempaque: r4(g.hl_reempaque),
             hl_total: r4(g.hl_total),
             ppm: ppm(g.hl_total),
             skus: g.skus.sort((x, y) => y.hl_total - x.hl_total),
           }))
           .sort((x, y) => y.hl_total - x.hl_total)
         const hlR = calibres.reduce((s, c) => s + c.hl_ruta, 0)
-        const hlE = calibres.reduce((s, c) => s + c.hl_reempaque, 0)
-        const hlT = hlR + hlE
+        const hlT = hlR
         return {
           envase,
           hl_ruta: r4(hlR),
-          hl_reempaque: r4(hlE),
           hl_total: r4(hlT),
           ppm: ppm(hlT),
           pct_dqi: totalHl > 0 ? Math.round((hlT / totalHl) * 1000) / 10 : null,
@@ -943,7 +843,6 @@ export async function getDqiPorTipoSku(
       sin_detalle: { hl: r4(sinDetalleHl), ppm: ppm(sinDetalleHl) },
       total: {
         hl_ruta: r4(hlRutaDqi),
-        hl_reempaque: r4(totalReemp),
         hl_total: r4(totalHl),
         ppm: ppmTotal,
       },

@@ -38,19 +38,16 @@ function filtrarPorFamilia(data: DqiTipoSkuData, familia: FamiliaSku | "todas"):
         .map((c) => {
           const skus = c.skus.filter((s) => s.tipo.familia === familia)
           const hl_ruta = skus.reduce((a, s) => a + s.hl_ruta, 0)
-          const hl_reempaque = skus.reduce((a, s) => a + s.hl_reempaque, 0)
-          const hl_total = hl_ruta + hl_reempaque
-          return { ...c, skus, hl_ruta, hl_reempaque, hl_total, ppm: ppm(hl_total) }
+          const hl_total = hl_ruta
+          return { ...c, skus, hl_ruta, hl_total, ppm: ppm(hl_total) }
         })
         .filter((c) => c.skus.length > 0)
       const hl_ruta = calibres.reduce((a, c) => a + c.hl_ruta, 0)
-      const hl_reempaque = calibres.reduce((a, c) => a + c.hl_reempaque, 0)
-      const hl_total = hl_ruta + hl_reempaque
+      const hl_total = hl_ruta
       return {
         ...e,
         calibres,
         hl_ruta,
-        hl_reempaque,
         hl_total,
         ppm: ppm(hl_total),
         pct_dqi: tot > 0 ? (hl_total / tot) * 100 : null,
@@ -60,27 +57,18 @@ function filtrarPorFamilia(data: DqiTipoSkuData, familia: FamiliaSku | "todas"):
     .sort((x, y) => y.hl_total - x.hl_total)
 }
 
-/** Barras horizontales por envase, partidas en rotura en ruta (llena) y
- * reempaque (rayada): son dos mecanismos de rotura distintos. */
+/** Barras horizontales por envase: HL rotos en ruta. */
 function BarrasEnvase({ envases, max }: { envases: DqiGrupoEnvase[]; max: number }) {
   return (
     <div className="space-y-1.5">
       {envases.map((e) => {
         const color = ENVASE_SKU_COLOR[e.envase]
         const wRuta = max > 0 ? (e.hl_ruta / max) * 100 : 0
-        const wReemp = max > 0 ? (e.hl_reempaque / max) * 100 : 0
         return (
           <div key={e.envase} className="flex items-center gap-2 text-xs">
             <span className="w-32 shrink-0 truncate text-slate-600">{ENVASE_SKU_LABEL[e.envase]}</span>
             <div className="flex h-4 min-w-0 flex-1 overflow-hidden rounded bg-slate-100">
               <div style={{ width: `${wRuta}%`, background: color }} title={`Rotura en ruta: ${fmtHL(e.hl_ruta)} HL`} />
-              <div
-                style={{
-                  width: `${wReemp}%`,
-                  background: `repeating-linear-gradient(45deg, ${color}, ${color} 3px, ${color}66 3px, ${color}66 6px)`,
-                }}
-                title={`Reempaque: ${fmtHL(e.hl_reempaque)} HL`}
-              />
             </div>
             <span className="w-14 shrink-0 text-right font-mono text-slate-700">{fmtPct(e.pct_dqi)}</span>
           </div>
@@ -113,7 +101,7 @@ export function DqiTipoSkuTabla({
     })
 
   if (envases.length === 0) {
-    return <p className="py-4 text-center text-sm text-slate-400">Sin roturas ni reempaque con detalle por SKU.</p>
+    return <p className="py-4 text-center text-sm text-slate-400">Sin roturas en ruta con detalle por SKU.</p>
   }
 
   return (
@@ -123,7 +111,6 @@ export function DqiTipoSkuTabla({
           <tr className="border-b border-slate-100 text-xs text-slate-500">
             <th className="px-2 py-2 text-left font-medium">Envase › calibre › SKU</th>
             <th className="px-2 py-2 text-right font-medium" title="HL rotos en distribución">Ruta HL</th>
-            <th className="px-2 py-2 text-right font-medium" title="HL que volvieron a reempaque">Reemp. HL</th>
             <th className="px-2 py-2 text-right font-medium">PPM</th>
             {!compacta && <th className="px-2 py-2 text-right font-medium">% DQI</th>}
             {onCrearPlan && <th className="w-8" />}
@@ -144,7 +131,6 @@ export function DqiTipoSkuTabla({
                     </span>
                   </td>
                   <td className="px-2 py-2 text-right font-mono text-slate-700">{fmtHL(e.hl_ruta)}</td>
-                  <td className="px-2 py-2 text-right font-mono text-slate-700">{fmtHL(e.hl_reempaque)}</td>
                   <td className="px-2 py-2 text-right font-mono font-semibold text-slate-800">{fmtPPM(e.ppm)}</td>
                   {!compacta && <td className="px-2 py-2 text-right font-mono text-slate-700">{fmtPct(e.pct_dqi)}</td>}
                   {onCrearPlan && (
@@ -182,7 +168,6 @@ export function DqiTipoSkuTabla({
                             </span>
                           </td>
                           <td className="px-2 py-1.5 text-right font-mono text-slate-600">{fmtHL(c.hl_ruta)}</td>
-                          <td className="px-2 py-1.5 text-right font-mono text-slate-600">{fmtHL(c.hl_reempaque)}</td>
                           <td className="px-2 py-1.5 text-right font-mono text-slate-700">{fmtPPM(c.ppm)}</td>
                           {!compacta && <td />}
                           {onCrearPlan && (
@@ -231,7 +216,6 @@ export function DqiTipoSkuTabla({
                                 )}
                               </td>
                               <td className="px-2 py-1.5 text-right font-mono text-slate-500">{fmtHL(s.hl_ruta)}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-slate-500">{fmtHL(s.hl_reempaque)}</td>
                               <td className="px-2 py-1.5 text-right font-mono text-slate-600">{fmtPPM(s.ppm)}</td>
                               {!compacta && <td />}
                               {onCrearPlan && <td />}
@@ -327,28 +311,13 @@ export function DqiTipoSkuCard({
             {top && (
               <p className="text-sm text-slate-600">
                 <span className="font-semibold text-slate-800">{ENVASE_SKU_LABEL[top.envase]}</span> explica el{" "}
-                <span className="font-semibold text-slate-800">{fmtPct(top.pct_dqi)}</span> del DQI del mes
-                {top.hl_reempaque > top.hl_ruta
-                  ? " — sobre todo por producto que vuelve a reempaque (packaging dañado)."
-                  : " — sobre todo por roturas en ruta."}
+                <span className="font-semibold text-slate-800">{fmtPct(top.pct_dqi)}</span> del DQI del mes.
               </p>
             )}
 
             <div>
               <BarrasEnvase envases={envases} max={max} />
-              <div className="mt-2 flex flex-wrap gap-4 text-[11px] text-slate-500">
-                <span className="inline-flex items-center gap-1">
-                  <span className="inline-block h-2.5 w-4 rounded-sm bg-slate-500" /> Rotura en ruta
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <span
-                    className="inline-block h-2.5 w-4 rounded-sm"
-                    style={{ background: "repeating-linear-gradient(45deg,#64748b,#64748b 3px,#64748b66 3px,#64748b66 6px)" }}
-                  />{" "}
-                  Reempaque
-                </span>
-                <span>% = parte del DQI corregido del mes</span>
-              </div>
+              <div className="mt-2 text-[11px] text-slate-500">% = parte del DQI del mes</div>
             </div>
 
             <DqiTipoSkuTabla envases={envases} onCrearPlan={onCrearPlan} />
@@ -357,12 +326,12 @@ export function DqiTipoSkuCard({
               <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 Roturas en ruta sin detalle por SKU: {fmtHL(data.sin_detalle.hl)} HL ({fmtPPM(data.sin_detalle.ppm)} PPM).
                 El DQI oficial las cuenta pero el tablero de pérdidas no las publica por artículo; se muestran aparte
-                para que la suma cierre con el DQI corregido ({fmtPPM(data.total.ppm)} PPM).
+                para que la suma cierre con el DQI del mes ({fmtPPM(data.total.ppm)} PPM).
               </p>
             )}
 
             <p className="text-[11px] text-slate-400">
-              Fuente: detalle diario del tablero de pérdidas (roturas de distribución + reempaque) sobre los HL
+              Fuente: detalle diario del tablero de pérdidas (roturas de distribución) sobre los HL
               entregados del mes. Envase y calibre se leen de la descripción del artículo en Chess; la familia, del
               maestro de artículos. En amarillo, el motivo que cargó el chofer en Mis roturas.
             </p>

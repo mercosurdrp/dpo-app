@@ -397,7 +397,7 @@ export async function getArbolKpiRechazo(): Promise<
 
     // ── DQI: viene del tablero del depósito, un fetch por mes ────────────
     // Se pide sólo el mes en curso: el YTD exigiría 12 llamadas al tablero y
-    // hoy ese endpoint no publica la serie corregida (pendiente del punto 1.4).
+    // la evolución mensual ya se ve en /indicadores/dqi.
     // La apertura por envase (hijos del DQI) se pide en paralelo: mismo
     // tablero, otro endpoint; no suma latencia.
     const [dqiRes, tipoSkuRes] = await Promise.allSettled([
@@ -406,8 +406,7 @@ export async function getArbolKpiRechazo(): Promise<
     ])
     mth.dqi = null
     if (dqiRes.status === "fulfilled" && "data" in dqiRes.value) {
-      const d = dqiRes.value.data as { correccion?: { ppm_corregido?: number | null } | null }
-      mth.dqi = d.correccion?.ppm_corregido ?? null
+      mth.dqi = dqiRes.value.data.dqi.mes ?? null
     }
     ytd.dqi = null
     for (const envase of ENVASE_SKU_ORDEN) {
@@ -489,11 +488,9 @@ export async function getArbolKpiRechazoSeries(): Promise<
       sinSerie.fuera_ruta = "No se pudo leer la serie mensual de fuera de ruta."
     }
 
-    // El DQI se calcula en el tablero del depósito con un fetch por mes: una
-    // serie anual serían doce llamadas y ese endpoint todavía no publica la
-    // versión corregida con reempaque (pendiente del punto 1.4 de la auditoría).
+    // El DQI se calcula en el tablero del depósito con un fetch por mes.
     sinSerie.dqi =
-      "El DQI lo calcula el tablero del depósito mes a mes y todavía no publica la serie corregida con reempaque."
+      "El DQI lo calcula el tablero del depósito mes a mes; la evolución está en /indicadores/dqi."
     for (const envase of ENVASE_SKU_ORDEN) {
       sinSerie[nodoArbolEnvase(envase)] =
         "La apertura por envase se arma con el detalle por SKU del mes en curso; abajo está el desglose por calibre y SKU."
