@@ -33,6 +33,8 @@ import {
 import { ClienteModal, ClientesExplorador } from "./clientes-explorador"
 import { CoberturaBloque, TASA_FOCO } from "./cobertura-bloque"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
+import { CruceNpsBloque } from "./cruce-nps-bloque"
+import type { RmdCruceNpsData } from "@/actions/rmd-cruce-nps"
 
 const MESES = [
   "Ene",
@@ -91,6 +93,8 @@ interface Props {
   ganadoresSorteo: GanadorSorteoRmd[] | null
   /** Acumulado del año vs el mismo período del anterior. Null si no se pudo leer. */
   ytd: ComparativoYtdData<RmdYtdFila> | null
+  /** Cruce RMD bajo × motivo logístico en NPS. Null si falló la consulta. */
+  cruceNps: RmdCruceNpsData | null
 }
 
 export function RmdClient({
@@ -100,6 +104,7 @@ export function RmdClient({
   resumenSorteo,
   ganadoresSorteo,
   ytd,
+  cruceNps,
 }: Props) {
   const { resumen, por_mes, distribucion, motivos, clientes, recuperados } =
     data
@@ -230,10 +235,21 @@ export function RmdClient({
       )}
 
       <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-xl grid-cols-3">
           <TabsTrigger value="panel">🚚 Panel RMD</TabsTrigger>
           <TabsTrigger value="cobertura">📨 Cobertura de encuestas</TabsTrigger>
+          <TabsTrigger value="cruce-nps">🔗 Cruce con NPS</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="cruce-nps" className="mt-4">
+          {cruceNps ? (
+            <CruceNpsBloque data={cruceNps} />
+          ) : (
+            <p className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              No se pudo armar el cruce con NPS.
+            </p>
+          )}
+        </TabsContent>
 
         <TabsContent value="cobertura" className="mt-4">
           {cobertura ? (
