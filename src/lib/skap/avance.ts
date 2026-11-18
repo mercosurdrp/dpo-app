@@ -76,8 +76,8 @@ export interface AvancePdp {
   manual: { fecha: string; plataforma: number | null } | null
 }
 
-/** Líderes que no se muestran en la matriz (pedido del usuario 18/11/2026). */
-const LIDERES_OCULTOS = ["RIMOLI", "RIMOLLI"]
+/** Líderes que no se muestran en la matriz (pedido del usuario 18/11/2026: Rimoli, Haberle). */
+const LIDERES_OCULTOS = ["RIMOLI", "RIMOLLI", "HABERLE"]
 
 function liderVisible(nombre: string | undefined): string {
   const n = (nombre ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase()
