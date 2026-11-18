@@ -51,6 +51,8 @@ import { esEstadoManual, estadoDerivado, formatDuracion } from "@/lib/capacitaci
 import { CapacitacionesCalendario } from "./capacitaciones-calendario"
 import { CapacitacionesAdherencia } from "./capacitaciones-adherencia"
 import { CapacitacionesAsistencia } from "./capacitaciones-asistencia"
+import { CapacitacionesCosto } from "./capacitaciones-costo"
+import type { CostoConfig } from "@/lib/capacitacion-costo"
 import {
   META_ASISTENCIA_PCT,
   pctAsistencia,
@@ -72,6 +74,9 @@ interface Props {
   asistenciaPorEmpleado: { filas: FilaAsistenciaEmpleado[]; empleados: EmpleadoRef[] } | null
   /** Ids de capacitaciones a las que el usuario logueado está convocado y todavía no rindió. */
   misPendientes: string[]
+  /** Parámetros del presupuesto de costo. Null para quien no lo ve (no es admin/auditor). */
+  costoConfig: CostoConfig | null
+  puedeEditarCosto: boolean
 }
 
 const estadoOptions: { value: string; label: string }[] = [
@@ -117,6 +122,8 @@ export function CapacitacionesClient({
   canEdit,
   asistenciaPorEmpleado,
   misPendientes,
+  costoConfig,
+  puedeEditarCosto,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -485,6 +492,16 @@ export function CapacitacionesClient({
         hoy={hoy}
         porEmpleado={asistenciaPorEmpleado}
       />
+
+      {/* Presupuesto de costo — sólo admin/auditor (tiene sueldos) */}
+      {costoConfig && (
+        <CapacitacionesCosto
+          capacitaciones={withDerived}
+          config={costoConfig}
+          puedeEditar={puedeEditarCosto}
+          hoy={hoy}
+        />
+      )}
 
       {/* Avance de completadas por pilar */}
       {avancePorPilar.length > 0 && (

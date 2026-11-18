@@ -1,5 +1,6 @@
 import { getAsistenciaEmpleados, getCapacitaciones, getMisCapacitaciones } from "@/actions/capacitaciones"
 import { getProfile } from "@/lib/session"
+import { getCostoConfig } from "@/actions/capacitacion-costo"
 import { CapacitacionesClient } from "./capacitaciones-client"
 
 export default async function CapacitacionesPage() {
@@ -25,6 +26,9 @@ export default async function CapacitacionesPage() {
   // La asistencia individual (quién faltó a qué) sólo la ve admin/auditor.
   const asistencia = canEdit ? await getAsistenciaEmpleados() : null
   const porEmpleado = asistencia && !("error" in asistencia) ? asistencia.data : null
+  // El presupuesto de costo tiene sueldos: sólo admin/auditor.
+  const costo = canEdit ? await getCostoConfig() : null
+  const costoConfig = costo && "data" in costo ? costo.data : null
   const misPendientes =
     "data" in mias
       ? mias.data.filter((c) => c.asistencia?.resultado === "pendiente").map((c) => c.id)
@@ -36,6 +40,8 @@ export default async function CapacitacionesPage() {
       canEdit={canEdit}
       asistenciaPorEmpleado={porEmpleado}
       misPendientes={misPendientes}
+      costoConfig={costoConfig}
+      puedeEditarCosto={profile?.role === "admin"}
     />
   )
 }
