@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useTransition } from "react"
+import { useState, useMemo, useTransition, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
@@ -52,6 +52,18 @@ import { CapacitacionesCalendario } from "./capacitaciones-calendario"
 import { CapacitacionesAdherencia } from "./capacitaciones-adherencia"
 import { CapacitacionesAsistencia } from "./capacitaciones-asistencia"
 import { CapacitacionesCosto } from "./capacitaciones-costo"
+import { Cuadro } from "./tablero-cuadro"
+import { calcularAdherencia } from "@/lib/capacitacion-adherencia"
+import { calcularAsistencia } from "@/lib/capacitacion-asistencia"
+import { calcularCosto } from "@/lib/capacitacion-costo"
+import {
+  CalendarDays,
+  Gauge as GaugeIcon,
+  LayoutGrid,
+  Layers,
+  ListChecks as ListIcon,
+  Wallet as WalletIcon,
+} from "lucide-react"
 import type { CostoConfig } from "@/lib/capacitacion-costo"
 import {
   META_ASISTENCIA_PCT,
@@ -109,6 +121,11 @@ const PILAR_COLORS: Record<string, string> = {
 }
 
 const SIN_PILAR = "Sin pilar"
+
+const SECCIONES_TABLERO = ["listado", "adherencia", "asistencia", "costo", "pilares", "calendario"] as const
+type SeccionTablero = (typeof SECCIONES_TABLERO)[number]
+/** Qué cuadros dejó tildados cada usuario (preferencia de este navegador). */
+const CLAVE_TABLERO = "capacitaciones:tablero"
 
 // "Almacén" y "Almacen" conviven en la DB; se agrupan sin tildes
 function normalizePilar(pilar: string | null): string {
@@ -244,7 +261,7 @@ export function CapacitacionesClient({
   }, [withDerived])
 
   const [expandedPilar, setExpandedPilar] = useState<string | null>(null)
-  const [avanceOpen, setAvanceOpen] = useState(false)
+  const [avanceOpen, setAvanceOpen] = useState(true)
 
   const [realizadasOpen, setRealizadasOpen] = useState(false)
 
@@ -307,17 +324,66 @@ export function CapacitacionesClient({
     setDeleting(null)
   }
 
+  // ── Tablero: un cuadro por sección; se tildan las que se quieren ver ──
+  const [tablero, setTablero] = useState<Set<SeccionTablero>>(() => new Set<SeccionTablero>(["listado"]))
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CLAVE_TABLERO)
+      if (raw) {
+        const arr = (JSON.parse(raw) as string[]).filter((x): x is SeccionTablero =>
+          (SECCIONES_TABLERO as readonly string[]).includes(x)
+        )
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- preferencia guardada del navegador
+        setTablero(new Set(arr))
+      }
+    } catch {
+      /* sin storage: queda el default */
+    }
+  }, [])
+  function toggleTablero(k: SeccionTablero) {
+    setTablero((prev) => {
+      const n = new Set(prev)
+      if (n.has(k)) n.delete(k)
+      else n.add(k)
+      try {
+        localStorage.setItem(CLAVE_TABLERO, JSON.stringify([...n]))
+      } catch {
+        /* sin storage */
+      }
+      return n
+    })
+  }
+  const ver = (k: SeccionTablero) => tablero.has(k)
+
+  const resAdh = useMemo(() => calcularAdherencia(withDerived, hoy), [withDerived, hoy])
+  const resAsis = useMemo(() => calcularAsistencia(itemsAsistencia, hoy), [itemsAsistencia, hoy])
+  const resCosto = useMemo(
+    () => (costoConfig ? calcularCosto(withDerived, costoConfig, Number(hoy.slice(0, 4)), hoy).pac.total : null),
+    [withDerived, costoConfig, hoy]
+  )
+  const delMes = useMemo(() => {
+    const mes = hoy.slice(0, 7)
+    const lista = withDerived.filter((c) => c.estadoReal !== "cancelada" && c.fecha?.startsWith(mes))
+    const proxima = withDerived
+      .filter((c) => c.estadoReal !== "cancelada" && c.fecha && c.fecha >= hoy && c.estadoReal !== "completada")
+      .sort((a, b) => a.fecha.localeCompare(b.fecha))[0]
+    return { cant: lista.length, proxima }
+  }, [withDerived, hoy])
+  const semaforo = (v: number | null, meta = 90) =>
+    v === null ? "#94A3B8" : v >= meta ? "#10B981" : v >= meta - 20 ? "#F59E0B" : "#EF4444"
+  const seccionesVisibles = SECCIONES_TABLERO.filter((k) => k !== "costo" || costoConfig)
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Capacitaciones</h1>
           <p className="text-sm text-slate-500">
             Gestiona las capacitaciones del personal
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link href="/capacitaciones/matriz-skap">
             <Button variant="outline">
               <ClipboardCheck className="mr-2 size-4" />
@@ -454,48 +520,127 @@ export function CapacitacionesClient({
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard label="Calendarizadas" value={stats.total} color="#6366F1" />
-        <StatCard label="Pendientes" value={stats.programadas} color={ESTADO_CAPACITACION_COLORS.programada} />
-        <StatCard label="En Curso" value={stats.enCurso} color={ESTADO_CAPACITACION_COLORS.en_curso} />
-        <StatCard label="Completadas" value={stats.completadas} color={ESTADO_CAPACITACION_COLORS.completada} />
-        <button
-          type="button"
-          onClick={() => setRealizadasOpen(true)}
-          className="text-left outline-none"
-          aria-label="Ver capacitaciones realizadas"
-        >
-          <Card className="transition-shadow hover:shadow-md">
-            <CardContent className="flex items-center gap-2.5 px-3 py-2">
-              <div
-                className="flex size-8 items-center justify-center rounded-md text-xs font-bold text-white"
-                style={{ backgroundColor: "#0EA5E9" }}
-              >
-                {stats.pctRealizadas}%
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-medium text-slate-600">Cumplimiento anual</span>
-                <span className="text-[11px] text-slate-400">Ver realizadas</span>
-              </div>
-            </CardContent>
-          </Card>
-        </button>
+      {/* Tablero */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="flex items-center gap-1.5 text-xs text-slate-500">
+            <LayoutGrid className="size-3.5" />
+            Tocá un cuadro para ver su información. Podés tildar varios.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              const todos = tablero.size >= seccionesVisibles.length
+              const n = new Set<SeccionTablero>(todos ? [] : seccionesVisibles)
+              setTablero(n)
+              try {
+                localStorage.setItem(CLAVE_TABLERO, JSON.stringify([...n]))
+              } catch {
+                /* sin storage */
+              }
+            }}
+            className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+          >
+            {tablero.size >= seccionesVisibles.length ? "Cerrar todo" : "Ver todo"}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <Cuadro
+            activo={ver("listado")}
+            onClick={() => toggleTablero("listado")}
+            icono={<ListIcon className="size-4" />}
+            titulo="Capacitaciones"
+            valor={`${stats.total}`}
+            detalle={`${stats.completadas} completadas · ${stats.enCurso} en curso · ${stats.programadas} pendientes`}
+            pie={`Cumplimiento anual ${stats.pctRealizadas} %`}
+            pieColor={semaforo(stats.pctRealizadas)}
+            barra={stats.pctRealizadas}
+            color="#0F172A"
+          />
+          <Cuadro
+            activo={ver("adherencia")}
+            onClick={() => toggleTablero("adherencia")}
+            icono={<GaugeIcon className="size-4" />}
+            titulo="Adherencia"
+            valor={resAdh.adherenciaYtd === null ? "—" : `${resAdh.adherenciaYtd} %`}
+            color={semaforo(resAdh.adherenciaYtd)}
+            detalle={`Al cronograma YTD · ${resAdh.atrasadas.length} atrasadas`}
+            pie={`Anual ${resAdh.cumplimientoAnual} % · meta 90 %`}
+            barra={resAdh.adherenciaYtd}
+          />
+          <Cuadro
+            activo={ver("asistencia")}
+            onClick={() => toggleTablero("asistencia")}
+            icono={<UserCheck className="size-4" />}
+            titulo="Asistencia"
+            valor={resAsis.pctYtd === null ? "—" : `${resAsis.pctYtd} %`}
+            color={semaforo(resAsis.pctYtd)}
+            detalle={`${resAsis.presentes} presentes de ${resAsis.convocados} · ${resAsis.dictadas} dictadas`}
+            pie={`${resAsis.ausentes} ausencias · meta 90 %`}
+            barra={resAsis.pctYtd}
+          />
+          {costoConfig && resCosto && (
+            <Cuadro
+              activo={ver("costo")}
+              onClick={() => toggleTablero("costo")}
+              icono={<WalletIcon className="size-4" />}
+              titulo="Costo vs PAC"
+              valor={"$ " + Math.round(resCosto.real).toLocaleString("es-AR")}
+              color={resCosto.pac - resCosto.real >= 0 ? "#10B981" : "#EF4444"}
+              detalle={`Real dictado · ${resCosto.pac > 0 ? Math.round((resCosto.real / resCosto.pac) * 100) : "—"} % del PAC`}
+              pie={`Desvío $ ${Math.round(resCosto.pac - resCosto.real).toLocaleString("es-AR")}`}
+              pieColor={resCosto.pac - resCosto.real >= 0 ? "#10B981" : "#EF4444"}
+              barra={resCosto.pac > 0 ? (resCosto.real / resCosto.pac) * 100 : null}
+            />
+          )}
+          <Cuadro
+            activo={ver("pilares")}
+            onClick={() => toggleTablero("pilares")}
+            icono={<Layers className="size-4" />}
+            titulo="Avance por pilar"
+            valor={`${avancePorPilar.length} pilares`}
+            detalle={
+              avancePorPilar.length
+                ? `Mejor: ${[...avancePorPilar].sort((a, b) => b.pct - a.pct)[0].pilar} · Peor: ${[...avancePorPilar].sort((a, b) => a.pct - b.pct)[0].pilar}`
+                : "Sin capacitaciones"
+            }
+            pie="Completadas sobre calendarizadas"
+            color="#0F172A"
+          />
+          <Cuadro
+            activo={ver("calendario")}
+            onClick={() => toggleTablero("calendario")}
+            icono={<CalendarDays className="size-4" />}
+            titulo="Calendario"
+            valor={`${delMes.cant} este mes`}
+            detalle={
+              delMes.proxima
+                ? `Próxima: ${new Date(delMes.proxima.fecha + "T12:00:00").toLocaleDateString("es-AR")}`
+                : "Sin próximas programadas"
+            }
+            pie={delMes.proxima ? delMes.proxima.titulo : "Ver el mes en el calendario"}
+            color="#0F172A"
+          />
+        </div>
       </div>
 
       {/* Adherencia al cronograma (Gantt) — meta 90 % a fin de año */}
-      <CapacitacionesAdherencia capacitaciones={withDerived} hoy={hoy} />
+      {ver("adherencia") && <CapacitacionesAdherencia capacitaciones={withDerived} hoy={hoy} inicialAbierto />}
 
       {/* Asistencia por capacitación — meta 90 % de presentismo */}
-      <CapacitacionesAsistencia
-        capacitaciones={itemsAsistencia}
-        hoy={hoy}
-        porEmpleado={asistenciaPorEmpleado}
-      />
+      {ver("asistencia") && (
+        <CapacitacionesAsistencia
+          capacitaciones={itemsAsistencia}
+          hoy={hoy}
+          porEmpleado={asistenciaPorEmpleado}
+          inicialAbierto
+        />
+      )}
 
       {/* Presupuesto de costo — sólo admin/auditor (tiene sueldos) */}
-      {costoConfig && (
+      {costoConfig && ver("costo") && (
         <CapacitacionesCosto
+          inicialAbierto
           capacitaciones={withDerived}
           config={costoConfig}
           puedeEditar={puedeEditarCosto}
@@ -504,7 +649,7 @@ export function CapacitacionesClient({
       )}
 
       {/* Avance de completadas por pilar */}
-      {avancePorPilar.length > 0 && (
+      {ver("pilares") && avancePorPilar.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
             <button
@@ -593,7 +738,7 @@ export function CapacitacionesClient({
       )}
 
       {/* Calendario de programación (respeta los filtros activos) */}
-      <CapacitacionesCalendario capacitaciones={filtered} />
+      {ver("calendario") && <CapacitacionesCalendario capacitaciones={filtered} inicialAbierto />}
 
       {/* Dialog: lista de capacitaciones realizadas */}
       <Dialog open={realizadasOpen} onOpenChange={setRealizadasOpen}>
@@ -659,234 +804,224 @@ export function CapacitacionesClient({
         </DialogContent>
       </Dialog>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-          <Input
-            className="pl-10"
-            placeholder="Buscar por titulo o instructor..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <Select value={filterPilar} onValueChange={(v) => setFilterPilar(v ?? "all")}>
-          <SelectTrigger className="w-full sm:w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PILAR_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.value !== "all" && (
-                  <span
-                    className="mr-2 inline-block size-2.5 rounded-full"
-                    style={{ backgroundColor: PILAR_COLORS[o.value] }}
-                  />
-                )}
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterEstado} onValueChange={(v) => setFilterEstado(v ?? "all")}>
-          <SelectTrigger className="w-full sm:w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {estadoOptions.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* List */}
-      {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-slate-400">
-          <GraduationCap className="mb-3 size-10" />
-          <p className="font-medium">No hay capacitaciones</p>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((cap) => (
-            <Link key={cap.id} href={`/capacitaciones/${cap.id}`}>
-              <Card className="group cursor-pointer transition-shadow hover:shadow-md">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <CardTitle className="text-base leading-tight group-hover:text-blue-600">
-                      {cap.titulo}
-                    </CardTitle>
-                    <Badge
-                      variant="secondary"
-                      style={{
-                        backgroundColor: ESTADO_CAPACITACION_COLORS[cap.estadoReal] + "20",
-                        color: ESTADO_CAPACITACION_COLORS[cap.estadoReal],
-                      }}
-                      title={
-                        cap.estadoManual ? "Estado cargado a mano" : undefined
-                      }
-                    >
-                      {ESTADO_CAPACITACION_LABELS[cap.estadoReal]}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm text-slate-500">
-                  {cap.pilar && (
-                    <div className="flex items-center gap-2">
+      {ver("listado") && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-slate-800">Capacitaciones</h2>
+            <button
+              type="button"
+              onClick={() => setRealizadasOpen(true)}
+              className="text-xs font-medium text-sky-600 hover:underline"
+            >
+              Ver realizadas ({stats.completadas} · {stats.pctRealizadas} %)
+            </button>
+          </div>
+          {/* Filters */}
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                className="pl-10"
+                placeholder="Buscar por titulo o instructor..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <Select value={filterPilar} onValueChange={(v) => setFilterPilar(v ?? "all")}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PILAR_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.value !== "all" && (
                       <span
-                        className="size-2.5 rounded-full"
-                        style={{ backgroundColor: PILAR_COLORS[cap.pilar] ?? "#94A3B8" }}
+                        className="mr-2 inline-block size-2.5 rounded-full"
+                        style={{ backgroundColor: PILAR_COLORS[o.value] }}
                       />
-                      <span className="font-medium" style={{ color: PILAR_COLORS[cap.pilar] ?? "#94A3B8" }}>
-                        {cap.pilar}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Calendar className="size-3.5" />
-                    <span>{fmtFecha(cap.fecha)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <User className="size-3.5" />
-                    <span>{cap.instructor}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="size-3.5" />
-                    <span>{formatDuracion(cap.duracion_horas)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="size-3.5" />
-                    {cap.total_asistentes > 0 ? (
-                      <span>
-                        <span className="font-semibold text-slate-700">
-                          {Math.round((cap.aprobados / cap.total_asistentes) * 100)}%
-                        </span>{" "}
-                        aprobados ({cap.aprobados}/{cap.total_asistentes})
-                      </span>
-                    ) : (
-                      <span className="text-slate-400">Sin inscriptos</span>
                     )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <UserCheck className="size-3.5" />
-                    {(() => {
-                      const pct = pctAsistencia({
-                        convocados: cap.total_asistentes,
-                        presentes: cap.presentes,
-                      })
-                      if (pct === null) {
-                        return <span className="text-slate-400">Sin convocados</span>
-                      }
-                      const color =
-                        pct >= META_ASISTENCIA_PCT
-                          ? "#10B981"
-                          : pct >= META_ASISTENCIA_PCT - 20
-                            ? "#F59E0B"
-                            : "#EF4444"
-                      return (
-                        <span title={`Meta de asistencia: ${META_ASISTENCIA_PCT} %`}>
-                          <span className="font-semibold" style={{ color }}>
-                            {pct}%
-                          </span>{" "}
-                          asistencia ({cap.presentes}/{cap.total_asistentes})
-                        </span>
-                      )
-                    })()}
-                  </div>
-                  {cap.lugar && (
-                    <div className="flex items-center gap-2">
-                      <MapPin className="size-3.5" />
-                      <span>{cap.lugar}</span>
-                    </div>
-                  )}
-                  {misPendientes.includes(cap.id) && (
-                    // La tarjeta entera ya es un Link: un <a> adentro de otro no es
-                    // HTML válido, así que se navega a mano.
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        router.push(`/mis-capacitaciones/${cap.id}`)
-                      }}
-                      className="flex w-full items-center gap-2 rounded-md bg-amber-50 px-2 py-1 text-left text-amber-700 hover:bg-amber-100"
-                    >
-                      <ClipboardCheck className="size-3.5" />
-                      <span className="font-medium">Te falta rendir este examen</span>
-                    </button>
-                  )}
-                  {canEdit && (
-                    <div className="flex justify-end gap-1 pt-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={`size-7 p-0 ${cap.visible ? "text-green-500 hover:text-green-700" : "text-slate-300 hover:text-slate-500"}`}
-                        title={cap.visible ? "Visible para empleados — click para ocultar" : "Oculta — click para hacer visible"}
-                        onClick={async (e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          const result = await toggleCapacitacionVisible(cap.id, !cap.visible)
-                          if ("error" in result) {
-                            toast.error(result.error)
-                          } else {
-                            setCapacitaciones((prev) =>
-                              prev.map((c) =>
-                                c.id === cap.id ? { ...c, visible: !c.visible } : c
-                              )
-                            )
-                            toast.success(cap.visible ? "Oculta para empleados" : "Visible para empleados")
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterEstado} onValueChange={(v) => setFilterEstado(v ?? "all")}>
+              <SelectTrigger className="w-full sm:w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {estadoOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* List */}
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-slate-400">
+              <GraduationCap className="mb-3 size-10" />
+              <p className="font-medium">No hay capacitaciones</p>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {filtered.map((cap) => (
+                <Link key={cap.id} href={`/capacitaciones/${cap.id}`}>
+                  <Card className="group cursor-pointer transition-shadow hover:shadow-md">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <CardTitle className="text-base leading-tight group-hover:text-blue-600">
+                          {cap.titulo}
+                        </CardTitle>
+                        <Badge
+                          variant="secondary"
+                          style={{
+                            backgroundColor: ESTADO_CAPACITACION_COLORS[cap.estadoReal] + "20",
+                            color: ESTADO_CAPACITACION_COLORS[cap.estadoReal],
+                          }}
+                          title={
+                            cap.estadoManual ? "Estado cargado a mano" : undefined
                           }
-                        }}
-                      >
-                        {cap.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="size-7 p-0 text-slate-400 hover:text-red-500"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          handleDelete(cap.id)
-                        }}
-                        disabled={deleting === cap.id}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
+                        >
+                          {ESTADO_CAPACITACION_LABELS[cap.estadoReal]}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm text-slate-500">
+                      {cap.pilar && (
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="size-2.5 rounded-full"
+                            style={{ backgroundColor: PILAR_COLORS[cap.pilar] ?? "#94A3B8" }}
+                          />
+                          <span className="font-medium" style={{ color: PILAR_COLORS[cap.pilar] ?? "#94A3B8" }}>
+                            {cap.pilar}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <Calendar className="size-3.5" />
+                        <span>{fmtFecha(cap.fecha)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <User className="size-3.5" />
+                        <span>{cap.instructor}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="size-3.5" />
+                        <span>{formatDuracion(cap.duracion_horas)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="size-3.5" />
+                        {cap.total_asistentes > 0 ? (
+                          <span>
+                            <span className="font-semibold text-slate-700">
+                              {Math.round((cap.aprobados / cap.total_asistentes) * 100)}%
+                            </span>{" "}
+                            aprobados ({cap.aprobados}/{cap.total_asistentes})
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">Sin inscriptos</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <UserCheck className="size-3.5" />
+                        {(() => {
+                          const pct = pctAsistencia({
+                            convocados: cap.total_asistentes,
+                            presentes: cap.presentes,
+                          })
+                          if (pct === null) {
+                            return <span className="text-slate-400">Sin convocados</span>
+                          }
+                          const color =
+                            pct >= META_ASISTENCIA_PCT
+                              ? "#10B981"
+                              : pct >= META_ASISTENCIA_PCT - 20
+                                ? "#F59E0B"
+                                : "#EF4444"
+                          return (
+                            <span title={`Meta de asistencia: ${META_ASISTENCIA_PCT} %`}>
+                              <span className="font-semibold" style={{ color }}>
+                                {pct}%
+                              </span>{" "}
+                              asistencia ({cap.presentes}/{cap.total_asistentes})
+                            </span>
+                          )
+                        })()}
+                      </div>
+                      {cap.lugar && (
+                        <div className="flex items-center gap-2">
+                          <MapPin className="size-3.5" />
+                          <span>{cap.lugar}</span>
+                        </div>
+                      )}
+                      {misPendientes.includes(cap.id) && (
+                        // La tarjeta entera ya es un Link: un <a> adentro de otro no es
+                        // HTML válido, así que se navega a mano.
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            router.push(`/mis-capacitaciones/${cap.id}`)
+                          }}
+                          className="flex w-full items-center gap-2 rounded-md bg-amber-50 px-2 py-1 text-left text-amber-700 hover:bg-amber-100"
+                        >
+                          <ClipboardCheck className="size-3.5" />
+                          <span className="font-medium">Te falta rendir este examen</span>
+                        </button>
+                      )}
+                      {canEdit && (
+                        <div className="flex justify-end gap-1 pt-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={`size-7 p-0 ${cap.visible ? "text-green-500 hover:text-green-700" : "text-slate-300 hover:text-slate-500"}`}
+                            title={cap.visible ? "Visible para empleados — click para ocultar" : "Oculta — click para hacer visible"}
+                            onClick={async (e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              const result = await toggleCapacitacionVisible(cap.id, !cap.visible)
+                              if ("error" in result) {
+                                toast.error(result.error)
+                              } else {
+                                setCapacitaciones((prev) =>
+                                  prev.map((c) =>
+                                    c.id === cap.id ? { ...c, visible: !c.visible } : c
+                                  )
+                                )
+                                toast.success(cap.visible ? "Oculta para empleados" : "Visible para empleados")
+                              }
+                            }}
+                          >
+                            {cap.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="size-7 p-0 text-slate-400 hover:text-red-500"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              handleDelete(cap.id)
+                            }}
+                            disabled={deleting === cap.id}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
-  )
-}
-
-function StatCard({
-  label,
-  value,
-  color,
-}: {
-  label: string
-  value: number
-  color: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-2.5 px-3 py-2">
-        <div
-          className="flex size-8 items-center justify-center rounded-md text-sm font-bold text-white"
-          style={{ backgroundColor: color }}
-        >
-          {value}
-        </div>
-        <span className="text-xs font-medium text-slate-600">{label}</span>
-      </CardContent>
-    </Card>
   )
 }

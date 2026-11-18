@@ -11,6 +11,8 @@ type Item = CapacitacionConResumen & { estadoReal: EstadoCapacitacion }
 
 interface Props {
   capacitaciones: Item[]
+  /** Abrir ya desplegado (cuando se elige desde el tablero). */
+  inicialAbierto?: boolean
 }
 
 const PILAR_COLORS: Record<string, string> = {
@@ -45,12 +47,12 @@ const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 const pad = (n: number) => String(n).padStart(2, "0")
 const MAX_CHIPS = 3
 
-export function CapacitacionesCalendario({ capacitaciones }: Props) {
+export function CapacitacionesCalendario({ capacitaciones, inicialAbierto = false }: Props) {
   const hoy = new Date()
   const hoyStr = `${hoy.getFullYear()}-${pad(hoy.getMonth() + 1)}-${pad(hoy.getDate())}`
 
   const [cursor, setCursor] = useState({ y: hoy.getFullYear(), m: hoy.getMonth() })
-  const [abierto, setAbierto] = useState(false)
+  const [abierto, setAbierto] = useState(inicialAbierto)
 
   // Agrupa por fecha (YYYY-MM-DD) para evitar problemas de zona horaria
   const porFecha = useMemo(() => {

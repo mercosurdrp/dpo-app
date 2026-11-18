@@ -21,6 +21,8 @@ interface Props {
   capacitaciones: ItemAdherencia[]
   /** YYYY-MM-DD. Se pasa desde el cliente para no depender del huso del server. */
   hoy: string
+  /** Abrir ya desplegado (cuando se elige desde el tablero). */
+  inicialAbierto?: boolean
 }
 
 const MESES_CORTOS = [
@@ -42,10 +44,10 @@ function colorSemaforo(pct: number | null): string {
   return ROJO
 }
 
-export function CapacitacionesAdherencia({ capacitaciones, hoy }: Props) {
+export function CapacitacionesAdherencia({ capacitaciones, hoy, inicialAbierto = false }: Props) {
   const a = useMemo(() => calcularAdherencia(capacitaciones, hoy), [capacitaciones, hoy])
 
-  const [abierto, setAbierto] = useState(false)
+  const [abierto, setAbierto] = useState(inicialAbierto)
   const [verAtrasadas, setVerAtrasadas] = useState(false)
   const [verPilares, setVerPilares] = useState(false)
 

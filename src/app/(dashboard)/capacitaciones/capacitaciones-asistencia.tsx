@@ -28,6 +28,8 @@ interface Props {
   hoy: string
   /** Asistencia individual. Null para quien no puede verla (no es admin/auditor). */
   porEmpleado: { filas: FilaAsistenciaEmpleado[]; empleados: EmpleadoRef[] } | null
+  /** Abrir ya desplegado (cuando se elige desde el tablero). */
+  inicialAbierto?: boolean
 }
 
 const MESES_CORTOS = [
@@ -52,7 +54,12 @@ function fmtFecha(fecha: string): string {
   return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("es-AR")
 }
 
-export function CapacitacionesAsistencia({ capacitaciones, hoy, porEmpleado }: Props) {
+export function CapacitacionesAsistencia({
+  capacitaciones,
+  hoy,
+  porEmpleado,
+  inicialAbierto = false,
+}: Props) {
   const a = useMemo(() => calcularAsistencia(capacitaciones, hoy), [capacitaciones, hoy])
 
   const empleados = useMemo(
@@ -63,7 +70,7 @@ export function CapacitacionesAsistencia({ capacitaciones, hoy, porEmpleado }: P
     [porEmpleado, capacitaciones, hoy]
   )
 
-  const [abierto, setAbierto] = useState(false)
+  const [abierto, setAbierto] = useState(inicialAbierto)
   const [verBajoMeta, setVerBajoMeta] = useState(false)
   const [verDetalle, setVerDetalle] = useState(false)
   const [verEmpleados, setVerEmpleados] = useState(false)
