@@ -10,9 +10,12 @@
  * - **Presentes**: los convocados marcados `presente`. Se marca a mano desde el
  *   detalle, y también solo cuando el empleado rinde el examen en la app.
  * - **Ausentes** = convocados − presentes.
- * - **Dictada**: capacitación no cancelada, con fecha ≤ hoy y al menos un
- *   convocado. Sin convocados no hay denominador y no se mide; las de fecha
- *   futura tampoco (todavía no se dictaron).
+ * - **Dictada** (efectivamente realizada): capacitación no cancelada, con
+ *   fecha ≤ hoy, al menos un convocado y al menos un presente. Sin convocados
+ *   no hay denominador; las de fecha futura todavía no se dictaron; y las que
+ *   vencieron sin ningún presente no se realizaron (o no se cargó la
+ *   asistencia): contarlas inflaba los ausentes con gente que nunca tuvo la
+ *   charla.
  * - **% de asistencia de una capacitación** = presentes / convocados.
  * - **Asistencia YTD** = Σ presentes / Σ convocados de las dictadas del año.
  *   Es el KPI global: pondera por tamaño, así que una capacitación de 40
@@ -122,9 +125,15 @@ function enriquecer(c: ItemAsistencia): CapacitacionAsistencia {
   }
 }
 
-/** Dictada: no cancelada, fecha ≤ hoy, con al menos un convocado. */
+/** Dictada (efectivamente realizada): no cancelada, fecha ≤ hoy, con convocados y al menos un presente. */
 export function esDictada(c: ItemAsistencia, today: string): boolean {
-  return c.estadoReal !== "cancelada" && !!c.fecha && c.fecha <= today && c.convocados > 0
+  return (
+    c.estadoReal !== "cancelada" &&
+    !!c.fecha &&
+    c.fecha <= today &&
+    c.convocados > 0 &&
+    c.presentes > 0
+  )
 }
 
 export function calcularAsistencia(

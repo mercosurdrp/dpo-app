@@ -361,8 +361,8 @@ export function CapacitacionesAsistencia({ capacitaciones, hoy, porEmpleado }: P
             <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
               Convocados = asistentes cargados en la capacitación · Presentes = los marcados
               presentes (a mano o al rendir el examen en la app). Se miden sólo las capacitaciones
-              ya dictadas (fecha ≤ hoy) con al menos un convocado: las futuras y las dadas de baja
-              quedan afuera. La asistencia YTD pondera por tamaño, así que una capacitación de 40
+              efectivamente realizadas (fecha ≤ hoy, con convocados y al menos un presente): las
+              futuras, las dadas de baja y las que vencieron sin ningún presente quedan afuera. La asistencia YTD pondera por tamaño, así que una capacitación de 40
               personas pesa más que una de 4.
             </p>
           </div>

@@ -110,7 +110,7 @@ export function hojaAsistencia(
     ]),
     [],
     ["Definiciones: Convocados = asistentes cargados en la capacitación · Presentes = marcados presentes"],
-    ["(a mano o al rendir el examen en la app) · Dictada = no cancelada, fecha ≤ hoy y con al menos un convocado ·"],
+    ["(a mano o al rendir el examen en la app) · Dictada = no cancelada, fecha ≤ hoy, con convocados y al menos un presente ·"],
     [`En meta = la capacitación llega al ${META_ASISTENCIA_PCT} % de asistencia · La asistencia YTD pondera por tamaño.`],
   ]
 
@@ -156,7 +156,8 @@ export function hojaAdherenciaPersona(
             c.fecha?.slice(0, 4) === String(anio) &&
             c.estadoReal !== "cancelada" &&
             c.fecha <= today &&
-            c.convocados > 0
+            c.convocados > 0 &&
+            c.presentes > 0
         )
         .map((c) => normalizePilar(c.pilar))
     ),
