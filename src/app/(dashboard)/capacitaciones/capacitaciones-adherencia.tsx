@@ -11,7 +11,7 @@ import {
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { HAY_PAC, META_CUMPLIMIENTO, PAC_2026_ORIGEN, PAC_2026_TOTAL } from "@/lib/pac-2026"
+import { META_CUMPLIMIENTO } from "@/lib/pac-2026"
 import {
   calcularAdherencia,
   type ItemAdherencia,
@@ -218,12 +218,7 @@ export function CapacitacionesAdherencia({ capacitaciones, hoy }: Props) {
                 <thead>
                   <tr className="border-b text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
                     <th className="py-1.5 pr-2">Mes</th>
-                    {HAY_PAC && (
-                      <th className="py-1.5 pr-2 text-right" title={`Plan Anual de Capacitación aprobado — ${PAC_2026_ORIGEN}`}>
-                        PAC
-                      </th>
-                    )}
-                    <th className="py-1.5 pr-2 text-right">Calend.</th>
+                    <th className="py-1.5 pr-2 text-right">Calendarizadas</th>
                     <th className="py-1.5 pr-2 text-right">Vencidas</th>
                     <th className="py-1.5 pr-2 text-right">Cumplidas</th>
                     <th className="py-1.5 pl-2">Adherencia</th>
@@ -237,11 +232,6 @@ export function CapacitacionesAdherencia({ capacitaciones, hoy }: Props) {
                         <td className="py-1.5 pr-2 font-medium text-slate-700">
                           {MESES_CORTOS[m.mes]}
                         </td>
-                        {HAY_PAC && (
-                          <td className="py-1.5 pr-2 text-right text-slate-400">
-                            {m.pac || "—"}
-                          </td>
-                        )}
                         <td className="py-1.5 pr-2 text-right text-slate-600">
                           {m.calendarizadas || "—"}
                         </td>
@@ -285,15 +275,6 @@ export function CapacitacionesAdherencia({ capacitaciones, hoy }: Props) {
               </table>
             </div>
             <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-              {HAY_PAC && (
-                <>
-                  PAC = plan aprobado ({PAC_2026_TOTAL} capacitaciones, {PAC_2026_ORIGEN}).
-                  Calendarizado en el sistema: {a.totalAnual}. Hasta{" "}
-                  {MESES_CORTOS[a.ultimoMesCerrado] ?? "—"} (último mes cerrado) el PAC preveía{" "}
-                  {a.pacYtd} y el sistema tiene {a.calendarizadasHastaMesCerrado} cargadas,{" "}
-                  {a.cumplidasHastaMesCerrado} cumplidas.{" "}
-                </>
-              )}
               La adherencia se mide contra el calendarizado del sistema, que es la evidencia
               auditable. En verde, las cumplidas antes de su fecha: suman al cumplimiento anual pero
               todavía no a la adherencia.
@@ -325,8 +306,7 @@ export function CapacitacionesAdherencia({ capacitaciones, hoy }: Props) {
                   <thead>
                     <tr className="border-b text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
                       <th className="py-1.5 pr-2">Pilar</th>
-                      {HAY_PAC && <th className="py-1.5 pr-2 text-right">PAC</th>}
-                      <th className="py-1.5 pr-2 text-right">Calend.</th>
+                      <th className="py-1.5 pr-2 text-right">Calendarizadas</th>
                       <th className="py-1.5 pr-2 text-right">Atrasadas</th>
                       <th className="py-1.5 pr-2 text-right">Cumplidas</th>
                       <th className="py-1.5 text-right">Adherencia</th>
@@ -336,9 +316,6 @@ export function CapacitacionesAdherencia({ capacitaciones, hoy }: Props) {
                     {a.porPilar.map((p) => (
                       <tr key={p.pilar} className="border-b last:border-0">
                         <td className="py-1.5 pr-2 font-medium text-slate-700">{p.pilar}</td>
-                        {HAY_PAC && (
-                          <td className="py-1.5 pr-2 text-right text-slate-400">{p.pac || "—"}</td>
-                        )}
                         <td className="py-1.5 pr-2 text-right text-slate-600">
                           {p.calendarizadas || "—"}
                         </td>
