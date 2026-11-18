@@ -76,13 +76,21 @@ export interface AvancePdp {
   manual: { fecha: string; plataforma: number | null } | null
 }
 
+/** Líderes que no se muestran en la matriz (pedido del usuario 18/11/2026). */
+const LIDERES_OCULTOS = ["RIMOLI", "RIMOLLI"]
+
+function liderVisible(nombre: string | undefined): string {
+  const n = (nombre ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase()
+  return LIDERES_OCULTOS.some((x) => n.includes(x)) ? "" : (nombre ?? "")
+}
+
 export function aAvancePdp(o: ObjetivoPdp, manual?: ObtenidoManualPdp): AvancePdp {
   const obtenido = manual ? manual.obtenido : o.obtenido
   return {
     clave: claveObjetivoPdp(o),
     objetivo: o.objetivo,
     descripcion: o.descripcion,
-    jefe: o.jefe?.nombre ?? "",
+    jefe: liderVisible(o.jefe?.nombre),
     meta: o.meta,
     obtenido,
     avance: avanceObjetivo({ meta: o.meta, obtenido }),
