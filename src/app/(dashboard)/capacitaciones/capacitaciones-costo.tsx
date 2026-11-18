@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ChevronDown, Wallet, Save, RotateCcw } from "lucide-react"
+import { ChevronDown, Wallet, Save, RotateCcw, Download } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -64,6 +64,11 @@ export function CapacitacionesCosto({ capacitaciones, config, puedeEditar, hoy }
   const desde = MESES[cfg.mesDesde]
   const hasta = MESES[cfg.mesHasta]
 
+  async function descargar() {
+    const [XLSX, { libroCosto }] = await Promise.all([import("xlsx"), import("@/lib/capacitacion-costo-xlsx")])
+    XLSX.writeFile(libroCosto(XLSX, r, cfg, hoy), `Presupuesto_Costo_Capacitaciones_${hoy}.xlsx`)
+  }
+
   function guardar() {
     setMsg(null)
     startTransition(async () => {
@@ -107,9 +112,15 @@ export function CapacitacionesCosto({ capacitaciones, config, puedeEditar, hoy }
               </span>
             )}
           </button>
-          <Badge variant="secondary" className="text-[11px] text-slate-500">
-            Sólo admin / auditor
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={descargar}>
+              <Download className="mr-1.5 size-3.5" />
+              Descargar Excel
+            </Button>
+            <Badge variant="secondary" className="text-[11px] text-slate-500">
+              Sólo admin / auditor
+            </Badge>
+          </div>
         </div>
       </CardHeader>
 
