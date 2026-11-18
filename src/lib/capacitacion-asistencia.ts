@@ -15,7 +15,8 @@
  *   no hay denominador; las de fecha futura todavía no se dictaron; y las que
  *   vencieron sin ningún presente no se realizaron (o no se cargó la
  *   asistencia): contarlas inflaba los ausentes con gente que nunca tuvo la
- *   charla.
+ *   charla. Las que siguen **en curso** (todavía hay convocados pendientes de
+ *   rendir) tampoco se miden hasta cerrarse: sus pendientes no son ausentes.
  * - **% de asistencia de una capacitación** = presentes / convocados.
  * - **Asistencia YTD** = Σ presentes / Σ convocados de las dictadas del año.
  *   Es el KPI global: pondera por tamaño, así que una capacitación de 40
@@ -125,10 +126,14 @@ function enriquecer(c: ItemAsistencia): CapacitacionAsistencia {
   }
 }
 
-/** Dictada (efectivamente realizada): no cancelada, fecha ≤ hoy, con convocados y al menos un presente. */
+/**
+ * Dictada (efectivamente realizada y cerrada): no cancelada ni en curso, fecha ≤ hoy,
+ * con convocados y al menos un presente.
+ */
 export function esDictada(c: ItemAsistencia, today: string): boolean {
   return (
     c.estadoReal !== "cancelada" &&
+    c.estadoReal !== "en_curso" &&
     !!c.fecha &&
     c.fecha <= today &&
     c.convocados > 0 &&
