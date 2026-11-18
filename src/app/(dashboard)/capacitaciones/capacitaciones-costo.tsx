@@ -33,13 +33,18 @@ const GRIS = "#94A3B8"
 
 const $ = (n: number) => "$ " + Math.round(n).toLocaleString("es-AR")
 const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : null)
+const fmtH = (h: number) => (Math.round(h * 10) / 10).toLocaleString("es-AR")
+const signo$ = (n: number) => (Math.round(n) > 0 ? "+" : Math.round(n) < 0 ? "−" : "") + $(Math.abs(n)).slice(2)
+const signoK = (n: number) =>
+  (Math.round(n / 1000) > 0 ? "+" : Math.round(n / 1000) < 0 ? "−" : "") +
+  Math.abs(Math.round(n / 1000)).toLocaleString("es-AR") + " k"
 
-type Vista = "resumen" | "escenario" | "detalle" | "parametros"
+type Vista = "pac" | "resumen" | "escenario" | "detalle" | "parametros"
 
 export function CapacitacionesCosto({ capacitaciones, config, puedeEditar, hoy }: Props) {
   const anio = Number(hoy.slice(0, 4))
   const [abierto, setAbierto] = useState(false)
-  const [vista, setVista] = useState<Vista>("resumen")
+  const [vista, setVista] = useState<Vista>("pac")
   const [cfg, setCfg] = useState<CostoConfig>(config)
   const [guardado, setGuardado] = useState<CostoConfig>(config)
   const [msg, setMsg] = useState<string | null>(null)
@@ -47,12 +52,14 @@ export function CapacitacionesCosto({ capacitaciones, config, puedeEditar, hoy }
   const router = useRouter()
 
   // Se calcula con los parámetros en edición: lo que se tipea se ve al instante.
-  const r = useMemo(() => calcularCosto(capacitaciones, cfg, anio), [capacitaciones, cfg, anio])
+  const r = useMemo(() => calcularCosto(capacitaciones, cfg, anio, hoy), [capacitaciones, cfg, anio, hoy])
   const sucio = JSON.stringify(cfg) !== JSON.stringify(guardado)
 
   if (r.filas.length === 0) return null
 
   const pctEjec = pct(r.ejecutado, r.presupuesto)
+  const pctPac = pct(r.pac.total.real, r.pac.total.pac)
+  const desvioPac = r.pac.total.pac - r.pac.total.real
   const pctEsc = pct(r.escenario.real, r.escenario.meta)
   const desde = MESES[cfg.mesDesde]
   const hasta = MESES[cfg.mesHasta]
@@ -94,8 +101,9 @@ export function CapacitacionesCosto({ capacitaciones, config, puedeEditar, hoy }
             </CardTitle>
             {!abierto && (
               <span className="text-xs text-slate-500">
-                · presupuesto <b className="text-slate-700">{$(r.presupuesto)}</b> · ejecutado{" "}
-                <b className="text-slate-700">{$(r.ejecutado)}</b> · oficial PxQ {$(r.oficial)}
+                · PAC <b className="text-slate-700">{$(r.pac.total.pac)}</b> · real dictado{" "}
+                <b className="text-slate-700">{$(r.pac.total.real)}</b> ({pctPac ?? "—"} %) · desvío{" "}
+                <b style={{ color: desvioPac >= 0 ? VERDE : ROJO }}>{$(desvioPac)}</b>
               </span>
             )}
           </button>
@@ -108,7 +116,13 @@ export function CapacitacionesCosto({ capacitaciones, config, puedeEditar, hoy }
       {abierto && (
         <CardContent className="space-y-4">
           {/* KPIs */}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <Kpi
+              titulo="PAC vs Real dictado"
+              valor={$(r.pac.total.real)}
+              detalle={`${pctPac ?? "—"} % del PAC (${$(r.pac.total.pac)}) · desvío ${$(desvioPac)}`}
+              color={desvioPac >= 0 ? VERDE : ROJO}
+            />
             <Kpi
               titulo="Presupuesto"
               valor={$(r.presupuesto)}
@@ -141,6 +155,7 @@ export function CapacitacionesCosto({ capacitaciones, config, puedeEditar, hoy }
           <div className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1 text-xs font-medium">
             {(
               [
+                ["pac", "PAC vs Real"],
                 ["resumen", "Por mes y pilar"],
                 ["escenario", `Escenario ${cfg.capsPorMes} x mes`],
                 ["detalle", "Detalle"],
@@ -158,6 +173,156 @@ export function CapacitacionesCosto({ capacitaciones, config, puedeEditar, hoy }
               </button>
             ))}
           </div>
+
+          {vista === "pac" && (
+            <div className="space-y-4">
+              <div className="overflow-x-auto">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Por pilar — PAC vs real dictado
+                </p>
+                <table className="w-full min-w-[46rem] text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                      <th className="py-1.5 pr-2">Pilar</th>
+                      <th className="py-1.5 pr-2 text-right">Caps PAC / real</th>
+                      <th className="py-1.5 pr-2 text-right">Horas PAC / real</th>
+                      <th className="py-1.5 pr-2 text-right">Desvío hs</th>
+                      <th className="py-1.5 pr-2 text-right">$ PAC</th>
+                      <th className="py-1.5 pr-2 text-right">$ Real</th>
+                      <th className="py-1.5 pr-2 text-right">Desvío $</th>
+                      <th className="py-1.5 text-right">Ejec.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...r.pac.porPilar, { pilar: "Total", ...r.pac.total, porMes: [] }].map((p) => {
+                      const dh = p.horasPac - p.horasReal
+                      const d = p.pac - p.real
+                      const e = pct(p.real, p.pac)
+                      const tot = p.pilar === "Total"
+                      return (
+                        <tr key={p.pilar} className={tot ? "border-t-2 font-semibold" : "border-b last:border-0"}>
+                          <td className="py-1.5 pr-2 font-medium text-slate-700">{p.pilar}</td>
+                          <td className="py-1.5 pr-2 text-right text-slate-600">
+                            {p.capsPac} / {p.capsReal}
+                          </td>
+                          <td className="py-1.5 pr-2 text-right text-slate-600">
+                            {fmtH(p.horasPac)} / {fmtH(p.horasReal)}
+                          </td>
+                          <td className="py-1.5 pr-2 text-right text-xs" style={{ color: dh >= 0 ? VERDE : ROJO }}>
+                            {dh > 0 ? "+" : dh < 0 ? "−" : ""}
+                            {fmtH(Math.abs(dh))}
+                          </td>
+                          <td className="py-1.5 pr-2 text-right text-slate-500">{$(p.pac)}</td>
+                          <td className="py-1.5 pr-2 text-right text-slate-900">{$(p.real)}</td>
+                          <td className="py-1.5 pr-2 text-right font-semibold" style={{ color: d >= 0 ? VERDE : ROJO }}>
+                            {signo$(d)}
+                          </td>
+                          <td className="py-1.5 text-right text-xs text-slate-500">{e === null ? "—" : `${e} %`}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="overflow-x-auto">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Por mes — todos los pilares
+                </p>
+                <table className="w-full min-w-[46rem] text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                      <th className="py-1.5 pr-2">Mes</th>
+                      <th className="py-1.5 pr-2 text-right">Caps PAC / real</th>
+                      <th className="py-1.5 pr-2 text-right">Horas PAC / real</th>
+                      <th className="py-1.5 pr-2 text-right">$ PAC</th>
+                      <th className="py-1.5 pr-2 text-right">$ Real</th>
+                      <th className="py-1.5 pr-2 text-right">Desvío $</th>
+                      <th className="py-1.5 text-right">Acumulado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.pac.porMes.map((m) => {
+                      const d = m.pac - m.real
+                      return (
+                        <tr key={m.mes} className="border-b last:border-0">
+                          <td className="py-1.5 pr-2 font-medium text-slate-700">{MESES[m.mes]}</td>
+                          <td className="py-1.5 pr-2 text-right text-slate-600">
+                            {m.capsPac} / {m.capsReal}
+                          </td>
+                          <td className="py-1.5 pr-2 text-right text-slate-600">
+                            {fmtH(m.horasPac)} / {fmtH(m.horasReal)}
+                          </td>
+                          <td className="py-1.5 pr-2 text-right text-slate-500">{$(m.pac)}</td>
+                          <td className="py-1.5 pr-2 text-right text-slate-900">{$(m.real)}</td>
+                          <td className="py-1.5 pr-2 text-right font-semibold" style={{ color: d >= 0 ? VERDE : ROJO }}>
+                            {signo$(d)}
+                          </td>
+                          <td
+                            className="py-1.5 text-right text-xs font-semibold"
+                            style={{ color: m.desvioAcumulado >= 0 ? VERDE : ROJO }}
+                          >
+                            {signo$(m.desvioAcumulado)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="overflow-x-auto">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Desvío $ por pilar y mes (PAC − Real)
+                </p>
+                <table className="w-full min-w-[46rem] text-xs">
+                  <thead>
+                    <tr className="border-b text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                      <th className="py-1.5 pr-2">Pilar</th>
+                      {r.pac.meses.map((m) => (
+                        <th key={m} className="px-1 py-1.5 text-right">
+                          {MESES[m]}
+                        </th>
+                      ))}
+                      <th className="py-1.5 pl-2 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.pac.porPilar.map((p) => (
+                      <tr key={p.pilar} className="border-b last:border-0">
+                        <td className="py-1.5 pr-2 font-medium text-slate-700">{p.pilar}</td>
+                        {p.porMes.map((c, i) => {
+                          const d = c.pac - c.real
+                          return (
+                            <td
+                              key={i}
+                              className="px-1 py-1.5 text-right tabular-nums"
+                              title={`PAC ${$(c.pac)} (${c.capsPac} caps, ${fmtH(c.horasPac)} h) · Real ${$(c.real)} (${c.capsReal} caps, ${fmtH(c.horasReal)} h)`}
+                              style={{ color: d === 0 ? GRIS : d > 0 ? VERDE : ROJO }}
+                            >
+                              {d === 0 ? "—" : signoK(d)}
+                            </td>
+                          )
+                        })}
+                        <td
+                          className="py-1.5 pl-2 text-right font-semibold tabular-nums"
+                          style={{ color: p.pac - p.real >= 0 ? VERDE : ROJO }}
+                        >
+                          {signoK(p.pac - p.real)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+                  En miles de $ (pasá el mouse para ver el detalle). PAC = capacitaciones previstas × horas por
+                  capacitación (preparación + búsqueda + test + presentación) × valor/hora del pilar. Real = las
+                  efectivamente dictadas (cumplidas o con algún presente): horas de preparación del PAC + duración
+                  real dictada, al mismo valor/hora. Desvío = PAC − Real: verde = se gastó menos de lo presupuestado.
+                </p>
+              </div>
+            </div>
+          )}
 
           {vista === "resumen" && (
             <div className="grid gap-4 xl:grid-cols-2">
@@ -531,6 +696,60 @@ export function CapacitacionesCosto({ capacitaciones, config, puedeEditar, hoy }
                           </td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    PAC — presupuesto oficial por pilar (horas por capacitación, valor/hora y cantidad por mes)
+                  </p>
+                  <table className="w-full min-w-[60rem] text-xs">
+                    <thead>
+                      <tr className="border-b text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                        <th className="py-1.5 pr-2">Pilar</th>
+                        <th className="py-1.5 pr-1">Hs x cap</th>
+                        <th className="py-1.5 pr-1">Present.</th>
+                        <th className="py-1.5 pr-1">Valor/hora</th>
+                        {MESES.map((m) => (
+                          <th key={m} className="px-0.5 py-1.5 text-center">
+                            {m}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {PILARES_COSTO.map((p) => {
+                        const q = cfg.pac[p]
+                        const setPac = (patch: Partial<typeof q>) =>
+                          setCfg((c) => ({ ...c, pac: { ...c.pac, [p]: { ...c.pac[p], ...patch } } }))
+                        const n = (e: React.ChangeEvent<HTMLInputElement>) => Math.max(0, Number(e.target.value) || 0)
+                        return (
+                          <tr key={p} className="border-b last:border-0">
+                            <td className="py-1 pr-2 font-medium text-slate-700">{p}</td>
+                            <td className="py-1 pr-1">
+                              <Input type="number" min={0} step="0.25" className="h-7 w-16 px-1 text-xs" value={q.horasPorCap} onChange={(e) => setPac({ horasPorCap: n(e) })} />
+                            </td>
+                            <td className="py-1 pr-1">
+                              <Input type="number" min={0} step="0.25" className="h-7 w-16 px-1 text-xs" value={q.presentacion} onChange={(e) => setPac({ presentacion: n(e) })} />
+                            </td>
+                            <td className="py-1 pr-1">
+                              <Input type="number" min={0} className="h-7 w-24 px-1 text-xs" value={Math.round(q.valorHora * 100) / 100} onChange={(e) => setPac({ valorHora: n(e) })} />
+                            </td>
+                            {MESES.map((m, i) => (
+                              <td key={m} className="px-0.5 py-1">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  className="h-7 w-11 px-1 text-center text-xs"
+                                  value={q.cant[i]}
+                                  onChange={(e) => setPac({ cant: q.cant.map((v, j) => (j === i ? Math.floor(n(e)) : v)) })}
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

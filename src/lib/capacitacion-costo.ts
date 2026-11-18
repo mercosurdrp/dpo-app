@@ -11,6 +11,13 @@
  * - **Escenario**: cada capacitador da N capacitaciones por mes en el período;
  *   cada una cuesta (duración estándar + preparación) × su costo/hora.
  *
+ * - **PAC vs Real**: el PAC (presupuesto oficial, «Presupuesto PAC.xlsx») prevé
+ *   N capacitaciones por mes y pilar × horas por capacitación (preparación +
+ *   búsqueda + test + presentación) × valor/hora del pilar. Lo real son las
+ *   capacitaciones efectivamente dictadas (fecha ≤ hoy y cumplidas o con algún
+ *   presente): horas de preparación del PAC + duración real dictada, al mismo
+ *   valor/hora. Desvío = PAC − Real (positivo = se gastó menos).
+ *
  * Las horas-hombre de los asistentes son informativas y no se suman.
  */
 import type { EstadoCapacitacion } from "@/types/database"
@@ -43,6 +50,15 @@ export interface CostoConfig {
   instructores: Record<string, { nombre: string; sueldo: number }>
   /** Presupuesto oficial (PxQ MRP, línea GENTE/CAPACITACIONES) por mes, Ene→Dic. */
   oficialPxQ: number[]
+  /** PAC por pilar: horas por capacitación, de ellas presentación, valor/hora y cantidad por mes (Ene→Dic). */
+  pac: Record<string, PacPilar>
+}
+
+export interface PacPilar {
+  horasPorCap: number
+  presentacion: number
+  valorHora: number
+  cant: number[]
 }
 
 export const COSTO_CONFIG_DEFAULT: CostoConfig = {
@@ -64,6 +80,16 @@ export const COSTO_CONFIG_DEFAULT: CostoConfig = {
     Flota: { nombre: "Fausto Azzaretti", sueldo: 2_500_000 },
   },
   oficialPxQ: [0, 0, 750_000, 1_413_000, 1_350_000, 0, 0, 0, 1_350_000, 600_000, 600_000, 0],
+  // «Presupuesto PAC.xlsx», hoja Presup Capacitaciones Internas (total $ 4.597.470).
+  pac: {
+    Seguridad: { horasPorCap: 5, presentacion: 1.5, valorHora: 15457.576, cant: [0, 0, 0, 0, 0, 2, 7, 7, 9, 7, 0, 0] },
+    Almacen: { horasPorCap: 3.25, presentacion: 0.5, valorHora: 10416.667, cant: [0, 0, 0, 5, 2, 2, 5, 0, 3, 0, 0, 0] },
+    Entrega: { horasPorCap: 3.75, presentacion: 1, valorHora: 10416.667, cant: [0, 0, 0, 1, 0, 2, 2, 2, 2, 0, 0, 0] },
+    Gestion: { horasPorCap: 3.75, presentacion: 0.75, valorHora: 13250.125, cant: [0, 0, 0, 2, 0, 0, 2, 2, 2, 1, 0, 0] },
+    Planeamiento: { horasPorCap: 3, presentacion: 0.5, valorHora: 13250, cant: [0, 0, 0, 0, 0, 0, 3, 0, 2, 0, 0, 0] },
+    Gente: { horasPorCap: 3.5, presentacion: 1, valorHora: 7916.25, cant: [0, 0, 0, 0, 0, 0, 1, 1, 9, 1, 0, 0] },
+    Flota: { horasPorCap: 3.5, presentacion: 0.5, valorHora: 10416.667, cant: [0, 0, 0, 0, 0, 0, 2, 0, 2, 2, 0, 0] },
+  },
 }
 
 const num = (v: unknown, d: number) => (typeof v === "number" && isFinite(v) && v >= 0 ? v : d)
@@ -98,6 +124,22 @@ export function parseCostoConfig(raw: string | null | undefined): CostoConfig {
     mesHasta,
     instructores,
     oficialPxQ: Array.from({ length: 12 }, (_, i) => num(j.oficialPxQ?.[i], d.oficialPxQ[i])),
+    pac: Object.fromEntries(
+      PILARES_COSTO.map((p) => {
+        const g = j.pac?.[p]
+        const dp = d.pac[p]
+        const horasPorCap = num(g?.horasPorCap, dp.horasPorCap)
+        return [
+          p,
+          {
+            horasPorCap,
+            presentacion: Math.min(horasPorCap, num(g?.presentacion, dp.presentacion)),
+            valorHora: num(g?.valorHora, dp.valorHora),
+            cant: Array.from({ length: 12 }, (_, i) => Math.floor(num(g?.cant?.[i], dp.cant[i]))),
+          },
+        ]
+      })
+    ),
   }
 }
 
@@ -108,6 +150,8 @@ export interface ItemCosto {
   pilar: string | null
   duracion_horas: number
   total_asistentes: number
+  /** Para saber si se dictó (PAC vs Real). */
+  presentes?: number
   estadoReal: EstadoCapacitacion
 }
 
@@ -161,6 +205,24 @@ export interface ResumenCosto {
     costoEscenario: number
     costoReal: number
   }
+  pac: ResumenPac
+}
+
+interface CeldaPac {
+  capsPac: number
+  capsReal: number
+  horasPac: number
+  horasReal: number
+  pac: number
+  real: number
+}
+
+export interface ResumenPac {
+  /** Meses con PAC o con dictado real. */
+  meses: number[]
+  porPilar: ({ pilar: string; porMes: CeldaPac[] } & CeldaPac)[]
+  porMes: (CeldaPac & { mes: number; desvioAcumulado: number })[]
+  total: CeldaPac
 }
 
 /** "Almacén" / "flota" → "Almacen" / "Flota". */
@@ -169,7 +231,65 @@ export function normalizarPilarCosto(p: string | null): string {
   return PILARES_COSTO.find((x) => x.toLowerCase() === s) ?? (p?.trim() || "Sin pilar")
 }
 
-export function calcularCosto(items: ItemCosto[], cfg: CostoConfig, anio: number): ResumenCosto {
+const celdaVacia = (): CeldaPac => ({ capsPac: 0, capsReal: 0, horasPac: 0, horasReal: 0, pac: 0, real: 0 })
+
+function sumar(a: CeldaPac, b: CeldaPac): CeldaPac {
+  return {
+    capsPac: a.capsPac + b.capsPac,
+    capsReal: a.capsReal + b.capsReal,
+    horasPac: a.horasPac + b.horasPac,
+    horasReal: a.horasReal + b.horasReal,
+    pac: a.pac + b.pac,
+    real: a.real + b.real,
+  }
+}
+
+/** PAC (presupuesto oficial) vs lo realmente dictado, por pilar y mes. */
+export function calcularPacVsReal(filas: FilaCosto[], cfg: CostoConfig, hoy: string): ResumenPac {
+  const grid: Record<string, CeldaPac[]> = {}
+  for (const p of PILARES_COSTO) {
+    const q = cfg.pac[p]
+    grid[p] = Array.from({ length: 12 }, (_, m) => {
+      const c = celdaVacia()
+      c.capsPac = q.cant[m] ?? 0
+      c.horasPac = c.capsPac * q.horasPorCap
+      c.pac = c.horasPac * q.valorHora
+      return c
+    })
+  }
+  for (const f of filas) {
+    const q = cfg.pac[f.pilarN]
+    const dictada = f.fecha <= hoy && (f.cumplida || (f.presentes ?? 0) > 0)
+    if (!q || !dictada) continue
+    const h = q.horasPorCap - q.presentacion + (Number(f.duracion_horas) || 0)
+    const c = grid[f.pilarN][f.mes]
+    c.capsReal += 1
+    c.horasReal += h
+    c.real += h * q.valorHora
+  }
+  const meses = Array.from({ length: 12 }, (_, m) => m).filter((m) =>
+    PILARES_COSTO.some((p) => grid[p][m].capsPac > 0 || grid[p][m].capsReal > 0)
+  )
+  const porPilar = PILARES_COSTO.map((pilar) => ({
+    pilar,
+    porMes: meses.map((m) => grid[pilar][m]),
+    ...meses.reduce((acc, m) => sumar(acc, grid[pilar][m]), celdaVacia()),
+  })).sort((a, b) => b.pac - a.pac)
+  let acum = 0
+  const porMes = meses.map((mes) => {
+    const c = PILARES_COSTO.reduce((acc, p) => sumar(acc, grid[p][mes]), celdaVacia())
+    acum += c.pac - c.real
+    return { ...c, mes, desvioAcumulado: acum }
+  })
+  return { meses, porPilar, porMes, total: porMes.reduce((a, b) => sumar(a, b), celdaVacia()) }
+}
+
+export function calcularCosto(
+  items: ItemCosto[],
+  cfg: CostoConfig,
+  anio: number,
+  hoy: string = new Date().toISOString().slice(0, 10)
+): ResumenCosto {
   const filas: FilaCosto[] = items
     .filter((c) => c.fecha?.slice(0, 4) === String(anio) && c.estadoReal !== "cancelada")
     .map((c) => {
@@ -272,5 +392,6 @@ export function calcularCosto(items: ItemCosto[], cfg: CostoConfig, anio: number
       costoEscenario: sumC((c) => c.costoEscenario),
       costoReal: sumC((c) => c.costoReal),
     },
+    pac: calcularPacVsReal(filas, cfg, hoy),
   }
 }
