@@ -585,9 +585,9 @@ export function CapacitacionesClient({
               onClick={() => toggleTablero("costo")}
               icono={<WalletIcon className="size-4" />}
               titulo="Costo vs PAC"
-              valor={"$ " + Math.round(resCosto.real).toLocaleString("es-AR")}
+              valor={resCosto.pac > 0 ? `${Math.round((resCosto.real / resCosto.pac) * 100)} %` : "—"}
               color={resCosto.pac - resCosto.real >= 0 ? "#10B981" : "#EF4444"}
-              detalle={`Real dictado · ${resCosto.pac > 0 ? Math.round((resCosto.real / resCosto.pac) * 100) : "—"} % del PAC`}
+              detalle={`Adherencia al PAC · real $ ${Math.round(resCosto.real).toLocaleString("es-AR")} de $ ${Math.round(resCosto.pac).toLocaleString("es-AR")}`}
               pie={`Desvío $ ${Math.round(resCosto.pac - resCosto.real).toLocaleString("es-AR")}`}
               pieColor={resCosto.pac - resCosto.real >= 0 ? "#10B981" : "#EF4444"}
               barra={resCosto.pac > 0 ? (resCosto.real / resCosto.pac) * 100 : null}
