@@ -66,7 +66,6 @@ export function CapacitacionesAsistencia({ capacitaciones, hoy, porEmpleado }: P
   const [abierto, setAbierto] = useState(false)
   const [verBajoMeta, setVerBajoMeta] = useState(false)
   const [verDetalle, setVerDetalle] = useState(false)
-  const [verPilares, setVerPilares] = useState(false)
   const [verEmpleados, setVerEmpleados] = useState(false)
   const [buscaEmpleado, setBuscaEmpleado] = useState("")
   const [empleadoAbierto, setEmpleadoAbierto] = useState<string | null>(null)
@@ -367,61 +366,6 @@ export function CapacitacionesAsistencia({ capacitaciones, hoy, porEmpleado }: P
               personas pesa más que una de 4.
             </p>
           </div>
-
-          {/* Por pilar */}
-          {a.porPilar.length > 0 && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setVerPilares((v) => !v)}
-                className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 outline-none hover:text-slate-700"
-              >
-                <ChevronDown
-                  className={`size-3.5 transition-transform ${verPilares ? "" : "-rotate-90"}`}
-                />
-                Asistencia por pilar
-              </button>
-              {verPilares && (
-                <div className="mt-2 overflow-x-auto">
-                  <table className="w-full min-w-[30rem] text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                        <th className="py-1.5 pr-2">Pilar</th>
-                        <th className="py-1.5 pr-2 text-right">Dictadas</th>
-                        <th className="py-1.5 pr-2 text-right">Convocados</th>
-                        <th className="py-1.5 pr-2 text-right">Presentes</th>
-                        <th className="py-1.5 pr-2 text-right">Ausentes</th>
-                        <th className="py-1.5 text-right">Asistencia</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {a.porPilar.map((p) => (
-                        <tr key={p.pilar} className="border-b last:border-0">
-                          <td className="py-1.5 pr-2 font-medium text-slate-700">{p.pilar}</td>
-                          <td className="py-1.5 pr-2 text-right text-slate-600">{p.dictadas}</td>
-                          <td className="py-1.5 pr-2 text-right text-slate-600">{p.convocados}</td>
-                          <td className="py-1.5 pr-2 text-right font-semibold text-slate-900">
-                            {p.presentes}
-                          </td>
-                          <td
-                            className={`py-1.5 pr-2 text-right ${p.ausentes > 0 ? "font-semibold text-red-600" : "text-slate-400"}`}
-                          >
-                            {p.ausentes || "—"}
-                          </td>
-                          <td
-                            className="py-1.5 text-right font-semibold"
-                            style={{ color: colorSemaforo(p.pct) }}
-                          >
-                            {p.pct === null ? "—" : `${p.pct} %`}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Por empleado */}
           {empleados.length > 0 && (
